@@ -54,12 +54,31 @@ SELECT user_id
 -- name: ListRoomsForUser :many
 -- サイドバーのルーム一覧: 参加しているルーム（全種類）と、参加していない public ルーム。
 -- 読めない private / dm は含めない。並びは最近メッセージがあった順（インデックス rooms_workspace_id_last_message_at_idx）。
-SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member
+-- 最終メッセージは seq = last_message_seq の行を、ルームごとに UNIQUE インデックスで 1 回引く（N+1 のクエリにしない。ADR 0012）。
+-- 未読数はクライアントにも出せるよう last_read_seq をそのまま返し、サービスで last_message_seq との差を取る。
+SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq,
+       lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
+       lm.created_at AS last_message_created_at, lm.deleted_at AS last_message_deleted_at,
+       lu.handle AS last_message_sender_handle, lu.display_name AS last_message_sender_display_name
   FROM rooms r
   LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = sqlc.arg(user_id)
+  LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = r.last_message_seq
+  LEFT JOIN users lu ON lu.id = lm.sender_id
  WHERE r.workspace_id = sqlc.arg(workspace_id)
    AND (r.kind = 'public' OR rm.user_id IS NOT NULL)
  ORDER BY r.last_message_at DESC NULLS LAST, r.id;
+
+-- name: GetRoomSummary :one
+-- 1 件のルームについて、ListRoomsForUser と同じ列（既読位置と最終メッセージ）を返す。読めるかどうかの判定は呼び出し側で済ませる。
+SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq,
+       lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
+       lm.created_at AS last_message_created_at, lm.deleted_at AS last_message_deleted_at,
+       lu.handle AS last_message_sender_handle, lu.display_name AS last_message_sender_display_name
+  FROM rooms r
+  LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = sqlc.arg(user_id)
+  LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = r.last_message_seq
+  LEFT JOIN users lu ON lu.id = lm.sender_id
+ WHERE r.id = sqlc.arg(room_id);
 
 -- name: ListUserProfiles :many
 -- DM の相手などの公開プロフィールをまとめて引く（N+1 にしない）。退会済みでも匿名化した値を返す。

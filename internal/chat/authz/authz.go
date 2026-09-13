@@ -189,3 +189,32 @@ func CanRemoveRoomMember(kind RoomKind, a RoomActor, target Role) bool {
 func CanLeaveRoom(kind RoomKind, a RoomActor) bool {
 	return (kind == RoomPublic || kind == RoomPrivate) && a.Role.IsMember() && a.IsRoomMember
 }
+
+// CanMarkRoomRead は既読位置を更新できるかを返す。既読位置は room_members の行にあるので、参加していない public は対象外。
+func CanMarkRoomRead(kind RoomKind, a RoomActor) bool {
+	return CanReadRoom(kind, a) && a.IsRoomMember
+}
+
+// ---- メッセージ ----
+
+// CanEditMessage はメッセージを編集できるかを返す。送信者本人で、いまも投稿できる場合だけ（ADR 0012）。
+// 他人の本文を書き換えられると、発言の主体が分からなくなるので、admin 以上にも許さない。
+func CanEditMessage(kind RoomKind, a RoomActor, isSender bool) bool {
+	return isSender && CanWriteRoom(kind, a)
+}
+
+// CanDeleteMessage はメッセージを削除できるかを返す（ADR 0012）。
+//
+//   - 送信者本人は、いまも投稿できるなら削除できる。
+//   - それ以外は、ルームを読める admin 以上で、送信者を管理できる（CanManage）場合だけ。荒らしの投稿を消すため。
+//     送信者がワークスペースを抜けていれば（senderRole が空）、admin 以上なら削除できる。抜けた人の投稿を誰も消せなくなるのを避ける。
+//   - dm では他人のメッセージを削除できない。dm は 2 人だけの場で、管理の対象にしない。
+func CanDeleteMessage(kind RoomKind, a RoomActor, isSender bool, senderRole Role) bool {
+	if isSender {
+		return CanWriteRoom(kind, a)
+	}
+	if kind == RoomDM || a.Role.rank() < RoleAdmin.rank() || !CanReadRoom(kind, a) {
+		return false
+	}
+	return !senderRole.IsMember() || CanManage(a.Role, senderRole)
+}

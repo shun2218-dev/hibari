@@ -1,4 +1,4 @@
-// Package chat はチャットドメイン（ワークスペース・ロール・招待・ルーム）。
+// Package chat はチャットドメイン（ワークスペース・ロール・招待・ルーム・メッセージ）。
 //
 // HTTP の知識は持たない。エラーは sentinel error / 型付きエラーで返し、
 // HTTP ステータスへの変換は internal/httpx が行う（CLAUDE.md「エラーハンドリング」）。
