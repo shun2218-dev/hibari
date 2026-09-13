@@ -4,9 +4,11 @@
 package chattest
 
 import (
+	"context"
 	"crypto/rand"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,10 +16,12 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/presence"
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
 	"github.com/shun2218-dev/hibari/internal/platform/config"
 	"github.com/shun2218-dev/hibari/internal/platform/db"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
+	"github.com/shun2218-dev/hibari/internal/platform/redis"
 	"github.com/shun2218-dev/hibari/internal/platform/storage"
 	"github.com/shun2218-dev/hibari/internal/platform/testenv"
 )
@@ -30,11 +34,47 @@ var AttachmentLimits = chat.AttachmentLimits{MaxBytes: config.DefaultAttachmentM
 
 // Env は組み立て済みの Service とその依存。
 type Env struct {
-	Pool    *pgxpool.Pool
-	Clock   *clock.Fake
-	IDs     id.Generator
-	Storage *storage.S3
-	Service *chat.Service
+	Pool     *pgxpool.Pool
+	Clock    *clock.Fake
+	IDs      id.Generator
+	Storage  *storage.S3
+	Presence *presence.Store
+	// Deliveries は Service が配信したイベントを記録する。
+	Deliveries *Recorder
+	Service    *chat.Service
+}
+
+// Recorder は配信されたイベントを記録する chat.Delivery。
+type Recorder struct {
+	mu     sync.Mutex
+	events []chat.Event
+}
+
+// Deliver はイベントを記録する。
+func (r *Recorder) Deliver(_ context.Context, ev chat.Event) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, ev)
+}
+
+// Take は記録したイベントを返し、記録を空にする。
+func (r *Recorder) Take() []chat.Event {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	evs := r.events
+	r.events = nil
+	return evs
+}
+
+// NewPresence はテスト用の Redis に接続した presence.Store を返す。
+func NewPresence(t testing.TB) *presence.Store {
+	t.Helper()
+	rdb, err := redis.Open(t.Context(), testenv.RedisURL(t))
+	if err != nil {
+		t.Fatalf("open redis: %v", err)
+	}
+	t.Cleanup(func() { _ = rdb.Close() })
+	return presence.New(rdb)
 }
 
 type options struct {
@@ -67,11 +107,15 @@ func New(t testing.TB, opts ...Option) *Env {
 	clk := clock.NewFake(o.start)
 	ids := id.NewGenerator(clk, rand.Reader)
 	st := NewStorage(t)
+	pr := NewPresence(t)
+	rec := &Recorder{}
 	return &Env{
-		Pool:    pool,
-		Clock:   clk,
-		IDs:     ids,
-		Storage: st,
+		Pool:       pool,
+		Clock:      clk,
+		IDs:        ids,
+		Storage:    st,
+		Presence:   pr,
+		Deliveries: rec,
 		Service: chat.NewService(chat.Deps{
 			DB:               pool,
 			Clock:            clk,
@@ -80,6 +124,8 @@ func New(t testing.TB, opts ...Option) *Env {
 			Logger:           slog.New(slog.DiscardHandler),
 			Storage:          st,
 			AttachmentLimits: AttachmentLimits,
+			Delivery:         rec,
+			Presence:         pr,
 		}),
 	}
 }

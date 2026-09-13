@@ -135,7 +135,10 @@ func (s *Service) UpdateWorkspace(ctx context.Context, actor, workspaceID ulid.U
 		return Workspace{}, err
 	}
 
-	var ws Workspace
+	var (
+		ws      Workspace
+		updated bool
+	)
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
 		me, err := q.GetWorkspaceRoleForShare(ctx, store.GetWorkspaceRoleForShareParams{WorkspaceID: workspaceID, UserID: actor})
@@ -150,9 +153,20 @@ func (s *Service) UpdateWorkspace(ctx context.Context, actor, workspaceID ulid.U
 			if _, err := q.UpdateWorkspace(ctx, params); err != nil {
 				return fmt.Errorf("update workspace: %w", err)
 			}
+			updated = true
 		}
 		ws, err = getWorkspace(ctx, q, actor, workspaceID)
 		return err
 	})
-	return ws, err
+	if err != nil {
+		return Workspace{}, err
+	}
+	if updated {
+		s.deliver(ctx, Event{
+			Type: EventWorkspaceUpdated,
+			To:   Audience{Workspaces: []ulid.ULID{workspaceID}},
+			Data: WorkspaceUpdated{WorkspaceID: workspaceID, Name: ws.Name, InvitePolicy: ws.InvitePolicy},
+		})
+	}
+	return ws, nil
 }

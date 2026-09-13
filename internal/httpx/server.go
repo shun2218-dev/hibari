@@ -15,7 +15,7 @@ import (
 //
 // shutdown では新規の接続の受け付けを止め、処理中のリクエストが終わるのを timeout まで待つ。
 // デプロイや `docker compose restart` のたびに処理中のリクエストを切らないため。
-// WebSocket のように Hijack された接続は Shutdown の対象外なので、Phase 4 で Hub 側に停止処理を足す。
+// WebSocket のように Hijack された接続は Shutdown の対象外なので、呼び出し側（main）が戻った後に Hub を止める（ADR 0015）。
 func Serve(ctx context.Context, srv *http.Server, ln net.Listener, timeout time.Duration) error {
 	errCh := make(chan error, 1)
 	go func() {

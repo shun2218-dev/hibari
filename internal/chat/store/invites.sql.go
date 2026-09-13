@@ -246,13 +246,14 @@ func (q *Queries) GetInviteWithCreator(ctx context.Context, arg GetInviteWithCre
 	return i, err
 }
 
-const joinDefaultRooms = `-- name: JoinDefaultRooms :exec
+const joinDefaultRooms = `-- name: JoinDefaultRooms :many
 INSERT INTO room_members (room_id, user_id, last_read_seq, joined_at)
 SELECT r.id, $1, r.last_message_seq, $2::timestamptz
   FROM rooms r
  WHERE r.workspace_id = $3
    AND r.is_default
 ON CONFLICT DO NOTHING
+RETURNING room_id
 `
 
 type JoinDefaultRoomsParams struct {
@@ -262,9 +263,25 @@ type JoinDefaultRoomsParams struct {
 }
 
 // is_default のルームに参加する。last_read_seq は参加時点の最新の seq にする（参加前のメッセージを未読にしない）。
-func (q *Queries) JoinDefaultRooms(ctx context.Context, arg JoinDefaultRoomsParams) error {
-	_, err := q.db.Exec(ctx, joinDefaultRooms, arg.UserID, arg.Now, arg.WorkspaceID)
-	return err
+// 参加したルームを返す。本人と各ルームの購読者に member.joined を配信するため（ADR 0015）。
+func (q *Queries) JoinDefaultRooms(ctx context.Context, arg JoinDefaultRoomsParams) ([]ulid.ULID, error) {
+	rows, err := q.db.Query(ctx, joinDefaultRooms, arg.UserID, arg.Now, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ulid.ULID{}
+	for rows.Next() {
+		var room_id ulid.ULID
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listInvites = `-- name: ListInvites :many

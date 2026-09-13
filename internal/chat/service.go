@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
@@ -24,6 +25,16 @@ type Deps struct {
 	// Storage は添付ファイルを置くオブジェクトストレージ。
 	Storage          Storage
 	AttachmentLimits AttachmentLimits
+	// Delivery はコミット済みの変更を配信する（ADR 0015）。
+	Delivery Delivery
+	// Presence はユーザーがオンラインかを読む。REST で presence の初期値を返すのに使う（ADR 0015）。
+	Presence PresenceReader
+}
+
+// PresenceReader は presence（Redis に TTL 付きで置く。CLAUDE.md ルール 5）を読む。
+type PresenceReader interface {
+	// Online は userIDs のうちオンラインのユーザーを返す。
+	Online(ctx context.Context, userIDs []ulid.ULID) (map[ulid.ULID]bool, error)
 }
 
 // Service はチャットのユースケース。
@@ -36,6 +47,8 @@ type Service struct {
 
 	storage          Storage
 	attachmentLimits AttachmentLimits
+	delivery         Delivery
+	presence         PresenceReader
 }
 
 // NewService は Service を返す。
@@ -49,6 +62,8 @@ func NewService(d Deps) *Service {
 
 		storage:          d.Storage,
 		attachmentLimits: d.AttachmentLimits,
+		delivery:         d.Delivery,
+		presence:         d.Presence,
 	}
 }
 

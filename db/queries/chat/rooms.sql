@@ -1,14 +1,22 @@
 -- ルーム（ADR 0006 / 0011）。
 
 -- name: AllocateMessageSeq :one
--- ルームの次の seq を採番して返す（ADR 0002「採番方式の確定」）。
--- 送信と同じトランザクションの中で呼ぶ。rooms の行ロックで同じルームへの送信が直列化され、
+-- ルームの次の seq と change_seq を採番して返す（ADR 0002「採番方式の確定」/ ADR 0014）。
+-- 送信と同じトランザクションの中で呼ぶ。rooms の行ロックで同じルームへの送信・編集・削除が直列化され、
 -- ロールバックすれば採番も取り消されるので欠番にならない。
 UPDATE rooms
    SET last_message_seq = last_message_seq + 1,
+       last_change_seq  = last_change_seq + 1,
        last_message_at  = sqlc.arg(now)::timestamptz
  WHERE id = sqlc.arg(room_id)
-RETURNING last_message_seq;
+RETURNING last_message_seq, last_change_seq;
+
+-- name: AllocateChangeSeq :one
+-- 既存のメッセージの編集・削除のために change_seq だけを採番する（ADR 0014）。seq は進めない。
+UPDATE rooms
+   SET last_change_seq = last_change_seq + 1
+ WHERE id = sqlc.arg(room_id)
+RETURNING last_change_seq;
 
 -- name: CreateRoom :one
 -- public / private のルーム。名前の重複は部分 UNIQUE インデックス（rooms_workspace_id_name_idx）で検出する。

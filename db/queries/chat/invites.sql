@@ -78,11 +78,13 @@ UPDATE workspace_invites
    AND expires_at > sqlc.arg(now)::timestamptz
    AND (max_uses IS NULL OR use_count < max_uses);
 
--- name: JoinDefaultRooms :exec
+-- name: JoinDefaultRooms :many
 -- is_default のルームに参加する。last_read_seq は参加時点の最新の seq にする（参加前のメッセージを未読にしない）。
+-- 参加したルームを返す。本人と各ルームの購読者に member.joined を配信するため（ADR 0015）。
 INSERT INTO room_members (room_id, user_id, last_read_seq, joined_at)
 SELECT r.id, sqlc.arg(user_id), r.last_message_seq, sqlc.arg(now)::timestamptz
   FROM rooms r
  WHERE r.workspace_id = sqlc.arg(workspace_id)
    AND r.is_default
-ON CONFLICT DO NOTHING;
+ON CONFLICT DO NOTHING
+RETURNING room_id;

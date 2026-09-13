@@ -526,16 +526,22 @@ type roomResponse struct {
 	IsDefault bool    `json:"is_default"`
 	IsMember  bool    `json:"is_member"`
 	// MemberCount は 1 件の取得でだけ返す。
-	MemberCount    *int64               `json:"member_count,omitempty"`
-	DMPeer         *userProfileResponse `json:"dm_peer,omitempty"`
-	LastMessageSeq int64                `json:"last_message_seq"`
-	LastMessageAt  *time.Time           `json:"last_message_at"`
+	MemberCount    *int64          `json:"member_count,omitempty"`
+	DMPeer         *dmPeerResponse `json:"dm_peer,omitempty"`
+	LastMessageSeq int64           `json:"last_message_seq"`
+	LastMessageAt  *time.Time      `json:"last_message_at"`
 	// LastReadSeq はルームのメンバーでなければ null。
 	LastReadSeq *int64 `json:"last_read_seq"`
 	UnreadCount int64  `json:"unread_count"`
 	// LastMessage はメッセージが 1 件もなければ null。
 	LastMessage *lastMessageResponse `json:"last_message"`
 	CreatedAt   time.Time            `json:"created_at"`
+}
+
+// dmPeerResponse は DM の相手。online は presence の初期値（ADR 0015）。
+type dmPeerResponse struct {
+	userProfileResponse
+	Online bool `json:"online"`
 }
 
 // lastMessageResponse はサイドバーの最終メッセージ。相対時刻の表示はクライアントが created_at から作る。
@@ -570,8 +576,7 @@ func newRoomResponse(r chat.Room, withCount bool) roomResponse {
 		resp.MemberCount = &r.MemberCount
 	}
 	if r.DMPeer != nil {
-		p := newUserProfileResponse(*r.DMPeer)
-		resp.DMPeer = &p
+		resp.DMPeer = &dmPeerResponse{userProfileResponse: newUserProfileResponse(*r.DMPeer), Online: r.DMPeerOnline}
 	}
 	return resp
 }
@@ -714,12 +719,20 @@ func (h *chatHandlers) listRoomMembers(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
+	// ワークスペースのメンバー一覧と同じ形に、presence の初期値（online）を加える（ADR 0015）。
+	type roomMemberResponse struct {
+		memberResponse
+		Online bool `json:"online"`
+	}
 	resp := struct {
-		Members    []memberResponse `json:"members"`
-		NextCursor *string          `json:"next_cursor"`
-	}{Members: make([]memberResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
+		Members    []roomMemberResponse `json:"members"`
+		NextCursor *string              `json:"next_cursor"`
+	}{Members: make([]roomMemberResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
 	for i, m := range p.Items {
-		resp.Members[i] = memberResponse{User: newUserProfileResponse(m.User), Role: string(m.Role), JoinedAt: m.JoinedAt}
+		resp.Members[i] = roomMemberResponse{
+			memberResponse: memberResponse{User: newUserProfileResponse(m.User), Role: string(m.Role), JoinedAt: m.JoinedAt},
+			Online:         m.Online,
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

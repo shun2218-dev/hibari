@@ -425,8 +425,8 @@ func TestListMessagesLimit(t *testing.T) {
 	// 送信のユースケースを 120 回通すと遅いので、seq の不変条件を満たす行を SQL で直接入れる。
 	_, err := env.Pool.Exec(t.Context(), `
 		WITH s AS (SELECT generate_series(1, 120) AS seq)
-		INSERT INTO messages (id, room_id, seq, sender_id, client_msg_id, body, created_at)
-		SELECT gen_random_uuid(), $1, s.seq, $2, gen_random_uuid(), 'bulk', $3 FROM s`, room.ID, owner, env.Clock.Now())
+		INSERT INTO messages (id, room_id, seq, change_seq, sender_id, client_msg_id, body, created_at)
+		SELECT gen_random_uuid(), $1, s.seq, s.seq, $2, gen_random_uuid(), 'bulk', $3 FROM s`, room.ID, owner, env.Clock.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

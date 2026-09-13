@@ -42,3 +42,18 @@ UPDATE refresh_tokens
        revoked_reason = sqlc.arg(reason)::text
  WHERE user_id = sqlc.arg(user_id)
    AND revoked_at IS NULL;
+
+-- name: IsSessionActive :one
+-- セッション（family）に、未失効で期限内の Refresh Token が残っているか（ADR 0015）。
+-- ローテーション済みの行は revoked_at を持つが、family の最新の行が未失効なら、セッションは生きている。
+-- 退会済みのユーザーのセッションは生きていないものとして扱う。インデックス refresh_tokens(family_id) を使う。
+SELECT EXISTS (
+    SELECT 1
+      FROM refresh_tokens rt
+      JOIN users u ON u.id = rt.user_id
+     WHERE rt.family_id = sqlc.arg(family_id)
+       AND rt.user_id = sqlc.arg(user_id)
+       AND rt.revoked_at IS NULL
+       AND rt.expires_at > sqlc.arg(now)::timestamptz
+       AND u.deleted_at IS NULL
+)::boolean;
