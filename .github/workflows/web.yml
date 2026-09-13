@@ -1,0 +1,41 @@
+# web/（Next.js）の CI。PR ごとに実行する。
+name: web
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: lint
+        run: npm run lint
+      - name: 型チェック
+        run: npm run typecheck
+      - name: Vitest
+        run: npm test
+      - name: build
+        # NEXT_PUBLIC_ の値はビルド時に埋め込まれる。CI では値の形だけ満たせばよい。
+        env:
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
+        run: npm run build

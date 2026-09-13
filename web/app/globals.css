@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/*
+ * デザイントークンの正本（CLAUDE.md ルール 7）。
+ *
+ * Phase 1 ではプレースホルダ。Phase 1.5 で docs/ui/ のデザインから、役割ベースの名前
+ * （例: --color-surface / --color-text-muted）でライト / ダークのトークンを定義し、
+ * Tailwind の @theme がこれらの CSS 変数だけを参照するようにする。
+ * コンポーネントに色・余白・角丸・フォントサイズの生の値や Tailwind の任意値を書かない。
+ */
