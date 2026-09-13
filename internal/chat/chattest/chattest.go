@@ -117,3 +117,39 @@ func (e *Env) Role(t testing.TB, workspaceID, userID ulid.ULID) chat.Role {
 	}
 	return chat.Role(role)
 }
+
+// RoomOptions は InsertRoom で作るルームの属性。
+type RoomOptions struct {
+	Kind           string // 既定は public
+	IsDefault      bool
+	LastMessageSeq int64
+}
+
+// InsertRoom はルームを SQL で直接作り、ID を返す。ルームの作成のユースケースを通さずに、
+// is_default や last_message_seq を持つ状態を作るためのもの。
+func (e *Env) InsertRoom(t testing.TB, workspaceID, creator ulid.ULID, opts RoomOptions) ulid.ULID {
+	t.Helper()
+	if opts.Kind == "" {
+		opts.Kind = "public"
+	}
+	roomID := e.IDs.New()
+	_, err := e.Pool.Exec(t.Context(),
+		`INSERT INTO rooms (id, workspace_id, kind, name, is_default, created_by, last_message_seq, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		roomID, workspaceID, opts.Kind, "room-"+strings.ToLower(roomID.String()), opts.IsDefault, creator, opts.LastMessageSeq, e.Clock.Now())
+	if err != nil {
+		t.Fatalf("insert room: %v", err)
+	}
+	return roomID
+}
+
+// InsertRoomMember はルームのメンバーを SQL で直接入れる。すでにメンバーなら何もしない。
+func (e *Env) InsertRoomMember(t testing.TB, roomID, userID ulid.ULID) {
+	t.Helper()
+	_, err := e.Pool.Exec(t.Context(),
+		`INSERT INTO room_members (room_id, user_id, last_read_seq, joined_at) VALUES ($1, $2, 0, $3) ON CONFLICT DO NOTHING`,
+		roomID, userID, e.Clock.Now())
+	if err != nil {
+		t.Fatalf("insert room member: %v", err)
+	}
+}

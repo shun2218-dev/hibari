@@ -93,7 +93,7 @@ Phase 3a の着手時点で、ADR 0006 とロードマップが決めていな�
 | `invite-expired` | 410 | 招待の期限切れ |
 | `invite-exhausted` | 410 | 招待の使用上限に達した |
 
-入力の検証エラー（422 `validation-error`）の `reason` に、`invalid_value`（列挙値にない値、自分自身への譲渡など、形式は正しいが受け付けられない値）を追加する。
+入力の検証エラー（422 `validation-error`）の `reason` に、`invalid_value`（列挙値にない値、自分自身への譲渡など、形式は正しいが受け付けられない値）と `out_of_range`（数値が範囲外）を追加する。
 
 ## 理由
 

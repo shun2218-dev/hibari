@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -169,4 +170,114 @@ func TestWorkspaceFlow(t *testing.T) {
 
 	// 認証がなければ 401。
 	expectProblem(t, c.do(request{method: http.MethodGet, path: "/api/v1/workspaces"}), http.StatusUnauthorized, "unauthenticated")
+}
+
+type inviteBody struct {
+	ID        string  `json:"id"`
+	MaxUses   *int    `json:"max_uses"`
+	UseCount  int     `json:"use_count"`
+	ExpiresAt string  `json:"expires_at"`
+	RevokedAt *string `json:"revoked_at"`
+	Status    string  `json:"status"`
+	Code      string  `json:"code"`
+	CreatedBy struct {
+		ID string `json:"id"`
+	} `json:"created_by"`
+}
+
+func TestInviteFlow(t *testing.T) {
+	c := newAPI(t)
+	owner, member, newcomer, stranger := c.registerUser(), c.registerUser(), c.registerUser(), c.registerUser()
+	r := c.as(owner, http.MethodPost, "/api/v1/workspaces", map[string]string{"name": "山と印刷"})
+	expectStatus(t, r, http.StatusCreated)
+	ws := decode[workspaceBody](t, r)
+	base := "/api/v1/workspaces/" + ws.ID
+	c.addMember(ws.ID, member, "member")
+
+	// 作成: コードは作成のレスポンスでだけ返る。
+	expectProblem(t, c.as(member, http.MethodPost, base+"/invites", map[string]any{"expires_in_seconds": 3600}), http.StatusForbidden, "forbidden")
+	p := expectProblem(t, c.as(owner, http.MethodPost, base+"/invites", map[string]any{"max_uses": 0, "expires_in_seconds": int64(1) << 62}), http.StatusUnprocessableEntity, "validation-error")
+	if len(p.Errors) != 2 {
+		t.Errorf("errors = %+v, want max_uses and expires_in_seconds out of range", p.Errors)
+	}
+	r = c.as(owner, http.MethodPost, base+"/invites", map[string]any{"max_uses": 1, "expires_in_seconds": 7 * 24 * 3600})
+	expectStatus(t, r, http.StatusCreated)
+	inv := decode[inviteBody](t, r)
+	if len(inv.Code) != 22 || inv.Status != "active" || inv.MaxUses == nil || *inv.MaxUses != 1 || inv.CreatedBy.ID != owner.id || inv.RevokedAt != nil {
+		t.Fatalf("created invite = %s", r.body)
+	}
+
+	// 一覧: member も見られるが、コードは含まれない。
+	r = c.as(member, http.MethodGet, base+"/invites", nil)
+	expectStatus(t, r, http.StatusOK)
+	if strings.Contains(string(r.body), inv.Code) || strings.Contains(string(r.body), `"code"`) {
+		t.Fatalf("invite list leaks the code: %s", r.body)
+	}
+	list := decode[struct {
+		Invites    []inviteBody `json:"invites"`
+		NextCursor *string      `json:"next_cursor"`
+	}](t, r)
+	if len(list.Invites) != 1 || list.Invites[0].ID != inv.ID {
+		t.Fatalf("invites = %s", r.body)
+	}
+	expectProblem(t, c.as(stranger, http.MethodGet, base+"/invites", nil), http.StatusNotFound, "not-found")
+
+	// プレビュー → 参加
+	r = c.as(newcomer, http.MethodGet, "/api/v1/invites/"+inv.Code, nil)
+	expectStatus(t, r, http.StatusOK)
+	preview := decode[struct {
+		Workspace struct {
+			ID              string `json:"id"`
+			Name            string `json:"name"`
+			MemberCount     int    `json:"member_count"`
+			PublicRoomCount int    `json:"public_room_count"`
+		} `json:"workspace"`
+		Inviter struct {
+			ID string `json:"id"`
+		} `json:"inviter"`
+		AlreadyMember bool `json:"already_member"`
+	}](t, r)
+	if preview.Workspace.ID != ws.ID || preview.Workspace.Name != "山と印刷" || preview.Workspace.MemberCount != 2 || preview.Inviter.ID != owner.id || preview.AlreadyMember {
+		t.Errorf("preview = %s", r.body)
+	}
+	expectProblem(t, c.do(request{method: http.MethodGet, path: "/api/v1/invites/" + inv.Code}), http.StatusUnauthorized, "unauthenticated")
+
+	r = c.as(newcomer, http.MethodPost, "/api/v1/invites/"+inv.Code+"/accept", nil)
+	expectStatus(t, r, http.StatusOK)
+	accepted := decode[struct {
+		Workspace     workspaceBody `json:"workspace"`
+		AlreadyMember bool          `json:"already_member"`
+	}](t, r)
+	if accepted.AlreadyMember || accepted.Workspace.ID != ws.ID || accepted.Workspace.MyRole != "member" {
+		t.Errorf("accept = %s", r.body)
+	}
+	r = c.as(newcomer, http.MethodPost, "/api/v1/invites/"+inv.Code+"/accept", nil)
+	expectStatus(t, r, http.StatusOK)
+	if !strings.Contains(string(r.body), `"already_member":true`) {
+		t.Errorf("second accept = %s, want already_member", r.body)
+	}
+
+	// 使えない招待は理由ごとの problem になり、ワークスペースの情報を含まない。
+	r = c.as(stranger, http.MethodPost, "/api/v1/invites/"+inv.Code+"/accept", nil)
+	expectProblem(t, r, http.StatusGone, "invite-exhausted")
+	if strings.Contains(string(r.body), ws.ID) || strings.Contains(string(r.body), "山と印刷") {
+		t.Errorf("problem leaks the workspace: %s", r.body)
+	}
+	expectProblem(t, c.as(stranger, http.MethodGet, "/api/v1/invites/"+inv.Code, nil), http.StatusGone, "invite-exhausted")
+	expectProblem(t, c.as(stranger, http.MethodGet, "/api/v1/invites/nope", nil), http.StatusNotFound, "invite-invalid")
+
+	r = c.as(owner, http.MethodPost, base+"/invites", map[string]any{"expires_in_seconds": 60})
+	expectStatus(t, r, http.StatusCreated)
+	short := decode[inviteBody](t, r)
+	c.env.Clock.Advance(time.Minute)
+	expectProblem(t, c.as(stranger, http.MethodGet, "/api/v1/invites/"+short.Code, nil), http.StatusGone, "invite-expired")
+
+	// 取り消し
+	r = c.as(owner, http.MethodPost, base+"/invites", map[string]any{"expires_in_seconds": 3600})
+	expectStatus(t, r, http.StatusCreated)
+	toRevoke := decode[inviteBody](t, r)
+	expectProblem(t, c.as(member, http.MethodDelete, base+"/invites/"+toRevoke.ID, nil), http.StatusForbidden, "forbidden")
+	expectStatus(t, c.as(owner, http.MethodDelete, base+"/invites/"+toRevoke.ID, nil), http.StatusNoContent)
+	expectStatus(t, c.as(owner, http.MethodDelete, base+"/invites/"+toRevoke.ID, nil), http.StatusNoContent)
+	expectProblem(t, c.as(stranger, http.MethodPost, "/api/v1/invites/"+toRevoke.Code+"/accept", nil), http.StatusNotFound, "invite-invalid")
 }
