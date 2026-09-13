@@ -185,6 +185,46 @@ func (q *Queries) GetWorkspaceMember(ctx context.Context, arg GetWorkspaceMember
 	return i, err
 }
 
+const getWorkspaceMemberRoles = `-- name: GetWorkspaceMemberRoles :many
+SELECT wm.user_id, wm.role
+  FROM workspace_members wm
+  JOIN workspaces w ON w.id = wm.workspace_id
+ WHERE wm.workspace_id = $1
+   AND wm.user_id = ANY($2::uuid[])
+   AND w.deleted_at IS NULL
+`
+
+type GetWorkspaceMemberRolesParams struct {
+	WorkspaceID ulid.ULID
+	UserIds     []ulid.ULID
+}
+
+type GetWorkspaceMemberRolesRow struct {
+	UserID ulid.ULID
+	Role   string
+}
+
+// user_ids のワークスペースでのロール。読み取りだけの API で使い、ロックしない。
+func (q *Queries) GetWorkspaceMemberRoles(ctx context.Context, arg GetWorkspaceMemberRolesParams) ([]GetWorkspaceMemberRolesRow, error) {
+	rows, err := q.db.Query(ctx, getWorkspaceMemberRoles, arg.WorkspaceID, arg.UserIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetWorkspaceMemberRolesRow{}
+	for rows.Next() {
+		var i GetWorkspaceMemberRolesRow
+		if err := rows.Scan(&i.UserID, &i.Role); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getWorkspaceRole = `-- name: GetWorkspaceRole :one
 SELECT wm.role
   FROM workspace_members wm
@@ -367,6 +407,51 @@ func (q *Queries) LockWorkspaceMembers(ctx context.Context, arg LockWorkspaceMem
 	items := []LockWorkspaceMembersRow{}
 	for rows.Next() {
 		var i LockWorkspaceMembersRow
+		if err := rows.Scan(&i.UserID, &i.Role); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const shareLockWorkspaceMembers = `-- name: ShareLockWorkspaceMembers :many
+SELECT wm.user_id, wm.role
+  FROM workspace_members wm
+  JOIN workspaces w ON w.id = wm.workspace_id
+ WHERE wm.workspace_id = $1
+   AND wm.user_id = ANY($2::uuid[])
+   AND w.deleted_at IS NULL
+ ORDER BY wm.user_id
+   FOR SHARE OF wm
+`
+
+type ShareLockWorkspaceMembersParams struct {
+	WorkspaceID ulid.ULID
+	UserIds     []ulid.ULID
+}
+
+type ShareLockWorkspaceMembersRow struct {
+	UserID ulid.ULID
+	Role   string
+}
+
+// ルームのメンバーを増やす操作（参加・追加・DM）の前に、関係する人の workspace_members の行を共有ロックする。
+// キック（FOR UPDATE）と直列化し、「キックがルームの参加を消した後に、並行した参加が room_members を入れる」ことを防ぐ。
+// そのまま残ると、同じ人がワークスペースに戻ったときに、招かれていない private ルームに入れてしまう。
+// 行のロックは LockWorkspaceMembers と同じく user_id の順に取る。
+func (q *Queries) ShareLockWorkspaceMembers(ctx context.Context, arg ShareLockWorkspaceMembersParams) ([]ShareLockWorkspaceMembersRow, error) {
+	rows, err := q.db.Query(ctx, shareLockWorkspaceMembers, arg.WorkspaceID, arg.UserIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ShareLockWorkspaceMembersRow{}
+	for rows.Next() {
+		var i ShareLockWorkspaceMembersRow
 		if err := rows.Scan(&i.UserID, &i.Role); err != nil {
 			return nil, err
 		}

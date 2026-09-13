@@ -281,3 +281,138 @@ func TestInviteFlow(t *testing.T) {
 	expectStatus(t, c.as(owner, http.MethodDelete, base+"/invites/"+toRevoke.ID, nil), http.StatusNoContent)
 	expectProblem(t, c.as(stranger, http.MethodPost, "/api/v1/invites/"+toRevoke.Code+"/accept", nil), http.StatusNotFound, "invite-invalid")
 }
+
+type roomBody struct {
+	ID          string  `json:"id"`
+	Kind        string  `json:"kind"`
+	Name        *string `json:"name"`
+	IsDefault   bool    `json:"is_default"`
+	IsMember    bool    `json:"is_member"`
+	MemberCount *int    `json:"member_count"`
+	DMPeer      *struct {
+		ID string `json:"id"`
+	} `json:"dm_peer"`
+}
+
+// joinViaInvite は owner が作った招待で u をワークスペースに参加させる（ロードマップ Phase 3a の DoD の流れ）。
+func (c *apiClient) joinViaInvite(owner apiUser, workspaceID string, u apiUser) {
+	c.t.Helper()
+	r := c.as(owner, http.MethodPost, "/api/v1/workspaces/"+workspaceID+"/invites", map[string]any{"expires_in_seconds": 3600})
+	expectStatus(c.t, r, http.StatusCreated)
+	code := decode[inviteBody](c.t, r).Code
+	expectStatus(c.t, c.as(u, http.MethodPost, "/api/v1/invites/"+code+"/accept", nil), http.StatusOK)
+}
+
+// ワークスペース作成 → 招待 → 別ユーザーが参加 → ルーム作成 → 参加（ロードマップ Phase 3a の DoD）。
+func TestRoomFlow(t *testing.T) {
+	c := newAPI(t)
+	owner, alice, bob, stranger := c.registerUser(), c.registerUser(), c.registerUser(), c.registerUser()
+	r := c.as(owner, http.MethodPost, "/api/v1/workspaces", map[string]string{"name": "山と印刷"})
+	expectStatus(t, r, http.StatusCreated)
+	ws := decode[workspaceBody](t, r)
+	base := "/api/v1/workspaces/" + ws.ID
+
+	// public ルームを作り、既定のルームにしてから招待する。
+	r = c.as(owner, http.MethodPost, base+"/rooms", map[string]string{"kind": "public", "name": "雑談"})
+	expectStatus(t, r, http.StatusCreated)
+	general := decode[roomBody](t, r)
+	if general.Kind != "public" || general.Name == nil || *general.Name != "雑談" || !general.IsMember || *general.MemberCount != 1 {
+		t.Fatalf("created room = %s", r.body)
+	}
+	r = c.as(owner, http.MethodPatch, "/api/v1/rooms/"+general.ID, map[string]any{"is_default": true})
+	expectStatus(t, r, http.StatusOK)
+	c.joinViaInvite(owner, ws.ID, alice)
+	c.joinViaInvite(owner, ws.ID, bob)
+
+	// 招待を受け入れると既定のルームに参加している。
+	r = c.as(alice, http.MethodGet, "/api/v1/rooms/"+general.ID, nil)
+	expectStatus(t, r, http.StatusOK)
+	if got := decode[roomBody](t, r); !got.IsMember || *got.MemberCount != 3 {
+		t.Errorf("default room for alice = %s", r.body)
+	}
+	expectProblem(t, c.as(alice, http.MethodPatch, "/api/v1/rooms/"+general.ID, map[string]string{"name": "乗っ取り"}), http.StatusForbidden, "forbidden")
+
+	// alice が public を作り、bob が参加する。
+	r = c.as(alice, http.MethodPost, base+"/rooms", map[string]string{"kind": "public", "name": "デザインレビュー"})
+	expectStatus(t, r, http.StatusCreated)
+	design := decode[roomBody](t, r)
+	expectProblem(t, c.as(bob, http.MethodPost, base+"/rooms", map[string]string{"kind": "private", "name": "デザインレビュー"}), http.StatusConflict, "room-name-taken")
+	r = c.as(bob, http.MethodGet, "/api/v1/rooms/"+design.ID, nil)
+	expectStatus(t, r, http.StatusOK)
+	if decode[roomBody](t, r).IsMember {
+		t.Error("bob should be able to read the public room without joining")
+	}
+	r = c.as(bob, http.MethodPost, "/api/v1/rooms/"+design.ID+"/join", nil)
+	expectStatus(t, r, http.StatusOK)
+	if got := decode[roomBody](t, r); !got.IsMember || *got.MemberCount != 2 {
+		t.Errorf("joined room = %s", r.body)
+	}
+
+	// private ルームは、追加されるまで一覧にも出ず、取得も 404。
+	r = c.as(alice, http.MethodPost, base+"/rooms", map[string]string{"kind": "private", "name": "リリース準備"})
+	expectStatus(t, r, http.StatusCreated)
+	private := decode[roomBody](t, r)
+	expectProblem(t, c.as(bob, http.MethodGet, "/api/v1/rooms/"+private.ID, nil), http.StatusNotFound, "not-found")
+	expectProblem(t, c.as(bob, http.MethodPost, "/api/v1/rooms/"+private.ID+"/join", nil), http.StatusNotFound, "not-found")
+	expectProblem(t, c.as(alice, http.MethodPost, "/api/v1/rooms/"+private.ID+"/members", map[string]string{"user_id": stranger.id}), http.StatusUnprocessableEntity, "user-not-in-workspace")
+	expectProblem(t, c.as(alice, http.MethodPost, "/api/v1/rooms/"+private.ID+"/members", map[string]string{}), http.StatusUnprocessableEntity, "validation-error")
+	expectStatus(t, c.as(alice, http.MethodPost, "/api/v1/rooms/"+private.ID+"/members", map[string]string{"user_id": bob.id}), http.StatusNoContent)
+
+	// DM: 新規は 201、相手から作っても同じルームを 200 で返す。
+	r = c.as(bob, http.MethodPost, base+"/rooms", map[string]string{"kind": "dm", "user_id": alice.id})
+	expectStatus(t, r, http.StatusCreated)
+	dm := decode[roomBody](t, r)
+	if dm.Kind != "dm" || dm.Name != nil || dm.DMPeer == nil || dm.DMPeer.ID != alice.id || !strings.Contains(string(r.body), `"name":null`) {
+		t.Fatalf("dm = %s", r.body)
+	}
+	r = c.as(alice, http.MethodPost, base+"/rooms", map[string]string{"kind": "dm", "user_id": bob.id})
+	expectStatus(t, r, http.StatusOK)
+	if got := decode[roomBody](t, r); got.ID != dm.ID || got.DMPeer.ID != bob.id {
+		t.Errorf("reverse dm = %s", r.body)
+	}
+	expectProblem(t, c.as(bob, http.MethodPost, base+"/rooms", map[string]string{"kind": "dm", "user_id": bob.id}), http.StatusUnprocessableEntity, "validation-error")
+	expectProblem(t, c.as(owner, http.MethodGet, "/api/v1/rooms/"+dm.ID, nil), http.StatusNotFound, "not-found")
+
+	// bob のサイドバー: 参加しているルームと、参加していない public ルーム。
+	r = c.as(bob, http.MethodGet, base+"/rooms", nil)
+	expectStatus(t, r, http.StatusOK)
+	list := decode[struct {
+		Rooms []roomBody `json:"rooms"`
+	}](t, r)
+	got := map[string]bool{}
+	for _, room := range list.Rooms {
+		got[room.ID] = room.IsMember
+		if room.MemberCount != nil {
+			t.Errorf("list includes member_count: %s", r.body)
+		}
+	}
+	if len(got) != 4 || !got[general.ID] || !got[design.ID] || !got[private.ID] || !got[dm.ID] {
+		t.Errorf("bob's rooms = %s", r.body)
+	}
+	r = c.as(owner, http.MethodGet, base+"/rooms", nil)
+	expectStatus(t, r, http.StatusOK)
+	if strings.Contains(string(r.body), private.ID) || strings.Contains(string(r.body), dm.ID) {
+		t.Errorf("owner's rooms include a private room or someone else's dm: %s", r.body)
+	}
+
+	// ルームのメンバー一覧（ワークスペースでのロール付き）
+	r = c.as(owner, http.MethodGet, "/api/v1/rooms/"+design.ID+"/members", nil)
+	expectStatus(t, r, http.StatusOK)
+	members := decode[membersBody](t, r)
+	if len(members.Members) != 2 || members.NextCursor != nil {
+		t.Errorf("room members = %s", r.body)
+	}
+	for _, m := range members.Members {
+		if m.Role != "member" {
+			t.Errorf("member role = %q, want the workspace role", m.Role)
+		}
+	}
+
+	// ルームから外す: member は他人を外せない。admin 以上は外せる。自分は抜けられる。DM は固定。
+	expectProblem(t, c.as(alice, http.MethodDelete, "/api/v1/rooms/"+design.ID+"/members/"+bob.id, nil), http.StatusForbidden, "forbidden")
+	expectStatus(t, c.as(owner, http.MethodDelete, "/api/v1/rooms/"+design.ID+"/members/"+bob.id, nil), http.StatusNoContent)
+	expectStatus(t, c.as(bob, http.MethodDelete, "/api/v1/rooms/"+private.ID+"/members/"+bob.id, nil), http.StatusNoContent)
+	expectProblem(t, c.as(bob, http.MethodGet, "/api/v1/rooms/"+private.ID, nil), http.StatusNotFound, "not-found")
+	expectProblem(t, c.as(bob, http.MethodDelete, "/api/v1/rooms/"+dm.ID+"/members/"+bob.id, nil), http.StatusForbidden, "forbidden")
+	expectProblem(t, c.as(stranger, http.MethodGet, base+"/rooms", nil), http.StatusNotFound, "not-found")
+}

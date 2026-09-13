@@ -10,6 +10,20 @@ import (
 	ulid "github.com/oklog/ulid/v2"
 )
 
+type Room struct {
+	ID             ulid.ULID
+	WorkspaceID    ulid.ULID
+	Kind           string
+	Name           *string
+	DmKey          *string
+	IsDefault      bool
+	CreatedBy      ulid.ULID
+	LastMessageSeq int64
+	LastMessageAt  *time.Time
+	CreatedAt      time.Time
+	ArchivedAt     *time.Time
+}
+
 type Workspace struct {
 	ID           ulid.ULID
 	Slug         string
