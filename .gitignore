@@ -1,0 +1,30 @@
+# OS / エディタ
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# 環境変数・秘密情報（.env.example だけをコミットする）
+.env
+.env.*
+!.env.example
+
+# 開発用の鍵（make keys で生成する）
+/keys/
+*.pem
+
+# Go
+/bin/
+/tmp/
+coverage.out
+*.test
+
+# web/（Next.js）
+web/node_modules/
+web/.next/
+web/out/
+web/coverage/
+web/playwright-report/
+web/test-results/
+web/next-env.d.ts
+*.tsbuildinfo
