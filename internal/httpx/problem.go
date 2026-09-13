@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/shun2218-dev/hibari/internal/auth"
+	"github.com/shun2218-dev/hibari/internal/chat"
 	"github.com/shun2218-dev/hibari/internal/platform/authn"
 )
 
@@ -57,9 +58,10 @@ func (e *errBadRequest) Error() string { return e.detail }
 // 想定外のエラーは 500 にして詳細をログにだけ残す（内部の構造をクライアントに見せない）。
 func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err error) {
 	var (
-		verr *auth.ValidationError
-		berr *errBadRequest
-		lerr *auth.RateLimitedError
+		verr  *auth.ValidationError
+		cverr *chat.ValidationError
+		berr  *errBadRequest
+		lerr  *auth.RateLimitedError
 	)
 	switch {
 	case errors.As(err, &berr):
@@ -69,7 +71,19 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		for i, f := range verr.Fields {
 			fields[i] = problemFieldError{Field: f.Field, Reason: f.Reason}
 		}
-		writeProblem(w, r, problem{Type: "validation-error", Title: "Invalid input", Status: http.StatusUnprocessableEntity, Errors: fields})
+		writeValidationProblem(w, r, fields)
+	case errors.As(err, &cverr):
+		fields := make([]problemFieldError, len(cverr.Fields))
+		for i, f := range cverr.Fields {
+			fields[i] = problemFieldError{Field: f.Field, Reason: f.Reason}
+		}
+		writeValidationProblem(w, r, fields)
+	case errors.Is(err, chat.ErrNotFound):
+		writeProblem(w, r, problem{Type: "not-found", Title: "Not found", Status: http.StatusNotFound})
+	case errors.Is(err, chat.ErrForbidden):
+		writeProblem(w, r, problem{Type: "forbidden", Title: "You are not allowed to do this", Status: http.StatusForbidden})
+	case errors.Is(err, chat.ErrOwnerMustTransfer):
+		writeProblem(w, r, problem{Type: "owner-must-transfer", Title: "Transfer ownership before leaving", Status: http.StatusConflict})
 	case errors.As(err, &lerr):
 		// Retry-After は秒の整数（RFC 9110 §10.2.3）。0 秒にならないよう切り上げる。
 		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(lerr.RetryAfter.Seconds())))))
@@ -95,6 +109,10 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 			slog.Any("error", err))
 		writeProblem(w, r, problem{Type: "internal", Title: "Internal server error", Status: http.StatusInternalServerError})
 	}
+}
+
+func writeValidationProblem(w http.ResponseWriter, r *http.Request, fields []problemFieldError) {
+	writeProblem(w, r, problem{Type: "validation-error", Title: "Invalid input", Status: http.StatusUnprocessableEntity, Errors: fields})
 }
 
 // writeUnauthorized は Access Token による認証の失敗を返す（authn.Require の UnauthorizedFunc）。

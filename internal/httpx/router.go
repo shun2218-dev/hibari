@@ -23,6 +23,8 @@ type Deps struct {
 	JWKS []byte
 	// RefreshCookieSecure は Refresh Token の Cookie に Secure 属性を付けるか。
 	RefreshCookieSecure bool
+
+	Chat ChatService
 }
 
 // healthTimeout は healthz が依存先を待つ上限。LB のヘルスチェックの間隔より十分短くする。
@@ -34,6 +36,7 @@ func NewRouter(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", Healthz(d.Logger, healthTimeout, d.HealthChecks...))
 	registerAuthRoutes(mux, d)
+	registerChatRoutes(mux, d)
 
 	var h http.Handler = mux
 	h = withAccessLog(d.Logger, d.Clock, h)
