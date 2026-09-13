@@ -186,7 +186,7 @@ hibari/
 - **`main` と `develop` への直接のコミット・push は禁止。** 取り込みは必ず PR のマージで行う。
 - `.githooks/` のフックがローカルで直接のコミットと push を止める（clone したら `git config core.hooksPath .githooks` を実行する）。GitHub 側でもブランチ保護を設定する。
 - 作業を始めるときは、必ず `develop` の最新から作業ブランチを切る。
-- ブランチ名は英小文字とハイフン（例: `feature/phase-1-foundation`、`feature/auth-refresh-rotation`）。
+- ブランチ名は英小文字とハイフンで、作業内容を表す（例: `feature/dev-environment`、`feature/auth-refresh-rotation`）。フェーズ番号（`phase-1` など）は入れない。
 
 ### コミットメッセージ
 
