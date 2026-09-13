@@ -38,4 +38,30 @@
 
 ## 追記
 
-- （Phase 1 で採番方式を確定したらここに書く。想定は同一トランザクション内での `UPDATE rooms SET last_message_seq = last_message_seq + 1 WHERE id = $1 RETURNING last_message_seq`）
+### 2026-09-13 採番方式の確定（Phase 1）
+
+送信と同じトランザクションの中で、次の 1 文で採番する。
+
+```sql
+UPDATE rooms
+   SET last_message_seq = last_message_seq + 1,
+       last_message_at  = $now
+ WHERE id = $room_id
+RETURNING last_message_seq;
+```
+
+- **直列化の仕組み**: UPDATE が rooms の行に `FOR NO KEY UPDATE` のロックを取るので、同じルームへの並行送信は、先行するトランザクションのコミットかロールバックまで待たされる。待たされた側は更新後の値を読み直してから +1 する（READ COMMITTED の再評価）。そのため `SELECT ... FOR UPDATE` を別に発行する必要はない。
+- **ロールバックで欠番にならない**: カウンタの更新もトランザクションに含まれるので、INSERT が失敗してロールバックすれば採番も取り消される。全ルーム共通の SEQUENCE との決定的な違い。
+- **messages の FK とは衝突しない**: messages の INSERT は FK の検査で rooms の行に `FOR KEY SHARE` を取る。これは自分の `FOR NO KEY UPDATE` とも、他のトランザクションの `FOR NO KEY UPDATE` とも競合しない（キー列を変えない UPDATE だから）。
+- **ロックを持つ時間を短くする**: UPDATE から COMMIT までの間に、外部への I/O（Redis への publish、ストレージへの HEAD など）を挟まない。配信はコミットの後に行う（ADR 0004）。
+- **根拠のテスト**: `db/schema_test.go` の `TestSeqAllocationConcurrent`。50 並行の送信（うち 3 件に 1 件はロールバック）で、seq が 1 から欠番も重複もなく並び、`last_message_seq` がコミットされた件数と一致することを確かめている。
+
+検討した代替案
+
+- **`pg_advisory_xact_lock(hash(room_id))` + `SELECT max(seq) + 1`**: 行ロックと同じ直列化ができるが、ハッシュの衝突で無関係なルーム同士が待ち合う。カウンタ列（ADR の決定）があるなら、行ロックの方が単純。
+- **別テーブル `room_seq_counters`**: rooms の行を、名前の変更などの他の更新とロックで取り合わなくなる。ただしルームの更新頻度は送信よりはるかに低いので、テーブルを増やすほどの効果がない。
+- **`rooms_workspace_id_last_message_at_idx` の影響**: `last_message_at` はインデックス列なので、この UPDATE は HOT 更新にならず、送信のたびに rooms のインデックスにも書き込みが発生する。一覧のソートのための非正規化とのトレードオフとして許容する。
+
+### 2026-09-13 インデックスの形（Phase 1）
+
+`UNIQUE(room_id, seq)` と `INDEX(room_id, seq DESC)` は、`CREATE UNIQUE INDEX messages_room_id_seq_idx ON messages (room_id, seq DESC)` の 1 本で兼ねる。B-tree は逆方向にも走査できるので、昇順と降順を 2 本張っても書き込みが遅くなるだけ。UNIQUE 制約（`CONSTRAINT ... UNIQUE`）は降順を指定できないので、UNIQUE インデックスとして作る。

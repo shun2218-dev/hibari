@@ -39,11 +39,37 @@ sh: ## server コンテナでシェルを開く
 psql: ## 開発用 DB に psql で接続する
 	$(COMPOSE) exec postgres sh -c 'psql -U "$$POSTGRES_USER" "$$POSTGRES_DB"'
 
+# ---- DB ----
+
+# goose はコンテナ内の DATABASE_URL（compose.yaml で組み立てる）に対して実行する。
+GOOSE := $(GOTOOL) goose -dir db/migrations postgres
+
+.PHONY: migrate-up
+migrate-up: ## マイグレーションを最新まで適用する（開発用 DB とテスト用 DB の両方）
+	$(RUN_GO) sh -c '$(GOOSE) "$$DATABASE_URL" up && $(GOOSE) "$$TEST_DATABASE_URL" up'
+
+.PHONY: migrate-down
+migrate-down: ## マイグレーションを 1 つ戻す（開発用 DB とテスト用 DB の両方）
+	$(RUN_GO) sh -c '$(GOOSE) "$$DATABASE_URL" down && $(GOOSE) "$$TEST_DATABASE_URL" down'
+
+.PHONY: migrate-status
+migrate-status: ## 開発用 DB のマイグレーションの状態を表示する
+	$(RUN_GO) sh -c '$(GOOSE) "$$DATABASE_URL" status'
+
+.PHONY: migrate-new
+migrate-new: ## マイグレーションを作る（例: make migrate-new name=add_reactions）
+	@test -n "$(name)" || (echo "usage: make migrate-new name=<snake_case>" >&2; exit 1)
+	$(RUN_GO) $(GOTOOL) goose -dir db/migrations -s create $(name) sql
+
+.PHONY: sqlc
+sqlc: ## db/queries から Go のコードを生成する（sqlc.yaml）
+	$(RUN_GO) $(GOTOOL) sqlc generate
+
 # ---- 品質 ----
 
 .PHONY: test
-test: ## Go の全テストを -race 付きで実行する（実物の Postgres / Redis を使う）
-	$(RUN_GO) go test -race -count=1 ./...
+test: ## Go の全テストを -race 付きで実行する（テスト用 DB を最新のスキーマにしてから、実物の Postgres / Redis で）
+	$(RUN_GO) sh -c '$(GOOSE) "$$TEST_DATABASE_URL" up && go test -race -count=1 ./...'
 
 .PHONY: lint
 lint: ## go vet と golangci-lint を実行する
