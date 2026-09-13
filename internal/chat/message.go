@@ -39,10 +39,12 @@ type Message struct {
 	// Body は削除済みなら空。
 	Body string
 	// ReplyTo は返信先。返信でなければ nil。
-	ReplyTo   *ReplyPreview
-	CreatedAt time.Time
-	EditedAt  *time.Time
-	DeletedAt *time.Time
+	ReplyTo *ReplyPreview
+	// Attachments は添付。削除済みのメッセージでは空（ADR 0013）。
+	Attachments []MessageAttachment
+	CreatedAt   time.Time
+	EditedAt    *time.Time
+	DeletedAt   *time.Time
 }
 
 // ReplyPreview は返信先のメッセージの表示に必要な情報。
@@ -84,9 +86,10 @@ func toMessage(r messageView) Message {
 }
 
 // validateBody は本文を検証する。前後の空白は削らない（コードの字下げなどを保つ）が、空白だけの本文は受け付けない。
-func validateBody(fields *fieldErrors, body string) {
+// 添付があるメッセージ（hasAttachments）だけは、本文が空でもよい（ADR 0013）。
+func validateBody(fields *fieldErrors, body string, hasAttachments bool) {
 	switch {
-	case strings.TrimSpace(body) == "":
+	case strings.TrimSpace(body) == "" && !hasAttachments:
 		fields.add("body", ReasonRequired)
 	case utf8.RuneCountInString(body) > messageBodyMax:
 		fields.add("body", ReasonTooLong)
@@ -103,6 +106,8 @@ type SendMessageInput struct {
 	Body        string
 	// ReplyToID は同じルームのメッセージ。返信でなければ nil。
 	ReplyToID *ulid.ULID
+	// AttachmentIDs は、送信者が同じルームにアップロードして complete 済みの添付（ADR 0013）。
+	AttachmentIDs []ulid.ULID
 }
 
 // SendMessage はメッセージを送信する。同じ送信者が同じ client_msg_id で送信済みなら、created を false にして既存のメッセージを返す。
@@ -120,7 +125,8 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 	if in.ClientMsgID == (ulid.ULID{}) {
 		fields.add("client_msg_id", ReasonRequired)
 	}
-	validateBody(&fields, in.Body)
+	validateBody(&fields, in.Body, len(in.AttachmentIDs) > 0)
+	validateAttachmentIDs(&fields, in.AttachmentIDs)
 	if err := fields.err(); err != nil {
 		return Message{}, false, err
 	}
@@ -162,6 +168,9 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 			}
 			return fmt.Errorf("create message: %w", err)
 		}
+		if err := attachToMessage(ctx, q, actor, roomID, id, in.AttachmentIDs); err != nil {
+			return err
+		}
 		if _, err := q.AdvanceLastReadSeq(ctx, store.AdvanceLastReadSeqParams{RoomID: roomID, UserID: actor, Seq: seq}); err != nil {
 			return fmt.Errorf("advance sender's last_read_seq: %w", err)
 		}
@@ -180,7 +189,11 @@ func getMessage(ctx context.Context, q *store.Queries, roomID, id ulid.ULID) (Me
 	if err != nil {
 		return Message{}, notFoundIfNoRows(err, "get message")
 	}
-	return toMessage(row), nil
+	msgs := []Message{toMessage(row)}
+	if err := loadMessageAttachments(ctx, q, roomID, msgs); err != nil {
+		return Message{}, err
+	}
+	return msgs[0], nil
 }
 
 // MessageQuery は履歴の取得の指定。BeforeSeq と AfterSeq は同時に指定できない。
@@ -266,13 +279,17 @@ func (s *Service) ListMessages(ctx context.Context, actor, roomID ulid.ULID, mq 
 	for i, r := range rows {
 		page.Messages[i] = toMessage(r)
 	}
+	if err := loadMessageAttachments(ctx, q, roomID, page.Messages); err != nil {
+		return MessagePage{}, err
+	}
 	return page, nil
 }
 
 // EditMessage は本文を編集する。送信者本人だけができる（ADR 0012）。本文が変わらなければ edited_at を更新しない。
 func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid.ULID, body string) (Message, error) {
 	var fields fieldErrors
-	validateBody(&fields, body)
+	// 編集では添付を変えられない。添付があっても、本文を空にする編集は受け付けない（ADR 0013 は送信時だけ空を許す）。
+	validateBody(&fields, body, false)
 	if err := fields.err(); err != nil {
 		return Message{}, err
 	}
@@ -333,6 +350,10 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, roomID, messageID ul
 		}
 		if err := q.SoftDeleteMessage(ctx, store.SoftDeleteMessageParams{ID: messageID, Now: s.clock.Now()}); err != nil {
 			return fmt.Errorf("delete message: %w", err)
+		}
+		// 添付は掃除ジョブに消させる。ストレージの呼び出しをこのトランザクションに入れない（ADR 0013）。
+		if err := q.MarkMessageAttachmentsDeleted(ctx, store.MarkMessageAttachmentsDeletedParams{RoomID: roomID, MessageID: &messageID}); err != nil {
+			return fmt.Errorf("mark attachments deleted: %w", err)
 		}
 		return nil
 	})

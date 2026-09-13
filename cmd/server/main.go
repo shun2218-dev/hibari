@@ -25,6 +25,7 @@ import (
 	platformlog "github.com/shun2218-dev/hibari/internal/platform/log"
 	"github.com/shun2218-dev/hibari/internal/platform/ratelimit"
 	"github.com/shun2218-dev/hibari/internal/platform/redis"
+	"github.com/shun2218-dev/hibari/internal/platform/storage"
 )
 
 // version はビルド時に -ldflags "-X main.version=vX.Y.Z" で埋め込む（CLAUDE.md「リリース手順」）。
@@ -109,13 +110,34 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	// 同じプロセスなので公開鍵を直接渡す。auth を別プロセスに切り出したら、JWKS を取得して渡す形に変える（ADR 0001）。
 	verifier := authn.NewVerifier([]authn.PublicKey{accessTokens.PublicKey()}, cfg.JWTIssuer, cfg.JWTAudience, clk)
 
+	// ストレージには起動時に接続しない。落ちていても、添付以外の機能は動かせるようにする。
+	objectStorage, err := storage.New(cfg.Storage)
+	if err != nil {
+		return err
+	}
+
 	chatService := chat.NewService(chat.Deps{
-		DB:     pool,
-		Clock:  clk,
-		IDs:    ids,
-		Random: rand.Reader,
-		Logger: logger,
+		DB:               pool,
+		Clock:            clk,
+		IDs:              ids,
+		Random:           rand.Reader,
+		Logger:           logger,
+		Storage:          objectStorage,
+		AttachmentLimits: chat.AttachmentLimits{MaxBytes: cfg.AttachmentMaxBytes, AllowedTypes: cfg.AttachmentAllowedTypes},
 	})
+
+	// 添付の掃除ジョブ（ADR 0013）。DB のプールを閉じる前に止めて、終わるのを待つ。
+	// defer は後に書いたものから実行されるので、pool.Close の defer より後に書く。
+	jobCtx, stopJobs := context.WithCancel(ctx)
+	cleanupDone := make(chan struct{})
+	go func() {
+		defer close(cleanupDone)
+		chatService.RunAttachmentCleanup(jobCtx, chat.AttachmentCleanupInterval)
+	}()
+	defer func() {
+		stopJobs()
+		<-cleanupDone
+	}()
 
 	handler := httpx.NewRouter(httpx.Deps{
 		Logger: logger,

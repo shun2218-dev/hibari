@@ -29,9 +29,11 @@ type messageResponse struct {
 	ClientMsgID string                `json:"client_msg_id"`
 	Body        string                `json:"body"`
 	ReplyTo     *replyPreviewResponse `json:"reply_to"`
-	CreatedAt   time.Time             `json:"created_at"`
-	EditedAt    *time.Time            `json:"edited_at"`
-	DeletedAt   *time.Time            `json:"deleted_at"`
+	// Attachments は削除済みのメッセージでは空配列。GET URL は含めない（ADR 0013）。
+	Attachments []messageAttachmentResponse `json:"attachments"`
+	CreatedAt   time.Time                   `json:"created_at"`
+	EditedAt    *time.Time                  `json:"edited_at"`
+	DeletedAt   *time.Time                  `json:"deleted_at"`
 }
 
 func newMessageResponse(m chat.Message) messageResponse {
@@ -42,6 +44,7 @@ func newMessageResponse(m chat.Message) messageResponse {
 		Sender:      newUserProfileResponse(m.Sender),
 		ClientMsgID: m.ClientMsgID.String(),
 		Body:        m.Body,
+		Attachments: newMessageAttachmentsResponse(m.Attachments),
 		CreatedAt:   m.CreatedAt,
 		EditedAt:    m.EditedAt,
 		DeletedAt:   m.DeletedAt,
@@ -65,9 +68,10 @@ func bodyID(field, s string) (id ulid.ULID, ok bool, err error) {
 }
 
 type sendMessageRequest struct {
-	ClientMsgID string `json:"client_msg_id"`
-	Body        string `json:"body"`
-	ReplyToID   string `json:"reply_to_id"`
+	ClientMsgID   string   `json:"client_msg_id"`
+	Body          string   `json:"body"`
+	ReplyToID     string   `json:"reply_to_id"`
+	AttachmentIDs []string `json:"attachment_ids"`
 }
 
 // sendMessage は新しく作ったら 201、同じ client_msg_id の再送なら既存のメッセージを 200 で返す（ADR 0004）。
@@ -95,6 +99,14 @@ func (h *chatHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if ok {
 		in.ReplyToID = &replyTo
+	}
+	for _, s := range req.AttachmentIDs {
+		id, err := ulid.ParseStrict(s)
+		if err != nil {
+			writeError(h.logger, w, r, &chat.ValidationError{Fields: []chat.FieldError{{Field: "attachment_ids", Reason: chat.ReasonInvalidFormat}}})
+			return
+		}
+		in.AttachmentIDs = append(in.AttachmentIDs, id)
 	}
 	msg, created, err := h.svc.SendMessage(r.Context(), actorOf(r), roomID, in)
 	if err != nil {

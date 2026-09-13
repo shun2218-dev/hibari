@@ -150,12 +150,13 @@ erDiagram
     uuid id PK
     uuid room_id FK "アップロード時点で authz 済みのルーム"
     uuid uploader_id FK
-    uuid message_id FK "null なら未確定"
-    text status "pending / attached。古い pending は掃除する"
-    text object_key UK "S3 互換のキー"
-    text mime_type "アップロード後に HEAD で検証した値"
-    bigint size_bytes
-    int width "画像のみ"
-    int height "画像のみ"
+    uuid message_id FK "attached / deleted のときだけ持つ"
+    text status "pending / uploaded / attached / deleted。ADR 0013"
+    text object_key UK "S3 互換のキー。ファイル名は入れない"
+    text file_name "表示と Content-Disposition 用"
+    text mime_type "発行時の申告値。complete で HEAD と一致を確かめる"
+    bigint size_bytes "署名に含めるので PUT はこのサイズに限られる"
+    int width "画像のみ。クライアントの申告値"
+    int height "画像のみ。クライアントの申告値"
     timestamptz created_at
   }

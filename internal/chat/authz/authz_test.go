@@ -295,3 +295,30 @@ func TestCanDeleteMessage(t *testing.T) {
 			})
 	}
 }
+
+func TestCanUploadAttachment(t *testing.T) {
+	checkRoom(t, "CanUploadAttachment", CanUploadAttachment, func(c roomCase) bool {
+		// 投稿できる人だけ。参加していない public ではアップロードできない。
+		known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
+		return known && isWorkspaceMember(c.role) && c.isRoomMember
+	})
+}
+
+func TestCanCompleteAttachment(t *testing.T) {
+	if !CanCompleteAttachment(true) || CanCompleteAttachment(false) {
+		t.Error("CanCompleteAttachment must allow only the uploader")
+	}
+}
+
+func TestCanViewAttachment(t *testing.T) {
+	checkRoom(t, "CanViewAttachment", CanViewAttachment, func(c roomCase) bool {
+		switch c.kind {
+		case RoomPublic:
+			return isWorkspaceMember(c.role) // 参加していなくても読める
+		case RoomPrivate, RoomDM:
+			return isWorkspaceMember(c.role) && c.isRoomMember
+		default:
+			return false
+		}
+	})
+}

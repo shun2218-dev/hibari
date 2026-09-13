@@ -94,6 +94,10 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		writeProblem(w, r, problem{Type: "user-not-in-workspace", Title: "The user is not a member of the workspace", Status: http.StatusUnprocessableEntity})
 	case errors.Is(err, chat.ErrMessageDeleted):
 		writeProblem(w, r, problem{Type: "message-deleted", Title: "The message has been deleted", Status: http.StatusConflict})
+	case errors.Is(err, chat.ErrAttachmentNotUploaded):
+		writeProblem(w, r, problem{Type: "attachment-not-uploaded", Title: "The file has not been uploaded", Status: http.StatusConflict})
+	case errors.Is(err, chat.ErrAttachmentMismatch):
+		writeProblem(w, r, problem{Type: "attachment-mismatch", Title: "The uploaded file does not match the declared size or type", Status: http.StatusConflict})
 	case errors.Is(err, chat.ErrOwnerMustTransfer):
 		writeProblem(w, r, problem{Type: "owner-must-transfer", Title: "Transfer ownership before leaving", Status: http.StatusConflict})
 	case errors.As(err, &lerr):

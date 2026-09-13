@@ -68,6 +68,10 @@ jobs:
       # CI=true（GitHub Actions が設定する）のとき、接続先がなければテストはスキップせずに失敗する（internal/platform/testenv）。
       TEST_DATABASE_URL: postgres://hibari:hibari@localhost:5432/hibari_test?sslmode=disable
       TEST_REDIS_URL: redis://localhost:6379/1
+      TEST_S3_ENDPOINT: http://localhost:9000
+      TEST_S3_BUCKET: hibari-test
+      TEST_S3_ACCESS_KEY_ID: hibari
+      TEST_S3_SECRET_ACCESS_KEY: hibari-secret
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -76,6 +80,18 @@ jobs:
           cache-dependency-path: |
             go.sum
             tools/go.sum
+      - name: MinIO を起動してテスト用のバケットを作る
+        # サービスコンテナは起動コマンド（server /data）を渡せないので、docker run で起動する。イメージは compose.yaml と揃える。
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER="$TEST_S3_ACCESS_KEY_ID" -e MINIO_ROOT_PASSWORD="$TEST_S3_SECRET_ACCESS_KEY" \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for _ in $(seq 30); do
+            curl -fsS http://localhost:9000/minio/health/live && break
+            sleep 2
+          done
+          docker exec minio mc alias set local http://localhost:9000 "$TEST_S3_ACCESS_KEY_ID" "$TEST_S3_SECRET_ACCESS_KEY"
+          docker exec minio mc mb --ignore-existing local/hibari-test
       - name: マイグレーション（up → reset → up）
         # Down も壊れていないことを確かめるため、一度すべて戻してから適用し直す。
         run: |

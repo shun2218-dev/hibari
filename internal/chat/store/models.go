@@ -10,6 +10,21 @@ import (
 	ulid "github.com/oklog/ulid/v2"
 )
 
+type Attachment struct {
+	ID         ulid.ULID
+	RoomID     ulid.ULID
+	UploaderID ulid.ULID
+	MessageID  *ulid.ULID
+	Status     string
+	ObjectKey  string
+	MimeType   string
+	SizeBytes  int64
+	Width      *int32
+	Height     *int32
+	CreatedAt  time.Time
+	FileName   string
+}
+
 type Message struct {
 	ID          ulid.ULID
 	RoomID      ulid.ULID
