@@ -13,6 +13,18 @@ GOTOOL  := go tool -modfile=tools/go.mod
 help: ## コマンドの一覧を表示する
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
+# ---- 一括 ----
+
+# 前提のターゲットに並べず $(MAKE) で順に呼ぶのは、`make -j` でも
+# 「コンテナの起動 → マイグレーション → Next.js」の順序を崩さないため。
+# web はフォアグラウンドで動くので最後に置く。Ctrl+C で止まるのは Next.js だけで、
+# コンテナは動いたまま残る（止めるときは `make down`）。
+.PHONY: dev
+dev: ## 全部をローカルで起動する（compose の起動 → マイグレーション → ホストで Next.js）
+	$(MAKE) up
+	$(MAKE) migrate-up
+	$(MAKE) web
+
 # ---- compose ----
 
 .PHONY: up
