@@ -1,10 +1,194 @@
 @import "tailwindcss";
 
 /*
- * デザイントークンの正本（CLAUDE.md ルール 7）。
+ * デザイントークンの正本（CLAUDE.md ルール 7）。各トークンの用途は docs/ui/tokens.md を参照。
  *
- * Phase 1 ではプレースホルダ。Phase 1.5 で docs/ui/ のデザインから、役割ベースの名前
- * （例: --color-surface / --color-text-muted）でライト / ダークのトークンを定義し、
- * Tailwind の @theme がこれらの CSS 変数だけを参照するようにする。
- * コンポーネントに色・余白・角丸・フォントサイズの生の値や Tailwind の任意値を書かない。
+ * - 値は docs/ui/ に取り込んだ Claude Design のデザインから写したもの。ここ以外に色・余白・角丸・
+ *   フォントサイズの生の値を書かない（コンポーネントでも Tailwind の任意値でも）。
+ * - `--*: initial` で Tailwind の既定テーマを捨てる。既定のパレット（text-red-500 など）や
+ *   サイズが残っていると、トークンを経由しない値が紛れ込んでも気づけないため。
+ * - ライトの値を @theme に置き、ダークは同じ名前の変数を [data-theme="dark"] で上書きする。
+ *   Tailwind のユーティリティは var(--color-*) を参照するので、属性を切り替えるだけで全体が追従する。
  */
+
+@theme static {
+  --*: initial;
+
+  /* ---- 色: 面と線 ---- */
+  --color-background: #f2f5f2;
+  --color-surface: #ffffff;
+  --color-surface-muted: #e8ede9;
+  --color-border: #d7ded9;
+
+  /* ---- 色: 文字 ---- */
+  --color-text: #16201d;
+  --color-text-secondary: #47544d;
+  --color-text-muted: #78857e;
+
+  /* ---- 色: primary（緑）= 操作できるもの。ボタン・リンク・選択中の項目 ---- */
+  --color-primary: #2f6f62;
+  --color-primary-hover: #245a4f;
+  --color-primary-subtle: #e3efea;
+  --color-on-primary: #ffffff;
+
+  /* ---- 色: attention（琥珀）= いま起きていること。未読・入力中・接続状態 ---- */
+  --color-attention: #c08519;
+  --color-attention-subtle: #fbf1dc;
+  --color-attention-text: #7a5410;
+  --color-on-attention: #16201d;
+
+  /* ---- 色: 状態 ---- */
+  --color-danger: #b23a2e;
+  --color-danger-subtle: #f8e7e4;
+  --color-online: #3e9c7e;
+
+  /* ---- 色: オーバーレイ（ダイアログ・シートの背後） ---- */
+  --color-overlay: rgb(22 32 29 / 0.32);
+
+  /* ---- 色: アバター。ユーザーごとに 1〜6 のどれかを割り当てる ---- */
+  --color-avatar-1: #64786e;
+  --color-avatar-2: #86765c;
+  --color-avatar-3: #5e6e80;
+  --color-avatar-4: #746a7d;
+  --color-avatar-5: #4f7268;
+  --color-avatar-6: #7c6f5b;
+  --color-on-avatar: #ffffff;
+
+  /* ---- 書体 ---- */
+  /* 欧文を Instrument Sans、和文を Zen Kaku Gothic New で描く。読み込み（next/font）は Phase 6 */
+  --font-sans: "Instrument Sans", "Zen Kaku Gothic New", system-ui, sans-serif;
+  /* 時刻・ハンドル・招待リンクなど、桁や文字をそろえて読ませたいもの */
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* ---- 文字サイズ（7 段階）。rem にしてブラウザの文字サイズ設定に追従させる ---- */
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-xs: 0.75rem; /* 12px */
+  --text-sm: 0.8125rem; /* 13px */
+  --text-base: 0.875rem; /* 14px */
+  --text-lg: 0.9375rem; /* 15px: メッセージ本文・入力欄 */
+  --text-xl: 1.25rem; /* 20px */
+  --text-2xl: 1.625rem; /* 26px */
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --leading-none: 1;
+  --leading-normal: 1.6;
+  /* メッセージ本文。半日開いたままでも読み疲れしない行送りとしてデザインで確定した値 */
+  --leading-relaxed: 1.75;
+
+  --tracking-tight: -0.015em;
+
+  /* ---- 余白・サイズ。p-2 = 8px のように 4px 刻みで数える ---- */
+  --spacing: 0.25rem;
+
+  /* ---- 角丸（4 段階） ---- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
+  /* ---- 影 ---- */
+  --shadow-overlay: 0 8px 24px var(--color-overlay);
+
+  /* ---- 動き ---- */
+  /* モバイルでパネルが横からスライドするときの減速カーブ */
+  --ease-slide: cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-spin: spin 900ms linear infinite;
+  --animate-typing-dot: typing-dot 1.2s infinite;
+
+  /* ---- ブレークポイント。これ未満をモバイルのレイアウトにする ---- */
+  --breakpoint-md: 48rem; /* 768px */
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes typing-dot {
+    0%,
+    60%,
+    100% {
+      opacity: 0.25;
+    }
+    30% {
+      opacity: 1;
+    }
+  }
+}
+
+[data-theme="dark"] {
+  --color-background: #101614;
+  --color-surface: #171f1c;
+  --color-surface-muted: #1f2926;
+  --color-border: #2b3733;
+
+  --color-text: #e8eeea;
+  --color-text-secondary: #aab8b1;
+  --color-text-muted: #7e8c85;
+
+  --color-primary: #5aa694;
+  --color-primary-hover: #6fbba8;
+  --color-primary-subtle: #1b302b;
+  --color-on-primary: #101614;
+
+  --color-attention: #d9a441;
+  --color-attention-subtle: #2e2415;
+  --color-attention-text: #d9a441;
+  --color-on-attention: #101614;
+
+  --color-danger: #d9705f;
+  --color-danger-subtle: #33201d;
+  --color-online: #4fb08f;
+
+  --color-overlay: rgb(6 10 9 / 0.55);
+
+  --color-avatar-1: #89a096;
+  --color-avatar-2: #ad9b7c;
+  --color-avatar-3: #8496aa;
+  --color-avatar-4: #9c90a8;
+  --color-avatar-5: #7fa095;
+  --color-avatar-6: #a3947a;
+  --color-on-avatar: #101614;
+
+  color-scheme: dark;
+}
+
+/* テーマはユーザーが設定画面で明示的に選ぶ（OS の設定には追従しない）ので、media ではなく属性で切り替える */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-lg);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  /* フォーカスリングはキーボード操作のときだけ出す。色は「操作できるもの」の primary */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+}
