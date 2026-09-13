@@ -1,0 +1,46 @@
+# sqlc の設定（ADR 0003）。スキーマの正本は goose のマイグレーション。
+#
+# 生成先はドメインごとに分ける。1 つのパッケージに生成すると、chat から auth のクエリ
+# （refresh_tokens など）を呼べてしまい、境界（ADR 0001）を lint でしか守れなくなるため。
+# auth の生成先（db/queries/auth → internal/auth/store）は Phase 2 で足す。
+version: "2"
+
+# uuid ↔ ulid.ULID の変換は internal/platform/db の pgx コーデックが担う（ADR 0005）。
+# 生成コードは ulid.ULID と time.Time だけを扱い、pgtype.UUID / pgtype.Timestamptz をドメイン層に漏らさない。
+overrides:
+  go:
+    overrides:
+      - db_type: uuid
+        go_type:
+          import: github.com/oklog/ulid/v2
+          type: ULID
+      - db_type: uuid
+        nullable: true
+        go_type:
+          import: github.com/oklog/ulid/v2
+          type: ULID
+          pointer: true
+      - db_type: timestamptz
+        go_type:
+          import: time
+          type: Time
+      - db_type: timestamptz
+        nullable: true
+        go_type:
+          import: time
+          type: Time
+          pointer: true
+
+sql:
+  - engine: postgresql
+    schema: db/migrations
+    queries: db/queries/chat
+    gen:
+      go:
+        package: store
+        out: internal/chat/store
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        emit_empty_slices: true
+        # 使っていないテーブルの構造体（chat の store に User や RefreshToken など）を生成しない。
+        omit_unused_structs: true
