@@ -3,3 +3,20 @@
 //   sqlc v1.31.1
 
 package store
+
+import (
+	"time"
+
+	ulid "github.com/oklog/ulid/v2"
+)
+
+type Workspace struct {
+	ID           ulid.ULID
+	Slug         string
+	Name         string
+	InvitePolicy string
+	CreatedBy    ulid.ULID
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	DeletedAt    *time.Time
+}

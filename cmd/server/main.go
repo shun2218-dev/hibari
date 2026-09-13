@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/shun2218-dev/hibari/internal/auth"
+	"github.com/shun2218-dev/hibari/internal/chat"
 	"github.com/shun2218-dev/hibari/internal/httpx"
 	"github.com/shun2218-dev/hibari/internal/platform/authn"
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
@@ -108,6 +109,14 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	// 同じプロセスなので公開鍵を直接渡す。auth を別プロセスに切り出したら、JWKS を取得して渡す形に変える（ADR 0001）。
 	verifier := authn.NewVerifier([]authn.PublicKey{accessTokens.PublicKey()}, cfg.JWTIssuer, cfg.JWTAudience, clk)
 
+	chatService := chat.NewService(chat.Deps{
+		DB:     pool,
+		Clock:  clk,
+		IDs:    ids,
+		Random: rand.Reader,
+		Logger: logger,
+	})
+
 	handler := httpx.NewRouter(httpx.Deps{
 		Logger: logger,
 		Clock:  clk,
@@ -120,6 +129,7 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		Verifier:            verifier,
 		JWKS:                jwks,
 		RefreshCookieSecure: cfg.RefreshCookieSecure,
+		Chat:                chatService,
 	})
 
 	srv := &http.Server{

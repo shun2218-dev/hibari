@@ -184,9 +184,10 @@ PATCH  /api/v1/rooms/{id}
 POST   /api/v1/rooms/{id}/join                          public のみ
 POST   /api/v1/rooms/{id}/members                       private に人を追加
 DELETE /api/v1/rooms/{id}/members/{userID}
+GET    /api/v1/rooms/{id}/members                       ルームのメンバー一覧（ADR 0011 で追加）
 ```
 
-**要点**
+**要点**（詳細と、権限表にない操作の判断は ADR 0011）
 - authz レイヤを 1 箇所に作る。判定は `canReadRoom` / `canWriteRoom` / `canManage` / `canGrant` / `canCreateInvite` の形
 - ロール変更は `canManage(actor, target) && canGrant(actor, newRole)`
 - owner の譲渡は 1 トランザクションで行う（旧 owner を admin に降格 → 新 owner を昇格）。対象の行は `SELECT ... FOR UPDATE` でロックする
