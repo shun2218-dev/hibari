@@ -49,6 +49,8 @@ const (
 	ReasonInvalidFormat = "invalid_format"
 	// ReasonInvalidValue は列挙値にない値など、形式は正しいが受け付けられない値。
 	ReasonInvalidValue = "invalid_value"
+	// ReasonOutOfRange は数値が許される範囲の外にあることを表す。
+	ReasonOutOfRange = "out_of_range"
 )
 
 func (e *ValidationError) Error() string {

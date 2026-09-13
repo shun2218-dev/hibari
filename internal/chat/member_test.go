@@ -149,21 +149,12 @@ func TestChangeMemberRole(t *testing.T) {
 	})
 }
 
-// addRoomMembership は rooms と room_members を SQL で直接作る（ルームの API は Phase 3a の後半で入る）。
+// addRoomMembership は private ルームを作って members を入れる。
 func addRoomMembership(t *testing.T, env *chattest.Env, workspaceID, creator ulid.ULID, members ...ulid.ULID) ulid.ULID {
 	t.Helper()
-	roomID := env.IDs.New()
-	if _, err := env.Pool.Exec(t.Context(),
-		`INSERT INTO rooms (id, workspace_id, kind, name, created_by, created_at) VALUES ($1, $2, 'private', $3, $4, $5)`,
-		roomID, workspaceID, "room-"+roomID.String(), creator, env.Clock.Now()); err != nil {
-		t.Fatal(err)
-	}
+	roomID := env.InsertRoom(t, workspaceID, creator, chattest.RoomOptions{Kind: "private"})
 	for _, m := range members {
-		if _, err := env.Pool.Exec(t.Context(),
-			`INSERT INTO room_members (room_id, user_id, last_read_seq, joined_at) VALUES ($1, $2, 0, $3) ON CONFLICT DO NOTHING`,
-			roomID, m, env.Clock.Now()); err != nil {
-			t.Fatal(err)
-		}
+		env.InsertRoomMember(t, roomID, m)
 	}
 	return roomID
 }

@@ -20,3 +20,15 @@ type Workspace struct {
 	UpdatedAt    time.Time
 	DeletedAt    *time.Time
 }
+
+type WorkspaceInvite struct {
+	ID          ulid.ULID
+	WorkspaceID ulid.ULID
+	CodeHash    []byte
+	CreatedBy   ulid.ULID
+	MaxUses     *int32
+	UseCount    int32
+	ExpiresAt   time.Time
+	RevokedAt   *time.Time
+	CreatedAt   time.Time
+}

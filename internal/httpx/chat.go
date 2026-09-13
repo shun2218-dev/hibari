@@ -3,6 +3,7 @@ package httpx
 import (
 	"context"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -23,6 +24,12 @@ type ChatService interface {
 	ChangeMemberRole(ctx context.Context, actor, workspaceID, target ulid.ULID, newRole string) (chat.Member, error)
 	RemoveMember(ctx context.Context, actor, workspaceID, target ulid.ULID) error
 	TransferOwnership(ctx context.Context, actor, workspaceID, target ulid.ULID) error
+
+	CreateInvite(ctx context.Context, actor, workspaceID ulid.ULID, in chat.InviteInput) (chat.CreatedInvite, error)
+	ListInvites(ctx context.Context, actor, workspaceID ulid.ULID, page chat.PageRequest) (chat.Page[chat.Invite], error)
+	RevokeInvite(ctx context.Context, actor, workspaceID, inviteID ulid.ULID) error
+	PreviewInvite(ctx context.Context, actor ulid.ULID, code string) (chat.InvitePreview, error)
+	AcceptInvite(ctx context.Context, actor ulid.ULID, code string) (chat.InviteAcceptance, error)
 }
 
 type chatHandlers struct {
@@ -45,6 +52,13 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("PATCH /api/v1/workspaces/{workspaceID}/members/{userID}", h.changeMemberRole)
 	handle("DELETE /api/v1/workspaces/{workspaceID}/members/{userID}", h.removeMember)
 	handle("POST /api/v1/workspaces/{workspaceID}/ownership-transfer", h.transferOwnership)
+
+	handle("POST /api/v1/workspaces/{workspaceID}/invites", h.createInvite)
+	handle("GET /api/v1/workspaces/{workspaceID}/invites", h.listInvites)
+	handle("DELETE /api/v1/workspaces/{workspaceID}/invites/{inviteID}", h.revokeInvite)
+	// パス変数の名前 code はログで伏せる対象（secretPathValues）。名前を変えるときはそちらも変える。
+	handle("GET /api/v1/invites/{code}", h.previewInvite)
+	handle("POST /api/v1/invites/{code}/accept", h.acceptInvite)
 }
 
 // actorOf は認証済みのリクエストの主体を返す。requireAuth の内側でだけ呼ぶ。
@@ -311,4 +325,155 @@ func (h *chatHandlers) transferOwnership(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type inviteResponse struct {
+	ID          string              `json:"id"`
+	WorkspaceID string              `json:"workspace_id"`
+	CreatedBy   userProfileResponse `json:"created_by"`
+	MaxUses     *int                `json:"max_uses"`
+	UseCount    int                 `json:"use_count"`
+	ExpiresAt   time.Time           `json:"expires_at"`
+	RevokedAt   *time.Time          `json:"revoked_at"`
+	CreatedAt   time.Time           `json:"created_at"`
+	Status      string              `json:"status"`
+	// Code は作成のレスポンスでだけ返す。一覧では再表示しない（ADR 0006）。
+	Code string `json:"code,omitempty"`
+}
+
+func newInviteResponse(inv chat.Invite) inviteResponse {
+	return inviteResponse{
+		ID:          inv.ID.String(),
+		WorkspaceID: inv.WorkspaceID.String(),
+		CreatedBy:   newUserProfileResponse(inv.CreatedBy),
+		MaxUses:     inv.MaxUses,
+		UseCount:    inv.UseCount,
+		ExpiresAt:   inv.ExpiresAt,
+		RevokedAt:   inv.RevokedAt,
+		CreatedAt:   inv.CreatedAt,
+		Status:      string(inv.Status),
+	}
+}
+
+type createInviteRequest struct {
+	// MaxUses が null（または省略）なら無制限。
+	MaxUses          *int   `json:"max_uses"`
+	ExpiresInSeconds *int64 `json:"expires_in_seconds"`
+}
+
+func (h *chatHandlers) createInvite(w http.ResponseWriter, r *http.Request) {
+	wsID, err := pathID(r, "workspaceID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	var req createInviteRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	in := chat.InviteInput{MaxUses: req.MaxUses}
+	if req.ExpiresInSeconds != nil {
+		// 巨大な値で time.Duration があふれて負にならないよう、表せる最大に丸めてから渡す（範囲の検証は chat が行う）。
+		secs := min(*req.ExpiresInSeconds, int64(math.MaxInt64/time.Second))
+		d := time.Duration(secs) * time.Second
+		in.ExpiresIn = &d
+	}
+	inv, err := h.svc.CreateInvite(r.Context(), actorOf(r), wsID, in)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	resp := newInviteResponse(inv.Invite)
+	resp.Code = inv.Code
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (h *chatHandlers) listInvites(w http.ResponseWriter, r *http.Request) {
+	wsID, err := pathID(r, "workspaceID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	page, err := pageRequest(r)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	p, err := h.svc.ListInvites(r.Context(), actorOf(r), wsID, page)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	resp := struct {
+		Invites    []inviteResponse `json:"invites"`
+		NextCursor *string          `json:"next_cursor"`
+	}{Invites: make([]inviteResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
+	for i, inv := range p.Items {
+		resp.Invites[i] = newInviteResponse(inv)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *chatHandlers) revokeInvite(w http.ResponseWriter, r *http.Request) {
+	wsID, err := pathID(r, "workspaceID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	inviteID, err := pathID(r, "inviteID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	if err := h.svc.RevokeInvite(r.Context(), actorOf(r), wsID, inviteID); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type invitePreviewResponse struct {
+	Workspace struct {
+		ID              string `json:"id"`
+		Name            string `json:"name"`
+		MemberCount     int64  `json:"member_count"`
+		PublicRoomCount int64  `json:"public_room_count"`
+	} `json:"workspace"`
+	Inviter       userProfileResponse `json:"inviter"`
+	AlreadyMember bool                `json:"already_member"`
+	ExpiresAt     time.Time           `json:"expires_at"`
+}
+
+func (h *chatHandlers) previewInvite(w http.ResponseWriter, r *http.Request) {
+	p, err := h.svc.PreviewInvite(r.Context(), actorOf(r), r.PathValue("code"))
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	var resp invitePreviewResponse
+	resp.Workspace.ID = p.WorkspaceID.String()
+	resp.Workspace.Name = p.WorkspaceName
+	resp.Workspace.MemberCount = p.MemberCount
+	resp.Workspace.PublicRoomCount = p.PublicRoomCount
+	resp.Inviter = newUserProfileResponse(p.Inviter)
+	resp.AlreadyMember = p.AlreadyMember
+	resp.ExpiresAt = p.ExpiresAt
+	writeJSON(w, http.StatusOK, resp)
+}
+
+type inviteAcceptanceResponse struct {
+	Workspace     workspaceResponse `json:"workspace"`
+	AlreadyMember bool              `json:"already_member"`
+}
+
+// acceptInvite は、新しく参加したときもすでにメンバーだったときも 200 を返す。
+// どちらでもクライアントの次の動作（ワークスペースを開く）は同じで、違いは already_member で分かる。
+func (h *chatHandlers) acceptInvite(w http.ResponseWriter, r *http.Request) {
+	res, err := h.svc.AcceptInvite(r.Context(), actorOf(r), r.PathValue("code"))
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, inviteAcceptanceResponse{Workspace: newWorkspaceResponse(res.Workspace, true), AlreadyMember: res.AlreadyMember})
 }

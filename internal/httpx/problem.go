@@ -82,6 +82,12 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		writeProblem(w, r, problem{Type: "not-found", Title: "Not found", Status: http.StatusNotFound})
 	case errors.Is(err, chat.ErrForbidden):
 		writeProblem(w, r, problem{Type: "forbidden", Title: "You are not allowed to do this", Status: http.StatusForbidden})
+	case errors.Is(err, chat.ErrInviteInvalid):
+		writeProblem(w, r, problem{Type: "invite-invalid", Title: "The invite link is invalid", Status: http.StatusNotFound})
+	case errors.Is(err, chat.ErrInviteExpired):
+		writeProblem(w, r, problem{Type: "invite-expired", Title: "The invite link has expired", Status: http.StatusGone})
+	case errors.Is(err, chat.ErrInviteExhausted):
+		writeProblem(w, r, problem{Type: "invite-exhausted", Title: "The invite link has reached its usage limit", Status: http.StatusGone})
 	case errors.Is(err, chat.ErrOwnerMustTransfer):
 		writeProblem(w, r, problem{Type: "owner-must-transfer", Title: "Transfer ownership before leaving", Status: http.StatusConflict})
 	case errors.As(err, &lerr):
