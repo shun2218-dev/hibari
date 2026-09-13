@@ -1,0 +1,42 @@
+# golangci-lint v2 の設定。バージョンは tools/go.mod で固定している。
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - depguard
+    - errorlint
+    - forbidigo
+    - noctx
+    - sloglint
+    - usestdlibvars
+  settings:
+    depguard:
+      rules:
+        # ADR 0001: chat は auth を import しない。境界をコンパイラではなく lint で守る。
+        chat-must-not-import-auth:
+          files:
+            - "**/internal/chat/**"
+          deny:
+            - pkg: github.com/shun2218-dev/hibari/internal/auth
+              desc: "chat は auth に依存しない。接点は platform/authn の userID / sid と Redis の失効イベントだけ（ADR 0001）"
+    forbidigo:
+      analyze-types: true
+      forbid:
+        # 時刻は Clock から取得する（CLAUDE.md「Go 全般」）。Clock の実装だけ nolint で許可する。
+        - pattern: ^time\.Now$
+          msg: "clock.Clock を注入して Now() を使う"
+        - pattern: ^time\.Sleep$
+          msg: "テストで時間待ちをしない。Clock を固定するか、channel で同期する"
+    sloglint:
+      # 属性はキーと値の組ではなく slog.String などで型付きで書き、キーの打ち間違いを防ぐ。
+      attr-only: true
+      key-naming-case: snake
+
+  exclusions:
+    rules:
+      # テストの単発リクエストやリスナーまで context 付きにすると読みにくくなるだけなので、noctx は本体のコードにだけ効かせる。
+      - path: _test\.go
+        linters:
+          - noctx

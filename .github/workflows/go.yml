@@ -1,0 +1,75 @@
+# Go の CI。PR ごとに実行し、落ちている PR はマージしない（CLAUDE.md「テスト」）。
+name: go
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - name: go mod tidy に差分がない
+        run: |
+          go mod tidy -diff
+          (cd tools && go mod tidy -diff)
+      - name: go vet
+        run: go vet ./...
+      - name: golangci-lint
+        # バージョンは tools/go.mod で固定したものを使い、ローカルの `make lint` と一致させる。
+        run: go tool -modfile=tools/go.mod golangci-lint run ./...
+
+  test:
+    runs-on: ubuntu-latest
+    # DB を使う処理はモックにせず、サービスコンテナの実物でテストする。
+    # イメージは compose.yaml と揃える。
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hibari
+          POSTGRES_PASSWORD: hibari
+          POSTGRES_DB: hibari_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hibari -d hibari_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      # CI=true（GitHub Actions が設定する）のとき、接続先がなければテストはスキップせずに失敗する（internal/platform/testenv）。
+      TEST_DATABASE_URL: postgres://hibari:hibari@localhost:5432/hibari_test?sslmode=disable
+      TEST_REDIS_URL: redis://localhost:6379/1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: go test -race
+        run: go test -race -count=1 ./...
