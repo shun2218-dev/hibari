@@ -66,16 +66,8 @@ func (in RegisterInput) normalize() (RegisterInput, error) {
 	}
 
 	// パスワードは空白も含めて利用者が選んだ値なので、トリムしない。
-	n := utf8.RuneCountInString(in.Password)
-	switch {
-	case in.Password == "":
-		add("password", ReasonRequired)
-	case !utf8.ValidString(in.Password):
-		add("password", ReasonInvalidFormat)
-	case n < passwordMinRunes:
-		add("password", ReasonTooShort)
-	case n > passwordMaxRunes:
-		add("password", ReasonTooLong)
+	if reason := passwordProblem(in.Password); reason != "" {
+		add("password", reason)
 	}
 
 	if len(fields) > 0 {
@@ -84,8 +76,25 @@ func (in RegisterInput) normalize() (RegisterInput, error) {
 	return in, nil
 }
 
+// passwordProblem はパスワードが制約を満たさない理由を返す。満たしていれば空文字列。
+// 登録とパスワードの再設定で同じ制約を使う。
+func passwordProblem(password string) string {
+	n := utf8.RuneCountInString(password)
+	switch {
+	case password == "":
+		return ReasonRequired
+	case !utf8.ValidString(password):
+		return ReasonInvalidFormat
+	case n < passwordMinRunes:
+		return ReasonTooShort
+	case n > passwordMaxRunes:
+		return ReasonTooLong
+	}
+	return ""
+}
+
 // isPlainEmail は s が「表示名や角括弧を含まない、アドレスだけ」の形式かを返す。
-// 到達可能かどうかはメールの確認（Phase 2 の verify-email）で確かめるので、ここでは形式だけを見る。
+// 到達可能かどうかはメールの確認（verify-email）で確かめるので、ここでは形式だけを見る。
 func isPlainEmail(s string) bool {
 	addr, err := mail.ParseAddress(s)
 	return err == nil && addr.Name == "" && addr.Address == s

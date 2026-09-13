@@ -18,3 +18,20 @@ SELECT *
   FROM users
  WHERE id = sqlc.arg(id)
    AND deleted_at IS NULL;
+
+-- name: MarkEmailVerified :execrows
+-- すでに確認済みなら日時を上書きしない（最初に確認した日時を残す）。
+UPDATE users
+   SET email_verified_at = coalesce(email_verified_at, sqlc.arg(now)::timestamptz),
+       updated_at        = sqlc.arg(now)::timestamptz
+ WHERE id = sqlc.arg(id)
+   AND deleted_at IS NULL;
+
+-- name: UpdatePasswordFromReset :execrows
+-- リセットのリンクはその email に届いたものなので、email の所有も確認できたとみなす。
+UPDATE users
+   SET password_hash     = sqlc.arg(password_hash),
+       email_verified_at = coalesce(email_verified_at, sqlc.arg(now)::timestamptz),
+       updated_at        = sqlc.arg(now)::timestamptz
+ WHERE id = sqlc.arg(id)
+   AND deleted_at IS NULL;

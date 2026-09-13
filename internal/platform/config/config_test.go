@@ -2,6 +2,8 @@ package config_test
 
 import (
 	"log/slog"
+	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -55,12 +57,14 @@ func TestLoad(t *testing.T) {
 				JWTIssuer:           "hibari",
 				JWTAudience:         "hibari-api",
 				RefreshCookieSecure: true,
+				AppBaseURL:          &url.URL{Scheme: "http", Host: "localhost:3000"},
 			},
 		},
 		{
 			name: "overrides",
 			env: with("HTTP_ADDR", ":9090", "LOG_LEVEL", "debug", "LOG_FORMAT", "text", "SHUTDOWN_TIMEOUT", "3s",
-				"JWT_ISSUER", "https://hibari.example", "JWT_AUDIENCE", "chat", "REFRESH_COOKIE_SECURE", "false"),
+				"JWT_ISSUER", "https://hibari.example", "JWT_AUDIENCE", "chat", "REFRESH_COOKIE_SECURE", "false",
+				"APP_BASE_URL", "https://hibari.example/app"),
 			want: config.Config{
 				HTTPAddr:        ":9090",
 				DatabaseURL:     "postgres://localhost/hibari",
@@ -73,6 +77,7 @@ func TestLoad(t *testing.T) {
 				JWTIssuer:           "https://hibari.example",
 				JWTAudience:         "chat",
 				RefreshCookieSecure: false,
+				AppBaseURL:          &url.URL{Scheme: "https", Host: "hibari.example", Path: "/app"},
 			},
 		},
 		{
@@ -101,6 +106,11 @@ func TestLoad(t *testing.T) {
 			wantErr: []string{"REFRESH_COOKIE_SECURE"},
 		},
 		{
+			name:    "relative app base url",
+			env:     with("APP_BASE_URL", "/app"),
+			wantErr: []string{"APP_BASE_URL: must be an absolute http(s) URL"},
+		},
+		{
 			name:    "non-positive shutdown timeout",
 			env:     with("SHUTDOWN_TIMEOUT", "0s"),
 			wantErr: []string{"SHUTDOWN_TIMEOUT: must be positive"},
@@ -125,7 +135,7 @@ func TestLoad(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load() error = %v", err)
 			}
-			if got != tt.want {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("Load() = %+v, want %+v", got, tt.want)
 			}
 		})

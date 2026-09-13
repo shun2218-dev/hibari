@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/netip"
+	"net/url"
 	"strings"
 	"time"
 
@@ -58,6 +59,22 @@ func (c Client) userAgent() *string {
 	return &ua
 }
 
+// ipKey は IP 単位の回数制限のキー。IP が分からなければ空文字列（その制限は数えない）。
+func (c Client) ipKey() string {
+	if !c.IP.IsValid() {
+		return ""
+	}
+	return c.IP.Unmap().String()
+}
+
+// accountKey はアカウント単位の回数制限のキー。email は大文字小文字を区別しない（citext）ので揃える。
+func accountKey(email string) string {
+	if email == "" {
+		return ""
+	}
+	return strings.ToLower(email)
+}
+
 func (c Client) ip() *netip.Addr {
 	if !c.IP.IsValid() {
 		return nil
@@ -85,7 +102,12 @@ type Deps struct {
 	Passwords    *PasswordHasher
 	AccessTokens *AccessTokenIssuer
 	Revocations  RevocationNotifier
-	Logger       *slog.Logger
+	Limiter      RateLimiter
+	Limits       RateLimits
+	Mailer       Mailer
+	// AppBaseURL はメールに載せるリンクの起点（Web クライアントの URL）。
+	AppBaseURL *url.URL
+	Logger     *slog.Logger
 }
 
 // Service は認証のユースケース。
@@ -97,6 +119,10 @@ type Service struct {
 	passwords    *PasswordHasher
 	accessTokens *AccessTokenIssuer
 	revocations  RevocationNotifier
+	limiter      RateLimiter
+	limits       RateLimits
+	mailer       Mailer
+	appBaseURL   *url.URL
 	logger       *slog.Logger
 }
 
@@ -110,12 +136,19 @@ func NewService(d Deps) *Service {
 		passwords:    d.Passwords,
 		accessTokens: d.AccessTokens,
 		revocations:  d.Revocations,
+		limiter:      d.Limiter,
+		limits:       d.Limits,
+		mailer:       d.Mailer,
+		appBaseURL:   d.AppBaseURL,
 		logger:       d.Logger,
 	}
 }
 
-// Register はユーザーを作成し、そのままログインしたセッションを返す。
+// Register はユーザーを作成し、そのままログインしたセッションを返す。確認メールも送る。
 func (s *Service) Register(ctx context.Context, in RegisterInput, c Client) (User, Session, error) {
+	if err := s.checkRateLimits(ctx, limitKey{s.limits.RegisterPerIP, c.ipKey()}); err != nil {
+		return User{}, Session{}, err
+	}
 	in, err := in.normalize()
 	if err != nil {
 		return User{}, Session{}, err
@@ -153,6 +186,12 @@ func (s *Service) Register(ctx context.Context, in RegisterInput, c Client) (Use
 		// コミット時にも UNIQUE 違反は起こりうる（遅延制約ではないので実際は INSERT 時に出るが、念のため同じ変換を通す）。
 		return User{}, Session{}, createUserError(err)
 	}
+
+	// 確認メールを送れなくても登録は成功させる。利用者は画面から再送できる。
+	if err := s.sendEmailVerification(ctx, u.ID, u.Email); err != nil {
+		s.logger.ErrorContext(ctx, "send email verification after register failed",
+			slog.String("user_id", u.ID.String()), slog.Any("error", err))
+	}
 	return toUser(u), sess, nil
 }
 
@@ -174,8 +213,16 @@ func createUserError(err error) error {
 // 「email が存在しない」「OAuth だけのユーザー」「パスワードが違う」はすべて同じエラーを、
 // 同じだけの時間（Argon2id の検証 1 回分）をかけて返す（CLAUDE.md「エラーハンドリング」）。
 func (s *Service) Login(ctx context.Context, email, password string, c Client) (User, Session, error) {
+	email = strings.TrimSpace(email)
+	if err := s.checkRateLimits(ctx,
+		limitKey{s.limits.LoginPerIP, c.ipKey()},
+		limitKey{s.limits.LoginPerAccount, accountKey(email)},
+	); err != nil {
+		return User{}, Session{}, err
+	}
+
 	q := store.New(s.db)
-	u, err := q.GetActiveUserByEmail(ctx, strings.TrimSpace(email))
+	u, err := q.GetActiveUserByEmail(ctx, email)
 	var hash *string
 	switch {
 	case err == nil:
