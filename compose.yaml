@@ -67,6 +67,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       TEST_REDIS_URL: redis://redis:6379/1
       HTTP_ADDR: :8080
+      # `make keys` で作る開発用の鍵。リポジトリを /src に bind mount しているのでそのまま読める。
+      JWT_PRIVATE_KEY_FILE: /src/keys/jwt_ed25519.pem
     # Phase 5 では Caddy だけがホストに公開し、server の公開はやめる。
     ports:
       - "${SERVER_PORT:-8080}:8080"

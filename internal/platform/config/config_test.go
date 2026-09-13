@@ -20,6 +20,8 @@ func TestLoad(t *testing.T) {
 	base := map[string]string{
 		"DATABASE_URL": "postgres://localhost/hibari",
 		"REDIS_URL":    "redis://localhost:6379/0",
+
+		"JWT_PRIVATE_KEY_FILE": "/keys/jwt.pem",
 	}
 	with := func(kv ...string) map[string]string {
 		m := make(map[string]string, len(base)+len(kv)/2)
@@ -48,11 +50,17 @@ func TestLoad(t *testing.T) {
 				LogLevel:        slog.LevelInfo,
 				LogFormat:       config.LogFormatJSON,
 				ShutdownTimeout: 15 * time.Second,
+
+				JWTPrivateKeyFile:   "/keys/jwt.pem",
+				JWTIssuer:           "hibari",
+				JWTAudience:         "hibari-api",
+				RefreshCookieSecure: true,
 			},
 		},
 		{
 			name: "overrides",
-			env:  with("HTTP_ADDR", ":9090", "LOG_LEVEL", "debug", "LOG_FORMAT", "text", "SHUTDOWN_TIMEOUT", "3s"),
+			env: with("HTTP_ADDR", ":9090", "LOG_LEVEL", "debug", "LOG_FORMAT", "text", "SHUTDOWN_TIMEOUT", "3s",
+				"JWT_ISSUER", "https://hibari.example", "JWT_AUDIENCE", "chat", "REFRESH_COOKIE_SECURE", "false"),
 			want: config.Config{
 				HTTPAddr:        ":9090",
 				DatabaseURL:     "postgres://localhost/hibari",
@@ -60,12 +68,17 @@ func TestLoad(t *testing.T) {
 				LogLevel:        slog.LevelDebug,
 				LogFormat:       config.LogFormatText,
 				ShutdownTimeout: 3 * time.Second,
+
+				JWTPrivateKeyFile:   "/keys/jwt.pem",
+				JWTIssuer:           "https://hibari.example",
+				JWTAudience:         "chat",
+				RefreshCookieSecure: false,
 			},
 		},
 		{
 			name:    "missing required values are all reported",
 			env:     map[string]string{"DATABASE_URL": ""},
-			wantErr: []string{"DATABASE_URL is required", "REDIS_URL is required"},
+			wantErr: []string{"DATABASE_URL is required", "REDIS_URL is required", "JWT_PRIVATE_KEY_FILE is required"},
 		},
 		{
 			name:    "invalid log level",
@@ -81,6 +94,11 @@ func TestLoad(t *testing.T) {
 			name:    "invalid shutdown timeout",
 			env:     with("SHUTDOWN_TIMEOUT", "soon"),
 			wantErr: []string{"SHUTDOWN_TIMEOUT"},
+		},
+		{
+			name:    "invalid refresh cookie secure",
+			env:     with("REFRESH_COOKIE_SECURE", "sometimes"),
+			wantErr: []string{"REFRESH_COOKIE_SECURE"},
 		},
 		{
 			name:    "non-positive shutdown timeout",

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 )
 
@@ -19,6 +20,16 @@ type Config struct {
 	LogLevel        slog.Level
 	LogFormat       LogFormat
 	ShutdownTimeout time.Duration
+
+	// JWTPrivateKeyFile は Access Token の署名鍵（Ed25519、PKCS#8 の PEM）のパス。`make keys` で開発用の鍵を作る。
+	// 鍵の中身ではなくパスを受け取るのは、本番でシークレットをファイルとしてマウントする形に合わせるため。
+	JWTPrivateKeyFile string
+	// JWTIssuer / JWTAudience は Access Token の iss / aud。発行と検証で同じ値を使う。
+	JWTIssuer   string
+	JWTAudience string
+	// RefreshCookieSecure は Refresh Token の Cookie に Secure 属性を付けるか。
+	// ブラウザは http://localhost を安全なオリジンとして扱うので、ローカルでも既定の true のままでよい。
+	RefreshCookieSecure bool
 }
 
 // LogFormat はログの出力形式。
@@ -54,6 +65,10 @@ func Load(lookup LookupEnv) (Config, error) {
 		HTTPAddr:    optional("HTTP_ADDR", ":8080"),
 		DatabaseURL: required("DATABASE_URL"),
 		RedisURL:    required("REDIS_URL"),
+
+		JWTPrivateKeyFile: required("JWT_PRIVATE_KEY_FILE"),
+		JWTIssuer:         optional("JWT_ISSUER", "hibari"),
+		JWTAudience:       optional("JWT_AUDIENCE", "hibari-api"),
 	}
 
 	if err := cfg.LogLevel.UnmarshalText([]byte(optional("LOG_LEVEL", "info"))); err != nil {
@@ -76,6 +91,12 @@ func Load(lookup LookupEnv) (Config, error) {
 	default:
 		cfg.ShutdownTimeout = timeout
 	}
+
+	secure, err := strconv.ParseBool(optional("REFRESH_COOKIE_SECURE", "true"))
+	if err != nil {
+		errs = append(errs, fmt.Errorf("REFRESH_COOKIE_SECURE: %w", err))
+	}
+	cfg.RefreshCookieSecure = secure
 
 	if len(errs) > 0 {
 		return Config{}, fmt.Errorf("load config: %w", errors.Join(errs...))
