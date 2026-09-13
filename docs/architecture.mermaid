@@ -1,0 +1,71 @@
+flowchart TB
+
+  subgraph CL["クライアント"]
+    direction LR
+    WEB["Next.js (Web)<br/>UI のみ<br/>例外: refresh Cookie の薄いプロキシ"]
+    DSK["Tauri (Desktop)<br/>Phase 7 以降"]
+    MOB["Mobile<br/>Phase 7 以降・要 Push"]
+  end
+
+  subgraph GO["Go — 単一バイナリ（論理分離・物理は 1 プロセス）"]
+    direction LR
+
+    subgraph AUTH["internal/auth"]
+      A1["登録 / ログイン（Argon2id）"]
+      A2["OAuth 2.0 + PKCE<br/>Phase 7 以降"]
+      A3["Access JWT 発行（15分・sid 付き）"]
+      A4["Refresh ローテーション + 再利用検知<br/>（family 単位で失効）"]
+      A5["JWKS 公開エンドポイント"]
+    end
+
+    subgraph CHAT["internal/chat"]
+      C0["ワークスペース / ロール / 招待"]
+      C6["authz（読める / 書ける）"]
+      C1["WebSocket Hub / 接続管理"]
+      C2["seq 採番 & 永続化"]
+      C3["冪等性（client_msg_id）"]
+      C4["差分取得 REST（after_seq）"]
+      C5["presence / typing"]
+      C7["添付（署名付き URL 発行）"]
+    end
+
+    subgraph PLAT["internal/platform"]
+      P1["DB / Redis クライアント"]
+      P2["authn: JWT 検証 / ws-ticket<br/>失効フック"]
+      P3["設定 / 構造化ログ"]
+      P4["ULID / Clock"]
+      P5["storage: S3 API クライアント"]
+    end
+  end
+
+  subgraph INFRA["インフラ"]
+    direction LR
+    PG[("PostgreSQL<br/>唯一の真実<br/>users / workspaces / rooms / messages")]
+    RD[("Redis<br/>Pub/Sub・presence・typing<br/>失効通知・ws-ticket・レート制限")]
+    S3[("S3 互換ストレージ<br/>ローカル: MinIO / 本番: R2（暫定）<br/>private バケット")]
+  end
+
+  WEB -->|"REST: Bearer JWT<br/>WSS: 短命 ws-ticket"| GO
+  WEB -.->|"署名付き URL で直 PUT / GET"| S3
+  DSK -.-> GO
+  MOB -.-> GO
+
+  P2 ==>|"検証済み userID + sid のみ"| CHAT
+  AUTH --> PG
+  CHAT --> PG
+  CHAT --> RD
+  AUTH -->|"失効イベント publish"| RD
+  RD -->|"auth:revoked 購読"| P2
+  CHAT --> P5
+  P5 --> S3
+
+  N1["<b>境界の約束</b><br/>chat は auth を import しない。<br/>接点は「authn が渡す検証済み userID / sid」と<br/>Redis の失効イベントのみ。<br/>これを守れば別プロセスへの切り出しは<br/>ルーティング変更で済む。"]
+  N2["<b>2 台目以降</b><br/>同じバイナリを横に並べるだけ。<br/>配信は Redis Pub/Sub 経由（at-most-once）。<br/>取りこぼしは after_seq の差分取得で補う。<br/>JWT 検証はローカル完結。失効は WS には即時、<br/>REST には最大 15 分遅れて効く。"]
+
+  GO -.- N1
+  GO -.- N2
+
+  classDef future stroke-dasharray: 5 4
+  classDef note fill:none,stroke-dasharray: 3 4
+  class DSK,MOB,A2 future
+  class N1,N2 note

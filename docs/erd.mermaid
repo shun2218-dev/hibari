@@ -1,0 +1,161 @@
+erDiagram
+
+  users ||--o{ oauth_accounts : "連携"
+  users ||--o{ refresh_tokens : "保持"
+  users ||--o{ one_time_tokens : "保持"
+  users ||--o{ devices : "所有"
+  devices |o--o{ refresh_tokens : "紐付く"
+  refresh_tokens |o--o| refresh_tokens : "rotated_from"
+
+  users ||--o{ workspaces : "作成"
+  users ||--o{ workspace_members : "所属"
+  workspaces ||--o{ workspace_members : "含む"
+  workspaces ||--o{ workspace_invites : "発行"
+  users ||--o{ workspace_invites : "作成"
+  workspaces ||--o{ rooms : "含む"
+
+  users ||--o{ rooms : "作成"
+  users ||--o{ room_members : "参加"
+  rooms ||--o{ room_members : "含む"
+  rooms ||--o{ messages : "含む"
+  users ||--o{ messages : "投稿"
+  messages |o--o{ messages : "返信先"
+
+  rooms ||--o{ attachments : "保存先"
+  users ||--o{ attachments : "アップロード"
+  messages |o--o{ attachments : "添付"
+
+  users {
+    uuid id PK "ULID を uuid 型で保存"
+    citext handle UK "@名。表示用と別"
+    text display_name
+    citext email UK "OAuth のみでも必須にする"
+    timestamptz email_verified_at "null なら未検証"
+    text password_hash "Argon2id。OAuth のみなら null"
+    text avatar_object_key "null 可"
+    timestamptz created_at
+    timestamptz updated_at
+    timestamptz deleted_at "退会。email / handle / display_name は匿名化する"
+  }
+
+  oauth_accounts {
+    uuid id PK
+    uuid user_id FK
+    text provider "google / github"
+    text provider_account_id "UNIQUE(provider, これ)"
+    text refresh_token_enc "暗号化。不要なら持たない"
+    timestamptz created_at
+  }
+
+  refresh_tokens {
+    uuid id PK
+    uuid user_id FK
+    uuid device_id FK "null 可"
+    uuid family_id "ローテーションのチェーン ID。JWT の sid"
+    bytea token_hash UK "SHA-256。生値は絶対に保存しない"
+    uuid rotated_from FK "自己参照。監査・デバッグ用"
+    timestamptz expires_at
+    timestamptz revoked_at "null なら有効"
+    text revoked_reason "rotated / logout / reuse_detected / password_reset"
+    text user_agent
+    inet ip
+    timestamptz created_at
+  }
+
+  one_time_tokens {
+    uuid id PK
+    uuid user_id FK
+    text purpose "email_verify / password_reset"
+    bytea token_hash UK
+    timestamptz expires_at
+    timestamptz consumed_at "使用済みフラグ"
+    timestamptz created_at
+  }
+
+  devices {
+    uuid id PK "Phase 7 の Push 用。先に器だけ作る"
+    uuid user_id FK
+    text platform "web / ios / android / desktop"
+    text push_token "APNs / FCM。null 可"
+    timestamptz last_seen_at
+    timestamptz created_at
+  }
+
+  workspaces {
+    uuid id PK
+    citext slug UK "URL 用"
+    text name
+    text invite_policy "admins_only / all_members。既定 admins_only"
+    uuid created_by FK
+    timestamptz created_at
+    timestamptz updated_at
+    timestamptz deleted_at
+  }
+
+  workspace_members {
+    uuid workspace_id PK, FK "複合主キー"
+    uuid user_id PK, FK "複合主キー。INDEX(user_id)"
+    text role "owner / admin / member。owner は部分 UNIQUE で 1 人"
+    timestamptz joined_at "退出時は行を削除する"
+  }
+
+  workspace_invites {
+    uuid id PK
+    uuid workspace_id FK
+    bytea code_hash UK "SHA-256。生コードは作成時に 1 度だけ返す"
+    uuid created_by FK
+    int max_uses "null なら無制限"
+    int use_count "条件付き UPDATE で加算"
+    timestamptz expires_at
+    timestamptz revoked_at
+    timestamptz created_at
+  }
+
+  rooms {
+    uuid id PK
+    uuid workspace_id FK
+    text kind "public / private / dm"
+    text name "UNIQUE(workspace_id, name) WHERE kind <> dm。dm では null"
+    text dm_key "UNIQUE(workspace_id, dm_key) WHERE kind = dm"
+    boolean is_default "ワークスペース参加時に自動参加"
+    uuid created_by FK
+    bigint last_message_seq "採番カウンタ兼最新 seq。初期値 0"
+    timestamptz last_message_at "一覧のソート用に非正規化"
+    timestamptz created_at
+    timestamptz archived_at
+  }
+
+  room_members {
+    uuid room_id PK, FK "複合主キー"
+    uuid user_id PK, FK "複合主キー。INDEX(user_id)"
+    bigint last_read_seq "参加時は rooms.last_message_seq で初期化"
+    timestamptz muted_until "null 可"
+    timestamptz joined_at "退出時は行を削除する"
+  }
+
+  messages {
+    uuid id PK "UNIQUE(room_id, id) も張る（返信の複合 FK 用）"
+    uuid room_id FK
+    bigint seq "UNIQUE(room_id, seq)。順序の唯一の根拠"
+    uuid sender_id FK
+    uuid client_msg_id "UNIQUE(room_id, sender_id, これ)。冪等性"
+    text body "削除時は空にする"
+    uuid reply_to_id FK "(room_id, reply_to_id) の複合 FK。null 可"
+    timestamptz created_at "表示用。ソートには使わない"
+    timestamptz edited_at
+    timestamptz deleted_at "論理削除。tombstone を配信する"
+  }
+
+  attachments {
+    uuid id PK
+    uuid room_id FK "アップロード時点で authz 済みのルーム"
+    uuid uploader_id FK
+    uuid message_id FK "null なら未確定"
+    text status "pending / attached。古い pending は掃除する"
+    text object_key UK "S3 互換のキー"
+    text mime_type "アップロード後に HEAD で検証した値"
+    bigint size_bytes
+    int width "画像のみ"
+    int height "画像のみ"
+    timestamptz created_at
+  }
