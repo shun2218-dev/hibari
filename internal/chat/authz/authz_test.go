@@ -251,3 +251,47 @@ func TestCanRemoveRoomMember(t *testing.T) {
 			})
 	}
 }
+
+func TestCanMarkRoomRead(t *testing.T) {
+	checkRoom(t, "CanMarkRoomRead", CanMarkRoomRead, func(c roomCase) bool {
+		// 既読位置は room_members にあるので、参加していない public では更新できない。
+		known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
+		return known && isWorkspaceMember(c.role) && c.isRoomMember
+	})
+}
+
+func TestCanEditMessage(t *testing.T) {
+	checkRoom(t, "CanEditMessage(sender)", func(k RoomKind, ra RoomActor) bool { return CanEditMessage(k, ra, true) },
+		func(c roomCase) bool {
+			known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
+			return known && isWorkspaceMember(c.role) && c.isRoomMember
+		})
+	// 他人のメッセージは owner でも編集できない。
+	checkRoom(t, "CanEditMessage(not sender)", func(k RoomKind, ra RoomActor) bool { return CanEditMessage(k, ra, false) },
+		func(roomCase) bool { return false })
+}
+
+func TestCanDeleteMessage(t *testing.T) {
+	checkRoom(t, "CanDeleteMessage(sender)", func(k RoomKind, ra RoomActor) bool { return CanDeleteMessage(k, ra, true, m) },
+		func(c roomCase) bool {
+			known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
+			return known && isWorkspaceMember(c.role) && c.isRoomMember
+		})
+	for _, sender := range allRoles {
+		checkRoom(t, fmt.Sprintf("CanDeleteMessage(sender role=%q)", sender),
+			func(k RoomKind, ra RoomActor) bool { return CanDeleteMessage(k, ra, false, sender) },
+			func(c roomCase) bool {
+				// owner は admin と member の、admin は member の投稿を消せる。抜けた人（none / 未知の値）の投稿は admin 以上なら消せる。
+				departed := sender == none || sender == bogus
+				manages := (c.role == o && (sender == a || sender == m || departed)) || (c.role == a && (sender == m || departed))
+				switch c.kind {
+				case RoomPublic:
+					return manages // 参加していなくても読めるので消せる
+				case RoomPrivate:
+					return manages && c.isRoomMember
+				default:
+					return false // dm と未知の種類
+				}
+			})
+	}
+}

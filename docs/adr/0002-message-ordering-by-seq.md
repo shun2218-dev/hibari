@@ -65,3 +65,8 @@ RETURNING last_message_seq;
 ### 2026-09-13 インデックスの形（Phase 1）
 
 `UNIQUE(room_id, seq)` と `INDEX(room_id, seq DESC)` は、`CREATE UNIQUE INDEX messages_room_id_seq_idx ON messages (room_id, seq DESC)` の 1 本で兼ねる。B-tree は逆方向にも走査できるので、昇順と降順を 2 本張っても書き込みが遅くなるだけ。UNIQUE 制約（`CONSTRAINT ... UNIQUE`）は降順を指定できないので、UNIQUE インデックスとして作る。
+
+### 2026-09-14 冪等な再送で seq を消費しない書き方（Phase 3b）
+
+送信者の `room_members` の行を先にロックしてから `client_msg_id` で既存を探し、なければ採番する。詳細と代替案は ADR 0012。
+根拠のテストは `internal/chat/message_test.go` の `TestSendMessageConcurrentSeq`（再送とロールバックを混ぜた 50 並行の送信で欠番も重複もない）と `TestSendMessageIdempotentConcurrent`。

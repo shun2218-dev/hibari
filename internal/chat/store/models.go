@@ -10,6 +10,19 @@ import (
 	ulid "github.com/oklog/ulid/v2"
 )
 
+type Message struct {
+	ID          ulid.ULID
+	RoomID      ulid.ULID
+	Seq         int64
+	SenderID    ulid.ULID
+	ClientMsgID ulid.ULID
+	Body        string
+	ReplyToID   *ulid.ULID
+	CreatedAt   time.Time
+	EditedAt    *time.Time
+	DeletedAt   *time.Time
+}
+
 type Room struct {
 	ID             ulid.ULID
 	WorkspaceID    ulid.ULID

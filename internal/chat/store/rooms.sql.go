@@ -270,6 +270,65 @@ func (q *Queries) GetRoomMemberships(ctx context.Context, arg GetRoomMemberships
 	return items, nil
 }
 
+const getRoomSummary = `-- name: GetRoomSummary :one
+SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq,
+       lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
+       lm.created_at AS last_message_created_at, lm.deleted_at AS last_message_deleted_at,
+       lu.handle AS last_message_sender_handle, lu.display_name AS last_message_sender_display_name
+  FROM rooms r
+  LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = $1
+  LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = r.last_message_seq
+  LEFT JOIN users lu ON lu.id = lm.sender_id
+ WHERE r.id = $2
+`
+
+type GetRoomSummaryParams struct {
+	UserID ulid.ULID
+	RoomID ulid.ULID
+}
+
+type GetRoomSummaryRow struct {
+	Room                         Room
+	IsMember                     bool
+	LastReadSeq                  *int64
+	LastMessageID                *ulid.ULID
+	LastMessageSenderID          *ulid.ULID
+	LastMessageBody              *string
+	LastMessageCreatedAt         *time.Time
+	LastMessageDeletedAt         *time.Time
+	LastMessageSenderHandle      *string
+	LastMessageSenderDisplayName *string
+}
+
+// 1 件のルームについて、ListRoomsForUser と同じ列（既読位置と最終メッセージ）を返す。読めるかどうかの判定は呼び出し側で済ませる。
+func (q *Queries) GetRoomSummary(ctx context.Context, arg GetRoomSummaryParams) (GetRoomSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getRoomSummary, arg.UserID, arg.RoomID)
+	var i GetRoomSummaryRow
+	err := row.Scan(
+		&i.Room.ID,
+		&i.Room.WorkspaceID,
+		&i.Room.Kind,
+		&i.Room.Name,
+		&i.Room.DmKey,
+		&i.Room.IsDefault,
+		&i.Room.CreatedBy,
+		&i.Room.LastMessageSeq,
+		&i.Room.LastMessageAt,
+		&i.Room.CreatedAt,
+		&i.Room.ArchivedAt,
+		&i.IsMember,
+		&i.LastReadSeq,
+		&i.LastMessageID,
+		&i.LastMessageSenderID,
+		&i.LastMessageBody,
+		&i.LastMessageCreatedAt,
+		&i.LastMessageDeletedAt,
+		&i.LastMessageSenderHandle,
+		&i.LastMessageSenderDisplayName,
+	)
+	return i, err
+}
+
 const listRoomMembers = `-- name: ListRoomMembers :many
 SELECT rm.user_id, rm.joined_at, wm.role, u.handle, u.display_name
   FROM room_members rm
@@ -325,9 +384,14 @@ func (q *Queries) ListRoomMembers(ctx context.Context, arg ListRoomMembersParams
 }
 
 const listRoomsForUser = `-- name: ListRoomsForUser :many
-SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, (rm.user_id IS NOT NULL)::boolean AS is_member
+SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq,
+       lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
+       lm.created_at AS last_message_created_at, lm.deleted_at AS last_message_deleted_at,
+       lu.handle AS last_message_sender_handle, lu.display_name AS last_message_sender_display_name
   FROM rooms r
   LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = $1
+  LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = r.last_message_seq
+  LEFT JOIN users lu ON lu.id = lm.sender_id
  WHERE r.workspace_id = $2
    AND (r.kind = 'public' OR rm.user_id IS NOT NULL)
  ORDER BY r.last_message_at DESC NULLS LAST, r.id
@@ -339,12 +403,22 @@ type ListRoomsForUserParams struct {
 }
 
 type ListRoomsForUserRow struct {
-	Room     Room
-	IsMember bool
+	Room                         Room
+	IsMember                     bool
+	LastReadSeq                  *int64
+	LastMessageID                *ulid.ULID
+	LastMessageSenderID          *ulid.ULID
+	LastMessageBody              *string
+	LastMessageCreatedAt         *time.Time
+	LastMessageDeletedAt         *time.Time
+	LastMessageSenderHandle      *string
+	LastMessageSenderDisplayName *string
 }
 
 // サイドバーのルーム一覧: 参加しているルーム（全種類）と、参加していない public ルーム。
 // 読めない private / dm は含めない。並びは最近メッセージがあった順（インデックス rooms_workspace_id_last_message_at_idx）。
+// 最終メッセージは seq = last_message_seq の行を、ルームごとに UNIQUE インデックスで 1 回引く（N+1 のクエリにしない。ADR 0012）。
+// 未読数はクライアントにも出せるよう last_read_seq をそのまま返し、サービスで last_message_seq との差を取る。
 func (q *Queries) ListRoomsForUser(ctx context.Context, arg ListRoomsForUserParams) ([]ListRoomsForUserRow, error) {
 	rows, err := q.db.Query(ctx, listRoomsForUser, arg.UserID, arg.WorkspaceID)
 	if err != nil {
@@ -367,6 +441,14 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, arg ListRoomsForUserPara
 			&i.Room.CreatedAt,
 			&i.Room.ArchivedAt,
 			&i.IsMember,
+			&i.LastReadSeq,
+			&i.LastMessageID,
+			&i.LastMessageSenderID,
+			&i.LastMessageBody,
+			&i.LastMessageCreatedAt,
+			&i.LastMessageDeletedAt,
+			&i.LastMessageSenderHandle,
+			&i.LastMessageSenderDisplayName,
 		); err != nil {
 			return nil, err
 		}

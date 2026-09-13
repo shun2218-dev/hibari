@@ -45,24 +45,64 @@ type Room struct {
 	DMPeer         *UserProfile
 	LastMessageSeq int64
 	LastMessageAt  *time.Time
-	CreatedAt      time.Time
+	// LastReadSeq は actor の既読位置。ルームのメンバーでなければ nil。
+	LastReadSeq *int64
+	// UnreadCount は last_message_seq - last_read_seq。削除済みのメッセージも数える近似（ADR 0002）。メンバーでなければ 0。
+	UnreadCount int64
+	// LastMessage はサイドバーに出す最終メッセージ。メッセージがなければ nil。
+	LastMessage *MessagePreview
+	CreatedAt   time.Time
 }
 
-func toRoom(r store.Room, isMember bool) Room {
+// MessagePreview はサイドバーに出す最終メッセージ。
+type MessagePreview struct {
+	ID     ulid.ULID
+	Sender UserProfile
+	// Body は削除済みなら空。
+	Body      string
+	CreatedAt time.Time
+	Deleted   bool
+}
+
+// toRoom はルームの行と、actor の既読位置・最終メッセージを JOIN した行から Room を作る。
+// GetRoomSummary の行は、同じ列の store.ListRoomsForUserRow に変換してから渡す。
+func toRoom(r store.ListRoomsForUserRow) Room {
 	room := Room{
-		ID:             r.ID,
-		WorkspaceID:    r.WorkspaceID,
-		Kind:           RoomKind(r.Kind),
-		IsDefault:      r.IsDefault,
-		IsMember:       isMember,
-		LastMessageSeq: r.LastMessageSeq,
-		LastMessageAt:  r.LastMessageAt,
-		CreatedAt:      r.CreatedAt,
+		ID:             r.Room.ID,
+		WorkspaceID:    r.Room.WorkspaceID,
+		Kind:           RoomKind(r.Room.Kind),
+		IsDefault:      r.Room.IsDefault,
+		IsMember:       r.IsMember,
+		LastMessageSeq: r.Room.LastMessageSeq,
+		LastMessageAt:  r.Room.LastMessageAt,
+		LastReadSeq:    r.LastReadSeq,
+		CreatedAt:      r.Room.CreatedAt,
 	}
-	if r.Name != nil {
-		room.Name = *r.Name
+	if r.Room.Name != nil {
+		room.Name = *r.Room.Name
+	}
+	if r.LastReadSeq != nil {
+		room.UnreadCount = r.Room.LastMessageSeq - *r.LastReadSeq
+	}
+	if r.LastMessageID != nil {
+		room.LastMessage = &MessagePreview{
+			ID:        *r.LastMessageID,
+			Sender:    UserProfile{ID: *r.LastMessageSenderID, Handle: *r.LastMessageSenderHandle, DisplayName: *r.LastMessageSenderDisplayName},
+			Body:      *r.LastMessageBody,
+			CreatedAt: *r.LastMessageCreatedAt,
+			Deleted:   r.LastMessageDeletedAt != nil,
+		}
 	}
 	return room
+}
+
+// roomSummary は actor から見たルームを 1 件読む（既読位置と最終メッセージを含む）。読めるかどうかの判定は呼び出し側で済ませる。
+func roomSummary(ctx context.Context, q *store.Queries, actor, roomID ulid.ULID) (Room, error) {
+	row, err := q.GetRoomSummary(ctx, store.GetRoomSummaryParams{UserID: actor, RoomID: roomID})
+	if err != nil {
+		return Room{}, fmt.Errorf("get room summary: %w", err)
+	}
+	return toRoom(store.ListRoomsForUserRow(row)), nil
 }
 
 // RoomMember はルームのメンバー。
@@ -108,20 +148,24 @@ func (a roomAccess) actor(userID ulid.ULID) authz.RoomActor {
 
 func (a roomAccess) kind() RoomKind { return RoomKind(a.room.Kind) }
 
-// lockMode は loadRoomAccess が workspace_members の行をロックするか。
-type lockMode bool
+// lockMode は loadRoomAccess がどの行をロックするか。
+type lockMode int
 
 const (
 	// noLock は読み取りだけの API で使う。FOR SHARE は行にロックの情報を書き込むので、頻繁に呼ばれる読み取りでは取らない。
-	noLock lockMode = false
-	// shareLock は、判定の後に書き込む API で使う。
-	shareLock lockMode = true
+	noLock lockMode = iota
+	// shareLock は、判定の後に room_members を増やしたり、ロールに基づいて書き込んだりする API で使う。
+	// workspace_members の行を共有ロックし、キックやロールの変更と直列化する（ADR 0011）。
+	shareLock
+	// memberRowLock は、ルームのメンバーであることだけを根拠に書き込む API（送信・編集）で使う。
+	// room_members の行を FOR NO KEY UPDATE でロックし、キック・退出（行の DELETE）と直列化する（ADR 0012）。
+	// workspace_members はロックしない。送信のたびにその行へロックの情報を書き込まないため。
+	memberRowLock
 )
 
 // loadRoomAccess はルームと、userIDs（先頭が actor）のワークスペースでのロールとルームのメンバーかどうかを読む。
 //
-// shareLock なら workspace_members の行を共有ロックする（ShareLockWorkspaceMembers）。この後で room_members を増やしたり、
-// ロールに基づいて判定したりする間に、キックやロールの変更が割り込まないようにするため。
+// ロックの範囲は mode で選ぶ（lockMode の説明を参照）。
 // actor がルームを読めなければ ErrNotFound を返す（存在を明かさない）。
 func loadRoomAccess(ctx context.Context, q *store.Queries, mode lockMode, roomID ulid.ULID, userIDs ...ulid.ULID) (roomAccess, error) {
 	room, err := q.GetRoom(ctx, roomID)
@@ -147,7 +191,12 @@ func loadRoomAccess(ctx context.Context, q *store.Queries, mode lockMode, roomID
 			a.roles[r.UserID] = Role(r.Role)
 		}
 	}
-	memberships, err := q.GetRoomMemberships(ctx, store.GetRoomMembershipsParams{RoomID: roomID, UserIds: ids})
+	var memberships []ulid.ULID
+	if mode == memberRowLock {
+		memberships, err = q.LockRoomMemberships(ctx, store.LockRoomMembershipsParams{RoomID: roomID, UserIds: ids})
+	} else {
+		memberships, err = q.GetRoomMemberships(ctx, store.GetRoomMembershipsParams{RoomID: roomID, UserIds: ids})
+	}
 	if err != nil {
 		return roomAccess{}, fmt.Errorf("get room memberships: %w", err)
 	}
@@ -234,7 +283,10 @@ func (s *Service) createNamedRoom(ctx context.Context, q *store.Queries, actor, 
 	if _, err := q.AddRoomMember(ctx, store.AddRoomMemberParams{RoomID: r.ID, UserID: actor, Now: now}); err != nil {
 		return Room{}, fmt.Errorf("add creator: %w", err)
 	}
-	room := toRoom(r, true)
+	room, err := roomSummary(ctx, q, actor, r.ID)
+	if err != nil {
+		return Room{}, err
+	}
 	room.MemberCount = 1
 	return room, nil
 }
@@ -276,7 +328,11 @@ func (s *Service) createDM(ctx context.Context, q *store.Queries, actor, workspa
 			return Room{}, false, fmt.Errorf("add dm member: %w", err)
 		}
 	}
-	room := toRoom(r, true)
+	// 既存の DM ならメッセージがありうるので、既読位置と最終メッセージも読む。
+	room, err := roomSummary(ctx, q, actor, r.ID)
+	if err != nil {
+		return Room{}, false, err
+	}
 	room.MemberCount = 2
 	profiles, err := q.ListUserProfiles(ctx, []ulid.ULID{peer})
 	if err != nil || len(profiles) != 1 {
@@ -299,7 +355,7 @@ func (s *Service) ListRooms(ctx context.Context, actor, workspaceID ulid.ULID) (
 	rooms := make([]Room, len(rows))
 	dmKeys := make([]*string, len(rows))
 	for i, r := range rows {
-		rooms[i] = toRoom(r.Room, r.IsMember)
+		rooms[i] = toRoom(r)
 		dmKeys[i] = r.Room.DmKey
 	}
 	if err := attachDMPeers(ctx, q, actor, rooms, dmKeys); err != nil {
@@ -354,7 +410,10 @@ func getRoom(ctx context.Context, q *store.Queries, actor, roomID ulid.ULID) (Ro
 	if err != nil {
 		return Room{}, err
 	}
-	room := toRoom(a.room, a.members[actor])
+	room, err := roomSummary(ctx, q, actor, roomID)
+	if err != nil {
+		return Room{}, err
+	}
 	if room.MemberCount, err = q.GetRoomMemberCount(ctx, roomID); err != nil {
 		return Room{}, fmt.Errorf("count room members: %w", err)
 	}
