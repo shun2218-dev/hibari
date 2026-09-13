@@ -34,3 +34,11 @@ UPDATE refresh_tokens
        revoked_reason = sqlc.arg(reason)::text
  WHERE family_id = sqlc.arg(family_id)
    AND revoked_at IS NULL;
+
+-- name: RevokeAllRefreshTokensForUser :execrows
+-- ユーザーの全セッションの失効（パスワードリセット）。
+UPDATE refresh_tokens
+   SET revoked_at     = sqlc.arg(now)::timestamptz,
+       revoked_reason = sqlc.arg(reason)::text
+ WHERE user_id = sqlc.arg(user_id)
+   AND revoked_at IS NULL;

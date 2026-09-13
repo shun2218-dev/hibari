@@ -105,3 +105,49 @@ func (q *Queries) GetActiveUserByID(ctx context.Context, id ulid.ULID) (User, er
 	)
 	return i, err
 }
+
+const markEmailVerified = `-- name: MarkEmailVerified :execrows
+UPDATE users
+   SET email_verified_at = coalesce(email_verified_at, $1::timestamptz),
+       updated_at        = $1::timestamptz
+ WHERE id = $2
+   AND deleted_at IS NULL
+`
+
+type MarkEmailVerifiedParams struct {
+	Now time.Time
+	ID  ulid.ULID
+}
+
+// すでに確認済みなら日時を上書きしない（最初に確認した日時を残す）。
+func (q *Queries) MarkEmailVerified(ctx context.Context, arg MarkEmailVerifiedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markEmailVerified, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updatePasswordFromReset = `-- name: UpdatePasswordFromReset :execrows
+UPDATE users
+   SET password_hash     = $1,
+       email_verified_at = coalesce(email_verified_at, $2::timestamptz),
+       updated_at        = $2::timestamptz
+ WHERE id = $3
+   AND deleted_at IS NULL
+`
+
+type UpdatePasswordFromResetParams struct {
+	PasswordHash *string
+	Now          time.Time
+	ID           ulid.ULID
+}
+
+// リセットのリンクはその email に届いたものなので、email の所有も確認できたとみなす。
+func (q *Queries) UpdatePasswordFromReset(ctx context.Context, arg UpdatePasswordFromResetParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePasswordFromReset, arg.PasswordHash, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}

@@ -112,6 +112,29 @@ func (q *Queries) MarkRefreshTokenRotated(ctx context.Context, arg MarkRefreshTo
 	return err
 }
 
+const revokeAllRefreshTokensForUser = `-- name: RevokeAllRefreshTokensForUser :execrows
+UPDATE refresh_tokens
+   SET revoked_at     = $1::timestamptz,
+       revoked_reason = $2::text
+ WHERE user_id = $3
+   AND revoked_at IS NULL
+`
+
+type RevokeAllRefreshTokensForUserParams struct {
+	Now    time.Time
+	Reason string
+	UserID ulid.ULID
+}
+
+// ユーザーの全セッションの失効（パスワードリセット）。
+func (q *Queries) RevokeAllRefreshTokensForUser(ctx context.Context, arg RevokeAllRefreshTokensForUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeAllRefreshTokensForUser, arg.Now, arg.Reason, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeRefreshTokenFamily = `-- name: RevokeRefreshTokenFamily :execrows
 UPDATE refresh_tokens
    SET revoked_at     = $1::timestamptz,

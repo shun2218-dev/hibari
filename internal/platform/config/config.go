@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -30,6 +31,8 @@ type Config struct {
 	// RefreshCookieSecure は Refresh Token の Cookie に Secure 属性を付けるか。
 	// ブラウザは http://localhost を安全なオリジンとして扱うので、ローカルでも既定の true のままでよい。
 	RefreshCookieSecure bool
+	// AppBaseURL は Web クライアントの URL。確認メールや再設定メールのリンクの起点にする。
+	AppBaseURL *url.URL
 }
 
 // LogFormat はログの出力形式。
@@ -97,6 +100,16 @@ func Load(lookup LookupEnv) (Config, error) {
 		errs = append(errs, fmt.Errorf("REFRESH_COOKIE_SECURE: %w", err))
 	}
 	cfg.RefreshCookieSecure = secure
+
+	baseURL, err := url.Parse(optional("APP_BASE_URL", "http://localhost:3000"))
+	switch {
+	case err != nil:
+		errs = append(errs, fmt.Errorf("APP_BASE_URL: %w", err))
+	case (baseURL.Scheme != "http" && baseURL.Scheme != "https") || baseURL.Host == "":
+		errs = append(errs, fmt.Errorf("APP_BASE_URL: must be an absolute http(s) URL, got %q", baseURL))
+	default:
+		cfg.AppBaseURL = baseURL
+	}
 
 	if len(errs) > 0 {
 		return Config{}, fmt.Errorf("load config: %w", errors.Join(errs...))

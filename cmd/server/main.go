@@ -22,6 +22,7 @@ import (
 	"github.com/shun2218-dev/hibari/internal/platform/db"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
 	platformlog "github.com/shun2218-dev/hibari/internal/platform/log"
+	"github.com/shun2218-dev/hibari/internal/platform/ratelimit"
 	"github.com/shun2218-dev/hibari/internal/platform/redis"
 )
 
@@ -97,7 +98,12 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		Passwords:    passwords,
 		AccessTokens: accessTokens,
 		Revocations:  authn.NewRevocationPublisher(rdb),
-		Logger:       logger,
+		Limiter:      ratelimit.New(rdb, clk),
+		Limits:       auth.DefaultRateLimits,
+		// 本番用のメール送信はまだない。デプロイ（Phase 7 以降）の前に、非同期で送る実装に差し替える。
+		Mailer:     auth.LogMailer{Logger: logger},
+		AppBaseURL: cfg.AppBaseURL,
+		Logger:     logger,
 	})
 	// 同じプロセスなので公開鍵を直接渡す。auth を別プロセスに切り出したら、JWKS を取得して渡す形に変える（ADR 0001）。
 	verifier := authn.NewVerifier([]authn.PublicKey{accessTokens.PublicKey()}, cfg.JWTIssuer, cfg.JWTAudience, clk)

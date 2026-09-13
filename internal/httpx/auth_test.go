@@ -15,6 +15,7 @@ import (
 	"github.com/shun2218-dev/hibari/internal/auth/authtest"
 	"github.com/shun2218-dev/hibari/internal/httpx"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
+	"github.com/shun2218-dev/hibari/internal/platform/ratelimit"
 )
 
 // 実物の Postgres に対してルーター全体を組み立て、HTTP の入出力を確かめる統合テスト。
@@ -24,9 +25,9 @@ type apiClient struct {
 	srv *httptest.Server
 }
 
-func newAPI(t *testing.T) *apiClient {
+func newAPI(t *testing.T, opts ...authtest.Option) *apiClient {
 	t.Helper()
-	env := authtest.New(t)
+	env := authtest.New(t, opts...)
 	jwks, err := env.AccessTokens.JWKS()
 	if err != nil {
 		t.Fatal(err)
@@ -389,5 +390,92 @@ func TestJWKSEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(string(r.body), `"kid":"`+c.env.AccessTokens.PublicKey().ID+`"`) {
 		t.Fatalf("jwks does not contain the signing key id: %s", r.body)
+	}
+}
+
+func TestEmailVerificationEndpoints(t *testing.T) {
+	c := newAPI(t)
+	reg := registerBody(c)
+	r := c.do(request{method: http.MethodPost, path: "/api/v1/auth/register", body: reg})
+	token := decode[tokenBody](t, r).AccessToken
+
+	// 再送には Access Token が要る。
+	r = c.do(request{method: http.MethodPost, path: "/api/v1/auth/verify-email/request"})
+	expectProblem(t, r, http.StatusUnauthorized, "unauthenticated")
+
+	r = c.do(request{method: http.MethodPost, path: "/api/v1/auth/verify-email/request", headers: bearer(token)})
+	if r.status != http.StatusAccepted {
+		t.Fatalf("request = %d %s", r.status, r.body)
+	}
+	link := c.env.Mailer.Last(t, reg["email"]).Token()
+
+	r = c.do(request{method: http.MethodPost, path: "/api/v1/auth/verify-email/confirm", body: map[string]string{"token": link}})
+	if r.status != http.StatusNoContent {
+		t.Fatalf("confirm = %d %s", r.status, r.body)
+	}
+	r = c.do(request{method: http.MethodGet, path: "/api/v1/users/me", headers: bearer(token)})
+	if !strings.Contains(string(r.body), `"email_verified":true`) {
+		t.Fatalf("me after verify = %s", r.body)
+	}
+
+	r = c.do(request{method: http.MethodPost, path: "/api/v1/auth/verify-email/confirm", body: map[string]string{"token": link}})
+	expectProblem(t, r, http.StatusBadRequest, "invalid-one-time-token")
+}
+
+func TestPasswordResetEndpoints(t *testing.T) {
+	c := newAPI(t)
+	reg := registerBody(c)
+	r := c.do(request{method: http.MethodPost, path: "/api/v1/auth/register", body: reg})
+	session := decode[tokenBody](t, r)
+
+	// アカウントの有無に関係なく同じ 202。
+	for _, email := range []string{"nobody-" + reg["email"], reg["email"]} {
+		r = c.do(request{method: http.MethodPost, path: "/api/v1/auth/password-reset/request", body: map[string]string{"email": email}})
+		if r.status != http.StatusAccepted || len(r.body) != 0 {
+			t.Fatalf("request(%s) = %d %s", email, r.status, r.body)
+		}
+	}
+	link := c.env.Mailer.Last(t, reg["email"])
+	if link.Kind != "password_reset" {
+		t.Fatalf("last mail = %+v", link)
+	}
+
+	r = c.do(request{method: http.MethodPost, path: "/api/v1/auth/password-reset/confirm", body: map[string]string{"token": link.Token(), "password": "short"}})
+	p := expectProblem(t, r, http.StatusUnprocessableEntity, "validation-error")
+	if len(p.Errors) != 1 || p.Errors[0].Field != "password" || p.Errors[0].Reason != "too_short" {
+		t.Fatalf("errors = %+v", p.Errors)
+	}
+
+	r = c.do(request{method: http.MethodPost, path: "/api/v1/auth/password-reset/confirm", body: map[string]string{"token": link.Token(), "password": "a brand new passphrase"}})
+	if r.status != http.StatusNoContent {
+		t.Fatalf("confirm = %d %s", r.status, r.body)
+	}
+
+	// 既存のセッションは失効し、新しいパスワードでログインし直す。
+	r = c.do(request{method: http.MethodPost, path: "/api/v1/auth/refresh", body: map[string]string{"refresh_token": *session.RefreshToken}})
+	expectProblem(t, r, http.StatusUnauthorized, "invalid-refresh-token")
+	r = c.do(request{method: http.MethodPost, path: "/api/v1/auth/login", body: map[string]string{"email": reg["email"], "password": "a brand new passphrase"}})
+	if r.status != http.StatusOK {
+		t.Fatalf("login with new password = %d %s", r.status, r.body)
+	}
+
+	r = c.do(request{method: http.MethodPost, path: "/api/v1/auth/password-reset/confirm", body: map[string]string{"token": link.Token(), "password": "another passphrase"}})
+	expectProblem(t, r, http.StatusBadRequest, "invalid-one-time-token")
+}
+
+func TestLoginRateLimitedResponse(t *testing.T) {
+	limits := authtest.GenerousRateLimits
+	limits.LoginPerAccount = ratelimit.Rule{Name: authtest.RuleName("login-account"), Limit: 1, Window: 15 * time.Minute}
+	c := newAPI(t, authtest.WithRateLimits(limits))
+	reg := registerBody(c)
+	c.do(request{method: http.MethodPost, path: "/api/v1/auth/register", body: reg})
+
+	login := request{method: http.MethodPost, path: "/api/v1/auth/login", body: map[string]string{"email": reg["email"], "password": "wrong password"}}
+	expectProblem(t, c.do(login), http.StatusUnauthorized, "invalid-credentials")
+	r := c.do(login)
+	expectProblem(t, r, http.StatusTooManyRequests, "rate-limited")
+	// Clock は 12:00 ちょうどなので、ウィンドウの終わりまで 900 秒。
+	if got := r.header.Get("Retry-After"); got != "900" {
+		t.Fatalf("Retry-After = %q, want 900", got)
 	}
 }

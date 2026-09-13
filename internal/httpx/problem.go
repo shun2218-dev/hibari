@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
 
 	"github.com/shun2218-dev/hibari/internal/auth"
 	"github.com/shun2218-dev/hibari/internal/platform/authn"
@@ -57,6 +59,7 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 	var (
 		verr *auth.ValidationError
 		berr *errBadRequest
+		lerr *auth.RateLimitedError
 	)
 	switch {
 	case errors.As(err, &berr):
@@ -67,6 +70,12 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 			fields[i] = problemFieldError{Field: f.Field, Reason: f.Reason}
 		}
 		writeProblem(w, r, problem{Type: "validation-error", Title: "Invalid input", Status: http.StatusUnprocessableEntity, Errors: fields})
+	case errors.As(err, &lerr):
+		// Retry-After は秒の整数（RFC 9110 §10.2.3）。0 秒にならないよう切り上げる。
+		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(lerr.RetryAfter.Seconds())))))
+		writeProblem(w, r, problem{Type: "rate-limited", Title: "Too many requests", Status: http.StatusTooManyRequests})
+	case errors.Is(err, auth.ErrInvalidOneTimeToken):
+		writeProblem(w, r, problem{Type: "invalid-one-time-token", Title: "The link is invalid or has expired", Status: http.StatusBadRequest})
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		// email とパスワードのどちらが違うかは言わない。
 		writeProblem(w, r, problem{Type: "invalid-credentials", Title: "Email or password is incorrect", Status: http.StatusUnauthorized})
