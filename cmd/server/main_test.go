@@ -3,15 +3,54 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/shun2218-dev/hibari/internal/platform/testenv"
 )
+
+// writeSigningKey は `make keys` と同じ形式（PKCS#8 の PEM）の使い捨ての鍵を一時ディレクトリに書き、そのパスを返す。
+func writeSigningKey(t *testing.T) string {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "jwt_ed25519.pem")
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// 署名鍵のファイルがなければ、DB に接続する前に原因の分かるエラーで起動を止める。
+func TestRunFailsWithoutSigningKey(t *testing.T) {
+	env := map[string]string{
+		"DATABASE_URL":         "postgres://unused",
+		"REDIS_URL":            "redis://unused",
+		"JWT_PRIVATE_KEY_FILE": filepath.Join(t.TempDir(), "missing.pem"),
+	}
+	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+
+	err := run(t.Context(), lookup, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "make keys") {
+		t.Fatalf("run() = %v, want an error mentioning `make keys`", err)
+	}
+}
 
 // 実物の Postgres / Redis に対してサーバーを起動し、/healthz が 200 を返し、
 // ctx のキャンセルで run がエラーなく戻る（graceful shutdown して後始末まで終わる）ことを確かめる。
@@ -21,6 +60,8 @@ func TestRunServesHealthzAndShutsDown(t *testing.T) {
 		"REDIS_URL":        testenv.RedisURL(t),
 		"HTTP_ADDR":        "127.0.0.1:0", // 空いているポートを OS に選ばせる
 		"SHUTDOWN_TIMEOUT": "5s",
+
+		"JWT_PRIVATE_KEY_FILE": writeSigningKey(t),
 	}
 	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 

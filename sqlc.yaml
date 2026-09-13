@@ -2,7 +2,6 @@
 #
 # 生成先はドメインごとに分ける。1 つのパッケージに生成すると、chat から auth のクエリ
 # （refresh_tokens など）を呼べてしまい、境界（ADR 0001）を lint でしか守れなくなるため。
-# auth の生成先（db/queries/auth → internal/auth/store）は Phase 2 で足す。
 version: "2"
 
 # uuid ↔ ulid.ULID の変換は internal/platform/db の pgx コーデックが担う（ADR 0005）。
@@ -43,4 +42,16 @@ sql:
         emit_pointers_for_null_types: true
         emit_empty_slices: true
         # 使っていないテーブルの構造体（chat の store に User や RefreshToken など）を生成しない。
+        omit_unused_structs: true
+
+  - engine: postgresql
+    schema: db/migrations
+    queries: db/queries/auth
+    gen:
+      go:
+        package: store
+        out: internal/auth/store
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        emit_empty_slices: true
         omit_unused_structs: true

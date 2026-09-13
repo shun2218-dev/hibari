@@ -21,6 +21,15 @@ linters:
           deny:
             - pkg: github.com/shun2218-dev/hibari/internal/auth
               desc: "chat は auth に依存しない。接点は platform/authn の userID / sid と Redis の失効イベントだけ（ADR 0001）"
+        # platform は横断的な部品で、ドメインを知らない。authn が auth に依存すると、chat が authn 経由で auth に依存してしまう。
+        platform-must-not-import-domains:
+          files:
+            - "**/internal/platform/**"
+          deny:
+            - pkg: github.com/shun2218-dev/hibari/internal/auth
+              desc: "platform はドメインに依存しない。auth との共通の約束（クレーム名・失効イベントの形式）は authn に置き、auth がそれを使う"
+            - pkg: github.com/shun2218-dev/hibari/internal/chat
+              desc: "platform はドメインに依存しない"
     forbidigo:
       analyze-types: true
       forbid:

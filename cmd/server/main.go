@@ -14,7 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/shun2218-dev/hibari/internal/auth"
 	"github.com/shun2218-dev/hibari/internal/httpx"
+	"github.com/shun2218-dev/hibari/internal/platform/authn"
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
 	"github.com/shun2218-dev/hibari/internal/platform/config"
 	"github.com/shun2218-dev/hibari/internal/platform/db"
@@ -46,6 +48,16 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	}
 	logger := platformlog.New(logOut, cfg.LogLevel, cfg.LogFormat)
 
+	// 鍵がなければ DB に接続する前に落とす。動き出してから「ログインだけできない」状態にしない。
+	keyPEM, err := os.ReadFile(cfg.JWTPrivateKeyFile)
+	if err != nil {
+		return fmt.Errorf("read JWT_PRIVATE_KEY_FILE (run `make keys` to create a development key): %w", err)
+	}
+	signingKey, err := auth.ParseEd25519PrivateKeyPEM(keyPEM)
+	if err != nil {
+		return err
+	}
+
 	// 起動時の接続は無期限に待たない。依存先が上がっていないなら早く落として再起動に任せる。
 	startupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -63,14 +75,45 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	defer func() { _ = rdb.Close() }()
 
 	clk := clock.System{}
+	ids := id.NewGenerator(clk, rand.Reader)
+
+	accessTokens, err := auth.NewAccessTokenIssuer(signingKey, cfg.JWTIssuer, cfg.JWTAudience, clk, ids)
+	if err != nil {
+		return err
+	}
+	jwks, err := accessTokens.JWKS()
+	if err != nil {
+		return err
+	}
+	passwords, err := auth.NewPasswordHasher(auth.DefaultPasswordParams, rand.Reader)
+	if err != nil {
+		return err
+	}
+	authService := auth.NewService(auth.Deps{
+		DB:           pool,
+		Clock:        clk,
+		IDs:          ids,
+		Random:       rand.Reader,
+		Passwords:    passwords,
+		AccessTokens: accessTokens,
+		Revocations:  authn.NewRevocationPublisher(rdb),
+		Logger:       logger,
+	})
+	// 同じプロセスなので公開鍵を直接渡す。auth を別プロセスに切り出したら、JWKS を取得して渡す形に変える（ADR 0001）。
+	verifier := authn.NewVerifier([]authn.PublicKey{accessTokens.PublicKey()}, cfg.JWTIssuer, cfg.JWTAudience, clk)
+
 	handler := httpx.NewRouter(httpx.Deps{
 		Logger: logger,
 		Clock:  clk,
-		IDs:    id.NewGenerator(clk, rand.Reader),
+		IDs:    ids,
 		HealthChecks: []httpx.HealthCheck{
 			{Name: "postgres", Check: pool.Ping},
 			{Name: "redis", Check: func(ctx context.Context) error { return rdb.Ping(ctx).Err() }},
 		},
+		Auth:                authService,
+		Verifier:            verifier,
+		JWKS:                jwks,
+		RefreshCookieSecure: cfg.RefreshCookieSecure,
 	})
 
 	srv := &http.Server{
