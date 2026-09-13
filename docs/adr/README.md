@@ -20,6 +20,8 @@
 | [0011](0011-chat-workspace-room-api.md) | ワークスペース / 招待 / ルーム API の詳細（Phase 3a） | 採用 |
 | [0012](0012-message-api.md) | メッセージ API の詳細（Phase 3b。冪等な送信、編集・削除の権限、履歴と既読） | 採用 |
 | [0013](0013-attachment-api.md) | 添付ファイル API の詳細（Phase 3c。状態遷移、署名付き URL、受け付ける種類、掃除ジョブ） | 採用 |
+| [0014](0014-message-change-seq.md) | 変更番号（change_seq）による差分同期 | 採用 |
+| [0015](0015-websocket-hub-and-delivery.md) | WebSocket の Hub・購読・配信（Phase 4。購読の単位、Delivery、権限の再検証、presence / typing） | 採用 |
 
 ## テンプレート
 

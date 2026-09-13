@@ -1,0 +1,208 @@
+# WebSocket イベント
+
+WebSocket のプロトコルとイベントのスキーマの正本。設計の判断は ADR 0004（配信と差分取得）、0007（ws-ticket）、0014（change_seq）、0015（Hub と購読）。
+
+- WebSocket は「確定した変更を速く届ける」経路にすぎない。正は常に REST と Postgres にあり、配信は落ちうる（ADR 0004）。
+- JSON のフィールド名は `snake_case`、ID は ULID の文字列、時刻は RFC 3339。
+- メッセージの形は REST（`GET /api/v1/rooms/{id}/messages` の各要素）と同じ。
+
+## 接続
+
+1. `POST /api/v1/ws/ticket`（`Authorization: Bearer <access token>`）
+
+   ```json
+   { "ticket": "<43 文字>", "expires_in": 30 }
+   ```
+
+2. `GET /api/v1/ws?ticket=<ticket>` で WebSocket にアップグレードする。
+   - ticket は 30 秒で失効し、1 回しか使えない。再接続のたびに発行し直す。
+   - ticket が無効・期限切れ・使用済み、またはセッションが失効していたら、アップグレードせずに 401（`application/problem+json`、type `ws-ticket-invalid`）を返す。
+   - Access Token や Refresh Token を URL に載せない。URL に載せてよいのは ws-ticket だけ。
+
+- フレームはテキストで、1 フレームに JSON のオブジェクトを 1 つ入れる。
+- クライアントからのフレームは 4 KiB まで。
+
+## クライアント → サーバー
+
+すべてのメッセージは `type` を持つ。`id` は任意の文字列（64 文字まで）で、付けると同じ `id` の `ack` が返る。
+
+| type | 項目 | 説明 |
+|---|---|---|
+| `subscribe` | `room_id` または `workspace_id`（どちらか 1 つ） | 購読を始める。すでに購読していれば何もせず成功 |
+| `unsubscribe` | `room_id` または `workspace_id` | 購読をやめる。購読していなくても成功 |
+| `typing` | `room_id` | 入力中であることを知らせる。購読中のルームだけ。入力している間、数秒ごとに送ってよい（サーバーが 5 秒に 1 回に間引く） |
+| `ping` | — | アプリケーションの疎通確認（ブラウザは WebSocket の ping フレームを送れないため）。`ack` が返る |
+
+```json
+{ "type": "subscribe", "id": "c1", "room_id": "01J8..." }
+{ "type": "subscribe", "id": "c2", "workspace_id": "01J8..." }
+{ "type": "typing", "room_id": "01J8..." }
+```
+
+## サーバー → クライアント
+
+### ack
+
+```json
+{ "type": "ack", "id": "c1" }
+{ "type": "ack", "id": "c1", "error": "not_found" }
+```
+
+`id` のないメッセージが失敗したときも、`id` を省いた `ack` でエラーを返す。
+
+| error | 意味 |
+|---|---|
+| `invalid_message` | JSON として読めない、未知の `type`、項目の不足や形式の誤り |
+| `not_found` | 購読の対象が存在しない、または読めない（存在の有無を区別しない） |
+| `not_subscribed` | 購読していないルームに `typing` を送った |
+| `forbidden` | 読めるが投稿できないルームに `typing` を送った（参加していない public など） |
+| `too_many_subscriptions` | 1 つの接続の購読が上限（500 件）に達した |
+| `internal` | サーバーの内部エラー。時間をおいて再試行する |
+
+### イベント
+
+```json
+{ "type": "message.created", "data": { ... } }
+```
+
+「宛先」の列: **room** はそのルームの購読者、**workspace** はそのワークスペースの購読者、**本人** は該当するユーザーのすべての接続（購読の有無を問わない）。
+複数の宛先に当たっても、1 つの接続には 1 回だけ届く。
+
+| type | 宛先 | いつ |
+|---|---|---|
+| `message.created` | room | メッセージが送信された |
+| `message.updated` | room | 本文が編集された |
+| `message.deleted` | room | 削除された（`data` は tombstone） |
+| `member.joined` | room、参加した本人 | ルームの作成・参加・追加・DM の作成・招待の受け入れでルームのメンバーになった |
+| `member.left` | room | 退出した、または外された |
+| `room.updated` | room（public ならワークスペースも） | 名前や `is_default` が変わった |
+| `room.member_removed` | 本人 | 自分がルームから抜けた・外された |
+| `room.read` | 本人 | 自分の既読位置が進んだ（別の端末を含む） |
+| `workspace.updated` | workspace | 名前や `invite_policy` が変わった |
+| `workspace.member_removed` | workspace、本人 | ワークスペースから退出した、またはキックされた |
+| `workspace.role_changed` | workspace、本人 | ロールが変わった（owner の譲渡では 2 件） |
+| `presence.changed` | そのユーザーが所属する workspace | オンライン / オフラインが変わった |
+| `typing.started` | room（入力した本人の接続を除く） | 入力中になった |
+
+#### `message.created` / `message.updated` / `message.deleted`
+
+`data` はメッセージ（REST と同じ形）。
+
+```json
+{
+  "id": "01J8...", "room_id": "01J8...", "seq": 42, "change_seq": 57,
+  "sender": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" },
+  "client_msg_id": "01J8...", "body": "こんにちは",
+  "reply_to": null, "attachments": [],
+  "created_at": "2026-09-14T12:00:00Z", "edited_at": null, "deleted_at": null
+}
+```
+
+#### `member.joined`
+
+```json
+{ "workspace_id": "01J8...", "room_id": "01J8...", "user": { "id": "01J8...", "handle": "naoki", "display_name": "佐藤 直樹" } }
+```
+
+`user.id` が自分なら、ルームを `GET /api/v1/rooms/{id}` で取得してサイドバーに加え、購読する。
+
+#### `member.left`
+
+```json
+{ "workspace_id": "01J8...", "room_id": "01J8...", "user_id": "01J8..." }
+```
+
+#### `room.updated`
+
+```json
+{ "workspace_id": "01J8...", "room_id": "01J8...", "name": "デザインレビュー", "is_default": false }
+```
+
+#### `room.member_removed`
+
+```json
+{ "workspace_id": "01J8...", "room_id": "01J8...", "reason": "removed" }
+```
+
+- `reason`: `left`（自分で抜けた）/ `removed`（他人に外された、またはサーバーの再検証で読めなくなった）
+- 届いた時点で、サーバーはその接続の購読を外している（読めなくなった場合）。public ルームは参加していなくても読めるので、購読が残ることがある。
+- 画面: `chat/removed-from-channel.png`
+
+#### `room.read`
+
+```json
+{ "workspace_id": "01J8...", "room_id": "01J8...", "last_read_seq": 42, "unread_count": 0 }
+```
+
+#### `workspace.updated`
+
+```json
+{ "workspace_id": "01J8...", "name": "hibari 開発", "invite_policy": "admins_only" }
+```
+
+#### `workspace.member_removed`
+
+```json
+{ "workspace_id": "01J8...", "user_id": "01J8...", "reason": "removed" }
+```
+
+- `reason`: `left` / `removed`
+- `user_id` が自分なら、そのワークスペースの購読（ワークスペースとルーム）はすべて外れている。画面: `chat/removed-from-workspace.png`
+
+#### `workspace.role_changed`
+
+```json
+{ "workspace_id": "01J8...", "user_id": "01J8...", "role": "admin" }
+```
+
+#### `presence.changed`
+
+```json
+{ "user_id": "01J8...", "online": true }
+```
+
+初期値は REST で取る（`GET /api/v1/rooms/{id}/members` の `online`、ルームの `dm_peer.online`）。
+
+#### `typing.started`
+
+```json
+{ "workspace_id": "01J8...", "room_id": "01J8...", "user": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" } }
+```
+
+受け取ってから 6 秒で表示を消す。`typing.stopped` はない。
+
+## close コード
+
+| コード | 意味 | クライアントの動き |
+|---|---|---|
+| 1001 | サーバーの停止 | 指数バックオフ + ジッターで再接続し、同期する |
+| 1008 | プロトコル違反 | 同上（クライアントのバグを疑う） |
+| 1009 | フレームが大きすぎる | 同上 |
+| 4000 | 送信が追いつかない | 再接続し、同期する |
+| 4001 | セッションが失効した | 再接続しない。refresh を試み、失敗したらログイン画面へ |
+
+サーバーは 30 秒ごとに WebSocket の ping を送り、応答がなければ最長 60 秒で切る（このときクライアントには 1006 に見える）。
+
+## 同期（再接続の手順）
+
+WebSocket の配信は落ちうるので、クライアントはルームごとに次の 2 つを持つ（ADR 0014）。
+
+- `seq`: 表示の順序と未読の根拠
+- `change_seq`: 同期のカーソル。受け取ったメッセージの `change_seq` と、履歴のレスポンスの `last_change_seq` の最大値
+
+接続（再接続）したら、次の順に行う。**購読を先にする**。REST を先に読むと、読み終わってから購読するまでの変更を取りこぼす。
+
+1. ticket を発行して接続する
+2. 表示中のワークスペースと、サイドバーのルームを `subscribe` し、`ack` を待つ
+3. ルーム一覧（未読数・最終メッセージ）を REST で取り直す
+4. メッセージを表示・キャッシュしているルームごとに、`GET /api/v1/rooms/{id}/messages?after_change_seq=<change_seq>` を `has_more` が false になるまで呼ぶ
+   - 受け取ったメッセージは `id` で上書きし、表示は `seq` で並べる
+5. 開いているパネルのメンバー一覧（presence を含む）を REST で取り直す
+
+接続中にメッセージのイベントを受け取ったら:
+
+- `change_seq` がカーソル以下: すでに反映済み。無視してよい（`id` で上書きしても結果は同じ）
+- カーソル + 1: 反映してカーソルを進める
+- カーソル + 2 以上: 間のイベントを取りこぼした（または順序が入れ替わって届いた）。4 と同じ差分取得を行う
+
+REST の送信のレスポンスと `message.created` は両方届く。`client_msg_id` と `id` で重複を除く（ADR 0004）。
