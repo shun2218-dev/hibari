@@ -51,3 +51,10 @@
 - ログアウト後、奪われた Access Token は最大 15 分 REST で使える。ロールは JWT に入れず DB を正とするので、この間にキックされたユーザーの操作は authz で拒否される（権限の変更は即時に効く）。
 - Redis Pub/Sub は at-most-once なので、失効イベントを取りこぼしたインスタンスでは WS が切れない場合がある。ws-ticket の消費時と、定期的な再検証（Phase 4 で間隔を決める）で補う。
 - JWT のクレームが 1 つ増える。
+
+## 追記
+
+### 2026-09-14 定期的な再検証の間隔と、セッションの有効性の問い合わせ（Phase 4）
+
+- 定期的な再検証は **5 分ごと**に、すべての接続の sid の有効性と購読の authz を DB で確かめる（ADR 0015）。
+- ws-ticket の消費時と定期の再検証では、`authn.SessionChecker`（実装は auth の `SessionActive`。`refresh_tokens` の family に未失効・期限内の行があるか）でセッションの有効性を確かめる。authn も chat も auth を import せず、main で配線する。

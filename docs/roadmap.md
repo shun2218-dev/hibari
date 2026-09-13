@@ -37,6 +37,8 @@ Phase 7〜  任意
 | 失効イベントは userID 単位 | **sid 単位（全セッション失効時は userID 単位）** | ADR 0007 |
 | 添付ファイルは Phase 7 以降 | **Phase 3c に前倒し** | ADR 0008 |
 | Tauri は Phase 6 | **Phase 7 以降** | Phase 6 は Next.js |
+| Phase 4 の差分取得は `after_seq` | **`after_change_seq`（編集・削除も含む）** | ADR 0014 |
+| 購読はルームだけ | **ワークスペースとルーム** | ADR 0015 |
 | `tools/gen_*.py` で SVG 生成 | **`tools/render-diagrams.sh`（mermaid-cli）** | Python 版は mermaid を読んでいなかった |
 | Dockerfile の `:delegated` | **不要**（現行の Docker Desktop では無視される） | — |
 
@@ -276,8 +278,11 @@ GET    /api/v1/attachments/{id}/url            authz の後、署名付き GET U
 
 Redis Pub/Sub は使わず、インメモリの Hub だけで実装する。意図的に「2 台目を立てると壊れる」状態を作る。
 
-**要点**
+**要点**（詳細は ADR 0014 / 0015、イベントのスキーマは `docs/events.md`）
 - `POST /api/v1/ws/ticket`: TTL 30 秒の使い捨てチケット。Redis に SETEX で保存し、接続時に GETDEL で消費する。実装は `platform/authn`
+  - 接続は `GET /api/v1/ws?ticket=`。消費時に sid のセッションが有効かも確かめる（`authn.SessionChecker`。実装は auth）
+- 切断中の編集・削除も取れるよう、`rooms.last_change_seq` / `messages.change_seq` と `GET /rooms/{id}/messages?after_change_seq=` を追加（ADR 0014）
+- 購読の単位はワークスペースとルーム。本人宛てのイベントは購読なしで届く（ADR 0015）
 - Hub
   - 1 接続につき読み取り 1 本 + 書き込み 1 本の goroutine。書き込みは 1 本に集約する
   - buffered channel が詰まったら切断する
@@ -287,16 +292,18 @@ Redis Pub/Sub は使わず、インメモリの Hub だけで実装する。意�
   - サーバー → クライアント: `message.created` / `message.updated` / `message.deleted` / `member.joined` / `member.left` / `room.updated` / `room.member_removed` / `workspace.updated` / `workspace.member_removed` / `workspace.role_changed` / `presence.changed` / `typing.started` / `ack`
   - クライアント → サーバー: `subscribe` / `unsubscribe` / `typing` / `ping`
   - `docs/ui/` の全状態がイベントで表現できるか確認し、足りなければ実装前に指摘する
+    → `room.read`（他端末の既読）を追加、`member.joined` を本人にも送る、presence の初期値は REST（`online`）で返す、に確定（ADR 0015）
 - `subscribe` のたびに authz を実行する。権限が変わったら、サーバー側で購読を解除してからイベントを送る
 - 30 秒ごとに Ping を送り、60 秒応答がなければ切断する。登録解除は defer で行う
 - presence: `presence:{userID}`（TTL 60 秒）、typing: `typing:{roomID}:{userID}`（TTL 5 秒）
 - `auth:revoked` を受けたら、該当する sid（または userID）の接続を全部切る
+- 5 分ごとに、接続中のセッションと購読を DB で再検証する（ADR 0007 / 0015）
 
 **DoD**
-- [ ] 2 タブで同じルームを開き、片方の送信が即座に他方へ届く
-- [ ] 切断 → 送信 → 再接続 → `after_seq` で差分を取得し、取りこぼしがない（手動でも確認する）
-- [ ] private ルームから外されたユーザーには、以降のイベントが届かない
-- [ ] 接続を 100 本張って切る、を繰り返しても goroutine がリークしない（`-race` と `runtime.NumGoroutine()`）
+- [x] 2 タブで同じルームを開き、片方の送信が即座に他方へ届く（`internal/httpx/ws_test.go` の `TestWSDeliversMessages`。Web の UI は Phase 6）
+- [x] 切断 → 送信 → 再接続 → 差分を取得し、取りこぼしがない（`TestWSReconnectSync`。差分は `after_change_seq` で取り、切断中の編集・削除も含む）（手動でも確認する）
+- [x] private ルームから外されたユーザーには、以降のイベントが届かない（`TestWSRemovedFromRoomAndWorkspace`）
+- [x] 接続を 100 本張って切る、を繰り返しても goroutine がリークしない（`TestWSNoGoroutineLeak`。`-race` と `runtime.NumGoroutine()`）
 
 ---
 
