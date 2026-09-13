@@ -1,0 +1,91 @@
+# ローカル開発環境。
+#
+# - server には container_name も固定のホストポートへの依存も持たせない。
+#   Phase 5 で `docker compose up --scale server=2` と Caddy を足すため。
+#   サービス同士はサービス名（postgres / redis / minio）で到達する。
+# - postgres / redis はホストにポートを公開しない。psql は `make psql` でコンテナ内から使う。
+#   ホストに psql を要求しないことと、他プロジェクトの 5432 / 6379 と衝突しないことが理由。
+# - Next.js（web/）はここに入れず、ホストで起動する（CLAUDE.md「技術スタック」）。
+
+name: hibari
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hibari}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hibari}
+      POSTGRES_DB: ${POSTGRES_DB:-hibari}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # 統合テスト用の DB（hibari_test）を初回起動時に作る。開発データとテストを混ぜないため。
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    # MinIO はコミュニティ版のイメージ配布を 2025 年に終了したため、最後のリリースに固定する。
+    # 使うのは S3 API の PUT / GET / HEAD / DELETE と署名付き URL だけ（ADR 0008）。
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-hibari}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-hibari-secret}
+    # ブラウザが署名付き URL で直接 PUT / GET するので、API はホストに公開する（ADR 0008）。
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  server:
+    build:
+      context: .
+      target: dev
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-hibari}:${POSTGRES_PASSWORD:-hibari}@postgres:5432/${POSTGRES_DB:-hibari}?sslmode=disable
+      TEST_DATABASE_URL: postgres://${POSTGRES_USER:-hibari}:${POSTGRES_PASSWORD:-hibari}@postgres:5432/hibari_test?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      TEST_REDIS_URL: redis://redis:6379/1
+      HTTP_ADDR: :8080
+    # Phase 5 では Caddy だけがホストに公開し、server の公開はやめる。
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    volumes:
+      - .:/src
+      # モジュールキャッシュとビルドキャッシュは named volume に置く。
+      # bind mount に置くと macOS では遅く、再作成のたびにダウンロードとビルドがやり直しになる。
+      - gomod:/go/pkg/mod
+      - gobuild:/root/.cache/go-build
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  miniodata:
+  gomod:
+  gobuild:

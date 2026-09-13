@@ -1,0 +1,20 @@
+# air の設定（compose の server コンテナ内で使う）。
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/server ./cmd/server"
+  entrypoint = ["./tmp/server"]
+  include_ext = ["go", "sql"]
+  exclude_dir = ["tmp", "bin", "web", "docs", "tools", "keys"]
+  exclude_regex = ["_test\\.go$"]
+  # macOS の bind mount では inotify のイベントが届かないことがあるため、ポーリングで検知する。
+  poll = true
+  poll_interval = 500
+  delay = 200
+  # SIGINT を送ってから待つ。graceful shutdown の経路を開発中にも毎回通すため。
+  send_interrupt = true
+  kill_delay = "5s"
+
+[log]
+  main_only = true
