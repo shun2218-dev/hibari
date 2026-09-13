@@ -88,6 +88,10 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		writeProblem(w, r, problem{Type: "invite-expired", Title: "The invite link has expired", Status: http.StatusGone})
 	case errors.Is(err, chat.ErrInviteExhausted):
 		writeProblem(w, r, problem{Type: "invite-exhausted", Title: "The invite link has reached its usage limit", Status: http.StatusGone})
+	case errors.Is(err, chat.ErrRoomNameTaken):
+		writeProblem(w, r, problem{Type: "room-name-taken", Title: "A room with this name already exists", Status: http.StatusConflict})
+	case errors.Is(err, chat.ErrUserNotInWorkspace):
+		writeProblem(w, r, problem{Type: "user-not-in-workspace", Title: "The user is not a member of the workspace", Status: http.StatusUnprocessableEntity})
 	case errors.Is(err, chat.ErrOwnerMustTransfer):
 		writeProblem(w, r, problem{Type: "owner-must-transfer", Title: "Transfer ownership before leaving", Status: http.StatusConflict})
 	case errors.As(err, &lerr):

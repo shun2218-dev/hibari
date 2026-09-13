@@ -11,6 +11,7 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/authz"
 	"github.com/shun2218-dev/hibari/internal/platform/authn"
 )
 
@@ -30,6 +31,15 @@ type ChatService interface {
 	RevokeInvite(ctx context.Context, actor, workspaceID, inviteID ulid.ULID) error
 	PreviewInvite(ctx context.Context, actor ulid.ULID, code string) (chat.InvitePreview, error)
 	AcceptInvite(ctx context.Context, actor ulid.ULID, code string) (chat.InviteAcceptance, error)
+
+	CreateRoom(ctx context.Context, actor, workspaceID ulid.ULID, in chat.CreateRoomInput) (chat.Room, bool, error)
+	ListRooms(ctx context.Context, actor, workspaceID ulid.ULID) ([]chat.Room, error)
+	GetRoom(ctx context.Context, actor, roomID ulid.ULID) (chat.Room, error)
+	UpdateRoom(ctx context.Context, actor, roomID ulid.ULID, in chat.RoomUpdate) (chat.Room, error)
+	JoinRoom(ctx context.Context, actor, roomID ulid.ULID) (chat.Room, error)
+	AddRoomMember(ctx context.Context, actor, roomID, target ulid.ULID) error
+	RemoveRoomMember(ctx context.Context, actor, roomID, target ulid.ULID) error
+	ListRoomMembers(ctx context.Context, actor, roomID ulid.ULID, page chat.PageRequest) (chat.Page[chat.RoomMember], error)
 }
 
 type chatHandlers struct {
@@ -59,6 +69,15 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	// パス変数の名前 code はログで伏せる対象（secretPathValues）。名前を変えるときはそちらも変える。
 	handle("GET /api/v1/invites/{code}", h.previewInvite)
 	handle("POST /api/v1/invites/{code}/accept", h.acceptInvite)
+
+	handle("POST /api/v1/workspaces/{workspaceID}/rooms", h.createRoom)
+	handle("GET /api/v1/workspaces/{workspaceID}/rooms", h.listRooms)
+	handle("GET /api/v1/rooms/{roomID}", h.getRoom)
+	handle("PATCH /api/v1/rooms/{roomID}", h.updateRoom)
+	handle("POST /api/v1/rooms/{roomID}/join", h.joinRoom)
+	handle("GET /api/v1/rooms/{roomID}/members", h.listRoomMembers)
+	handle("POST /api/v1/rooms/{roomID}/members", h.addRoomMember)
+	handle("DELETE /api/v1/rooms/{roomID}/members/{userID}", h.removeRoomMember)
 }
 
 // actorOf は認証済みのリクエストの主体を返す。requireAuth の内側でだけ呼ぶ。
@@ -315,9 +334,9 @@ func (h *chatHandlers) transferOwnership(w http.ResponseWriter, r *http.Request)
 		writeError(h.logger, w, r, err)
 		return
 	}
-	target, err := ulid.ParseStrict(req.UserID)
+	target, err := bodyUserID(req.UserID)
 	if err != nil {
-		writeError(h.logger, w, r, &chat.ValidationError{Fields: []chat.FieldError{{Field: "user_id", Reason: chat.ReasonInvalidFormat}}})
+		writeError(h.logger, w, r, err)
 		return
 	}
 	if err := h.svc.TransferOwnership(r.Context(), actorOf(r), wsID, target); err != nil {
@@ -476,4 +495,239 @@ func (h *chatHandlers) acceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, inviteAcceptanceResponse{Workspace: newWorkspaceResponse(res.Workspace, true), AlreadyMember: res.AlreadyMember})
+}
+
+type roomResponse struct {
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
+	Kind        string `json:"kind"`
+	// Name は dm では null。
+	Name      *string `json:"name"`
+	IsDefault bool    `json:"is_default"`
+	IsMember  bool    `json:"is_member"`
+	// MemberCount は 1 件の取得でだけ返す。
+	MemberCount    *int64               `json:"member_count,omitempty"`
+	DMPeer         *userProfileResponse `json:"dm_peer,omitempty"`
+	LastMessageSeq int64                `json:"last_message_seq"`
+	LastMessageAt  *time.Time           `json:"last_message_at"`
+	CreatedAt      time.Time            `json:"created_at"`
+}
+
+func newRoomResponse(r chat.Room, withCount bool) roomResponse {
+	resp := roomResponse{
+		ID:             r.ID.String(),
+		WorkspaceID:    r.WorkspaceID.String(),
+		Kind:           string(r.Kind),
+		IsDefault:      r.IsDefault,
+		IsMember:       r.IsMember,
+		LastMessageSeq: r.LastMessageSeq,
+		LastMessageAt:  r.LastMessageAt,
+		CreatedAt:      r.CreatedAt,
+	}
+	if r.Kind != authz.RoomDM {
+		resp.Name = &r.Name
+	}
+	if withCount {
+		resp.MemberCount = &r.MemberCount
+	}
+	if r.DMPeer != nil {
+		p := newUserProfileResponse(*r.DMPeer)
+		resp.DMPeer = &p
+	}
+	return resp
+}
+
+// bodyUserID はリクエストボディの user_id を読む。
+func bodyUserID(s string) (ulid.ULID, error) {
+	if s == "" {
+		return ulid.ULID{}, &chat.ValidationError{Fields: []chat.FieldError{{Field: "user_id", Reason: chat.ReasonRequired}}}
+	}
+	id, err := ulid.ParseStrict(s)
+	if err != nil {
+		return ulid.ULID{}, &chat.ValidationError{Fields: []chat.FieldError{{Field: "user_id", Reason: chat.ReasonInvalidFormat}}}
+	}
+	return id, nil
+}
+
+type createRoomRequest struct {
+	Kind   string `json:"kind"`
+	Name   string `json:"name"`
+	UserID string `json:"user_id"`
+}
+
+// createRoom は新しく作ったら 201、既存の DM を返したら 200。
+func (h *chatHandlers) createRoom(w http.ResponseWriter, r *http.Request) {
+	wsID, err := pathID(r, "workspaceID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	var req createRoomRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	in := chat.CreateRoomInput{Kind: req.Kind, Name: req.Name}
+	if req.Kind == string(authz.RoomDM) {
+		if in.UserID, err = bodyUserID(req.UserID); err != nil {
+			writeError(h.logger, w, r, err)
+			return
+		}
+	}
+	room, created, err := h.svc.CreateRoom(r.Context(), actorOf(r), wsID, in)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, newRoomResponse(room, true))
+}
+
+func (h *chatHandlers) listRooms(w http.ResponseWriter, r *http.Request) {
+	wsID, err := pathID(r, "workspaceID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	rooms, err := h.svc.ListRooms(r.Context(), actorOf(r), wsID)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	resp := struct {
+		Rooms []roomResponse `json:"rooms"`
+	}{Rooms: make([]roomResponse, len(rooms))}
+	for i, room := range rooms {
+		resp.Rooms[i] = newRoomResponse(room, false)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *chatHandlers) getRoom(w http.ResponseWriter, r *http.Request) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	room, err := h.svc.GetRoom(r.Context(), actorOf(r), roomID)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newRoomResponse(room, true))
+}
+
+type updateRoomRequest struct {
+	Name      *string `json:"name"`
+	IsDefault *bool   `json:"is_default"`
+}
+
+func (h *chatHandlers) updateRoom(w http.ResponseWriter, r *http.Request) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	var req updateRoomRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	room, err := h.svc.UpdateRoom(r.Context(), actorOf(r), roomID, chat.RoomUpdate{Name: req.Name, IsDefault: req.IsDefault})
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newRoomResponse(room, true))
+}
+
+// joinRoom は public ルームに参加する。すでにメンバーでも 200 を返す。
+func (h *chatHandlers) joinRoom(w http.ResponseWriter, r *http.Request) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	room, err := h.svc.JoinRoom(r.Context(), actorOf(r), roomID)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newRoomResponse(room, true))
+}
+
+func (h *chatHandlers) listRoomMembers(w http.ResponseWriter, r *http.Request) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	page, err := pageRequest(r)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	p, err := h.svc.ListRoomMembers(r.Context(), actorOf(r), roomID, page)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	resp := struct {
+		Members    []memberResponse `json:"members"`
+		NextCursor *string          `json:"next_cursor"`
+	}{Members: make([]memberResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
+	for i, m := range p.Items {
+		resp.Members[i] = memberResponse{User: newUserProfileResponse(m.User), Role: string(m.Role), JoinedAt: m.JoinedAt}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+type addRoomMemberRequest struct {
+	UserID string `json:"user_id"`
+}
+
+// addRoomMember は private ルームに人を追加する。すでにメンバーでも 204 を返す。
+func (h *chatHandlers) addRoomMember(w http.ResponseWriter, r *http.Request) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	var req addRoomMemberRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	target, err := bodyUserID(req.UserID)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	if err := h.svc.AddRoomMember(r.Context(), actorOf(r), roomID, target); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// removeRoomMember はルームから外す。パスの userID が自分なら退出。
+func (h *chatHandlers) removeRoomMember(w http.ResponseWriter, r *http.Request) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	target, err := pathID(r, "userID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	if err := h.svc.RemoveRoomMember(r.Context(), actorOf(r), roomID, target); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

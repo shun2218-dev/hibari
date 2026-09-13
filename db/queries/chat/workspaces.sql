@@ -111,3 +111,26 @@ SELECT wm.role
  WHERE wm.workspace_id = sqlc.arg(workspace_id)
    AND wm.user_id = sqlc.arg(user_id)
    AND w.deleted_at IS NULL;
+
+-- name: ShareLockWorkspaceMembers :many
+-- ルームのメンバーを増やす操作（参加・追加・DM）の前に、関係する人の workspace_members の行を共有ロックする。
+-- キック（FOR UPDATE）と直列化し、「キックがルームの参加を消した後に、並行した参加が room_members を入れる」ことを防ぐ。
+-- そのまま残ると、同じ人がワークスペースに戻ったときに、招かれていない private ルームに入れてしまう。
+-- 行のロックは LockWorkspaceMembers と同じく user_id の順に取る。
+SELECT wm.user_id, wm.role
+  FROM workspace_members wm
+  JOIN workspaces w ON w.id = wm.workspace_id
+ WHERE wm.workspace_id = sqlc.arg(workspace_id)
+   AND wm.user_id = ANY(sqlc.arg(user_ids)::uuid[])
+   AND w.deleted_at IS NULL
+ ORDER BY wm.user_id
+   FOR SHARE OF wm;
+
+-- name: GetWorkspaceMemberRoles :many
+-- user_ids のワークスペースでのロール。読み取りだけの API で使い、ロックしない。
+SELECT wm.user_id, wm.role
+  FROM workspace_members wm
+  JOIN workspaces w ON w.id = wm.workspace_id
+ WHERE wm.workspace_id = sqlc.arg(workspace_id)
+   AND wm.user_id = ANY(sqlc.arg(user_ids)::uuid[])
+   AND w.deleted_at IS NULL;

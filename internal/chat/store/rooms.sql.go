@@ -12,7 +12,32 @@ import (
 	ulid "github.com/oklog/ulid/v2"
 )
 
+const addRoomMember = `-- name: AddRoomMember :execrows
+INSERT INTO room_members (room_id, user_id, last_read_seq, joined_at)
+SELECT r.id, $1, r.last_message_seq, $2::timestamptz
+  FROM rooms r
+ WHERE r.id = $3
+ON CONFLICT DO NOTHING
+`
+
+type AddRoomMemberParams struct {
+	UserID ulid.ULID
+	Now    time.Time
+	RoomID ulid.ULID
+}
+
+// ルームに参加する。すでにメンバーなら何もせず 0 を返す（冪等）。
+// last_read_seq は同じ文の中で rooms から読み、参加前のメッセージを未読にしない。
+func (q *Queries) AddRoomMember(ctx context.Context, arg AddRoomMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addRoomMember, arg.UserID, arg.Now, arg.RoomID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const allocateMessageSeq = `-- name: AllocateMessageSeq :one
+
 UPDATE rooms
    SET last_message_seq = last_message_seq + 1,
        last_message_at  = $1::timestamptz
@@ -25,6 +50,7 @@ type AllocateMessageSeqParams struct {
 	RoomID ulid.ULID
 }
 
+// ルーム（ADR 0006 / 0011）。
 // ルームの次の seq を採番して返す（ADR 0002「採番方式の確定」）。
 // 送信と同じトランザクションの中で呼ぶ。rooms の行ロックで同じルームへの送信が直列化され、
 // ロールバックすれば採番も取り消されるので欠番にならない。
@@ -33,4 +59,388 @@ func (q *Queries) AllocateMessageSeq(ctx context.Context, arg AllocateMessageSeq
 	var last_message_seq int64
 	err := row.Scan(&last_message_seq)
 	return last_message_seq, err
+}
+
+const createDMRoom = `-- name: CreateDMRoom :one
+INSERT INTO rooms (id, workspace_id, kind, dm_key, created_by, created_at)
+VALUES ($1, $2, 'dm', $3, $4, $5::timestamptz)
+ON CONFLICT (workspace_id, dm_key) WHERE kind = 'dm' DO NOTHING
+RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at
+`
+
+type CreateDMRoomParams struct {
+	ID          ulid.ULID
+	WorkspaceID ulid.ULID
+	DmKey       *string
+	CreatedBy   ulid.ULID
+	Now         time.Time
+}
+
+// DM を作る。同じ 2 人の DM がすでにあれば何もせず、行を返さない（呼び出し側で既存を読む）。
+// 並行して同じ DM を作ると、2 本目は 1 本目の UNIQUE の確定を待ってから DO NOTHING になる。
+func (q *Queries) CreateDMRoom(ctx context.Context, arg CreateDMRoomParams) (Room, error) {
+	row := q.db.QueryRow(ctx, createDMRoom,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.DmKey,
+		arg.CreatedBy,
+		arg.Now,
+	)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Kind,
+		&i.Name,
+		&i.DmKey,
+		&i.IsDefault,
+		&i.CreatedBy,
+		&i.LastMessageSeq,
+		&i.LastMessageAt,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const createRoom = `-- name: CreateRoom :one
+INSERT INTO rooms (id, workspace_id, kind, name, created_by, created_at)
+VALUES ($1, $2, $3, $4, $5, $6::timestamptz)
+RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at
+`
+
+type CreateRoomParams struct {
+	ID          ulid.ULID
+	WorkspaceID ulid.ULID
+	Kind        string
+	Name        *string
+	CreatedBy   ulid.ULID
+	Now         time.Time
+}
+
+// public / private のルーム。名前の重複は部分 UNIQUE インデックス（rooms_workspace_id_name_idx）で検出する。
+func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, error) {
+	row := q.db.QueryRow(ctx, createRoom,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.Kind,
+		arg.Name,
+		arg.CreatedBy,
+		arg.Now,
+	)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Kind,
+		&i.Name,
+		&i.DmKey,
+		&i.IsDefault,
+		&i.CreatedBy,
+		&i.LastMessageSeq,
+		&i.LastMessageAt,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const deleteRoomMember = `-- name: DeleteRoomMember :execrows
+DELETE FROM room_members
+ WHERE room_id = $1
+   AND user_id = $2
+`
+
+type DeleteRoomMemberParams struct {
+	RoomID ulid.ULID
+	UserID ulid.ULID
+}
+
+func (q *Queries) DeleteRoomMember(ctx context.Context, arg DeleteRoomMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRoomMember, arg.RoomID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getDMRoom = `-- name: GetDMRoom :one
+SELECT id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at
+  FROM rooms
+ WHERE workspace_id = $1
+   AND kind = 'dm'
+   AND dm_key = $2
+`
+
+type GetDMRoomParams struct {
+	WorkspaceID ulid.ULID
+	DmKey       *string
+}
+
+func (q *Queries) GetDMRoom(ctx context.Context, arg GetDMRoomParams) (Room, error) {
+	row := q.db.QueryRow(ctx, getDMRoom, arg.WorkspaceID, arg.DmKey)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Kind,
+		&i.Name,
+		&i.DmKey,
+		&i.IsDefault,
+		&i.CreatedBy,
+		&i.LastMessageSeq,
+		&i.LastMessageAt,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const getRoom = `-- name: GetRoom :one
+SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at
+  FROM rooms r
+  JOIN workspaces w ON w.id = r.workspace_id
+ WHERE r.id = $1
+   AND w.deleted_at IS NULL
+`
+
+// 削除済みのワークスペースのルームは見つからないものとして扱う。
+func (q *Queries) GetRoom(ctx context.Context, id ulid.ULID) (Room, error) {
+	row := q.db.QueryRow(ctx, getRoom, id)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Kind,
+		&i.Name,
+		&i.DmKey,
+		&i.IsDefault,
+		&i.CreatedBy,
+		&i.LastMessageSeq,
+		&i.LastMessageAt,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const getRoomMemberCount = `-- name: GetRoomMemberCount :one
+SELECT count(*)
+  FROM room_members
+ WHERE room_id = $1
+`
+
+func (q *Queries) GetRoomMemberCount(ctx context.Context, roomID ulid.ULID) (int64, error) {
+	row := q.db.QueryRow(ctx, getRoomMemberCount, roomID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getRoomMemberships = `-- name: GetRoomMemberships :many
+SELECT user_id
+  FROM room_members
+ WHERE room_id = $1
+   AND user_id = ANY($2::uuid[])
+`
+
+type GetRoomMembershipsParams struct {
+	RoomID  ulid.ULID
+	UserIds []ulid.ULID
+}
+
+// user_ids のうち、ルームのメンバーである人。
+func (q *Queries) GetRoomMemberships(ctx context.Context, arg GetRoomMembershipsParams) ([]ulid.ULID, error) {
+	rows, err := q.db.Query(ctx, getRoomMemberships, arg.RoomID, arg.UserIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ulid.ULID{}
+	for rows.Next() {
+		var user_id ulid.ULID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoomMembers = `-- name: ListRoomMembers :many
+SELECT rm.user_id, rm.joined_at, wm.role, u.handle, u.display_name
+  FROM room_members rm
+  JOIN rooms r ON r.id = rm.room_id
+  JOIN workspace_members wm ON wm.workspace_id = r.workspace_id AND wm.user_id = rm.user_id
+  JOIN users u ON u.id = rm.user_id
+ WHERE rm.room_id = $1
+   AND rm.user_id > $2
+   AND u.deleted_at IS NULL
+ ORDER BY rm.user_id
+ LIMIT $3
+`
+
+type ListRoomMembersParams struct {
+	RoomID  ulid.ULID
+	After   ulid.ULID
+	MaxRows int32
+}
+
+type ListRoomMembersRow struct {
+	UserID      ulid.ULID
+	JoinedAt    time.Time
+	Role        string
+	Handle      string
+	DisplayName string
+}
+
+// ルームのメンバーと、ワークスペースでのロール。主キー (room_id, user_id) の順に走査するので user_id をカーソルにする。
+func (q *Queries) ListRoomMembers(ctx context.Context, arg ListRoomMembersParams) ([]ListRoomMembersRow, error) {
+	rows, err := q.db.Query(ctx, listRoomMembers, arg.RoomID, arg.After, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRoomMembersRow{}
+	for rows.Next() {
+		var i ListRoomMembersRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.JoinedAt,
+			&i.Role,
+			&i.Handle,
+			&i.DisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoomsForUser = `-- name: ListRoomsForUser :many
+SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, (rm.user_id IS NOT NULL)::boolean AS is_member
+  FROM rooms r
+  LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = $1
+ WHERE r.workspace_id = $2
+   AND (r.kind = 'public' OR rm.user_id IS NOT NULL)
+ ORDER BY r.last_message_at DESC NULLS LAST, r.id
+`
+
+type ListRoomsForUserParams struct {
+	UserID      ulid.ULID
+	WorkspaceID ulid.ULID
+}
+
+type ListRoomsForUserRow struct {
+	Room     Room
+	IsMember bool
+}
+
+// サイドバーのルーム一覧: 参加しているルーム（全種類）と、参加していない public ルーム。
+// 読めない private / dm は含めない。並びは最近メッセージがあった順（インデックス rooms_workspace_id_last_message_at_idx）。
+func (q *Queries) ListRoomsForUser(ctx context.Context, arg ListRoomsForUserParams) ([]ListRoomsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listRoomsForUser, arg.UserID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRoomsForUserRow{}
+	for rows.Next() {
+		var i ListRoomsForUserRow
+		if err := rows.Scan(
+			&i.Room.ID,
+			&i.Room.WorkspaceID,
+			&i.Room.Kind,
+			&i.Room.Name,
+			&i.Room.DmKey,
+			&i.Room.IsDefault,
+			&i.Room.CreatedBy,
+			&i.Room.LastMessageSeq,
+			&i.Room.LastMessageAt,
+			&i.Room.CreatedAt,
+			&i.Room.ArchivedAt,
+			&i.IsMember,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserProfiles = `-- name: ListUserProfiles :many
+SELECT id, handle, display_name
+  FROM users
+ WHERE id = ANY($1::uuid[])
+`
+
+type ListUserProfilesRow struct {
+	ID          ulid.ULID
+	Handle      string
+	DisplayName string
+}
+
+// DM の相手などの公開プロフィールをまとめて引く（N+1 にしない）。退会済みでも匿名化した値を返す。
+func (q *Queries) ListUserProfiles(ctx context.Context, ids []ulid.ULID) ([]ListUserProfilesRow, error) {
+	rows, err := q.db.Query(ctx, listUserProfiles, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserProfilesRow{}
+	for rows.Next() {
+		var i ListUserProfilesRow
+		if err := rows.Scan(&i.ID, &i.Handle, &i.DisplayName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateRoom = `-- name: UpdateRoom :one
+UPDATE rooms
+   SET name       = coalesce($1, name),
+       is_default = coalesce($2, is_default)
+ WHERE id = $3
+RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at
+`
+
+type UpdateRoomParams struct {
+	Name      *string
+	IsDefault *bool
+	ID        ulid.ULID
+}
+
+// NULL を渡した項目は変更しない（PATCH）。
+func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) (Room, error) {
+	row := q.db.QueryRow(ctx, updateRoom, arg.Name, arg.IsDefault, arg.ID)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Kind,
+		&i.Name,
+		&i.DmKey,
+		&i.IsDefault,
+		&i.CreatedBy,
+		&i.LastMessageSeq,
+		&i.LastMessageAt,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
 }
