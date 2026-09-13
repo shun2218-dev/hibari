@@ -40,6 +40,12 @@ type ChatService interface {
 	AddRoomMember(ctx context.Context, actor, roomID, target ulid.ULID) error
 	RemoveRoomMember(ctx context.Context, actor, roomID, target ulid.ULID) error
 	ListRoomMembers(ctx context.Context, actor, roomID ulid.ULID, page chat.PageRequest) (chat.Page[chat.RoomMember], error)
+
+	SendMessage(ctx context.Context, actor, roomID ulid.ULID, in chat.SendMessageInput) (chat.Message, bool, error)
+	ListMessages(ctx context.Context, actor, roomID ulid.ULID, q chat.MessageQuery) (chat.MessagePage, error)
+	EditMessage(ctx context.Context, actor, roomID, messageID ulid.ULID, body string) (chat.Message, error)
+	DeleteMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) error
+	MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq int64) (chat.ReadState, error)
 }
 
 type chatHandlers struct {
@@ -78,6 +84,12 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("GET /api/v1/rooms/{roomID}/members", h.listRoomMembers)
 	handle("POST /api/v1/rooms/{roomID}/members", h.addRoomMember)
 	handle("DELETE /api/v1/rooms/{roomID}/members/{userID}", h.removeRoomMember)
+
+	handle("POST /api/v1/rooms/{roomID}/messages", h.sendMessage)
+	handle("GET /api/v1/rooms/{roomID}/messages", h.listMessages)
+	handle("PATCH /api/v1/rooms/{roomID}/messages/{messageID}", h.editMessage)
+	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}", h.deleteMessage)
+	handle("POST /api/v1/rooms/{roomID}/read", h.markRoomRead)
 }
 
 // actorOf は認証済みのリクエストの主体を返す。requireAuth の内側でだけ呼ぶ。
@@ -510,7 +522,21 @@ type roomResponse struct {
 	DMPeer         *userProfileResponse `json:"dm_peer,omitempty"`
 	LastMessageSeq int64                `json:"last_message_seq"`
 	LastMessageAt  *time.Time           `json:"last_message_at"`
-	CreatedAt      time.Time            `json:"created_at"`
+	// LastReadSeq はルームのメンバーでなければ null。
+	LastReadSeq *int64 `json:"last_read_seq"`
+	UnreadCount int64  `json:"unread_count"`
+	// LastMessage はメッセージが 1 件もなければ null。
+	LastMessage *lastMessageResponse `json:"last_message"`
+	CreatedAt   time.Time            `json:"created_at"`
+}
+
+// lastMessageResponse はサイドバーの最終メッセージ。相対時刻の表示はクライアントが created_at から作る。
+type lastMessageResponse struct {
+	ID        string              `json:"id"`
+	Sender    userProfileResponse `json:"sender"`
+	Body      string              `json:"body"`
+	CreatedAt time.Time           `json:"created_at"`
+	Deleted   bool                `json:"deleted"`
 }
 
 func newRoomResponse(r chat.Room, withCount bool) roomResponse {
@@ -522,7 +548,12 @@ func newRoomResponse(r chat.Room, withCount bool) roomResponse {
 		IsMember:       r.IsMember,
 		LastMessageSeq: r.LastMessageSeq,
 		LastMessageAt:  r.LastMessageAt,
+		LastReadSeq:    r.LastReadSeq,
+		UnreadCount:    r.UnreadCount,
 		CreatedAt:      r.CreatedAt,
+	}
+	if m := r.LastMessage; m != nil {
+		resp.LastMessage = &lastMessageResponse{ID: m.ID.String(), Sender: newUserProfileResponse(m.Sender), Body: m.Body, CreatedAt: m.CreatedAt, Deleted: m.Deleted}
 	}
 	if r.Kind != authz.RoomDM {
 		resp.Name = &r.Name
