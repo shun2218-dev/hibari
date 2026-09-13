@@ -49,6 +49,17 @@ test: ## Go の全テストを -race 付きで実行する（実物の Postgres 
 lint: ## go vet と golangci-lint を実行する
 	$(RUN_GO) sh -c 'go vet ./... && $(GOTOOL) golangci-lint run ./...'
 
+# ---- web（ホストで実行する） ----
+
+.PHONY: web
+web: ## ホストで Next.js の開発サーバーを起動する（API は compose の server）
+	@test -f web/.env.local || cp web/.env.example web/.env.local
+	cd web && npm install && npm run dev
+
+.PHONY: web-test
+web-test: ## web/ の lint / 型チェック / Vitest を実行する
+	cd web && npm run lint && npm run typecheck && npm test
+
 # ---- その他 ----
 
 .PHONY: keys
