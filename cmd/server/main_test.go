@@ -43,6 +43,10 @@ func TestRunFailsWithoutSigningKey(t *testing.T) {
 		"DATABASE_URL":         "postgres://unused",
 		"REDIS_URL":            "redis://unused",
 		"JWT_PRIVATE_KEY_FILE": filepath.Join(t.TempDir(), "missing.pem"),
+		"S3_ENDPOINT":          "http://unused",
+		"S3_BUCKET":            "unused",
+		"S3_ACCESS_KEY_ID":     "unused",
+		"S3_SECRET_ACCESS_KEY": "unused",
 	}
 	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 
@@ -63,6 +67,8 @@ func TestRunServesHealthzAndShutsDown(t *testing.T) {
 
 		"JWT_PRIVATE_KEY_FILE": writeSigningKey(t),
 	}
+	s3 := testenv.S3(t)
+	env["S3_ENDPOINT"], env["S3_BUCKET"], env["S3_ACCESS_KEY_ID"], env["S3_SECRET_ACCESS_KEY"] = s3.Endpoint, s3.Bucket, s3.AccessKeyID, s3.SecretAccessKey
 	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 
 	logR, logW := io.Pipe()

@@ -46,6 +46,10 @@ type ChatService interface {
 	EditMessage(ctx context.Context, actor, roomID, messageID ulid.ULID, body string) (chat.Message, error)
 	DeleteMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) error
 	MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq int64) (chat.ReadState, error)
+
+	CreateAttachment(ctx context.Context, actor, roomID ulid.ULID, in chat.AttachmentInput) (chat.CreatedAttachment, error)
+	CompleteAttachment(ctx context.Context, actor, attachmentID ulid.ULID) (chat.Attachment, error)
+	GetAttachmentURL(ctx context.Context, actor, attachmentID ulid.ULID) (chat.DownloadURL, error)
 }
 
 type chatHandlers struct {
@@ -90,6 +94,10 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("PATCH /api/v1/rooms/{roomID}/messages/{messageID}", h.editMessage)
 	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}", h.deleteMessage)
 	handle("POST /api/v1/rooms/{roomID}/read", h.markRoomRead)
+
+	handle("POST /api/v1/rooms/{roomID}/attachments", h.createAttachment)
+	handle("POST /api/v1/attachments/{attachmentID}/complete", h.completeAttachment)
+	handle("GET /api/v1/attachments/{attachmentID}/url", h.getAttachmentURL)
 }
 
 // actorOf は認証済みのリクエストの主体を返す。requireAuth の内側でだけ呼ぶ。

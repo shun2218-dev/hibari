@@ -54,6 +54,20 @@ services:
       timeout: 3s
       retries: 30
 
+  # バケットを作る使い捨てのコンテナ。アプリはバケットを作らない（本番のバケットはインフラの側で作る。ADR 0013）。
+  # 開発用（hibari）とテスト用（hibari-test）を分けるのは、DB と同じく開発データとテストを混ぜないため。
+  minio-init:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-hibari}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-hibari-secret}
+    entrypoint: ["sh", "-c"]
+    command:
+      - mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" && mc mb --ignore-existing local/hibari local/hibari-test
+    depends_on:
+      minio:
+        condition: service_healthy
+
   server:
     build:
       context: .
@@ -69,6 +83,19 @@ services:
       HTTP_ADDR: :8080
       # `make keys` で作る開発用の鍵。リポジトリを /src に bind mount しているのでそのまま読める。
       JWT_PRIVATE_KEY_FILE: /src/keys/jwt_ed25519.pem
+      # サーバーはサービス名で MinIO に到達し、署名付き URL はブラウザから到達できるホスト名で作る（ADR 0013）。
+      # 開発ではルートの認証情報をそのまま使う。
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:${MINIO_API_PORT:-9000}
+      S3_BUCKET: hibari
+      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-hibari}
+      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-hibari-secret}
+      S3_USE_PATH_STYLE: "true"
+      # テストはコンテナの中で署名付き URL にも PUT するので、公開エンドポイントを分けない。
+      TEST_S3_ENDPOINT: http://minio:9000
+      TEST_S3_BUCKET: hibari-test
+      TEST_S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-hibari}
+      TEST_S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-hibari-secret}
     # Phase 5 では Caddy だけがホストに公開し、server の公開はやめる。
     ports:
       - "${SERVER_PORT:-8080}:8080"
@@ -83,8 +110,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:

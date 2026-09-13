@@ -15,44 +15,92 @@ import (
 
 	"github.com/shun2218-dev/hibari/internal/chat"
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
+	"github.com/shun2218-dev/hibari/internal/platform/config"
 	"github.com/shun2218-dev/hibari/internal/platform/db"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
+	"github.com/shun2218-dev/hibari/internal/platform/storage"
 	"github.com/shun2218-dev/hibari/internal/platform/testenv"
 )
 
 // Start はテストの時計の初期値。
 var Start = time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
 
+// AttachmentLimits はテストで使う添付の設定値。本番の既定値と同じ。
+var AttachmentLimits = chat.AttachmentLimits{MaxBytes: config.DefaultAttachmentMaxBytes, AllowedTypes: config.DefaultAttachmentAllowedTypes}
+
 // Env は組み立て済みの Service とその依存。
 type Env struct {
 	Pool    *pgxpool.Pool
 	Clock   *clock.Fake
 	IDs     id.Generator
+	Storage *storage.S3
 	Service *chat.Service
 }
 
-// New は Env を返す。TEST_DATABASE_URL がなければテストをスキップする（CI では失敗する）。
-func New(t testing.TB) *Env {
+type options struct {
+	start time.Time
+}
+
+// Option は New の組み立てを変える。
+type Option func(*options)
+
+// WithClockStart は時計の初期値を変える。
+//
+// 添付の掃除ジョブは、テスト用 DB にある「時計で見て古い」添付をすべて消す。テスト用 DB はパッケージをまたいで共有するので、
+// 掃除を実行するテストは、ほかのテストの時計（Start 前後）より十分に過去から始めて、ほかのテストの添付を消さないようにする。
+func WithClockStart(t time.Time) Option {
+	return func(o *options) { o.start = t }
+}
+
+// New は Env を返す。TEST_DATABASE_URL などがなければテストをスキップする（CI では失敗する）。
+func New(t testing.TB, opts ...Option) *Env {
 	t.Helper()
+	o := options{start: Start}
+	for _, opt := range opts {
+		opt(&o)
+	}
 	pool, err := db.Open(t.Context(), testenv.DatabaseURL(t))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(pool.Close)
-	clk := clock.NewFake(Start)
+	clk := clock.NewFake(o.start)
 	ids := id.NewGenerator(clk, rand.Reader)
+	st := NewStorage(t)
 	return &Env{
-		Pool:  pool,
-		Clock: clk,
-		IDs:   ids,
+		Pool:    pool,
+		Clock:   clk,
+		IDs:     ids,
+		Storage: st,
 		Service: chat.NewService(chat.Deps{
-			DB:     pool,
-			Clock:  clk,
-			IDs:    ids,
-			Random: rand.Reader,
-			Logger: slog.New(slog.DiscardHandler),
+			DB:               pool,
+			Clock:            clk,
+			IDs:              ids,
+			Random:           rand.Reader,
+			Logger:           slog.New(slog.DiscardHandler),
+			Storage:          st,
+			AttachmentLimits: AttachmentLimits,
 		}),
 	}
+}
+
+// NewStorage はテスト用のバケット（MinIO）に接続した S3 を返す。
+// テストはコンテナの中から署名付き URL にも PUT するので、公開エンドポイントは分けない。
+func NewStorage(t testing.TB) *storage.S3 {
+	t.Helper()
+	env := testenv.S3(t)
+	st, err := storage.New(storage.Config{
+		Endpoint:        env.Endpoint,
+		Region:          "us-east-1",
+		Bucket:          env.Bucket,
+		AccessKeyID:     env.AccessKeyID,
+		SecretAccessKey: env.SecretAccessKey,
+		UsePathStyle:    true,
+	})
+	if err != nil {
+		t.Fatalf("open storage: %v", err)
+	}
+	return st
 }
 
 // CreateUser はユーザーを作って ID を返す。

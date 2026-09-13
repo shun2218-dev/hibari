@@ -329,20 +329,35 @@ func TestAttachmentsConstraints(t *testing.T) {
 		r1 := insertRoom(t, tx, w, u, "general")
 		r2 := insertRoom(t, tx, w, u, "random")
 		m1 := insertMessage(t, tx, r1, u, 1, nil)
-		const insert = `INSERT INTO attachments (id, room_id, uploader_id, message_id, status, object_key, mime_type, size_bytes, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, 'image/png', 10, $7)`
+		const insert = `INSERT INTO attachments (id, room_id, uploader_id, message_id, status, object_key, file_name, mime_type, size_bytes, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, 'a.png', 'image/png', 10, $7)`
 
 		mustExec(t, tx, insert, ids.New(), r1, u, nil, "pending", "k/pending", now)
+		mustExec(t, tx, insert, ids.New(), r1, u, nil, "uploaded", "k/uploaded", now)
 
+		// message_id を持つのは attached と deleted だけ（ADR 0013）。
 		expectViolation(t, tx, sqlstateCheck, "attachments_status_message",
 			insert, ids.New(), r1, u, nil, "attached", "k/a", now)
 		expectViolation(t, tx, sqlstateCheck, "attachments_status_message",
+			insert, ids.New(), r1, u, nil, "deleted", "k/a2", now)
+		expectViolation(t, tx, sqlstateCheck, "attachments_status_message",
 			insert, ids.New(), r1, u, m1, "pending", "k/b", now)
+		expectViolation(t, tx, sqlstateCheck, "attachments_status_message",
+			insert, ids.New(), r1, u, m1, "uploaded", "k/b2", now)
+		expectViolation(t, tx, sqlstateCheck, "attachments_status_check",
+			insert, ids.New(), r1, u, nil, "orphaned", "k/b3", now)
+		// 寸法は両方あるか、両方ないか。
+		expectViolation(t, tx, sqlstateCheck, "attachments_dimensions",
+			`INSERT INTO attachments (id, room_id, uploader_id, status, object_key, file_name, mime_type, size_bytes, width, created_at)
+			 VALUES ($1, $2, $3, 'pending', 'k/w', 'a.png', 'image/png', 10, 640, $4)`, ids.New(), r1, u, now)
+		mustExec(t, tx, `INSERT INTO attachments (id, room_id, uploader_id, status, object_key, file_name, mime_type, size_bytes, width, height, created_at)
+			 VALUES ($1, $2, $3, 'pending', 'k/wh', 'a.png', 'image/png', 10, 640, 480, $4)`, ids.New(), r1, u, now)
 		// 別のルームでアップロードした添付を、このルームのメッセージに付けられない。
 		expectViolation(t, tx, sqlstateForeignKey, "attachments_message_fkey",
 			insert, ids.New(), r2, u, m1, "attached", "k/c", now)
 
 		mustExec(t, tx, insert, ids.New(), r1, u, m1, "attached", "k/attached", now)
+		mustExec(t, tx, insert, ids.New(), r1, u, m1, "deleted", "k/deleted", now)
 		expectViolation(t, tx, sqlstateUnique, "attachments_object_key_key",
 			insert, ids.New(), r1, u, nil, "pending", "k/attached", now)
 

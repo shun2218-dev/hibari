@@ -218,3 +218,21 @@ func CanDeleteMessage(kind RoomKind, a RoomActor, isSender bool, senderRole Role
 	}
 	return !senderRole.IsMember() || CanManage(a.Role, senderRole)
 }
+
+// ---- 添付ファイル ----
+
+// CanUploadAttachment は、ルームに添付ファイルをアップロードする URL を発行できるかを返す（ADR 0013）。
+// アップロードは投稿の準備なので、投稿できる人に限る。読めるだけの人（参加していない public）がストレージに書き込めると、容量を使うだけの操作ができてしまう。
+func CanUploadAttachment(kind RoomKind, a RoomActor) bool {
+	return CanWriteRoom(kind, a)
+}
+
+// CanCompleteAttachment はアップロードの完了（HEAD による検証）を報告できるかを返す。アップロードした本人だけ。
+func CanCompleteAttachment(isUploader bool) bool {
+	return isUploader
+}
+
+// CanViewAttachment は、メッセージに付いた添付ファイルの GET URL を取得できるかを返す。メッセージを読める人なら取得できる。
+func CanViewAttachment(kind RoomKind, a RoomActor) bool {
+	return CanReadRoom(kind, a)
+}

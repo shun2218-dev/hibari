@@ -21,6 +21,9 @@ type Deps struct {
 	IDs    id.Generator
 	Random io.Reader
 	Logger *slog.Logger
+	// Storage は添付ファイルを置くオブジェクトストレージ。
+	Storage          Storage
+	AttachmentLimits AttachmentLimits
 }
 
 // Service はチャットのユースケース。
@@ -30,6 +33,9 @@ type Service struct {
 	ids    id.Generator
 	random io.Reader
 	logger *slog.Logger
+
+	storage          Storage
+	attachmentLimits AttachmentLimits
 }
 
 // NewService は Service を返す。
@@ -40,6 +46,9 @@ func NewService(d Deps) *Service {
 		ids:    d.IDs,
 		random: d.Random,
 		logger: d.Logger,
+
+		storage:          d.Storage,
+		attachmentLimits: d.AttachmentLimits,
 	}
 }
 

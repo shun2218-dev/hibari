@@ -14,6 +14,7 @@ import (
 
 	"github.com/shun2218-dev/hibari/internal/auth/authtest"
 	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/chattest"
 	"github.com/shun2218-dev/hibari/internal/httpx"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
 	"github.com/shun2218-dev/hibari/internal/platform/ratelimit"
@@ -43,7 +44,10 @@ func newAPI(t *testing.T, opts ...authtest.Option) *apiClient {
 		JWKS:                jwks,
 		RefreshCookieSecure: true,
 		// auth と同じ DB・時計で組み立てる。chat の統合テストは、auth で登録したユーザーを使う。
-		Chat: chat.NewService(chat.Deps{DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Random: rand.Reader, Logger: logger}),
+		Chat: chat.NewService(chat.Deps{
+			DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Random: rand.Reader, Logger: logger,
+			Storage: chattest.NewStorage(t), AttachmentLimits: chattest.AttachmentLimits,
+		}),
 	})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shun2218-dev/hibari/internal/platform/config"
+	"github.com/shun2218-dev/hibari/internal/platform/storage"
 )
 
 func env(m map[string]string) config.LookupEnv {
@@ -24,6 +25,11 @@ func TestLoad(t *testing.T) {
 		"REDIS_URL":    "redis://localhost:6379/0",
 
 		"JWT_PRIVATE_KEY_FILE": "/keys/jwt.pem",
+
+		"S3_ENDPOINT":          "http://minio:9000",
+		"S3_BUCKET":            "hibari",
+		"S3_ACCESS_KEY_ID":     "id",
+		"S3_SECRET_ACCESS_KEY": "secret",
 	}
 	with := func(kv ...string) map[string]string {
 		m := make(map[string]string, len(base)+len(kv)/2)
@@ -58,13 +64,19 @@ func TestLoad(t *testing.T) {
 				JWTAudience:         "hibari-api",
 				RefreshCookieSecure: true,
 				AppBaseURL:          &url.URL{Scheme: "http", Host: "localhost:3000"},
+
+				Storage:                storage.Config{Endpoint: "http://minio:9000", Region: "us-east-1", Bucket: "hibari", AccessKeyID: "id", SecretAccessKey: "secret"},
+				AttachmentMaxBytes:     25 << 20,
+				AttachmentAllowedTypes: config.DefaultAttachmentAllowedTypes,
 			},
 		},
 		{
 			name: "overrides",
 			env: with("HTTP_ADDR", ":9090", "LOG_LEVEL", "debug", "LOG_FORMAT", "text", "SHUTDOWN_TIMEOUT", "3s",
 				"JWT_ISSUER", "https://hibari.example", "JWT_AUDIENCE", "chat", "REFRESH_COOKIE_SECURE", "false",
-				"APP_BASE_URL", "https://hibari.example/app"),
+				"APP_BASE_URL", "https://hibari.example/app",
+				"S3_PUBLIC_ENDPOINT", "http://localhost:9000", "S3_REGION", "auto", "S3_USE_PATH_STYLE", "true",
+				"ATTACHMENT_MAX_BYTES", "1048576", "ATTACHMENT_ALLOWED_TYPES", "image/png, application/octet-stream"),
 			want: config.Config{
 				HTTPAddr:        ":9090",
 				DatabaseURL:     "postgres://localhost/hibari",
@@ -78,12 +90,40 @@ func TestLoad(t *testing.T) {
 				JWTAudience:         "chat",
 				RefreshCookieSecure: false,
 				AppBaseURL:          &url.URL{Scheme: "https", Host: "hibari.example", Path: "/app"},
+
+				Storage: storage.Config{
+					Endpoint: "http://minio:9000", PublicEndpoint: "http://localhost:9000", Region: "auto", Bucket: "hibari",
+					AccessKeyID: "id", SecretAccessKey: "secret", UsePathStyle: true,
+				},
+				AttachmentMaxBytes:     1 << 20,
+				AttachmentAllowedTypes: []string{"image/png", "application/octet-stream"},
 			},
 		},
 		{
-			name:    "missing required values are all reported",
-			env:     map[string]string{"DATABASE_URL": ""},
-			wantErr: []string{"DATABASE_URL is required", "REDIS_URL is required", "JWT_PRIVATE_KEY_FILE is required"},
+			name: "missing required values are all reported",
+			env:  map[string]string{"DATABASE_URL": ""},
+			wantErr: []string{"DATABASE_URL is required", "REDIS_URL is required", "JWT_PRIVATE_KEY_FILE is required",
+				"S3_ENDPOINT is required", "S3_BUCKET is required", "S3_ACCESS_KEY_ID is required", "S3_SECRET_ACCESS_KEY is required"},
+		},
+		{
+			name:    "invalid path style",
+			env:     with("S3_USE_PATH_STYLE", "maybe"),
+			wantErr: []string{"S3_USE_PATH_STYLE"},
+		},
+		{
+			name:    "non-positive attachment max bytes",
+			env:     with("ATTACHMENT_MAX_BYTES", "0"),
+			wantErr: []string{"ATTACHMENT_MAX_BYTES: must be positive"},
+		},
+		{
+			name:    "invalid attachment max bytes",
+			env:     with("ATTACHMENT_MAX_BYTES", "25MB"),
+			wantErr: []string{"ATTACHMENT_MAX_BYTES"},
+		},
+		{
+			name:    "attachment types with parameters or upper case",
+			env:     with("ATTACHMENT_ALLOWED_TYPES", "text/plain; charset=utf-8,Image/PNG,pdf"),
+			wantErr: []string{`"text/plain; charset=utf-8"`, `"Image/PNG"`, `"pdf"`},
 		},
 		{
 			name:    "invalid log level",

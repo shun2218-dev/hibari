@@ -8,9 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/shun2218-dev/hibari/internal/platform/storage"
 )
 
 // Config はサーバーの設定。
@@ -33,6 +37,27 @@ type Config struct {
 	RefreshCookieSecure bool
 	// AppBaseURL は Web クライアントの URL。確認メールや再設定メールのリンクの起点にする。
 	AppBaseURL *url.URL
+
+	// Storage は添付ファイルを置く S3 API のストレージ（ADR 0008 / 0013）。
+	Storage storage.Config
+	// AttachmentMaxBytes は添付ファイル 1 つのサイズの上限。
+	AttachmentMaxBytes int64
+	// AttachmentAllowedTypes は添付ファイルとして受け付ける Content-Type。
+	// 種類の分からないファイルはクライアントが application/octet-stream として申告する（ADR 0013）。
+	AttachmentAllowedTypes []string
+}
+
+// DefaultAttachmentMaxBytes は ATTACHMENT_MAX_BYTES の既定値（25 MiB）。
+const DefaultAttachmentMaxBytes = 25 << 20
+
+// DefaultAttachmentAllowedTypes は ATTACHMENT_ALLOWED_TYPES の既定値。
+// application/octet-stream を含めて、原則すべてのファイルを添付できるようにする。
+// ブラウザで開かせる種類は別に絞っている（chat の inline の判定。ADR 0013）。
+var DefaultAttachmentAllowedTypes = []string{
+	"image/png", "image/jpeg", "image/gif", "image/webp",
+	"application/pdf", "text/plain", "text/csv", "application/json", "application/zip",
+	"video/mp4", "audio/mpeg",
+	"application/octet-stream",
 }
 
 // LogFormat はログの出力形式。
@@ -109,6 +134,44 @@ func Load(lookup LookupEnv) (Config, error) {
 		errs = append(errs, fmt.Errorf("APP_BASE_URL: must be an absolute http(s) URL, got %q", baseURL))
 	default:
 		cfg.AppBaseURL = baseURL
+	}
+
+	cfg.Storage = storage.Config{
+		Endpoint:        required("S3_ENDPOINT"),
+		PublicEndpoint:  optional("S3_PUBLIC_ENDPOINT", ""),
+		Region:          optional("S3_REGION", "us-east-1"),
+		Bucket:          required("S3_BUCKET"),
+		AccessKeyID:     required("S3_ACCESS_KEY_ID"),
+		SecretAccessKey: required("S3_SECRET_ACCESS_KEY"),
+	}
+	pathStyle, err := strconv.ParseBool(optional("S3_USE_PATH_STYLE", "false"))
+	if err != nil {
+		errs = append(errs, fmt.Errorf("S3_USE_PATH_STYLE: %w", err))
+	}
+	cfg.Storage.UsePathStyle = pathStyle
+
+	maxBytes, err := strconv.ParseInt(optional("ATTACHMENT_MAX_BYTES", strconv.Itoa(DefaultAttachmentMaxBytes)), 10, 64)
+	switch {
+	case err != nil:
+		errs = append(errs, fmt.Errorf("ATTACHMENT_MAX_BYTES: %w", err))
+	case maxBytes <= 0:
+		errs = append(errs, fmt.Errorf("ATTACHMENT_MAX_BYTES: must be positive, got %d", maxBytes))
+	default:
+		cfg.AttachmentMaxBytes = maxBytes
+	}
+
+	cfg.AttachmentAllowedTypes = DefaultAttachmentAllowedTypes
+	if v := optional("ATTACHMENT_ALLOWED_TYPES", ""); v != "" {
+		cfg.AttachmentAllowedTypes = nil
+		for t := range strings.SplitSeq(v, ",") {
+			t = strings.TrimSpace(t)
+			// クライアントの申告と完全一致で比べるので、パラメータのない小文字の type/subtype だけを受け付ける。
+			if mt, params, err := mime.ParseMediaType(t); err != nil || len(params) > 0 || mt != t || !strings.Contains(mt, "/") {
+				errs = append(errs, fmt.Errorf("ATTACHMENT_ALLOWED_TYPES: invalid media type %q", t))
+				continue
+			}
+			cfg.AttachmentAllowedTypes = append(cfg.AttachmentAllowedTypes, t)
+		}
 	}
 
 	if len(errs) > 0 {
