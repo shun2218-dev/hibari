@@ -105,7 +105,7 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		logger.ErrorContext(r.Context(), "request failed",
 			slog.String("request_id", RequestID(r.Context())),
 			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
+			slog.String("path", loggedPath(r)),
 			slog.Any("error", err))
 		writeProblem(w, r, problem{Type: "internal", Title: "Internal server error", Status: http.StatusInternalServerError})
 	}

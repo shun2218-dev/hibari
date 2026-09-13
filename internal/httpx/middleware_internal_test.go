@@ -3,9 +3,11 @@ package httpx
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,5 +55,42 @@ func TestAccessLogRecordsDurationFromClock(t *testing.T) {
 	}
 	if entry.Duration != 250*time.Millisecond || entry.Status != http.StatusTeapot {
 		t.Fatalf("log = %+v, want duration=250ms status=418", entry)
+	}
+}
+
+// 招待コードのような秘密のパス変数は、アクセスログにもエラーログにも出さない。
+func TestLogsRedactSecretPathValues(t *testing.T) {
+	clk := clock.NewFake(time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC))
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/invites/{code}", func(w http.ResponseWriter, r *http.Request) {
+		writeError(logger, w, r, errors.New("boom"))
+	})
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	h := withAccessLog(logger, clk, mux)
+
+	const code = "s3cr3tInviteCodeXYZ_-a"
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/invites/"+code, nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/01M2DPCHY4T2M0QCYRC7Y7SYMV", nil))
+
+	if strings.Contains(logs.String(), code) {
+		t.Fatalf("logs contain the invite code:\n%s", logs.String())
+	}
+	var paths []string
+	for line := range strings.Lines(logs.String()) {
+		var entry struct {
+			Path string `json:"path"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, entry.Path)
+	}
+	want := []string{"/api/v1/invites/{code}", "/api/v1/invites/{code}", "/api/v1/workspaces/01M2DPCHY4T2M0QCYRC7Y7SYMV"}
+	if strings.Join(paths, " ") != strings.Join(want, " ") {
+		t.Errorf("logged paths = %v, want %v (error log, access log, then an ID that is not secret)", paths, want)
 	}
 }

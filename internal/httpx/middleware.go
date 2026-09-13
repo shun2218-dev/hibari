@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
@@ -58,8 +59,29 @@ func (s *statusRecorder) Unwrap() http.ResponseWriter {
 	return s.ResponseWriter
 }
 
+// secretPathValues は、値が秘密なのでログに出さないパス変数の名前。
+// 招待コードは「知っていれば参加できる」bearer な秘密で、パス（/api/v1/invites/{code}）に載る（ADR 0011）。
+var secretPathValues = []string{"code"}
+
+// loggedPath はログに出すパスを返す。秘密のパス変数の値は {name} に置き換える。
+//
+// パス変数は ServeMux がパターンに一致したときにだけ設定される。どのパターンにも一致しないパス（404）は伏せられないが、
+// その場合はサーバーが扱う秘密にはなっていない。
+func loggedPath(r *http.Request) string {
+	p := r.URL.Path
+	for _, name := range secretPathValues {
+		if v := r.PathValue(name); v != "" {
+			p = strings.ReplaceAll(p, v, "{"+name+"}")
+		}
+	}
+	return p
+}
+
 // withAccessLog はリクエストごとに 1 行の構造化ログを出す。
-// クエリ文字列は出さない（将来 ws-ticket などの秘密が載るため）。
+// クエリ文字列は出さない（将来 ws-ticket などの秘密が載るため）。パスの秘密は loggedPath で伏せる。
+//
+// ServeMux はパターンとパス変数を、渡された *http.Request にそのまま書き込む。
+// そのため next から戻った後なら、外側のこのミドルウェアからも PathValue で読める。
 func withAccessLog(logger *slog.Logger, clk clock.Clock, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := clk.Now()
@@ -71,7 +93,7 @@ func withAccessLog(logger *slog.Logger, clk clock.Clock, next http.Handler) http
 		logger.InfoContext(r.Context(), "http request",
 			slog.String("request_id", RequestID(r.Context())),
 			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
+			slog.String("path", loggedPath(r)),
 			slog.Int("status", rec.status),
 			slog.Duration("duration", clk.Now().Sub(start)),
 		)
