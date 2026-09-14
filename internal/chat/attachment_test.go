@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -611,5 +613,93 @@ func TestRunAttachmentCleanupStops(t *testing.T) {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatal("RunAttachmentCleanup did not return after the context was canceled")
+	}
+}
+
+// barrierStorage は Delete の回数をキーごとに数える。各インスタンスの最初の Delete は、両方のインスタンスが Delete に
+// 到達するまで待つ（トランザクションで行をロックしたまま待つので、2 台の掃除が確実に重なる）。
+// SKIP LOCKED でなければ、2 台目はロックされた行を待って Delete に到達できず、待ち合わせが時間切れになる。
+type barrierStorage struct {
+	chat.Storage
+	t      *testing.T
+	counts *sync.Map // key → *atomic.Int32
+	first  *sync.Once
+	ready  *sync.WaitGroup
+	both   <-chan struct{}
+}
+
+func (s barrierStorage) Delete(_ context.Context, key string) error {
+	s.first.Do(func() {
+		s.ready.Done()
+		select {
+		case <-s.both:
+		case <-time.After(10 * time.Second):
+			s.t.Error("the other instance did not reach Delete while this one held row locks")
+		}
+	})
+	n, _ := s.counts.LoadOrStore(key, new(atomic.Int32))
+	n.(*atomic.Int32).Add(1)
+	return nil
+}
+
+// ロードマップ Phase 5: 掃除ジョブを複数台で同時に実行しても、同じ添付を重複して消さない（FOR UPDATE SKIP LOCKED）。
+func TestCleanupAttachmentsConcurrentInstances(t *testing.T) {
+	env := chattest.New(t, chattest.WithClockStart(cleanupEpoch))
+	owner := env.CreateUser(t)
+	ws := env.CreateWorkspace(t, owner)
+	room := createRoom(t, env, owner, ws.ID, "public", "public")
+	// 1 回のトランザクションで消す件数（100）より多くして、2 台が別々の行の塊を取れるようにする。
+	const n = 250
+	created := make([]ulid.ULID, n)
+	for i := range created {
+		a, err := env.Service.CreateAttachment(t.Context(), owner, room.ID, textInput("stale.txt", []byte("x")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		created[i] = a.Attachment.ID
+	}
+	keys := map[string]bool{}
+	for _, id := range created {
+		keys[objectKey(t, env, id)] = true
+	}
+	env.Clock.Advance(25 * time.Hour)
+
+	var counts sync.Map
+	var ready sync.WaitGroup
+	ready.Add(2)
+	both := make(chan struct{})
+	go func() {
+		ready.Wait()
+		close(both)
+	}()
+	var wg sync.WaitGroup
+	for range 2 {
+		svc := chat.NewService(chat.Deps{
+			DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Logger: slog.New(slog.DiscardHandler),
+			Storage:  barrierStorage{Storage: env.Storage, t: t, counts: &counts, first: &sync.Once{}, ready: &ready, both: both},
+			Delivery: chat.NopDelivery{}, Presence: env.Presence,
+		})
+		wg.Go(func() {
+			if _, err := svc.CleanupAttachments(context.Background()); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+
+	counts.Range(func(key, v any) bool {
+		if c := v.(*atomic.Int32).Load(); c != 1 {
+			t.Errorf("object %s deleted %d times", key, c)
+		}
+		delete(keys, key.(string))
+		return true
+	})
+	if len(keys) != 0 {
+		t.Errorf("%d objects were not deleted", len(keys))
+	}
+	for _, id := range created {
+		if status := attachmentStatus(t, env, id); status != "" {
+			t.Fatalf("attachment %s still exists with status %q", id, status)
+		}
 	}
 }
