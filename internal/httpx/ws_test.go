@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/oklog/ulid/v2"
 
+	"github.com/shun2218-dev/hibari/internal/chat/realtime"
 	"github.com/shun2218-dev/hibari/internal/httpx"
 	"github.com/shun2218-dev/hibari/internal/platform/authn"
 )
@@ -36,6 +37,8 @@ type wsClient struct {
 	// closed は読み取りが終わったときのエラー（close コードを含む）を 1 回だけ流す。
 	closed chan error
 	seq    int
+	// broker は接続先のインスタンスの Broker。sync で Redis からの受け渡しを待つのに使う。
+	broker *realtime.Broker
 }
 
 func (c *apiClient) issueTicket(u apiUser) string {
@@ -71,7 +74,9 @@ func (c *apiClient) dialWS(u apiUser) *wsClient {
 	if err != nil {
 		c.t.Fatalf("dial: %v (status %d)", err, status)
 	}
-	return startWSClient(c.t, conn)
+	w := startWSClient(c.t, conn)
+	w.broker = c.broker
+	return w
 }
 
 func startWSClient(t *testing.T, conn *websocket.Conn) *wsClient {
@@ -146,10 +151,18 @@ func (w *wsClient) subscribe(field, id string) {
 	}
 }
 
-// sync は ping の ack が返るまでに届いたイベントを返す。
-// サーバーは 1 本の書き込みの goroutine が送信キューの順に書くので、ping より前にキューに入ったイベントは ack より先に届く。
+// sync は、それまでに publish されたイベントがすべて届くのを待ち、届いたイベントを返す。
+//
+// イベントは Redis Pub/Sub を通るので、REST のレスポンスより後に接続先のインスタンスに届く（ADR 0016）。
+// まず Broker.Sync で、Redis が受け付けた publish を Hub が送信キューに入れ終えるまで待つ。
+// その後の ping の ack は、サーバーの 1 本の書き込みの goroutine が送信キューの順に書くので、キューにあるイベントより後に届く。
 func (w *wsClient) sync() []wsFrame {
 	w.t.Helper()
+	if w.broker != nil {
+		if err := w.broker.Sync(w.t.Context()); err != nil {
+			w.t.Fatalf("broker sync: %v", err)
+		}
+	}
 	_, events := w.request(map[string]any{"type": "ping"})
 	return events
 }
@@ -739,9 +752,8 @@ func TestWSPingTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = conn.CloseNow() }()
-	if !c.online(u.id) {
-		t.Fatal("not online after connecting")
-	}
+	// アップグレードの応答はサーバーが接続を Hub に登録する前に返るので、オンラインになるのを待つ。
+	waitUntil(t, func() bool { return c.online(u.id) })
 	// ping に応答しないので、サーバーが切って登録を外す（presence がオフラインになる）。
 	waitUntil(t, func() bool { return !c.online(u.id) })
 }

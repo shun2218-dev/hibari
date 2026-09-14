@@ -1,7 +1,8 @@
 // Package realtime は WebSocket の接続を束ねる Hub（ADR 0015）。
 //
-// Hub は chat.Delivery の Phase 4 の実装で、単一インスタンスのメモリの中だけで宛先を解決する。
-// 2 台目のインスタンスに接続したクライアントには届かない（ロードマップ Phase 4 の意図どおり。Phase 5 で Redis に置き換える）。
+// Hub はこのインスタンスの接続だけを管理する。インスタンスをまたぐ配信は Redis Pub/Sub が担い（RedisDelivery / Broker。ADR 0016）、
+// Hub は Broker から受け取ったイベントを自分の接続に届ける（DeliverLocal）。
+// 接続が購読しているチャンネルは、購読の数を Broker に伝え、このインスタンスが必要なチャンネルだけを Redis で購読させる。
 //
 // Hub が扱うのは「誰がどの接続で何を購読しているか」と「イベントをどの接続に届けるか」だけで、
 // WebSocket のフレームや JSON は知らない。接続は Conn インターフェースとして受け取り、書き込みは実装（httpx）の
@@ -11,6 +12,7 @@ package realtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/presence"
 	"github.com/shun2218-dev/hibari/internal/platform/authn"
 )
 
@@ -48,6 +51,8 @@ const (
 	CloseSessionRevoked
 	// CloseServerShutdown はサーバーが停止する。
 	CloseServerShutdown
+	// CloseResync は、Redis との接続が張り直されてイベントを取りこぼしたかもしれない。クライアントは再接続して同期する（ADR 0016）。
+	CloseResync
 )
 
 // Conn は Hub から見た 1 本の接続。
@@ -69,10 +74,25 @@ type Authorizer interface {
 }
 
 // Presence は presence と typing の置き場所（presence.Store が実装する）。
+// presence の変化のイベントは、状態の変更と同じ Lua スクリプトの中で publish させる（ADR 0016）。
 type Presence interface {
-	SetOnline(ctx context.Context, userIDs ...ulid.ULID) error
-	SetOffline(ctx context.Context, userID ulid.ULID) error
+	Connect(ctx context.Context, userID ulid.ULID, online presence.Announcement) (bool, error)
+	Disconnect(ctx context.Context, userID ulid.ULID, offline presence.Announcement) (bool, error)
+	Refresh(ctx context.Context, userIDs ...ulid.ULID) error
 	StartTyping(ctx context.Context, roomID, userID ulid.ULID) (bool, error)
+}
+
+// Publisher はイベントをすべてのインスタンスに向けて publish する（*RedisDelivery が実装する）。
+type Publisher interface {
+	chat.Delivery
+	Announcement(ev chat.Event) (presence.Announcement, error)
+}
+
+// Subscriber は Redis Pub/Sub のチャンネルの購読を数える（*Broker が実装する）。
+type Subscriber interface {
+	// Acquire は購読を 1 つ増やし、Redis が反映するまで待つ。成功したら後で Release を呼ぶ。
+	Acquire(ctx context.Context, channel string) error
+	Release(channel string)
 }
 
 // Deps は Hub の依存。
@@ -80,6 +100,8 @@ type Deps struct {
 	Authorizer Authorizer
 	Presence   Presence
 	Sessions   authn.SessionChecker
+	Publisher  Publisher
+	Subscriber Subscriber
 	Logger     *slog.Logger
 }
 
@@ -118,12 +140,14 @@ func (s clientSet) add(c *Client) { s[c] = struct{}{} }
 // 別のユーザー同士はほとんど待ち合わないようにする。
 const presenceStripes = 64
 
-// Hub は接続と購読を管理し、イベントを接続に届ける。chat.Delivery を実装する。
+// Hub はこのインスタンスの接続と購読を管理し、イベントを接続に届ける。
 type Hub struct {
-	auth     Authorizer
-	presence Presence
-	sessions authn.SessionChecker
-	logger   *slog.Logger
+	auth       Authorizer
+	presence   Presence
+	sessions   authn.SessionChecker
+	publisher  Publisher
+	subscriber Subscriber
+	logger     *slog.Logger
 
 	mu            sync.Mutex
 	clients       clientSet
@@ -134,16 +158,20 @@ type Hub struct {
 	// epochs はユーザーごとの「購読の再検証を始めた回数」。
 	// 購読の authz の前後で値が変わっていたら、authz が権限の変更の前の DB を読んだ可能性があるので、やり直す（ADR 0015）。
 	epochs map[ulid.ULID]uint64
-	// announced は、最後に presence.changed でオンラインと知らせたユーザー。
+	// announced は、このインスタンスが presence にオンラインとして記録したユーザー。
 	announced    map[ulid.ULID]bool
 	shuttingDown bool
-	// drained は停止中に接続が 0 本になったら閉じる。
-	drained chan struct{}
+	// unregistering は、登録を外したが後始末（Redis の購読の解除と presence の更新）が終わっていない Unregister の数。
+	unregistering int
+	// drained は、停止中に接続が 0 本になり、後始末もすべて終わったら閉じる。
+	// 後始末を待たずに閉じると、呼び出し側（main）が Redis のクライアントを先に閉じて、presence が更新されずに残る。
+	drained     chan struct{}
+	drainClosed bool
 
 	presenceLocks [presenceStripes]sync.Mutex
 }
 
-var _ chat.Delivery = (*Hub)(nil)
+var _ Receiver = (*Hub)(nil)
 
 // NewHub は Hub を返す。
 func NewHub(d Deps) *Hub {
@@ -151,6 +179,8 @@ func NewHub(d Deps) *Hub {
 		auth:          d.Authorizer,
 		presence:      d.Presence,
 		sessions:      d.Sessions,
+		publisher:     d.Publisher,
+		subscriber:    d.Subscriber,
 		logger:        d.Logger,
 		clients:       clientSet{},
 		byUser:        map[ulid.ULID]clientSet{},
@@ -164,11 +194,23 @@ func NewHub(d Deps) *Hub {
 }
 
 // Register は検証済みの id の接続を登録する。そのユーザーの最初の接続なら、オンラインにして知らせる。
+//
+// 本人宛てのイベント（user チャンネル）の購読を Redis が反映してから登録する。戻った後に起きた本人宛てのイベントを取りこぼさないため。
 func (h *Hub) Register(ctx context.Context, id authn.Identity, conn Conn) (*Client, error) {
 	c := &Client{identity: id, conn: conn, rooms: map[ulid.ULID]ulid.ULID{}, workspaces: map[ulid.ULID]struct{}{}}
 	h.mu.Lock()
+	shuttingDown := h.shuttingDown
+	h.mu.Unlock()
+	if shuttingDown {
+		return nil, ErrShuttingDown
+	}
+	if err := h.subscriber.Acquire(ctx, userChannel(id.UserID)); err != nil {
+		return nil, fmt.Errorf("subscribe user channel: %w", err)
+	}
+	h.mu.Lock()
 	if h.shuttingDown {
 		h.mu.Unlock()
+		h.subscriber.Release(userChannel(id.UserID))
 		return nil, ErrShuttingDown
 	}
 	c.registered = true
@@ -192,22 +234,38 @@ func (h *Hub) Unregister(ctx context.Context, c *Client) {
 	delete(h.clients, c)
 	removeFrom(h.byUser, c.identity.UserID, c)
 	removeFrom(h.bySession, c.identity.SessionID, c)
+	channels := []string{userChannel(c.identity.UserID)}
 	for roomID := range c.rooms {
 		removeFrom(h.roomSubs, roomID, c)
+		channels = append(channels, roomChannel(roomID))
 	}
 	for workspaceID := range c.workspaces {
 		removeFrom(h.workspaceSubs, workspaceID, c)
+		channels = append(channels, workspaceChannel(workspaceID))
 	}
 	if _, ok := h.byUser[c.identity.UserID]; !ok {
 		delete(h.epochs, c.identity.UserID)
 	}
-	if h.shuttingDown && len(h.clients) == 0 {
-		close(h.drained)
-	}
+	h.unregistering++
 	h.mu.Unlock()
 
+	// Redis への送信はロックの外で行う（ほかの接続への配信を止めない）。
+	h.release(channels)
 	// 接続が切れた後の後始末なので、呼び出し側の ctx がキャンセル済みでも presence は更新する。
 	h.syncPresence(context.WithoutCancel(ctx), c.identity.UserID)
+
+	h.mu.Lock()
+	h.unregistering--
+	h.closeDrainedLocked()
+	h.mu.Unlock()
+}
+
+// closeDrainedLocked は、停止中で、接続も後始末中の Unregister もなくなったら drained を閉じる。
+func (h *Hub) closeDrainedLocked() {
+	if h.shuttingDown && !h.drainClosed && len(h.clients) == 0 && h.unregistering == 0 {
+		h.drainClosed = true
+		close(h.drained)
+	}
 }
 
 // Subscribe は購読を始める。authz を通らなければ chat.ErrNotFound（存在を明かさない）。すでに購読していれば何もしない。
@@ -237,14 +295,20 @@ func (h *Hub) Subscribe(ctx context.Context, c *Client, t Topic) error {
 		if err != nil {
 			return err
 		}
+		// Redis が購読を反映してから ack を返す。ack の後に REST を読むクライアントが、その間のイベントを取りこぼさないため（ADR 0016）。
+		if err := h.subscriber.Acquire(ctx, t.channel()); err != nil {
+			return err
+		}
 
 		h.mu.Lock()
 		if h.epochs[userID] != epoch {
 			// authz の間にこのユーザーの権限が変わった。authz が変更の前の DB を読んで通った可能性があるので、やり直す。
 			h.mu.Unlock()
+			h.subscriber.Release(t.channel())
 			continue
 		}
-		if c.registered && !c.subscribed(t) {
+		added := c.registered && !c.subscribed(t)
+		if added {
 			if t.RoomID != (ulid.ULID{}) {
 				c.rooms[t.RoomID] = workspaceID
 				addTo(h.roomSubs, t.RoomID, c)
@@ -254,6 +318,9 @@ func (h *Hub) Subscribe(ctx context.Context, c *Client, t Topic) error {
 			}
 		}
 		h.mu.Unlock()
+		if !added {
+			h.subscriber.Release(t.channel())
+		}
 		return nil
 	}
 }
@@ -261,21 +328,34 @@ func (h *Hub) Subscribe(ctx context.Context, c *Client, t Topic) error {
 // Unsubscribe は購読をやめる。購読していなければ何もしない。
 func (h *Hub) Unsubscribe(c *Client, t Topic) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.unsubscribeLocked(c, t)
+	removed := h.unsubscribeLocked(c, t)
+	h.mu.Unlock()
+	if removed {
+		h.subscriber.Release(t.channel())
+	}
 }
 
-func (h *Hub) unsubscribeLocked(c *Client, t Topic) {
+// unsubscribeLocked は購読を外し、外したら true を返す。呼び出し側はロックを外してから Release する。
+func (h *Hub) unsubscribeLocked(c *Client, t Topic) bool {
 	if t.RoomID != (ulid.ULID{}) {
 		if _, ok := c.rooms[t.RoomID]; ok {
 			delete(c.rooms, t.RoomID)
 			removeFrom(h.roomSubs, t.RoomID, c)
+			return true
 		}
-		return
+		return false
 	}
 	if _, ok := c.workspaces[t.WorkspaceID]; ok {
 		delete(c.workspaces, t.WorkspaceID)
 		removeFrom(h.workspaceSubs, t.WorkspaceID, c)
+		return true
+	}
+	return false
+}
+
+func (h *Hub) release(channels []string) {
+	for _, ch := range channels {
+		h.subscriber.Release(ch)
 	}
 }
 
@@ -308,7 +388,7 @@ func (h *Hub) Typing(ctx context.Context, c *Client, roomID ulid.ULID) error {
 	if err != nil {
 		return err
 	}
-	h.Deliver(ctx, chat.Event{
+	h.publisher.Deliver(ctx, chat.Event{
 		Type: chat.EventTypingStarted,
 		To:   chat.Audience{Rooms: []ulid.ULID{roomID}, ExceptUser: userID},
 		Data: data,
@@ -316,8 +396,9 @@ func (h *Hub) Typing(ctx context.Context, c *Client, roomID ulid.ULID) error {
 	return nil
 }
 
-// Deliver はイベントを宛先の接続に届ける。権限が変わったユーザーがいれば、先にその購読を再検証する（CLAUDE.md ルール 8）。
-func (h *Hub) Deliver(ctx context.Context, ev chat.Event) {
+// DeliverLocal はイベントを、このインスタンスの宛先の接続に届ける（Broker が Redis から受け取ったイベントを渡す）。
+// 権限が変わったユーザーの接続がこのインスタンスにあれば、先にその購読を再検証する（CLAUDE.md ルール 8）。
+func (h *Hub) DeliverLocal(ctx context.Context, ev chat.Event) {
 	for _, ch := range ev.AccessChanges {
 		workspaceID := ch.WorkspaceID
 		// 通知はイベントそのものが担うので、再検証では購読を外すだけにする。
@@ -406,6 +487,7 @@ func (h *Hub) revalidateUser(ctx context.Context, userID ulid.ULID, workspaceID 
 		ev chat.Event
 	}
 	var removals []removal
+	var released []string
 	h.mu.Lock()
 	for c := range h.byUser[userID] {
 		// 確かめた集合（roomSet / workspaceSet）に入っていた購読だけを外す。
@@ -413,6 +495,7 @@ func (h *Hub) revalidateUser(ctx context.Context, userID ulid.ULID, workspaceID 
 		for roomID, ws := range c.rooms {
 			if roomSet[roomID] && !allowedRooms[roomID] {
 				h.unsubscribeLocked(c, RoomTopic(roomID))
+				released = append(released, roomChannel(roomID))
 				removals = append(removals, removal{c, chat.Event{
 					Type: chat.EventRoomMemberRemoved,
 					Data: chat.RoomMemberRemoved{WorkspaceID: ws, RoomID: roomID, Reason: chat.RemovalRemoved},
@@ -422,6 +505,7 @@ func (h *Hub) revalidateUser(ctx context.Context, userID ulid.ULID, workspaceID 
 		for ws := range c.workspaces {
 			if workspaceSet[ws] && !allowedWorkspaces[ws] {
 				h.unsubscribeLocked(c, WorkspaceTopic(ws))
+				released = append(released, workspaceChannel(ws))
 				removals = append(removals, removal{c, chat.Event{
 					Type: chat.EventWorkspaceMemberRemoved,
 					Data: chat.WorkspaceMemberRemoved{WorkspaceID: ws, UserID: userID, Reason: chat.RemovalRemoved},
@@ -430,6 +514,7 @@ func (h *Hub) revalidateUser(ctx context.Context, userID ulid.ULID, workspaceID 
 		}
 	}
 	h.mu.Unlock()
+	h.release(released)
 
 	if notify {
 		for _, r := range removals {
@@ -453,6 +538,24 @@ func (h *Hub) CloseSessions(_ context.Context, rev authn.Revocation) {
 	for _, c := range targets {
 		c.conn.Close(CloseSessionRevoked)
 	}
+}
+
+// Resync は、このインスタンスのすべての接続を閉じさせ、クライアントに再接続と差分の取得をさせる。
+// Redis Pub/Sub の接続が張り直されたとき（その間のイベントが失われたとき）に Broker が呼ぶ（ADR 0016）。
+func (h *Hub) Resync(_ context.Context) {
+	for _, c := range h.allClients() {
+		c.conn.Close(CloseResync)
+	}
+}
+
+func (h *Hub) allClients() []*Client {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]*Client, 0, len(h.clients))
+	for c := range h.clients {
+		out = append(out, c)
+	}
+	return out
 }
 
 // Revalidate は、すべての接続のセッションと購読を DB で確かめ直す（ADR 0015 の定期的な再検証）。
@@ -490,7 +593,7 @@ func (h *Hub) Revalidate(ctx context.Context) {
 	}
 }
 
-// RefreshPresence は、接続中のユーザーの presence の TTL を延ばす。
+// RefreshPresence は、このインスタンスに接続しているユーザーの presence の TTL を延ばす。
 func (h *Hub) RefreshPresence(ctx context.Context) {
 	h.mu.Lock()
 	users := make([]ulid.ULID, 0, len(h.announced))
@@ -498,7 +601,7 @@ func (h *Hub) RefreshPresence(ctx context.Context) {
 		users = append(users, userID)
 	}
 	h.mu.Unlock()
-	if err := h.presence.SetOnline(ctx, users...); err != nil {
+	if err := h.presence.Refresh(ctx, users...); err != nil {
 		h.logger.ErrorContext(ctx, "refresh presence failed", slog.Any("error", err))
 	}
 }
@@ -525,19 +628,11 @@ func (h *Hub) Run(ctx context.Context, presenceInterval, revalidateInterval time
 // http.Server.Shutdown はアップグレード済みの接続を扱わないので、サーバーの停止時にこれを呼ぶ。
 func (h *Hub) Shutdown(ctx context.Context) error {
 	h.mu.Lock()
-	if !h.shuttingDown {
-		h.shuttingDown = true
-		if len(h.clients) == 0 {
-			close(h.drained)
-		}
-	}
-	targets := make([]*Client, 0, len(h.clients))
-	for c := range h.clients {
-		targets = append(targets, c)
-	}
+	h.shuttingDown = true
+	h.closeDrainedLocked()
 	h.mu.Unlock()
 
-	for _, c := range targets {
+	for _, c := range h.allClients() {
 		c.conn.Close(CloseServerShutdown)
 	}
 	select {
@@ -548,10 +643,11 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 	}
 }
 
-// syncPresence は、userID の接続の有無と、最後に知らせた presence が食い違っていれば、Redis を更新して presence.changed を送る。
+// syncPresence は、userID のこのインスタンスの接続の有無と、presence に記録した状態が食い違っていれば、presence を更新する。
+// インスタンスをまたいで最初の接続・最後の切断になったときだけ、presence の Lua スクリプトが presence.changed を publish する（ADR 0016）。
 //
-// 同じユーザーの遷移はロックで直列にする。「最後の接続の切断」と「新しい接続」が並行すると、Redis の DEL と SET、
-// オフラインとオンラインの通知の順序が入れ替わり、接続しているのにオフラインに見えることがあるため。
+// 同じユーザーの遷移はこのインスタンスの中でロックで直列にする。「最後の接続の切断」と「新しい接続」が並行すると、
+// Redis の HDEL と HSET の順序が入れ替わり、接続しているのにフィールドが消えることがあるため。
 func (h *Hub) syncPresence(ctx context.Context, userID ulid.ULID) {
 	lock := &h.presenceLocks[int(userID[len(userID)-1])%presenceStripes]
 	lock.Lock()
@@ -570,26 +666,30 @@ func (h *Hub) syncPresence(ctx context.Context, userID ulid.ULID) {
 	}
 	h.mu.Unlock()
 
-	var err error
-	if online {
-		err = h.presence.SetOnline(ctx, userID)
-	} else {
-		err = h.presence.SetOffline(ctx, userID)
-	}
-	if err != nil {
-		// REST の online が一時的にずれるだけなので、WebSocket の通知は続ける。
-		h.logger.ErrorContext(ctx, "update presence failed", slog.String("user_id", userID.String()), slog.Any("error", err))
-	}
+	// 宛先のワークスペースを読めなくても presence は更新する（REST の online を正しく保つ）。そのときは知らせない。
+	var ann presence.Announcement
 	workspaces, err := h.auth.WorkspaceIDs(ctx, userID)
 	if err != nil {
 		h.logger.ErrorContext(ctx, "list workspaces for presence failed", slog.String("user_id", userID.String()), slog.Any("error", err))
-		return
+	} else {
+		ann, err = h.publisher.Announcement(chat.Event{
+			Type: chat.EventPresenceChanged,
+			To:   chat.Audience{Workspaces: workspaces},
+			Data: chat.PresenceChanged{UserID: userID, Online: online},
+		})
+		if err != nil {
+			h.logger.ErrorContext(ctx, "encode presence event failed", slog.String("user_id", userID.String()), slog.Any("error", err))
+		}
 	}
-	h.Deliver(ctx, chat.Event{
-		Type: chat.EventPresenceChanged,
-		To:   chat.Audience{Workspaces: workspaces},
-		Data: chat.PresenceChanged{UserID: userID, Online: online},
-	})
+	if online {
+		_, err = h.presence.Connect(ctx, userID, ann)
+	} else {
+		_, err = h.presence.Disconnect(ctx, userID, ann)
+	}
+	if err != nil {
+		// 接続中なら RefreshPresence が次の周期でフィールドを置き直す。切断なら TTL で消える。
+		h.logger.ErrorContext(ctx, "update presence failed", slog.String("user_id", userID.String()), slog.Any("error", err))
+	}
 }
 
 func addTo(m map[ulid.ULID]clientSet, key ulid.ULID, c *Client) {

@@ -155,8 +155,14 @@ func (h *wsHandlers) serve(ctx context.Context, conn *websocket.Conn, id authn.I
 	c := newWSConn(ctx, conn, h.cfg, h.logger)
 	client, err := h.hub.Register(ctx, id, c)
 	if err != nil {
-		// 停止中（ErrShuttingDown）。書き込みの goroutine はまだ起動していないので、ここで閉じる。
-		_ = conn.Close(websocket.StatusGoingAway, "server is shutting down")
+		// 書き込みの goroutine はまだ起動していないので、ここで閉じる。
+		if errors.Is(err, realtime.ErrShuttingDown) {
+			_ = conn.Close(websocket.StatusGoingAway, "")
+			return
+		}
+		// 本人宛てのチャンネルを購読できない（Redis の障害など）。イベントが届かない接続を残さず、再接続させる。
+		h.logger.ErrorContext(ctx, "register websocket failed", slog.String("user_id", id.UserID.String()), slog.Any("error", err))
+		_ = conn.Close(websocket.StatusInternalError, "")
 		return
 	}
 	go c.writeLoop()
@@ -358,6 +364,8 @@ func (c *wsConn) Close(reason realtime.CloseReason) {
 		c.closeWith(closeSlowConsumer)
 	case realtime.CloseSessionRevoked:
 		c.closeWith(closeSessionRevoked)
+	case realtime.CloseResync:
+		c.closeWith(websocket.StatusServiceRestart)
 	default:
 		c.closeWith(websocket.StatusGoingAway)
 	}

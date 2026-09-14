@@ -27,7 +27,8 @@ services:
       retries: 30
 
   redis:
-    image: redis:7-alpine
+    # presence のフィールドごとの TTL（HEXPIRE）に 7.4 以降が必要（ADR 0016）。
+    image: redis:7.4-alpine
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s

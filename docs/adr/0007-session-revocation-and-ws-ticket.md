@@ -58,3 +58,8 @@
 
 - 定期的な再検証は **5 分ごと**に、すべての接続の sid の有効性と購読の authz を DB で確かめる（ADR 0015）。
 - ws-ticket の消費時と定期の再検証では、`authn.SessionChecker`（実装は auth の `SessionActive`。`refresh_tokens` の family に未失効・期限内の行があるか）でセッションの有効性を確かめる。authn も chat も auth を import せず、main で配線する。
+
+### 2026-09-15 複数インスタンスでの失効の反映（Phase 5）
+
+- `auth:revoked` はすべてのインスタンスが購読しているので、どのインスタンスに接続していても失効で WebSocket が切れる。ws-ticket も Redis に置くので、発行したインスタンスと接続するインスタンスが違ってもよい。
+- あるインスタンスが失効イベントを取りこぼしても、そのインスタンスの 5 分ごとの再検証で切れる（変更なし）。

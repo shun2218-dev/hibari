@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/shun2218-dev/hibari/internal/auth/authtest"
 	"github.com/shun2218-dev/hibari/internal/chat"
@@ -35,7 +36,11 @@ type apiClient struct {
 	env      *authtest.Env
 	srv      *httptest.Server
 	hub      *realtime.Hub
+	broker   *realtime.Broker
 	presence *presence.Store
+	redis    *goredis.Client
+	// instanceID はこのサーバー（インスタンス）の ID。presence のフィールドの名前になる。
+	instanceID ulid.ULID
 }
 
 // testWSConfig は WebSocket の設定。ping を待つテスト以外で ping が割り込まないよう、間隔は既定のまま長くする。
@@ -76,23 +81,56 @@ func newAPI(t *testing.T, opts ...apiOption) *apiClient {
 		opt(&o)
 	}
 	env := authtest.New(t, o.auth...)
+	return startInstance(t, env, o)
+}
+
+// newInstance は、同じ DB・Redis・鍵を使う 2 台目のサーバー（インスタンス）を立てる。
+// インスタンスの間の配信は Redis Pub/Sub だけを通る（ADR 0016）。
+func (c *apiClient) newInstance(opts ...apiOption) *apiClient {
+	c.t.Helper()
+	o := apiOptions{ws: testWSConfig()}
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return startInstance(c.t, c.env, o)
+}
+
+// startInstance は 1 台分のサーバー（Hub・Broker・presence・ルーター）を組み立てて起動する。
+func startInstance(t *testing.T, env *authtest.Env, o apiOptions) *apiClient {
+	t.Helper()
 	jwks, err := env.AccessTokens.JWKS()
 	if err != nil {
 		t.Fatal(err)
 	}
 	logger := slog.New(slog.DiscardHandler)
-	presenceStore := chattest.NewPresence(t)
-	hub := realtime.NewHub(realtime.Deps{
-		Authorizer: chat.NewSubscriptionAuthorizer(env.Pool),
-		Presence:   presenceStore,
-		Sessions:   env.Service,
-		Logger:     logger,
-	})
 	rdb, err := redis.Open(t.Context(), testenv.RedisURL(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = rdb.Close() })
+
+	instanceID := env.IDs.New()
+	broker, err := realtime.NewBroker(t.Context(), rdb, instanceID, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delivery := realtime.NewRedisDelivery(rdb, env.IDs, logger)
+	presenceStore := presence.New(rdb, instanceID)
+	hub := realtime.NewHub(realtime.Deps{
+		Authorizer: chat.NewSubscriptionAuthorizer(env.Pool),
+		Presence:   presenceStore,
+		Sessions:   env.Service,
+		Publisher:  delivery,
+		Subscriber: broker,
+		Logger:     logger,
+	})
+	brokerCtx, stopBroker := context.WithCancel(context.Background())
+	brokerDone := make(chan struct{})
+	go func() {
+		defer close(brokerDone)
+		broker.Run(brokerCtx, hub)
+	}()
+
 	h := httpx.NewRouter(httpx.Deps{
 		Logger:              logger,
 		Clock:               env.Clock,
@@ -106,7 +144,7 @@ func newAPI(t *testing.T, opts ...apiOption) *apiClient {
 		Chat: chat.NewService(chat.Deps{
 			DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Random: rand.Reader, Logger: logger,
 			Storage: chattest.NewStorage(t), AttachmentLimits: chattest.AttachmentLimits,
-			Delivery: hub, Presence: presenceStore,
+			Delivery: delivery, Presence: presenceStore,
 		}),
 		Realtime:  hub,
 		WSTickets: authn.NewWSTickets(rdb, rand.Reader),
@@ -122,8 +160,10 @@ func newAPI(t *testing.T, opts ...apiOption) *apiClient {
 			t.Errorf("hub shutdown: %v", err)
 		}
 		srv.Close()
+		stopBroker()
+		<-brokerDone
 	})
-	return &apiClient{t: t, env: env, srv: srv, hub: hub, presence: presenceStore}
+	return &apiClient{t: t, env: env, srv: srv, hub: hub, broker: broker, presence: presenceStore, redis: rdb, instanceID: instanceID}
 }
 
 type request struct {
