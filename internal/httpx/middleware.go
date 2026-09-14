@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
@@ -94,8 +95,17 @@ func withAccessLog(logger *slog.Logger, clk clock.Clock, next http.Handler) http
 			slog.String("request_id", RequestID(r.Context())),
 			slog.String("method", r.Method),
 			slog.String("path", loggedPath(r)),
+			slog.String("client_ip", logIP(clientIPFrom(r.Context()))),
 			slog.Int("status", rec.status),
 			slog.Duration("duration", clk.Now().Sub(start)),
 		)
 	})
+}
+
+// logIP はログに出す IP の表記を返す。分からなければ空文字列。
+func logIP(ip netip.Addr) string {
+	if !ip.IsValid() {
+		return ""
+	}
+	return ip.String()
 }

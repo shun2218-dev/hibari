@@ -172,6 +172,8 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 			{Name: "postgres", Check: pool.Ping},
 			{Name: "redis", Check: func(ctx context.Context) error { return rdb.Ping(ctx).Err() }},
 		},
+		// 前段のプロキシ（ローカルは Caddy、本番は Fly のプロキシ）。空なら X-Forwarded-For を読まない（ADR 0017）。
+		TrustedProxies:      cfg.TrustedProxies,
 		Auth:                authService,
 		Verifier:            verifier,
 		JWKS:                jwks,

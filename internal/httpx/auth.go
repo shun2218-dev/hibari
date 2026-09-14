@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"net/netip"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -255,13 +254,7 @@ func (h *authHandlers) jwksJSON(w http.ResponseWriter, _ *http.Request) {
 }
 
 // clientOf はリクエストから監査用のクライアント情報を取り出す。
-//
-// IP は接続元のアドレス（RemoteAddr）だけを使い、X-Forwarded-For は信用しない。
-// 信頼できるプロキシを経由する構成（Phase 5 の Caddy）になったら、そのときにプロキシのアドレスを設定で受け取って読む。
+// IP は withClientIP が求めた値だけを使う（ADR 0017）。ここで RemoteAddr や X-Forwarded-For を読まない。
 func clientOf(r *http.Request) auth.Client {
-	c := auth.Client{UserAgent: r.UserAgent()}
-	if ap, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
-		c.IP = ap.Addr()
-	}
-	return c
+	return auth.Client{UserAgent: r.UserAgent(), IP: clientIPFrom(r.Context())}
 }

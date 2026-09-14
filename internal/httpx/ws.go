@@ -137,7 +137,8 @@ func (h *wsHandlers) connect(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: h.cfg.OriginPatterns})
 	if err != nil {
 		// Accept がエラーのレスポンス（Origin の拒否など）を書いている。
-		h.logger.InfoContext(r.Context(), "websocket upgrade rejected", slog.String("request_id", RequestID(r.Context())), slog.Any("error", err))
+		h.logger.InfoContext(r.Context(), "websocket upgrade rejected",
+			slog.String("request_id", RequestID(r.Context())), slog.String("client_ip", logIP(clientIPFrom(r.Context()))), slog.Any("error", err))
 		return
 	}
 	conn.SetReadLimit(wsReadLimit)

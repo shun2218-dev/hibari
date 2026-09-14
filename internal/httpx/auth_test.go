@@ -9,9 +9,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/auth/authtest"
 	"github.com/shun2218-dev/hibari/internal/chat"
@@ -41,8 +44,9 @@ func testWSConfig() httpx.WSConfig {
 }
 
 type apiOptions struct {
-	auth []authtest.Option
-	ws   httpx.WSConfig
+	auth    []authtest.Option
+	ws      httpx.WSConfig
+	trusted httpx.TrustedProxies
 }
 
 // apiOption は newAPI の組み立てを変える。
@@ -54,6 +58,15 @@ func withAuthOptions(opts ...authtest.Option) apiOption {
 
 func withWSConfig(cfg httpx.WSConfig) apiOption {
 	return func(o *apiOptions) { o.ws = cfg }
+}
+
+// withTrustedProxies は X-Forwarded-For を信用するプロキシを設定する。
+func withTrustedProxies(prefixes ...string) apiOption {
+	return func(o *apiOptions) {
+		for _, p := range prefixes {
+			o.trusted = append(o.trusted, netip.MustParsePrefix(p))
+		}
+	}
 }
 
 func newAPI(t *testing.T, opts ...apiOption) *apiClient {
@@ -84,6 +97,7 @@ func newAPI(t *testing.T, opts ...apiOption) *apiClient {
 		Logger:              logger,
 		Clock:               env.Clock,
 		IDs:                 id.NewGenerator(env.Clock, rand.Reader),
+		TrustedProxies:      o.trusted,
 		Auth:                env.Service,
 		Verifier:            env.Verifier,
 		JWKS:                jwks,
@@ -544,4 +558,44 @@ func TestLoginRateLimitedResponse(t *testing.T) {
 	if got := r.header.Get("Retry-After"); got != "900" {
 		t.Fatalf("Retry-After = %q, want 900", got)
 	}
+}
+
+// クライアント IP（ADR 0017）は、レート制限と refresh_tokens.ip の両方で同じ値になる。
+func TestClientIPForRateLimitAndRefreshToken(t *testing.T) {
+	limits := authtest.GenerousRateLimits
+	limits.RegisterPerIP = ratelimit.Rule{Name: authtest.RuleName("register-ip"), Limit: 1, Window: time.Hour}
+	register := func(c *apiClient, xff string) response {
+		return c.do(request{method: http.MethodPost, path: "/api/v1/auth/register", body: registerBody(c), headers: map[string]string{"X-Forwarded-For": xff}})
+	}
+
+	t.Run("信頼するプロキシ経由なら XFF のクライアントごとに数え、その IP を保存する", func(t *testing.T) {
+		// httptest のサーバーへの接続元はループバックなので、それを前段のプロキシとして信頼する。
+		c := newAPI(t, withAuthOptions(authtest.WithRateLimits(limits)), withTrustedProxies("127.0.0.0/8", "::1/128"))
+		r := register(c, "198.51.100.1")
+		if r.status != http.StatusCreated {
+			t.Fatalf("register = %d %s", r.status, r.body)
+		}
+		expectProblem(t, register(c, "198.51.100.1"), http.StatusTooManyRequests, "rate-limited")
+		if r := register(c, "198.51.100.2"); r.status != http.StatusCreated {
+			t.Fatalf("register from another client = %d %s", r.status, r.body)
+		}
+
+		var ip string
+		userID := decode[tokenBody](t, r).User.ID
+		err := c.env.Pool.QueryRow(t.Context(), "SELECT host(ip) FROM refresh_tokens WHERE user_id = $1", ulid.MustParse(userID)).Scan(&ip)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ip != "198.51.100.1" {
+			t.Fatalf("refresh_tokens.ip = %q, want 198.51.100.1", ip)
+		}
+	})
+
+	t.Run("TRUSTED_PROXIES が空なら XFF を変えても制限を逃れられない", func(t *testing.T) {
+		c := newAPI(t, withAuthOptions(authtest.WithRateLimits(limits)))
+		if r := register(c, "198.51.100.1"); r.status != http.StatusCreated {
+			t.Fatalf("register = %d %s", r.status, r.body)
+		}
+		expectProblem(t, register(c, "198.51.100.2"), http.StatusTooManyRequests, "rate-limited")
+	})
 }

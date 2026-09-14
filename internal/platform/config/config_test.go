@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"log/slog"
+	"net/netip"
 	"net/url"
 	"reflect"
 	"strings"
@@ -76,7 +77,8 @@ func TestLoad(t *testing.T) {
 				"JWT_ISSUER", "https://hibari.example", "JWT_AUDIENCE", "chat", "REFRESH_COOKIE_SECURE", "false",
 				"APP_BASE_URL", "https://hibari.example/app",
 				"S3_PUBLIC_ENDPOINT", "http://localhost:9000", "S3_REGION", "auto", "S3_USE_PATH_STYLE", "true",
-				"ATTACHMENT_MAX_BYTES", "1048576", "ATTACHMENT_ALLOWED_TYPES", "image/png, application/octet-stream"),
+				"ATTACHMENT_MAX_BYTES", "1048576", "ATTACHMENT_ALLOWED_TYPES", "image/png, application/octet-stream",
+				"TRUSTED_PROXIES", "172.16.0.0/12, fdaa::/16,203.0.113.7/32"),
 			want: config.Config{
 				HTTPAddr:        ":9090",
 				DatabaseURL:     "postgres://localhost/hibari",
@@ -90,6 +92,9 @@ func TestLoad(t *testing.T) {
 				JWTAudience:         "chat",
 				RefreshCookieSecure: false,
 				AppBaseURL:          &url.URL{Scheme: "https", Host: "hibari.example", Path: "/app"},
+				TrustedProxies: []netip.Prefix{
+					netip.MustParsePrefix("172.16.0.0/12"), netip.MustParsePrefix("fdaa::/16"), netip.MustParsePrefix("203.0.113.7/32"),
+				},
 
 				Storage: storage.Config{
 					Endpoint: "http://minio:9000", PublicEndpoint: "http://localhost:9000", Region: "auto", Bucket: "hibari",
@@ -149,6 +154,12 @@ func TestLoad(t *testing.T) {
 			name:    "relative app base url",
 			env:     with("APP_BASE_URL", "/app"),
 			wantErr: []string{"APP_BASE_URL: must be an absolute http(s) URL"},
+		},
+		{
+			// 単独のアドレスや、ホスト部の残った CIDR は、意図した範囲か分からないので受け付けない。
+			name:    "invalid trusted proxies",
+			env:     with("TRUSTED_PROXIES", "10.0.0.1,10.0.0.1/8,caddy"),
+			wantErr: []string{`"10.0.0.1"`, `"10.0.0.1/8"`, `"caddy"`},
 		},
 		{
 			name:    "non-positive shutdown timeout",

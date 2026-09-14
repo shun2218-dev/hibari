@@ -22,6 +22,7 @@
 | [0013](0013-attachment-api.md) | 添付ファイル API の詳細（Phase 3c。状態遷移、署名付き URL、受け付ける種類、掃除ジョブ） | 採用 |
 | [0014](0014-message-change-seq.md) | 変更番号（change_seq）による差分同期 | 採用 |
 | [0015](0015-websocket-hub-and-delivery.md) | WebSocket の Hub・購読・配信（Phase 4。購読の単位、Delivery、権限の再検証、presence / typing） | 採用 |
+| [0017](0017-client-ip-and-trusted-proxies.md) | クライアント IP の決定と信頼するプロキシ（TRUSTED_PROXIES と X-Forwarded-For） | 採用 |
 
 ## テンプレート
 
