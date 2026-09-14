@@ -236,3 +236,21 @@ func CanCompleteAttachment(isUploader bool) bool {
 func CanViewAttachment(kind RoomKind, a RoomActor) bool {
 	return CanReadRoom(kind, a)
 }
+
+// ---- WebSocket（ADR 0015） ----
+
+// CanSubscribeWorkspace はワークスペースのイベント（設定・メンバー・presence）を購読できるかを返す。メンバーなら誰でも。
+func CanSubscribeWorkspace(actor Role) bool {
+	return actor.IsMember()
+}
+
+// CanSubscribeRoom はルームのイベント（メッセージ・メンバー・typing）を購読できるかを返す。読める人なら購読できる。
+// 購読のたびと権限の変更のたびに判定し、接続したときの結果をキャッシュし続けない（CLAUDE.md ルール 8）。
+func CanSubscribeRoom(kind RoomKind, a RoomActor) bool {
+	return CanReadRoom(kind, a)
+}
+
+// CanSendTyping は入力中を知らせられるかを返す。投稿できる人だけ（読めるだけの人が「入力中」と表示されないように）。
+func CanSendTyping(kind RoomKind, a RoomActor) bool {
+	return CanWriteRoom(kind, a)
+}

@@ -120,6 +120,7 @@ erDiagram
     boolean is_default "ワークスペース参加時に自動参加"
     uuid created_by FK
     bigint last_message_seq "採番カウンタ兼最新 seq。初期値 0"
+    bigint last_change_seq "作成・編集・削除の変更番号のカウンタ。初期値 0（ADR 0014）"
     timestamptz last_message_at "一覧のソート用に非正規化"
     timestamptz created_at
     timestamptz archived_at
@@ -137,6 +138,7 @@ erDiagram
     uuid id PK "UNIQUE(room_id, id) も張る（返信の複合 FK 用）"
     uuid room_id FK
     bigint seq "UNIQUE(room_id, seq)。順序の唯一の根拠"
+    bigint change_seq "UNIQUE(room_id, change_seq)。最後の作成・編集・削除の番号。同期のカーソル"
     uuid sender_id FK
     uuid client_msg_id "UNIQUE(room_id, sender_id, これ)。冪等性"
     text body "削除時は空にする"

@@ -36,13 +36,29 @@ func (q *Queries) AddRoomMember(ctx context.Context, arg AddRoomMemberParams) (i
 	return result.RowsAffected(), nil
 }
 
+const allocateChangeSeq = `-- name: AllocateChangeSeq :one
+UPDATE rooms
+   SET last_change_seq = last_change_seq + 1
+ WHERE id = $1
+RETURNING last_change_seq
+`
+
+// 既存のメッセージの編集・削除のために change_seq だけを採番する（ADR 0014）。seq は進めない。
+func (q *Queries) AllocateChangeSeq(ctx context.Context, roomID ulid.ULID) (int64, error) {
+	row := q.db.QueryRow(ctx, allocateChangeSeq, roomID)
+	var last_change_seq int64
+	err := row.Scan(&last_change_seq)
+	return last_change_seq, err
+}
+
 const allocateMessageSeq = `-- name: AllocateMessageSeq :one
 
 UPDATE rooms
    SET last_message_seq = last_message_seq + 1,
+       last_change_seq  = last_change_seq + 1,
        last_message_at  = $1::timestamptz
  WHERE id = $2
-RETURNING last_message_seq
+RETURNING last_message_seq, last_change_seq
 `
 
 type AllocateMessageSeqParams struct {
@@ -50,22 +66,27 @@ type AllocateMessageSeqParams struct {
 	RoomID ulid.ULID
 }
 
+type AllocateMessageSeqRow struct {
+	LastMessageSeq int64
+	LastChangeSeq  int64
+}
+
 // ルーム（ADR 0006 / 0011）。
-// ルームの次の seq を採番して返す（ADR 0002「採番方式の確定」）。
-// 送信と同じトランザクションの中で呼ぶ。rooms の行ロックで同じルームへの送信が直列化され、
+// ルームの次の seq と change_seq を採番して返す（ADR 0002「採番方式の確定」/ ADR 0014）。
+// 送信と同じトランザクションの中で呼ぶ。rooms の行ロックで同じルームへの送信・編集・削除が直列化され、
 // ロールバックすれば採番も取り消されるので欠番にならない。
-func (q *Queries) AllocateMessageSeq(ctx context.Context, arg AllocateMessageSeqParams) (int64, error) {
+func (q *Queries) AllocateMessageSeq(ctx context.Context, arg AllocateMessageSeqParams) (AllocateMessageSeqRow, error) {
 	row := q.db.QueryRow(ctx, allocateMessageSeq, arg.Now, arg.RoomID)
-	var last_message_seq int64
-	err := row.Scan(&last_message_seq)
-	return last_message_seq, err
+	var i AllocateMessageSeqRow
+	err := row.Scan(&i.LastMessageSeq, &i.LastChangeSeq)
+	return i, err
 }
 
 const createDMRoom = `-- name: CreateDMRoom :one
 INSERT INTO rooms (id, workspace_id, kind, dm_key, created_by, created_at)
 VALUES ($1, $2, 'dm', $3, $4, $5::timestamptz)
 ON CONFLICT (workspace_id, dm_key) WHERE kind = 'dm' DO NOTHING
-RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at
+RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq
 `
 
 type CreateDMRoomParams struct {
@@ -99,6 +120,7 @@ func (q *Queries) CreateDMRoom(ctx context.Context, arg CreateDMRoomParams) (Roo
 		&i.LastMessageAt,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.LastChangeSeq,
 	)
 	return i, err
 }
@@ -106,7 +128,7 @@ func (q *Queries) CreateDMRoom(ctx context.Context, arg CreateDMRoomParams) (Roo
 const createRoom = `-- name: CreateRoom :one
 INSERT INTO rooms (id, workspace_id, kind, name, created_by, created_at)
 VALUES ($1, $2, $3, $4, $5, $6::timestamptz)
-RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at
+RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq
 `
 
 type CreateRoomParams struct {
@@ -141,6 +163,7 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, e
 		&i.LastMessageAt,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.LastChangeSeq,
 	)
 	return i, err
 }
@@ -165,7 +188,7 @@ func (q *Queries) DeleteRoomMember(ctx context.Context, arg DeleteRoomMemberPara
 }
 
 const getDMRoom = `-- name: GetDMRoom :one
-SELECT id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at
+SELECT id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq
   FROM rooms
  WHERE workspace_id = $1
    AND kind = 'dm'
@@ -192,12 +215,13 @@ func (q *Queries) GetDMRoom(ctx context.Context, arg GetDMRoomParams) (Room, err
 		&i.LastMessageAt,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.LastChangeSeq,
 	)
 	return i, err
 }
 
 const getRoom = `-- name: GetRoom :one
-SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at
+SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq
   FROM rooms r
   JOIN workspaces w ON w.id = r.workspace_id
  WHERE r.id = $1
@@ -220,6 +244,7 @@ func (q *Queries) GetRoom(ctx context.Context, id ulid.ULID) (Room, error) {
 		&i.LastMessageAt,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.LastChangeSeq,
 	)
 	return i, err
 }
@@ -271,7 +296,7 @@ func (q *Queries) GetRoomMemberships(ctx context.Context, arg GetRoomMemberships
 }
 
 const getRoomSummary = `-- name: GetRoomSummary :one
-SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq,
+SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq,
        lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
        lm.created_at AS last_message_created_at, lm.deleted_at AS last_message_deleted_at,
        lu.handle AS last_message_sender_handle, lu.display_name AS last_message_sender_display_name
@@ -316,6 +341,7 @@ func (q *Queries) GetRoomSummary(ctx context.Context, arg GetRoomSummaryParams) 
 		&i.Room.LastMessageAt,
 		&i.Room.CreatedAt,
 		&i.Room.ArchivedAt,
+		&i.Room.LastChangeSeq,
 		&i.IsMember,
 		&i.LastReadSeq,
 		&i.LastMessageID,
@@ -384,7 +410,7 @@ func (q *Queries) ListRoomMembers(ctx context.Context, arg ListRoomMembersParams
 }
 
 const listRoomsForUser = `-- name: ListRoomsForUser :many
-SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq,
+SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq,
        lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
        lm.created_at AS last_message_created_at, lm.deleted_at AS last_message_deleted_at,
        lu.handle AS last_message_sender_handle, lu.display_name AS last_message_sender_display_name
@@ -440,6 +466,7 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, arg ListRoomsForUserPara
 			&i.Room.LastMessageAt,
 			&i.Room.CreatedAt,
 			&i.Room.ArchivedAt,
+			&i.Room.LastChangeSeq,
 			&i.IsMember,
 			&i.LastReadSeq,
 			&i.LastMessageID,
@@ -498,7 +525,7 @@ UPDATE rooms
    SET name       = coalesce($1, name),
        is_default = coalesce($2, is_default)
  WHERE id = $3
-RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at
+RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq
 `
 
 type UpdateRoomParams struct {
@@ -523,6 +550,7 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) (Room, e
 		&i.LastMessageAt,
 		&i.CreatedAt,
 		&i.ArchivedAt,
+		&i.LastChangeSeq,
 	)
 	return i, err
 }

@@ -25,6 +25,14 @@ type Deps struct {
 	RefreshCookieSecure bool
 
 	Chat ChatService
+
+	// Realtime は WebSocket の接続を束ねる Hub（ADR 0015）。
+	Realtime RealtimeHub
+	// WSTickets は ws-ticket の発行と消費（ADR 0007）。
+	WSTickets WSTicketStore
+	// Sessions は WebSocket の接続時にセッションの有効性を確かめる。
+	Sessions authn.SessionChecker
+	WS       WSConfig
 }
 
 // healthTimeout は healthz が依存先を待つ上限。LB のヘルスチェックの間隔より十分短くする。
@@ -37,6 +45,7 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("GET /healthz", Healthz(d.Logger, healthTimeout, d.HealthChecks...))
 	registerAuthRoutes(mux, d)
 	registerChatRoutes(mux, d)
+	registerWSRoutes(mux, d)
 
 	var h http.Handler = mux
 	h = withAccessLog(d.Logger, d.Clock, h)

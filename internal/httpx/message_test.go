@@ -13,6 +13,7 @@ type messageBody struct {
 	ID          string `json:"id"`
 	RoomID      string `json:"room_id"`
 	Seq         int64  `json:"seq"`
+	ChangeSeq   int64  `json:"change_seq"`
 	ClientMsgID string `json:"client_msg_id"`
 	Body        string `json:"body"`
 	Sender      struct {
@@ -30,8 +31,9 @@ type messageBody struct {
 }
 
 type messagesBody struct {
-	Messages []messageBody `json:"messages"`
-	HasMore  bool          `json:"has_more"`
+	Messages      []messageBody `json:"messages"`
+	HasMore       bool          `json:"has_more"`
+	LastChangeSeq int64         `json:"last_change_seq"`
 }
 
 type roomWithReadBody struct {
@@ -139,10 +141,17 @@ func TestMessageFlow(t *testing.T) {
 	if r = c.as(bob, http.MethodGet, messages+"?after_seq=5", nil); !strings.Contains(string(r.body), `"messages":[]`) {
 		t.Errorf("empty page = %s, want an empty array", r.body)
 	}
-	for _, q := range []string{"?before_seq=abc", "?after_seq=1.5", "?limit=0"} {
+	for _, q := range []string{"?before_seq=abc", "?after_seq=1.5", "?limit=0", "?after_change_seq=x"} {
 		expectProblem(t, c.as(bob, http.MethodGet, messages+q, nil), http.StatusBadRequest, "bad-request")
 	}
 	expectProblem(t, c.as(bob, http.MethodGet, messages+"?before_seq=3&after_seq=1", nil), http.StatusUnprocessableEntity, "validation-error")
+	expectProblem(t, c.as(bob, http.MethodGet, messages+"?after_seq=3&after_change_seq=1", nil), http.StatusUnprocessableEntity, "validation-error")
+	// 差分取得（ADR 0014）: change_seq の順に返し、ルームの last_change_seq を付ける。
+	r = c.as(bob, http.MethodGet, messages+"?after_change_seq=3", nil)
+	expectStatus(t, r, http.StatusOK)
+	if got := decode[messagesBody](t, r); seqs(got) != "4,5" || got.HasMore || got.LastChangeSeq != 5 || got.Messages[0].ChangeSeq != 4 {
+		t.Errorf("after_change_seq=3: %s", r.body)
+	}
 	expectProblem(t, c.as(bob, http.MethodGet, "/api/v1/rooms/"+ulid.Make().String()+"/messages", nil), http.StatusNotFound, "not-found")
 
 	// 編集は送信者だけ。owner でも他人のメッセージは編集できない。

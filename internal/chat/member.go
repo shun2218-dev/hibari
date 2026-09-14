@@ -69,7 +69,10 @@ func (s *Service) ChangeMemberRole(ctx context.Context, actor, workspaceID, targ
 		return Member{}, &ValidationError{Fields: []FieldError{{Field: "role", Reason: ReasonInvalidValue}}}
 	}
 
-	var m Member
+	var (
+		m       Member
+		changed bool
+	)
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
 		roles, err := lockMembers(ctx, q, workspaceID, actor, target)
@@ -93,6 +96,7 @@ func (s *Service) ChangeMemberRole(ctx context.Context, actor, workspaceID, targ
 			}); err != nil {
 				return fmt.Errorf("update role: %w", err)
 			}
+			changed = true
 		}
 		r, err := q.GetWorkspaceMember(ctx, store.GetWorkspaceMemberParams{WorkspaceID: workspaceID, UserID: target})
 		if err != nil {
@@ -105,13 +109,31 @@ func (s *Service) ChangeMemberRole(ctx context.Context, actor, workspaceID, targ
 		}
 		return nil
 	})
-	return m, err
+	if err != nil {
+		return Member{}, err
+	}
+	if changed {
+		s.deliver(ctx, roleChangedEvent(workspaceID, target, role))
+	}
+	return m, nil
+}
+
+// roleChangedEvent は、ワークスペースの購読者（メンバー一覧のロールの表示）と本人に届ける。
+// 読める範囲はロールに依存しないが、権限の変更として購読を再検証させる（CLAUDE.md ルール 8。判定を Hub に持たせない）。
+func roleChangedEvent(workspaceID, userID ulid.ULID, role Role) Event {
+	return Event{
+		Type:          EventWorkspaceRoleChanged,
+		To:            Audience{Workspaces: []ulid.ULID{workspaceID}, Users: []ulid.ULID{userID}},
+		AccessChanges: []AccessChange{{UserID: userID, WorkspaceID: workspaceID}},
+		Data:          WorkspaceRoleChanged{WorkspaceID: workspaceID, UserID: userID, Role: role},
+	}
 }
 
 // RemoveMember は target をワークスペースから外す。target が actor 自身なら退出として扱う。
 // ワークスペースのすべてのルームからも同じトランザクションで外す。
 func (s *Service) RemoveMember(ctx context.Context, actor, workspaceID, target ulid.ULID) error {
-	return s.inTx(ctx, func(tx pgx.Tx) error {
+	var leftRooms []ulid.ULID
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
 		roles, err := lockMembers(ctx, q, workspaceID, actor, target)
 		if err != nil {
@@ -137,9 +159,10 @@ func (s *Service) RemoveMember(ctx context.Context, actor, workspaceID, target u
 		}
 		// 先に room_members を消す。順序は結果に影響しないが、ワークスペースのメンバーでないのに
 		// ルームのメンバーである状態を、トランザクションの中でも作らないようにしておく。
-		if err := q.DeleteRoomMembershipsInWorkspace(ctx, store.DeleteRoomMembershipsInWorkspaceParams{
+		leftRooms, err = q.DeleteRoomMembershipsInWorkspace(ctx, store.DeleteRoomMembershipsInWorkspaceParams{
 			WorkspaceID: workspaceID, UserID: target,
-		}); err != nil {
+		})
+		if err != nil {
 			return fmt.Errorf("delete room memberships: %w", err)
 		}
 		if err := q.DeleteWorkspaceMember(ctx, store.DeleteWorkspaceMemberParams{WorkspaceID: workspaceID, UserID: target}); err != nil {
@@ -147,6 +170,33 @@ func (s *Service) RemoveMember(ctx context.Context, actor, workspaceID, target u
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	reason := RemovalRemoved
+	if actor == target {
+		reason = RemovalLeft
+	}
+	// 本人の購読を先に外させてから（AccessChanges）、ワークスペースと各ルームの購読者に知らせる。
+	events := []Event{{
+		Type:          EventWorkspaceMemberRemoved,
+		To:            Audience{Workspaces: []ulid.ULID{workspaceID}, Users: []ulid.ULID{target}},
+		AccessChanges: []AccessChange{{UserID: target, WorkspaceID: workspaceID}},
+		Data:          WorkspaceMemberRemoved{WorkspaceID: workspaceID, UserID: target, Reason: reason},
+	}}
+	for _, roomID := range leftRooms {
+		events = append(events, memberLeftEvent(workspaceID, roomID, target))
+	}
+	s.deliver(ctx, events...)
+	return nil
+}
+
+func memberLeftEvent(workspaceID, roomID, userID ulid.ULID) Event {
+	return Event{
+		Type: EventMemberLeft,
+		To:   Audience{Rooms: []ulid.ULID{roomID}},
+		Data: MemberLeft{WorkspaceID: workspaceID, RoomID: roomID, UserID: userID},
+	}
 }
 
 // TransferOwnership は owner を target に譲渡する。actor は admin になる。
@@ -154,7 +204,7 @@ func (s *Service) TransferOwnership(ctx context.Context, actor, workspaceID, tar
 	if actor == target {
 		return &ValidationError{Fields: []FieldError{{Field: "user_id", Reason: ReasonInvalidValue}}}
 	}
-	return s.inTx(ctx, func(tx pgx.Tx) error {
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
 		roles, err := lockMembers(ctx, q, workspaceID, actor, target)
 		if err != nil {
@@ -184,4 +234,9 @@ func (s *Service) TransferOwnership(ctx context.Context, actor, workspaceID, tar
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.deliver(ctx, roleChangedEvent(workspaceID, actor, authz.RoleAdmin), roleChangedEvent(workspaceID, target, authz.RoleOwner))
+	return nil
 }

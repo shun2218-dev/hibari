@@ -313,7 +313,11 @@ func (s *Service) AcceptInvite(ctx context.Context, actor ulid.ULID, code string
 	if code == "" {
 		return InviteAcceptance{}, ErrInviteInvalid
 	}
-	var result InviteAcceptance
+	var (
+		result InviteAcceptance
+		joined []ulid.ULID
+		me     UserProfile
+	)
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
 		inv, err := q.GetInviteByCodeHash(ctx, hashInviteCode(code))
@@ -354,8 +358,14 @@ func (s *Service) AcceptInvite(ctx context.Context, actor ulid.ULID, code string
 				}
 				return fmt.Errorf("consume invite %s: no row updated although it is active", inv.ID)
 			}
-			if err := q.JoinDefaultRooms(ctx, store.JoinDefaultRoomsParams{WorkspaceID: inv.WorkspaceID, UserID: actor, Now: now}); err != nil {
+			joined, err = q.JoinDefaultRooms(ctx, store.JoinDefaultRoomsParams{WorkspaceID: inv.WorkspaceID, UserID: actor, Now: now})
+			if err != nil {
 				return fmt.Errorf("join default rooms: %w", err)
+			}
+			if len(joined) > 0 {
+				if me, err = userProfile(ctx, q, actor); err != nil {
+					return err
+				}
 			}
 		}
 		result.Workspace, err = getWorkspace(ctx, q, actor, inv.WorkspaceID)
@@ -364,5 +374,11 @@ func (s *Service) AcceptInvite(ctx context.Context, actor ulid.ULID, code string
 	if err != nil {
 		return InviteAcceptance{}, err
 	}
+	// 本人は default ルームをまだ購読していないので、member.joined を本人にも届けてサイドバーに出させる（ADR 0015）。
+	events := make([]Event, len(joined))
+	for i, roomID := range joined {
+		events[i] = memberJoinedEvent(result.Workspace.ID, roomID, me)
+	}
+	s.deliver(ctx, events...)
 	return result, nil
 }

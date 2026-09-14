@@ -75,12 +75,13 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 	return i, err
 }
 
-const deleteRoomMembershipsInWorkspace = `-- name: DeleteRoomMembershipsInWorkspace :exec
+const deleteRoomMembershipsInWorkspace = `-- name: DeleteRoomMembershipsInWorkspace :many
 DELETE FROM room_members rm
  USING rooms r
  WHERE rm.room_id = r.id
    AND r.workspace_id = $1
    AND rm.user_id = $2
+RETURNING rm.room_id
 `
 
 type DeleteRoomMembershipsInWorkspaceParams struct {
@@ -90,9 +91,25 @@ type DeleteRoomMembershipsInWorkspaceParams struct {
 
 // ワークスペースから外れたら、そのワークスペースのルームからも外す（DM を含む）。
 // ワークスペースのメンバーでない人の room_members が残ると、再参加したときに private ルームへ戻れてしまう。
-func (q *Queries) DeleteRoomMembershipsInWorkspace(ctx context.Context, arg DeleteRoomMembershipsInWorkspaceParams) error {
-	_, err := q.db.Exec(ctx, deleteRoomMembershipsInWorkspace, arg.WorkspaceID, arg.UserID)
-	return err
+// 外したルームを返す。各ルームの購読者に member.left を配信するため（ADR 0015）。
+func (q *Queries) DeleteRoomMembershipsInWorkspace(ctx context.Context, arg DeleteRoomMembershipsInWorkspaceParams) ([]ulid.ULID, error) {
+	rows, err := q.db.Query(ctx, deleteRoomMembershipsInWorkspace, arg.WorkspaceID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ulid.ULID{}
+	for rows.Next() {
+		var room_id ulid.ULID
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteWorkspaceMember = `-- name: DeleteWorkspaceMember :exec

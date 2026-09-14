@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -15,6 +16,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
+	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/platform/testenv"
 )
@@ -115,8 +119,53 @@ func TestRunServesHealthzAndShutsDown(t *testing.T) {
 		t.Fatalf("GET /healthz = %d %s", resp.StatusCode, body)
 	}
 
+	// WebSocket を 1 本張っておく。http.Server.Shutdown はアップグレード済みの接続を扱わないので、
+	// run が Hub に閉じさせてから戻ること（ADR 0015）を確かめる。
+	ws := dialWebSocket(ctx, t, addr)
+
 	cancel()
+	if _, _, err := ws.Read(context.Background()); websocket.CloseStatus(err) != websocket.StatusGoingAway {
+		t.Errorf("websocket read during shutdown = %v, want close 1001", err)
+	}
 	if err := <-done; err != nil {
 		t.Fatalf("run() = %v, want nil after cancel", err)
 	}
+}
+
+// dialWebSocket は登録したユーザーの ws-ticket で接続する。
+func dialWebSocket(ctx context.Context, t *testing.T, addr string) *websocket.Conn {
+	t.Helper()
+	post := func(path, token string, body any) map[string]any {
+		t.Helper()
+		b, _ := json.Marshal(body)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+path, bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var out map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || resp.StatusCode >= 300 {
+			t.Fatalf("POST %s = %d, %v: %v", path, resp.StatusCode, err, out)
+		}
+		return out
+	}
+	handle := "main" + strings.ToLower(ulid.Make().String())
+	reg := post("/api/v1/auth/register", "", map[string]string{
+		"handle": handle, "display_name": "main test", "email": handle + "@example.com", "password": "correct horse battery staple",
+	})
+	ticket := post("/api/v1/ws/ticket", reg["access_token"].(string), nil)["ticket"].(string)
+	conn, resp, err := websocket.Dial(ctx, "ws://"+addr+"/api/v1/ws?ticket="+ticket, nil)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.CloseNow() })
+	return conn
 }

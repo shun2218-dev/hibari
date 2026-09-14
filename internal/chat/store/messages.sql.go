@@ -43,15 +43,16 @@ func (q *Queries) AdvanceLastReadSeq(ctx context.Context, arg AdvanceLastReadSeq
 }
 
 const createMessage = `-- name: CreateMessage :exec
-INSERT INTO messages (id, room_id, seq, sender_id, client_msg_id, body, reply_to_id, created_at)
-VALUES ($1, $2, $3, $4, $5,
-        $6, $7, $8::timestamptz)
+INSERT INTO messages (id, room_id, seq, change_seq, sender_id, client_msg_id, body, reply_to_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6,
+        $7, $8, $9::timestamptz)
 `
 
 type CreateMessageParams struct {
 	ID          ulid.ULID
 	RoomID      ulid.ULID
 	Seq         int64
+	ChangeSeq   int64
 	SenderID    ulid.ULID
 	ClientMsgID ulid.ULID
 	Body        string
@@ -65,6 +66,7 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.ID,
 		arg.RoomID,
 		arg.Seq,
+		arg.ChangeSeq,
 		arg.SenderID,
 		arg.ClientMsgID,
 		arg.Body,
@@ -75,11 +77,11 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 }
 
 const getMessageForUpdate = `-- name: GetMessageForUpdate :one
-SELECT id, room_id, seq, sender_id, client_msg_id, body, reply_to_id, created_at, edited_at, deleted_at
+SELECT id, room_id, seq, sender_id, client_msg_id, body, reply_to_id, created_at, edited_at, deleted_at, change_seq
   FROM messages
  WHERE room_id = $1
    AND id = $2
-   FOR UPDATE
+   FOR NO KEY UPDATE
 `
 
 type GetMessageForUpdateParams struct {
@@ -88,6 +90,8 @@ type GetMessageForUpdateParams struct {
 }
 
 // 編集・削除の対象を行ロックする。room_id を条件に含め、別のルームの ID では見つからないようにする。
+// FOR UPDATE ではなく FOR NO KEY UPDATE にする（ADR 0014）。返信の送信は rooms の行ロックを持ったまま返信先に FOR KEY SHARE を取るので、
+// FOR UPDATE で持ったまま rooms を待つ編集・削除とデッドロックする。本文と削除時刻の UPDATE はキーを変えないので、この強さで足りる。
 func (q *Queries) GetMessageForUpdate(ctx context.Context, arg GetMessageForUpdateParams) (Message, error) {
 	row := q.db.QueryRow(ctx, getMessageForUpdate, arg.RoomID, arg.ID)
 	var i Message
@@ -102,6 +106,7 @@ func (q *Queries) GetMessageForUpdate(ctx context.Context, arg GetMessageForUpda
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.ChangeSeq,
 	)
 	return i, err
 }
@@ -149,7 +154,7 @@ func (q *Queries) GetMessageSenderID(ctx context.Context, arg GetMessageSenderID
 }
 
 const getMessageView = `-- name: GetMessageView :one
-SELECT m.id, m.room_id, m.seq, m.sender_id, m.client_msg_id, m.body, m.reply_to_id,
+SELECT m.id, m.room_id, m.seq, m.change_seq, m.sender_id, m.client_msg_id, m.body, m.reply_to_id,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name,
        p.seq AS reply_seq, p.sender_id AS reply_sender_id, p.body AS reply_body, p.deleted_at AS reply_deleted_at,
@@ -171,6 +176,7 @@ type GetMessageViewRow struct {
 	ID                     ulid.ULID
 	RoomID                 ulid.ULID
 	Seq                    int64
+	ChangeSeq              int64
 	SenderID               ulid.ULID
 	ClientMsgID            ulid.ULID
 	Body                   string
@@ -195,6 +201,7 @@ func (q *Queries) GetMessageView(ctx context.Context, arg GetMessageViewParams) 
 		&i.ID,
 		&i.RoomID,
 		&i.Seq,
+		&i.ChangeSeq,
 		&i.SenderID,
 		&i.ClientMsgID,
 		&i.Body,
@@ -215,7 +222,7 @@ func (q *Queries) GetMessageView(ctx context.Context, arg GetMessageViewParams) 
 }
 
 const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT m.id, m.room_id, m.seq, m.sender_id, m.client_msg_id, m.body, m.reply_to_id,
+SELECT m.id, m.room_id, m.seq, m.change_seq, m.sender_id, m.client_msg_id, m.body, m.reply_to_id,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name,
        p.seq AS reply_seq, p.sender_id AS reply_sender_id, p.body AS reply_body, p.deleted_at AS reply_deleted_at,
@@ -240,6 +247,7 @@ type ListMessagesAfterRow struct {
 	ID                     ulid.ULID
 	RoomID                 ulid.ULID
 	Seq                    int64
+	ChangeSeq              int64
 	SenderID               ulid.ULID
 	ClientMsgID            ulid.ULID
 	Body                   string
@@ -272,6 +280,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.ID,
 			&i.RoomID,
 			&i.Seq,
+			&i.ChangeSeq,
 			&i.SenderID,
 			&i.ClientMsgID,
 			&i.Body,
@@ -299,7 +308,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesBefore = `-- name: ListMessagesBefore :many
-SELECT m.id, m.room_id, m.seq, m.sender_id, m.client_msg_id, m.body, m.reply_to_id,
+SELECT m.id, m.room_id, m.seq, m.change_seq, m.sender_id, m.client_msg_id, m.body, m.reply_to_id,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name,
        p.seq AS reply_seq, p.sender_id AS reply_sender_id, p.body AS reply_body, p.deleted_at AS reply_deleted_at,
@@ -324,6 +333,7 @@ type ListMessagesBeforeRow struct {
 	ID                     ulid.ULID
 	RoomID                 ulid.ULID
 	Seq                    int64
+	ChangeSeq              int64
 	SenderID               ulid.ULID
 	ClientMsgID            ulid.ULID
 	Body                   string
@@ -357,6 +367,93 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.ID,
 			&i.RoomID,
 			&i.Seq,
+			&i.ChangeSeq,
+			&i.SenderID,
+			&i.ClientMsgID,
+			&i.Body,
+			&i.ReplyToID,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.SenderHandle,
+			&i.SenderDisplayName,
+			&i.ReplySeq,
+			&i.ReplySenderID,
+			&i.ReplyBody,
+			&i.ReplyDeletedAt,
+			&i.ReplySenderHandle,
+			&i.ReplySenderDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMessagesChangedAfter = `-- name: ListMessagesChangedAfter :many
+SELECT m.id, m.room_id, m.seq, m.change_seq, m.sender_id, m.client_msg_id, m.body, m.reply_to_id,
+       m.created_at, m.edited_at, m.deleted_at,
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       p.seq AS reply_seq, p.sender_id AS reply_sender_id, p.body AS reply_body, p.deleted_at AS reply_deleted_at,
+       pu.handle AS reply_sender_handle, pu.display_name AS reply_sender_display_name
+  FROM messages m
+  JOIN users u ON u.id = m.sender_id
+  LEFT JOIN messages p ON p.room_id = m.room_id AND p.id = m.reply_to_id
+  LEFT JOIN users pu ON pu.id = p.sender_id
+ WHERE m.room_id = $1
+   AND m.change_seq > $2
+ ORDER BY m.change_seq
+ LIMIT $3
+`
+
+type ListMessagesChangedAfterParams struct {
+	RoomID         ulid.ULID
+	AfterChangeSeq int64
+	MaxRows        int32
+}
+
+type ListMessagesChangedAfterRow struct {
+	ID                     ulid.ULID
+	RoomID                 ulid.ULID
+	Seq                    int64
+	ChangeSeq              int64
+	SenderID               ulid.ULID
+	ClientMsgID            ulid.ULID
+	Body                   string
+	ReplyToID              *ulid.ULID
+	CreatedAt              time.Time
+	EditedAt               *time.Time
+	DeletedAt              *time.Time
+	SenderHandle           string
+	SenderDisplayName      string
+	ReplySeq               *int64
+	ReplySenderID          *ulid.ULID
+	ReplyBody              *string
+	ReplyDeletedAt         *time.Time
+	ReplySenderHandle      *string
+	ReplySenderDisplayName *string
+}
+
+// change_seq が after_change_seq より大きいメッセージ（作成・編集・削除）を、change_seq の古い順に max_rows 件。
+// 再接続の差分取得（ADR 0014）。インデックス messages_room_id_change_seq_idx を順方向に走査する。
+func (q *Queries) ListMessagesChangedAfter(ctx context.Context, arg ListMessagesChangedAfterParams) ([]ListMessagesChangedAfterRow, error) {
+	rows, err := q.db.Query(ctx, listMessagesChangedAfter, arg.RoomID, arg.AfterChangeSeq, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMessagesChangedAfterRow{}
+	for rows.Next() {
+		var i ListMessagesChangedAfterRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Seq,
+			&i.ChangeSeq,
 			&i.SenderID,
 			&i.ClientMsgID,
 			&i.Body,
@@ -401,7 +498,7 @@ type LockRoomMembershipsParams struct {
 // メッセージ（ADR 0002 / 0004 / 0012）。
 //
 // 一覧と 1 件の取得は、送信者と返信先のプレビューを同じ文で JOIN する（N+1 にしない）。
-// sqlc は SELECT の列リストを共有できないので、GetMessageView / ListMessagesBefore / ListMessagesAfter の列は揃えて書く。
+// sqlc は SELECT の列リストを共有できないので、GetMessageView / ListMessagesBefore / ListMessagesAfter / ListMessagesChangedAfter の列は揃えて書く。
 // user_ids のうちルームのメンバーである人の行を、FOR NO KEY UPDATE でロックして返す（ADR 0012）。
 // 送信は同じトランザクションで last_read_seq を更新するので、その UPDATE と同じ強さのロックを先に取る。
 // FOR SHARE で読んでから UPDATE すると、同じ人の並行した送信が互いの共有ロックを待ってデッドロックする。
@@ -428,35 +525,44 @@ func (q *Queries) LockRoomMemberships(ctx context.Context, arg LockRoomMembershi
 const softDeleteMessage = `-- name: SoftDeleteMessage :exec
 UPDATE messages
    SET body       = '',
-       deleted_at = $1::timestamptz
- WHERE id = $2
+       deleted_at = $1::timestamptz,
+       change_seq = $2
+ WHERE id = $3
 `
 
 type SoftDeleteMessageParams struct {
-	Now time.Time
-	ID  ulid.ULID
+	Now       time.Time
+	ChangeSeq int64
+	ID        ulid.ULID
 }
 
 // 論理削除。行と seq は残し、本文だけを消す（ADR 0002 / 0004）。
 func (q *Queries) SoftDeleteMessage(ctx context.Context, arg SoftDeleteMessageParams) error {
-	_, err := q.db.Exec(ctx, softDeleteMessage, arg.Now, arg.ID)
+	_, err := q.db.Exec(ctx, softDeleteMessage, arg.Now, arg.ChangeSeq, arg.ID)
 	return err
 }
 
 const updateMessageBody = `-- name: UpdateMessageBody :exec
 UPDATE messages
-   SET body      = $1,
-       edited_at = $2::timestamptz
- WHERE id = $3
+   SET body       = $1,
+       edited_at  = $2::timestamptz,
+       change_seq = $3
+ WHERE id = $4
 `
 
 type UpdateMessageBodyParams struct {
-	Body string
-	Now  time.Time
-	ID   ulid.ULID
+	Body      string
+	Now       time.Time
+	ChangeSeq int64
+	ID        ulid.ULID
 }
 
 func (q *Queries) UpdateMessageBody(ctx context.Context, arg UpdateMessageBodyParams) error {
-	_, err := q.db.Exec(ctx, updateMessageBody, arg.Body, arg.Now, arg.ID)
+	_, err := q.db.Exec(ctx, updateMessageBody,
+		arg.Body,
+		arg.Now,
+		arg.ChangeSeq,
+		arg.ID,
+	)
 	return err
 }

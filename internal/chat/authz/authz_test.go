@@ -121,6 +121,7 @@ func TestWorkspaceRoleOnly(t *testing.T) {
 	checkRoles(t, "CanTransferOwnership", CanTransferOwnership, o)
 	checkRoles(t, "CanListInvites", CanListInvites, o, a, m)
 	checkRoles(t, "CanCreateRoom", CanCreateRoom, o, a, m)
+	checkRoles(t, "CanSubscribeWorkspace", CanSubscribeWorkspace, o, a, m)
 }
 
 func TestCanCreateInvite(t *testing.T) {
@@ -320,5 +321,26 @@ func TestCanViewAttachment(t *testing.T) {
 		default:
 			return false
 		}
+	})
+}
+
+func TestCanSubscribeRoom(t *testing.T) {
+	checkRoom(t, "CanSubscribeRoom", CanSubscribeRoom, func(c roomCase) bool {
+		switch c.kind {
+		case RoomPublic:
+			return isWorkspaceMember(c.role) // 参加していなくても購読できる（閲覧中の public ルーム）
+		case RoomPrivate, RoomDM:
+			return isWorkspaceMember(c.role) && c.isRoomMember
+		default:
+			return false
+		}
+	})
+}
+
+func TestCanSendTyping(t *testing.T) {
+	checkRoom(t, "CanSendTyping", CanSendTyping, func(c roomCase) bool {
+		// 読めるだけ（参加していない public）の人は入力中を出せない。
+		known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
+		return known && isWorkspaceMember(c.role) && c.isRoomMember
 	})
 }

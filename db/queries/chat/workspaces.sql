@@ -94,14 +94,16 @@ DELETE FROM workspace_members
  WHERE workspace_id = sqlc.arg(workspace_id)
    AND user_id = sqlc.arg(user_id);
 
--- name: DeleteRoomMembershipsInWorkspace :exec
+-- name: DeleteRoomMembershipsInWorkspace :many
 -- ワークスペースから外れたら、そのワークスペースのルームからも外す（DM を含む）。
 -- ワークスペースのメンバーでない人の room_members が残ると、再参加したときに private ルームへ戻れてしまう。
+-- 外したルームを返す。各ルームの購読者に member.left を配信するため（ADR 0015）。
 DELETE FROM room_members rm
  USING rooms r
  WHERE rm.room_id = r.id
    AND r.workspace_id = sqlc.arg(workspace_id)
-   AND rm.user_id = sqlc.arg(user_id);
+   AND rm.user_id = sqlc.arg(user_id)
+RETURNING rm.room_id;
 
 -- name: GetWorkspaceRole :one
 -- 自分のロールだけを読む（ロックしない）。読み取りの API の「メンバーか」の確認に使う。

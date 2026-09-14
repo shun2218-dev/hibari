@@ -352,6 +352,16 @@ func (s *Service) Logout(ctx context.Context, rawToken string) error {
 	return nil
 }
 
+// SessionActive は userID のセッション sessionID がまだ有効か（ログアウト・再利用の検知・パスワードリセットで失効しておらず、期限内か）を返す。
+// authn.SessionChecker の実装。WebSocket の接続時と接続中の再検証で使う（ADR 0015）。
+func (s *Service) SessionActive(ctx context.Context, userID, sessionID ulid.ULID) (bool, error) {
+	active, err := store.New(s.db).IsSessionActive(ctx, store.IsSessionActiveParams{FamilyID: sessionID, UserID: userID, Now: s.clock.Now()})
+	if err != nil {
+		return false, fmt.Errorf("check session: %w", err)
+	}
+	return active, nil
+}
+
 // Me は userID のユーザーを返す。
 func (s *Service) Me(ctx context.Context, userID ulid.ULID) (User, error) {
 	u, err := store.New(s.db).GetActiveUserByID(ctx, userID)

@@ -410,6 +410,57 @@ func TestLogoutRevokesOnlyThatSession(t *testing.T) {
 	}
 }
 
+func TestSessionActive(t *testing.T) {
+	env := authtest.New(t)
+	u, mine, in := env.Register(t)
+	_, other, err := env.Service.Login(t.Context(), in.Email, in.Password, auth.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := func(userID, sid ulid.ULID) bool {
+		t.Helper()
+		ok, err := env.Service.SessionActive(t.Context(), userID, sid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+
+	if !active(u.ID, mine.ID) || !active(u.ID, other.ID) {
+		t.Fatal("new sessions are not active")
+	}
+	// 別のユーザーの ID と組み合わせた sid は有効にしない。
+	stranger, _, _ := env.Register(t)
+	if active(stranger.ID, mine.ID) {
+		t.Error("session is active for another user")
+	}
+	if active(u.ID, env.IDs.New()) {
+		t.Error("unknown session is active")
+	}
+
+	// ローテーションしても同じセッションのまま有効。
+	if _, err := env.Service.Refresh(t.Context(), mine.RefreshToken, auth.Client{}); err != nil {
+		t.Fatal(err)
+	}
+	if !active(u.ID, mine.ID) {
+		t.Error("session is not active after rotation")
+	}
+
+	// ログアウトしたセッションだけが無効になる。
+	if err := env.Service.Logout(t.Context(), other.RefreshToken); err != nil {
+		t.Fatal(err)
+	}
+	if active(u.ID, other.ID) || !active(u.ID, mine.ID) {
+		t.Errorf("after logout: other active = %v, mine active = %v", active(u.ID, other.ID), active(u.ID, mine.ID))
+	}
+
+	// Refresh Token の期限を過ぎたら無効。
+	env.Clock.Advance(auth.RefreshTokenTTL + time.Second)
+	if active(u.ID, mine.ID) {
+		t.Error("session is active after the refresh token expired")
+	}
+}
+
 func TestMe(t *testing.T) {
 	env := authtest.New(t)
 	u, _, _ := env.Register(t)

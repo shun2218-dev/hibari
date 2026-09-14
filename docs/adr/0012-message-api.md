@@ -99,3 +99,11 @@ Phase 3b の着手時点で、ロードマップと ADR 0002 / 0004 が決めて
 - 同じ送信者の同じルームへの送信は直列になる。1 人が 1 つのルームに並行して大量に送る使い方は想定しないので問題にしない。ルーム全体の直列化（ADR 0002 の `rooms` の行ロック）の方が先に上限になる。
 - 未読数には削除済みのメッセージも含まれる（ADR 0002 の近似のまま）。
 - 送信・編集・削除・既読は、まだ WebSocket に配信しない。Phase 4 で `Delivery` を入れるときに、これらのユースケースのコミット後から配信する。
+
+## 追記
+
+### 2026-09-14 切断中の編集・削除と、メッセージの行ロック（Phase 4）
+
+- 「結果」に書いた、`after_seq` で切断中の編集・削除を取得できない制約は、change_seq で解決した（ADR 0014）。
+- 編集・削除は change_seq を採番するために `rooms` の行もロックするようになった。返信の送信とのデッドロックを避けるため、メッセージの行ロックを `FOR UPDATE` から `FOR NO KEY UPDATE` に変えた（ADR 0014「ロックの順序」。根拠のテストは `internal/chat/change_seq_test.go` の `TestEditAndReplyConcurrentNoDeadlock`）。
+- 送信・編集・削除・既読は、コミットの後に Delivery へ渡す（`message.created` / `message.updated` / `message.deleted` / `room.read`。`docs/events.md`）。

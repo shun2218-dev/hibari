@@ -121,3 +121,10 @@ Phase 3a の着手時点で、ADR 0006 とロードマップが決めていな�
 - `users` の列を chat の SQL が読むので、`users` の列の変更（公開プロフィールの 5 列）は chat のクエリにも影響する。
 - ワークスペース一覧・ルーム一覧はページングしないので、所属数が極端に多いユーザーではレスポンスが大きくなる。
 - 招待プレビューは要ログインなので、Web クライアント（Phase 6）は、未ログインで招待リンクを開いたらログインさせてから招待のページに戻す必要がある。
+
+## 追記
+
+### 2026-09-14 WebSocket への通知（Phase 4）
+
+- 「結果」に書いたロールの変更・キック・譲渡・招待の受け入れの通知は、Delivery で配信するようになった（`workspace.role_changed` / `workspace.member_removed` / `member.joined` など。ADR 0015、`docs/events.md`）。
+- ルームのメンバー一覧（`GET /rooms/{id}/members`）の各メンバーと、ルームの `dm_peer` に presence の初期値 `online` を加えた（ADR 0015）。

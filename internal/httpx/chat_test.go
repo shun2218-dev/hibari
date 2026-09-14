@@ -11,8 +11,9 @@ import (
 
 // apiUser は API で登録したユーザー。
 type apiUser struct {
-	id    string
-	token string
+	id      string
+	token   string
+	refresh string
 }
 
 func (c *apiClient) registerUser() apiUser {
@@ -22,7 +23,7 @@ func (c *apiClient) registerUser() apiUser {
 		c.t.Fatalf("register status = %d: %s", r.status, r.body)
 	}
 	b := decode[tokenBody](c.t, r)
-	return apiUser{id: b.User.ID, token: b.AccessToken}
+	return apiUser{id: b.User.ID, token: b.AccessToken, refresh: *b.RefreshToken}
 }
 
 // as は u の Access Token を付けたリクエストを送る。

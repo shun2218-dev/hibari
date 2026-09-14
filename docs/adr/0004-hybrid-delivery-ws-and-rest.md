@@ -43,3 +43,8 @@ WebSocket は常に切れうる（モバイル回線の切り替え、スリー�
 
 `after_seq` は新しいメッセージだけを返すので、切断中に起きた既存のメッセージの編集・削除は取得できない。3b では既知の制約とし、Phase 4 で `docs/events.md` を設計するときに解決策を決める（ADR 0012）。
 差分取得の読み手が seq の欠番を観測しないこと（採番したトランザクションのコミットまで次の採番が待たされるため）は、`internal/chat/message_test.go` の `TestListMessagesAfterSeqSync` で確かめている。
+
+### 2026-09-14 切断中の編集・削除の取得と、Delivery の実装（Phase 4）
+
+- 上の制約は、変更番号（change_seq）と `GET /rooms/{id}/messages?after_change_seq=N` で解決した（ADR 0014）。再接続時の差分取得は `after_seq` ではなく `after_change_seq` で行う。`after_seq` は履歴の取得に残す。
+- `Delivery` の Phase 4 の実装（インメモリの Hub）、購読の単位、イベントの一覧は ADR 0015 と `docs/events.md`。

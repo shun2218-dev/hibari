@@ -95,6 +95,35 @@ func (q *Queries) GetRefreshTokenForUpdate(ctx context.Context, tokenHash []byte
 	return i, err
 }
 
+const isSessionActive = `-- name: IsSessionActive :one
+SELECT EXISTS (
+    SELECT 1
+      FROM refresh_tokens rt
+      JOIN users u ON u.id = rt.user_id
+     WHERE rt.family_id = $1
+       AND rt.user_id = $2
+       AND rt.revoked_at IS NULL
+       AND rt.expires_at > $3::timestamptz
+       AND u.deleted_at IS NULL
+)::boolean
+`
+
+type IsSessionActiveParams struct {
+	FamilyID ulid.ULID
+	UserID   ulid.ULID
+	Now      time.Time
+}
+
+// セッション（family）に、未失効で期限内の Refresh Token が残っているか（ADR 0015）。
+// ローテーション済みの行は revoked_at を持つが、family の最新の行が未失効なら、セッションは生きている。
+// 退会済みのユーザーのセッションは生きていないものとして扱う。インデックス refresh_tokens(family_id) を使う。
+func (q *Queries) IsSessionActive(ctx context.Context, arg IsSessionActiveParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isSessionActive, arg.FamilyID, arg.UserID, arg.Now)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const markRefreshTokenRotated = `-- name: MarkRefreshTokenRotated :exec
 UPDATE refresh_tokens
    SET revoked_at     = $1::timestamptz,

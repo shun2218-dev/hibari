@@ -36,6 +36,7 @@ type Message struct {
 	CreatedAt   time.Time
 	EditedAt    *time.Time
 	DeletedAt   *time.Time
+	ChangeSeq   int64
 }
 
 type Room struct {
@@ -50,6 +51,7 @@ type Room struct {
 	LastMessageAt  *time.Time
 	CreatedAt      time.Time
 	ArchivedAt     *time.Time
+	LastChangeSeq  int64
 }
 
 type Workspace struct {

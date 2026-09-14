@@ -2,6 +2,7 @@ package httpx_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"io"
@@ -15,26 +16,70 @@ import (
 	"github.com/shun2218-dev/hibari/internal/auth/authtest"
 	"github.com/shun2218-dev/hibari/internal/chat"
 	"github.com/shun2218-dev/hibari/internal/chat/chattest"
+	"github.com/shun2218-dev/hibari/internal/chat/presence"
+	"github.com/shun2218-dev/hibari/internal/chat/realtime"
 	"github.com/shun2218-dev/hibari/internal/httpx"
+	"github.com/shun2218-dev/hibari/internal/platform/authn"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
 	"github.com/shun2218-dev/hibari/internal/platform/ratelimit"
+	"github.com/shun2218-dev/hibari/internal/platform/redis"
+	"github.com/shun2218-dev/hibari/internal/platform/testenv"
 )
 
 // 実物の Postgres に対してルーター全体を組み立て、HTTP の入出力を確かめる統合テスト。
 type apiClient struct {
-	t   *testing.T
-	env *authtest.Env
-	srv *httptest.Server
+	t        *testing.T
+	env      *authtest.Env
+	srv      *httptest.Server
+	hub      *realtime.Hub
+	presence *presence.Store
 }
 
-func newAPI(t *testing.T, opts ...authtest.Option) *apiClient {
+// testWSConfig は WebSocket の設定。ping を待つテスト以外で ping が割り込まないよう、間隔は既定のまま長くする。
+func testWSConfig() httpx.WSConfig {
+	return httpx.DefaultWSConfig(nil)
+}
+
+type apiOptions struct {
+	auth []authtest.Option
+	ws   httpx.WSConfig
+}
+
+// apiOption は newAPI の組み立てを変える。
+type apiOption func(*apiOptions)
+
+func withAuthOptions(opts ...authtest.Option) apiOption {
+	return func(o *apiOptions) { o.auth = append(o.auth, opts...) }
+}
+
+func withWSConfig(cfg httpx.WSConfig) apiOption {
+	return func(o *apiOptions) { o.ws = cfg }
+}
+
+func newAPI(t *testing.T, opts ...apiOption) *apiClient {
 	t.Helper()
-	env := authtest.New(t, opts...)
+	o := apiOptions{ws: testWSConfig()}
+	for _, opt := range opts {
+		opt(&o)
+	}
+	env := authtest.New(t, o.auth...)
 	jwks, err := env.AccessTokens.JWKS()
 	if err != nil {
 		t.Fatal(err)
 	}
 	logger := slog.New(slog.DiscardHandler)
+	presenceStore := chattest.NewPresence(t)
+	hub := realtime.NewHub(realtime.Deps{
+		Authorizer: chat.NewSubscriptionAuthorizer(env.Pool),
+		Presence:   presenceStore,
+		Sessions:   env.Service,
+		Logger:     logger,
+	})
+	rdb, err := redis.Open(t.Context(), testenv.RedisURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = rdb.Close() })
 	h := httpx.NewRouter(httpx.Deps{
 		Logger:              logger,
 		Clock:               env.Clock,
@@ -47,11 +92,24 @@ func newAPI(t *testing.T, opts ...authtest.Option) *apiClient {
 		Chat: chat.NewService(chat.Deps{
 			DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Random: rand.Reader, Logger: logger,
 			Storage: chattest.NewStorage(t), AttachmentLimits: chattest.AttachmentLimits,
+			Delivery: hub, Presence: presenceStore,
 		}),
+		Realtime:  hub,
+		WSTickets: authn.NewWSTickets(rdb, rand.Reader),
+		Sessions:  env.Service,
+		WS:        o.ws,
 	})
 	srv := httptest.NewServer(h)
-	t.Cleanup(srv.Close)
-	return &apiClient{t: t, env: env, srv: srv}
+	t.Cleanup(func() {
+		// httptest.Server.Close はアップグレード済みの接続を待たないので、先に Hub に閉じさせて登録が外れるのを待つ。
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := hub.Shutdown(ctx); err != nil {
+			t.Errorf("hub shutdown: %v", err)
+		}
+		srv.Close()
+	})
+	return &apiClient{t: t, env: env, srv: srv, hub: hub, presence: presenceStore}
 }
 
 type request struct {
@@ -474,7 +532,7 @@ func TestPasswordResetEndpoints(t *testing.T) {
 func TestLoginRateLimitedResponse(t *testing.T) {
 	limits := authtest.GenerousRateLimits
 	limits.LoginPerAccount = ratelimit.Rule{Name: authtest.RuleName("login-account"), Limit: 1, Window: 15 * time.Minute}
-	c := newAPI(t, authtest.WithRateLimits(limits))
+	c := newAPI(t, withAuthOptions(authtest.WithRateLimits(limits)))
 	reg := registerBody(c)
 	c.do(request{method: http.MethodPost, path: "/api/v1/auth/register", body: reg})
 

@@ -21,10 +21,12 @@ type replyPreviewResponse struct {
 }
 
 type messageResponse struct {
-	ID     string              `json:"id"`
-	RoomID string              `json:"room_id"`
-	Seq    int64               `json:"seq"`
-	Sender userProfileResponse `json:"sender"`
+	ID     string `json:"id"`
+	RoomID string `json:"room_id"`
+	Seq    int64  `json:"seq"`
+	// ChangeSeq は同期のカーソル（ADR 0014）。表示の並びには seq を使う。
+	ChangeSeq int64               `json:"change_seq"`
+	Sender    userProfileResponse `json:"sender"`
 	// ClientMsgID は、クライアントが楽観的に表示したメッセージと、REST / WebSocket で届いたメッセージを突き合わせるために返す（ADR 0004）。
 	ClientMsgID string                `json:"client_msg_id"`
 	Body        string                `json:"body"`
@@ -41,6 +43,7 @@ func newMessageResponse(m chat.Message) messageResponse {
 		ID:          m.ID.String(),
 		RoomID:      m.RoomID.String(),
 		Seq:         m.Seq,
+		ChangeSeq:   m.ChangeSeq,
 		Sender:      newUserProfileResponse(m.Sender),
 		ClientMsgID: m.ClientMsgID.String(),
 		Body:        m.Body,
@@ -133,7 +136,8 @@ func querySeq(r *http.Request, name string) (*int64, error) {
 	return &v, nil
 }
 
-// listMessages は ?before_seq= / ?after_seq= / ?limit= で履歴を返す。messages は常に seq の昇順。
+// listMessages は ?before_seq= / ?after_seq= / ?after_change_seq= / ?limit= で履歴を返す。
+// messages は seq の昇順。after_change_seq のときだけ change_seq の昇順（再接続の差分取得。ADR 0014）。
 func (h *chatHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
 	roomID, err := pathID(r, "roomID")
 	if err != nil {
@@ -146,6 +150,10 @@ func (h *chatHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if mq.AfterSeq, err = querySeq(r, "after_seq"); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	if mq.AfterChangeSeq, err = querySeq(r, "after_change_seq"); err != nil {
 		writeError(h.logger, w, r, err)
 		return
 	}
@@ -166,7 +174,9 @@ func (h *chatHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
 	resp := struct {
 		Messages []messageResponse `json:"messages"`
 		HasMore  bool              `json:"has_more"`
-	}{Messages: make([]messageResponse, len(page.Messages)), HasMore: page.HasMore}
+		// LastChangeSeq はメッセージを読む前のルームの last_change_seq。クライアントは change_seq のカーソルをこの値まで進めてよい。
+		LastChangeSeq int64 `json:"last_change_seq"`
+	}{Messages: make([]messageResponse, len(page.Messages)), HasMore: page.HasMore, LastChangeSeq: page.LastChangeSeq}
 	for i, m := range page.Messages {
 		resp.Messages[i] = newMessageResponse(m)
 	}

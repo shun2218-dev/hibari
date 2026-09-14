@@ -70,3 +70,8 @@ RETURNING last_message_seq;
 
 送信者の `room_members` の行を先にロックしてから `client_msg_id` で既存を探し、なければ採番する。詳細と代替案は ADR 0012。
 根拠のテストは `internal/chat/message_test.go` の `TestSendMessageConcurrentSeq`（再送とロールバックを混ぜた 50 並行の送信で欠番も重複もない）と `TestSendMessageIdempotentConcurrent`。
+
+### 2026-09-14 変更番号（change_seq）を同じ文で採番する（Phase 4）
+
+作成・編集・削除をまとめて差分取得するため、`rooms.last_change_seq` を追加した（ADR 0014）。送信では同じ `UPDATE rooms ... RETURNING` で `last_message_seq` と `last_change_seq` を 1 つずつ増やす。編集・削除は `last_change_seq` だけを増やし、seq は進めない。
+seq は引き続き順序の唯一の根拠で、change_seq は同期のカーソルにだけ使う。

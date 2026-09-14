@@ -11,11 +11,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/shun2218-dev/hibari/internal/auth"
 	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/presence"
+	"github.com/shun2218-dev/hibari/internal/chat/realtime"
 	"github.com/shun2218-dev/hibari/internal/httpx"
 	"github.com/shun2218-dev/hibari/internal/platform/authn"
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
@@ -116,6 +119,21 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		return err
 	}
 
+	// WebSocket の Hub（ADR 0015）。Phase 4 はこのプロセスのメモリの中だけで配信する。
+	presenceStore := presence.New(rdb)
+	hub := realtime.NewHub(realtime.Deps{
+		Authorizer: chat.NewSubscriptionAuthorizer(pool),
+		Presence:   presenceStore,
+		// chat は auth を import しないので、セッションの有効性の問い合わせは authn のインターフェースとしてここで配線する（ADR 0001）。
+		Sessions: authService,
+		Logger:   logger,
+	})
+	// 失効イベントの購読は、接続を受け付ける前に始める。始める前に発行された失効は、ws-ticket の消費時の検証で拒否される。
+	revocations, err := authn.SubscribeRevocations(startupCtx, rdb, logger)
+	if err != nil {
+		return err
+	}
+
 	chatService := chat.NewService(chat.Deps{
 		DB:               pool,
 		Clock:            clk,
@@ -124,19 +142,26 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		Logger:           logger,
 		Storage:          objectStorage,
 		AttachmentLimits: chat.AttachmentLimits{MaxBytes: cfg.AttachmentMaxBytes, AllowedTypes: cfg.AttachmentAllowedTypes},
+		Delivery:         hub,
+		Presence:         presenceStore,
 	})
 
 	// 添付の掃除ジョブ（ADR 0013）。DB のプールを閉じる前に止めて、終わるのを待つ。
 	// defer は後に書いたものから実行されるので、pool.Close の defer より後に書く。
+	// Hub の定期処理（presence の延長と再検証）と、失効イベントの購読も同じく止めてから後始末する。
 	jobCtx, stopJobs := context.WithCancel(ctx)
-	cleanupDone := make(chan struct{})
-	go func() {
-		defer close(cleanupDone)
-		chatService.RunAttachmentCleanup(jobCtx, chat.AttachmentCleanupInterval)
-	}()
+	var jobs sync.WaitGroup
+	jobs.Go(func() { chatService.RunAttachmentCleanup(jobCtx, chat.AttachmentCleanupInterval) })
+	jobs.Go(func() { hub.Run(jobCtx, presence.RefreshInterval, realtime.RevalidateInterval) })
+	jobs.Go(func() {
+		if err := revocations.Run(jobCtx, hub.CloseSessions); err != nil {
+			// Redis との接続が切れて購読が終わった。失効の反映は定期の再検証（5 分ごと）に頼ることになる。
+			logger.ErrorContext(jobCtx, "revocation subscription stopped", slog.Any("error", err))
+		}
+	})
 	defer func() {
 		stopJobs()
-		<-cleanupDone
+		jobs.Wait()
 	}()
 
 	handler := httpx.NewRouter(httpx.Deps{
@@ -152,6 +177,11 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		JWKS:                jwks,
 		RefreshCookieSecure: cfg.RefreshCookieSecure,
 		Chat:                chatService,
+		Realtime:            hub,
+		WSTickets:           authn.NewWSTickets(rdb, rand.Reader),
+		Sessions:            authService,
+		// ブラウザからの接続は Web クライアントのオリジンだけを許す。
+		WS: httpx.DefaultWSConfig([]string{cfg.AppBaseURL.Host}),
 	})
 
 	srv := &http.Server{
@@ -172,6 +202,13 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	logger.InfoContext(ctx, "server started", slog.String("addr", ln.Addr().String()), slog.String("version", version))
 	if err := httpx.Serve(ctx, srv, ln, cfg.ShutdownTimeout); err != nil {
 		return err
+	}
+	// http.Server.Shutdown はアップグレード済みの WebSocket を扱わないので、Hub に閉じさせて、登録が外れるのを待つ。
+	// DB のプールを閉じる（defer）前に、接続の後始末（presence の更新など）を終わらせる。
+	hubCtx, cancelHub := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
+	defer cancelHub()
+	if err := hub.Shutdown(hubCtx); err != nil {
+		return fmt.Errorf("shutdown websocket hub: %w", err)
 	}
 	logger.InfoContext(ctx, "server stopped")
 	return nil
