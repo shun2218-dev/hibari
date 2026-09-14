@@ -1,8 +1,8 @@
 # ローカル開発環境。
 #
-# - server には container_name も固定のホストポートへの依存も持たせない。
-#   Phase 5 で `docker compose up --scale server=2` と Caddy を足すため。
-#   サービス同士はサービス名（postgres / redis / minio）で到達する。
+# - server には container_name も固定のホストポートへの依存も持たせない。`docker compose up --scale server=2` で増やせるようにする。
+#   ホストに公開するのは Caddy（ロードバランサ）だけで、server には Caddy を通って到達する（ロードマップ Phase 5、ADR 0016）。
+#   サービス同士はサービス名（postgres / redis / minio / server）で到達する。
 # - postgres / redis はホストにポートを公開しない。psql は `make psql` でコンテナ内から使う。
 #   ホストに psql を要求しないことと、他プロジェクトの 5432 / 6379 と衝突しないことが理由。
 # - Next.js（web/）はここに入れず、ホストで起動する（CLAUDE.md「技術スタック」）。
@@ -84,6 +84,8 @@ services:
       HTTP_ADDR: :8080
       # `make keys` で作る開発用の鍵。リポジトリを /src に bind mount しているのでそのまま読める。
       JWT_PRIVATE_KEY_FILE: /src/keys/jwt_ed25519.pem
+      # X-Forwarded-For を信用するのは Caddy からの接続だけ（ADR 0017）。
+      TRUSTED_PROXIES: ${CADDY_IP:-172.31.250.10}/32
       # サーバーはサービス名で MinIO に到達し、署名付き URL はブラウザから到達できるホスト名で作る（ADR 0013）。
       # 開発ではルートの認証情報をそのまま使う。
       S3_ENDPOINT: http://minio:9000
@@ -97,11 +99,11 @@ services:
       TEST_S3_BUCKET: hibari-test
       TEST_S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-hibari}
       TEST_S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-hibari-secret}
-    # Phase 5 では Caddy だけがホストに公開し、server の公開はやめる。
-    ports:
-      - "${SERVER_PORT:-8080}:8080"
+    # ホストには公開しない。Caddy が振り分ける。
     volumes:
       - .:/src
+      # air のビルド先（tmp/）はレプリカごとに分ける。bind mount のままだと、複数のレプリカが同じバイナリを同時に書き換えて壊す。
+      - /src/tmp
       # モジュールキャッシュとビルドキャッシュは named volume に置く。
       # bind mount に置くと macOS では遅く、再作成のたびにダウンロードとビルドがやり直しになる。
       - gomod:/go/pkg/mod
@@ -113,6 +115,29 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+
+  # ロードバランサ（ADR 0016）。ホストに公開するのはこれだけで、web/ の API のベース URL（localhost:8080）はここに向く。
+  caddy:
+    image: caddy:2.10-alpine
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      default:
+        # server の TRUSTED_PROXIES に書くので、アドレスを固定する（ADR 0017）。
+        ipv4_address: ${CADDY_IP:-172.31.250.10}
+    depends_on:
+      - server
+
+networks:
+  default:
+    ipam:
+      config:
+        # Caddy のアドレスを固定するために、サブネットを決める。ほかのネットワークと衝突したら .env で変える。
+        # 自動で割り当てるアドレスは後ろ半分に限り、固定したアドレスとぶつからないようにする。
+        - subnet: ${COMPOSE_SUBNET:-172.31.250.0/24}
+          ip_range: ${COMPOSE_IP_RANGE:-172.31.250.128/25}
 
 volumes:
   pgdata:

@@ -7,7 +7,9 @@ flowchart TB
     MOB["Mobile<br/>Phase 7 以降・要 Push"]
   end
 
-  subgraph GO["Go — 単一バイナリ（論理分離・物理は 1 プロセス）"]
+  LB["ロードバランサ<br/>ローカル: Caddy / 本番: Fly のプロキシ<br/>X-Forwarded-For を上書き（ADR 0017）"]
+
+  subgraph GO["Go — 単一バイナリ（論理分離）× N インスタンス"]
     direction LR
 
     subgraph AUTH["internal/auth"]
@@ -21,10 +23,11 @@ flowchart TB
     subgraph CHAT["internal/chat"]
       C0["ワークスペース / ロール / 招待"]
       C6["authz（読める / 書ける）"]
-      C1["WebSocket Hub / 接続管理"]
+      C1["WebSocket Hub / 接続管理<br/>自インスタンスの接続にだけ配る"]
+      C8["配信: Redis Pub/Sub<br/>room / workspace / user チャンネル"]
       C2["seq 採番 & 永続化"]
       C3["冪等性（client_msg_id）"]
-      C4["差分取得 REST（after_seq）"]
+      C4["差分取得 REST（after_change_seq）"]
       C5["presence / typing"]
       C7["添付（署名付き URL 発行）"]
     end
@@ -41,11 +44,12 @@ flowchart TB
   subgraph INFRA["インフラ"]
     direction LR
     PG[("PostgreSQL<br/>唯一の真実<br/>users / workspaces / rooms / messages")]
-    RD[("Redis<br/>Pub/Sub・presence・typing<br/>失効通知・ws-ticket・レート制限")]
+    RD[("Redis 7.4+<br/>Pub/Sub・presence（インスタンス別 TTL）・typing<br/>失効通知・ws-ticket・レート制限")]
     S3[("S3 互換ストレージ<br/>ローカル: MinIO / 本番: R2（暫定）<br/>private バケット")]
   end
 
-  WEB -->|"REST: Bearer JWT<br/>WSS: 短命 ws-ticket"| GO
+  WEB -->|"REST: Bearer JWT<br/>WSS: 短命 ws-ticket"| LB
+  LB --> GO
   WEB -.->|"署名付き URL で直 PUT / GET"| S3
   DSK -.-> GO
   MOB -.-> GO
@@ -54,13 +58,14 @@ flowchart TB
   AUTH --> PG
   CHAT --> PG
   CHAT --> RD
+  C8 <-->|"publish / 接続を持つチャンネルだけ subscribe"| RD
   AUTH -->|"失効イベント publish"| RD
   RD -->|"auth:revoked 購読"| P2
   CHAT --> P5
   P5 --> S3
 
   N1["<b>境界の約束</b><br/>chat は auth を import しない。<br/>接点は「authn が渡す検証済み userID / sid」と<br/>Redis の失効イベントのみ。<br/>これを守れば別プロセスへの切り出しは<br/>ルーティング変更で済む。"]
-  N2["<b>2 台目以降</b><br/>同じバイナリを横に並べるだけ。<br/>配信は Redis Pub/Sub 経由（at-most-once）。<br/>取りこぼしは after_seq の差分取得で補う。<br/>JWT 検証はローカル完結。失効は WS には即時、<br/>REST には最大 15 分遅れて効く。"]
+  N2["<b>2 台目以降</b><br/>同じバイナリを横に並べるだけ（ADR 0016）。<br/>配信は Redis Pub/Sub 経由（at-most-once）。<br/>取りこぼしは after_change_seq の差分取得で補い、<br/>Pub/Sub の再接続を検知したら WS を 1012 で切って同期させる。<br/>JWT 検証はローカル完結。失効は WS には即時、<br/>REST には最大 15 分遅れて効く。"]
 
   GO -.- N1
   GO -.- N2
