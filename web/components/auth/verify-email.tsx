@@ -1,0 +1,69 @@
+import { Button } from "@/components/ui/button";
+import { AlertIcon, CheckCircleIcon, MailIcon } from "@/components/ui/icons";
+
+import { StatusContent } from "./auth-shell";
+
+/** 登録直後。メールの確認は「いま待っていること」なので琥珀にする。 */
+export function VerifyEmailPending({
+  email,
+  resending,
+  onResend,
+  onChangeEmail,
+}: {
+  email: string;
+  resending?: boolean;
+  onResend?: () => void;
+  onChangeEmail?: () => void;
+}) {
+  return (
+    <StatusContent
+      tone="attention"
+      icon={<MailIcon className="size-5" />}
+      title="確認メールを送りました"
+      description={
+        <>
+          <span className="font-mono text-text">{email}</span> 宛のメールにあるリンクを開くと、確認が完了します。
+        </>
+      }
+    >
+      <div className="flex flex-col items-center gap-3">
+        <Button variant="primary-outline" size="lg" onClick={onResend} disabled={resending}>
+          確認メールを再送する
+        </Button>
+        <button type="button" onClick={onChangeEmail} className="text-xs font-medium text-primary hover:underline">
+          別のアドレスに変更する
+        </button>
+      </div>
+    </StatusContent>
+  );
+}
+
+export function VerifyEmailDone({ onOpen }: { onOpen?: () => void }) {
+  return (
+    <StatusContent
+      tone="primary"
+      icon={<CheckCircleIcon className="size-5" />}
+      title="メールアドレスを確認しました"
+      description="これで hibari のすべての機能が使えます。"
+    >
+      <Button size="lg" onClick={onOpen}>
+        hibari を開く
+      </Button>
+    </StatusContent>
+  );
+}
+
+export function VerifyEmailInvalid({ resending, onResend }: { resending?: boolean; onResend?: () => void }) {
+  return (
+    <StatusContent
+      tone="neutral"
+      icon={<AlertIcon className="size-5" />}
+      title="確認リンクが無効です"
+      description="リンクの有効期限が切れたか、すでに使われています。確認メールを送り直してください。"
+    >
+      <Button size="lg" onClick={onResend} disabled={resending}>
+        確認メールを再送する
+      </Button>
+    </StatusContent>
+  );
+}
