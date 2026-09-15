@@ -55,13 +55,13 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 | ライト | `#64786e` | `#86765c` | `#5e6e80` | `#746a7d` | `#4f7268` | `#7c6f5b` |
 | ダーク | `#89a096` | `#ad9b7c` | `#8496aa` | `#9c90a8` | `#7fa095` | `#a3947a` |
 
-どの番号を割り当てるかの規則（ID のハッシュなど）は Phase 6 で決める。同じユーザーはどの画面でも同じ色にする。
+番号はユーザー / ワークスペースの ID を FNV-1a でハッシュして決める（`web/lib/avatar.ts`、ADR 0018）。表示名からは決めないので、名前を変えても色は変わらない。
 
 ## 文字
 
 | トークン | 値 | Tailwind | 用途 |
 |---|---|---|---|
-| `--font-sans` | Instrument Sans, Zen Kaku Gothic New, system-ui | `font-sans` | 既定。欧文は Instrument Sans、和文は Zen Kaku Gothic New で描く |
+| `--font-sans` | Instrument Sans, Zen Kaku Gothic New, system-ui | `font-sans` | 既定。欧文は Instrument Sans、和文は Zen Kaku Gothic New で描く。読み込みは `web/app/fonts.ts`（next/font） |
 | `--font-mono` | JetBrains Mono | `font-mono` | 時刻、ハンドル（`@naoki`）、招待リンク、メールアドレス、ブランド名の横の `chat`。桁をそろえて視線を上下させないため |
 
 ### サイズ（7 段階）

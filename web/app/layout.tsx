@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
+
+import { instrumentSans, jetBrainsMono, zenKakuGothicNew } from "./fonts";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "hibari",
 };
 
-// 見た目（フォント・配色・レイアウト）は Phase 1.5 でデザインを取り込んでから決める。
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="ja">
+    <html
+      lang="ja"
+      className={`${instrumentSans.variable} ${zenKakuGothicNew.variable} ${jetBrainsMono.variable}`}
+    >
       <body>{children}</body>
     </html>
   );
