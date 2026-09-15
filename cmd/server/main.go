@@ -82,6 +82,10 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 
 	clk := clock.System{}
 	ids := id.NewGenerator(clk, rand.Reader)
+	// instanceID はこのプロセスを表す。presence でインスタンスごとの接続の有無を数えるのと、Pub/Sub の再接続の検知に使う（ADR 0016）。
+	// 複数台のログを見分けられるよう、すべてのログに付ける。
+	instanceID := ids.New()
+	logger = logger.With(slog.String("instance_id", instanceID.String()))
 
 	accessTokens, err := auth.NewAccessTokenIssuer(signingKey, cfg.JWTIssuer, cfg.JWTAudience, clk, ids)
 	if err != nil {
@@ -119,14 +123,21 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		return err
 	}
 
-	// WebSocket の Hub（ADR 0015）。Phase 4 はこのプロセスのメモリの中だけで配信する。
-	presenceStore := presence.New(rdb)
+	// WebSocket の配信（ADR 0015 / 0016）。イベントは Redis Pub/Sub で全インスタンスに流し、各インスタンスの Hub が自分の接続に届ける。
+	broker, err := realtime.NewBroker(startupCtx, rdb, instanceID, logger)
+	if err != nil {
+		return err
+	}
+	delivery := realtime.NewRedisDelivery(rdb, ids, logger)
+	presenceStore := presence.New(rdb, instanceID)
 	hub := realtime.NewHub(realtime.Deps{
 		Authorizer: chat.NewSubscriptionAuthorizer(pool),
 		Presence:   presenceStore,
 		// chat は auth を import しないので、セッションの有効性の問い合わせは authn のインターフェースとしてここで配線する（ADR 0001）。
-		Sessions: authService,
-		Logger:   logger,
+		Sessions:   authService,
+		Publisher:  delivery,
+		Subscriber: broker,
+		Logger:     logger,
 	})
 	// 失効イベントの購読は、接続を受け付ける前に始める。始める前に発行された失効は、ws-ticket の消費時の検証で拒否される。
 	revocations, err := authn.SubscribeRevocations(startupCtx, rdb, logger)
@@ -142,7 +153,7 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		Logger:           logger,
 		Storage:          objectStorage,
 		AttachmentLimits: chat.AttachmentLimits{MaxBytes: cfg.AttachmentMaxBytes, AllowedTypes: cfg.AttachmentAllowedTypes},
-		Delivery:         hub,
+		Delivery:         delivery,
 		Presence:         presenceStore,
 	})
 
@@ -164,6 +175,20 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		jobs.Wait()
 	}()
 
+	// Redis Pub/Sub の受信（ADR 0016）は、停止の合図（ctx）では止めず、Hub の停止が終わってから止める。
+	// 先に止めると、停止の途中で閉じていく接続の購読の解除や、その間に届くイベントの受け渡しができない。
+	// defer は後に書いたものから実行されるので、Redis のクライアントを閉じる defer より先に実行される。
+	brokerCtx, stopBroker := context.WithCancel(context.WithoutCancel(ctx))
+	brokerDone := make(chan struct{})
+	go func() {
+		defer close(brokerDone)
+		broker.Run(brokerCtx, hub)
+	}()
+	defer func() {
+		stopBroker()
+		<-brokerDone
+	}()
+
 	handler := httpx.NewRouter(httpx.Deps{
 		Logger: logger,
 		Clock:  clk,
@@ -172,6 +197,8 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 			{Name: "postgres", Check: pool.Ping},
 			{Name: "redis", Check: func(ctx context.Context) error { return rdb.Ping(ctx).Err() }},
 		},
+		// 前段のプロキシ（ローカルは Caddy、本番は Fly のプロキシ）。空なら X-Forwarded-For を読まない（ADR 0017）。
+		TrustedProxies:      cfg.TrustedProxies,
 		Auth:                authService,
 		Verifier:            verifier,
 		JWKS:                jwks,

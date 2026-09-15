@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"mime"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -37,6 +38,9 @@ type Config struct {
 	RefreshCookieSecure bool
 	// AppBaseURL は Web クライアントの URL。確認メールや再設定メールのリンクの起点にする。
 	AppBaseURL *url.URL
+	// TrustedProxies は X-Forwarded-For を信用する前段のプロキシのアドレス（CIDR）。既定は空で、XFF を読まない（ADR 0017）。
+	// ローカルは Caddy、本番は Fly のプロキシになるので、環境ごとに差し替える（docs/deploy.md）。
+	TrustedProxies []netip.Prefix
 
 	// Storage は添付ファイルを置く S3 API のストレージ（ADR 0008 / 0013）。
 	Storage storage.Config
@@ -134,6 +138,20 @@ func Load(lookup LookupEnv) (Config, error) {
 		errs = append(errs, fmt.Errorf("APP_BASE_URL: must be an absolute http(s) URL, got %q", baseURL))
 	default:
 		cfg.AppBaseURL = baseURL
+	}
+
+	for v := range strings.SplitSeq(optional("TRUSTED_PROXIES", ""), ",") {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		// 1 つのアドレスも /32 や /128 で書かせる。「10.0.0.1/8」のようなホスト部の残った値は、意図した範囲か分からないので拒否する。
+		prefix, err := netip.ParsePrefix(v)
+		if err != nil || prefix != prefix.Masked() {
+			errs = append(errs, fmt.Errorf("TRUSTED_PROXIES: invalid CIDR %q (write a single address as /32 or /128)", v))
+			continue
+		}
+		cfg.TrustedProxies = append(cfg.TrustedProxies, prefix)
 	}
 
 	cfg.Storage = storage.Config{

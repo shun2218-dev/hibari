@@ -74,7 +74,8 @@ func NewPresence(t testing.TB) *presence.Store {
 		t.Fatalf("open redis: %v", err)
 	}
 	t.Cleanup(func() { _ = rdb.Close() })
-	return presence.New(rdb)
+	// テストごとに別のインスタンスとして数える。
+	return presence.New(rdb, id.NewGenerator(clock.System{}, rand.Reader).New())
 }
 
 type options struct {

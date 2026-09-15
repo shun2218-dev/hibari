@@ -16,6 +16,8 @@ type Deps struct {
 	Clock        clock.Clock
 	IDs          id.Generator
 	HealthChecks []HealthCheck
+	// TrustedProxies は X-Forwarded-For を信用する前段のプロキシ。空なら XFF を読まない（ADR 0017）。
+	TrustedProxies TrustedProxies
 
 	Auth     AuthService
 	Verifier *authn.Verifier
@@ -49,6 +51,8 @@ func NewRouter(d Deps) http.Handler {
 
 	var h http.Handler = mux
 	h = withAccessLog(d.Logger, d.Clock, h)
+	// アクセスログにも同じクライアント IP を出すので、ログより外側で求める。
+	h = withClientIP(d.TrustedProxies, h)
 	h = withRequestID(d.IDs, h)
 	return h
 }

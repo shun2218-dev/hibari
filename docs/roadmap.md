@@ -39,6 +39,7 @@ Phase 7〜  任意
 | Tauri は Phase 6 | **Phase 7 以降** | Phase 6 は Next.js |
 | Phase 4 の差分取得は `after_seq` | **`after_change_seq`（編集・削除も含む）** | ADR 0014 |
 | 購読はルームだけ | **ワークスペースとルーム** | ADR 0015 |
+| Phase 5 の購読はルームとユーザー | **ルーム・ワークスペース・ユーザー** | ADR 0016 |
 | `tools/gen_*.py` で SVG 生成 | **`tools/render-diagrams.sh`（mermaid-cli）** | Python 版は mermaid を読んでいなかった |
 | Dockerfile の `:delegated` | **不要**（現行の Docker Desktop では無視される） | — |
 
@@ -318,10 +319,18 @@ Redis Pub/Sub は使わず、インメモリの Hub だけで実装する。意�
 - 添付の掃除ジョブが複数台で重複して実行されないことを確認する
 
 **DoD**
-- [ ] `--scale server=2` で、どちらに接続しても全員にメッセージが届く
-- [ ] 1 台を `docker compose stop` しても、再接続後に差分を取得して整合性が保たれる
-- [ ] Caddy が WebSocket のアップグレードを正しく通している
-- [ ] 別インスタンスに接続しているユーザーをキックしても、その場で購読が解除される
+- [x] `--scale server=2` で、どちらに接続しても全員にメッセージが届く（`internal/httpx/ws_scale_test.go` の `TestWSDeliversAcrossInstances`。compose の Caddy + 2 台でも手で確認）
+- [x] 1 台を `docker compose stop` しても、再接続後に差分を取得して整合性が保たれる（compose で 1 台を止め、1001 で切れた接続が別の 1 台に再接続して `after_change_seq` で切断中のメッセージを取れることを確認。止めている間の送信は Caddy がもう 1 台に送り直す）
+- [x] Caddy が WebSocket のアップグレードを正しく通している（上の確認はすべて Caddy 経由）
+- [x] 別インスタンスに接続しているユーザーをキックしても、その場で購読が解除される（`TestWSKickAcrossInstances`）
+
+**確定した内容**（ADR 0016 / 0017）
+- チャンネルは `room:` / `user:` に加えて `workspace:`（ADR 0015 のワークスペースの購読）。権限が変わったユーザーの `user:` にも流す
+- `subscribe` の ack と接続の登録は、Redis が購読を反映するまで待つ（番号付きの PING）
+- presence は Redis 7.4 のハッシュ（フィールドはインスタンスの ID、フィールドごとの TTL）で数え、状態の変更と presence.changed の publish を Lua で同時に行う
+- Pub/Sub の接続が張り直されたら、そのインスタンスの WebSocket を 1012 で切って同期させる
+- Caddy の後ろで IP 単位のレート制限が共有されないよう、`TRUSTED_PROXIES` から X-Forwarded-For を読む（ADR 0017）
+- 添付の掃除ジョブが複数台で重複しないことは `TestCleanupAttachmentsConcurrentInstances` で確認
 
 ---
 

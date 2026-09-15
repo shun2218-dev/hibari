@@ -1,0 +1,33 @@
+# ローカル開発用のロードバランサ（ロードマップ Phase 5、ADR 0016）。
+# 本番（Fly.io）では Fly のプロキシがこの役割を持つので、このファイルはローカルでしか使わない（docs/deploy.md）。
+{
+	# ローカル専用。TLS の証明書の取得も、管理 API も使わない。
+	auto_https off
+	admin off
+}
+
+:8080 {
+	reverse_proxy {
+		# `docker compose up --scale server=N` のすべてのレプリカに振り分ける。
+		# 固定のアドレスではなく DNS（compose のサービス名）を 1 秒ごとに引き直し、増えた・止まったレプリカに追従する。
+		dynamic a {
+			name server
+			port 8080
+			refresh 1s
+		}
+		lb_policy round_robin
+		# 止めたレプリカに当たったら、しばらく外して、ほかのレプリカで試し直す（`docker compose stop` の確認用）。
+		lb_try_duration 5s
+		fail_duration 10s
+		# 試し直すときに、1 台目に送りかけた本文をもう一度送れるよう、リクエストの本文を読み込んでおく。
+		# 読み込まないと POST の再試行が「閉じた本文」で失敗し、生きているレプリカまで故障とみなされる。
+		# 本文は小さな JSON だけ（ファイルの中身はサーバーを通らない。CLAUDE.md ルール 10）。
+		request_buffers 1MiB
+
+		# クライアントが送ってきた X-Forwarded-For は捨てて、Caddy から見た接続元で上書きする（追記しない）。
+		# サーバーは TRUSTED_PROXIES に Caddy のアドレスだけを入れて、このヘッダを信用する（ADR 0017）。
+		header_up X-Forwarded-For {remote_host}
+
+		# WebSocket のアップグレードは reverse_proxy が標準で通す。長くつながる接続を切らないよう、タイムアウトは設定しない。
+	}
+}

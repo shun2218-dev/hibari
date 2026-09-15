@@ -33,6 +33,11 @@ dev: ## 全部をローカルで起動する（鍵の生成 → compose の起�
 up: ## 全コンテナを起動する（server は air でホットリロード）
 	$(COMPOSE) up -d --build
 
+.PHONY: up-scale
+up-scale: ## server を n 台にして全コンテナを起動する（例: make up-scale n=2。Caddy が振り分ける）
+	@test -n "$(n)" || (echo "usage: make up-scale n=<replicas>" >&2; exit 1)
+	$(COMPOSE) up -d --build --scale server=$(n)
+
 .PHONY: down
 down: ## 全コンテナを停止する（データのボリュームは残す）
 	$(COMPOSE) down
@@ -46,7 +51,7 @@ ps: ## コンテナの状態を表示する
 	$(COMPOSE) ps
 
 .PHONY: sh
-sh: ## server コンテナでシェルを開く
+sh: ## server コンテナ（複数台なら 1 台目）でシェルを開く
 	$(COMPOSE) exec server bash
 
 .PHONY: psql

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"log/slog"
+	"maps"
 	"slices"
 	"sync"
 	"testing"
@@ -13,14 +14,16 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/presence"
 	"github.com/shun2218-dev/hibari/internal/chat/realtime"
 	"github.com/shun2218-dev/hibari/internal/platform/authn"
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
 )
 
-// Hub の単体テスト。接続・authz・presence・セッションを偽物にして、ネットワークと DB なしで振る舞いを確かめる。
-// 実物の WebSocket と DB を通した確認は internal/httpx の統合テストで行う。
+// Hub の単体テスト。接続・authz・presence・セッション・Redis Pub/Sub を偽物にして、ネットワークと DB なしで振る舞いを確かめる。
+// 偽物の Publisher は publish したイベントをその場で DeliverLocal に戻す（1 台だけの Redis Pub/Sub の代わり）。
+// 実物の Redis を通した確認は redis_test.go、WebSocket と DB を通した確認は internal/httpx の統合テストで行う。
 
 var ids = id.NewGenerator(clock.NewFake(time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)), rand.Reader)
 
@@ -171,31 +174,52 @@ func (a *fakeAuth) WorkspaceIDs(_ context.Context, userID ulid.ULID) ([]ulid.ULI
 }
 
 // fakePresence は presence と typing を記録する。typing の TTL は切れないので、2 回目以降は常に false。
+// Connect / Disconnect が状態を変えたら、実物の Lua スクリプトと同じく、渡されたイベントを publish する。
 type fakePresence struct {
 	mu        sync.Mutex
 	online    map[ulid.ULID]bool
-	setOnline int
+	refreshes int
 	typing    map[[2]ulid.ULID]bool
+	publisher *fakePublisher
+	// beforeDisconnect は Disconnect の最初に呼ばれる（後始末の途中の状態を作る）。
+	beforeDisconnect func()
 }
 
-func newFakePresence() *fakePresence {
-	return &fakePresence{online: map[ulid.ULID]bool{}, typing: map[[2]ulid.ULID]bool{}}
+func (p *fakePresence) Connect(ctx context.Context, userID ulid.ULID, ann presence.Announcement) (bool, error) {
+	p.mu.Lock()
+	first := !p.online[userID]
+	p.online[userID] = true
+	p.mu.Unlock()
+	if first {
+		p.publisher.publish(ctx, ann)
+	}
+	return first, nil
 }
 
-func (p *fakePresence) SetOnline(_ context.Context, userIDs ...ulid.ULID) error {
+func (p *fakePresence) Disconnect(ctx context.Context, userID ulid.ULID, ann presence.Announcement) (bool, error) {
+	p.mu.Lock()
+	hook := p.beforeDisconnect
+	p.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	p.mu.Lock()
+	last := p.online[userID]
+	delete(p.online, userID)
+	p.mu.Unlock()
+	if last {
+		p.publisher.publish(ctx, ann)
+	}
+	return last, nil
+}
+
+func (p *fakePresence) Refresh(_ context.Context, userIDs ...ulid.ULID) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.setOnline++
+	p.refreshes++
 	for _, id := range userIDs {
 		p.online[id] = true
 	}
-	return nil
-}
-
-func (p *fakePresence) SetOffline(_ context.Context, userID ulid.ULID) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	delete(p.online, userID)
 	return nil
 }
 
@@ -216,6 +240,68 @@ func (p *fakePresence) isOnline(userID ulid.ULID) bool {
 	return p.online[userID]
 }
 
+// fakePublisher は publish したイベントを、その場で Hub の DeliverLocal に渡す。
+type fakePublisher struct {
+	hub     *realtime.Hub
+	mu      sync.Mutex
+	pending map[string]chat.Event // Announcement の payload → イベント
+}
+
+func (p *fakePublisher) Deliver(ctx context.Context, ev chat.Event) {
+	p.hub.DeliverLocal(ctx, ev)
+}
+
+func (p *fakePublisher) Announcement(ev chat.Event) (presence.Announcement, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	key := ids.New().String()
+	p.pending[key] = ev
+	return presence.Announcement{Payload: []byte(key)}, nil
+}
+
+func (p *fakePublisher) publish(ctx context.Context, ann presence.Announcement) {
+	p.mu.Lock()
+	ev, ok := p.pending[string(ann.Payload)]
+	delete(p.pending, string(ann.Payload))
+	p.mu.Unlock()
+	if ok {
+		p.hub.DeliverLocal(ctx, ev)
+	}
+}
+
+// fakeSubscriber はチャンネルごとの購読の数を数える。
+type fakeSubscriber struct {
+	mu   sync.Mutex
+	refs map[string]int
+	err  error // nil でなければ Acquire が失敗する
+}
+
+func (s *fakeSubscriber) Acquire(_ context.Context, channel string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	s.refs[channel]++
+	return nil
+}
+
+func (s *fakeSubscriber) Release(channel string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refs[channel]--
+	if s.refs[channel] == 0 {
+		delete(s.refs, channel)
+	}
+}
+
+// channels は購読の数が 0 でないチャンネルと、その数を返す。
+func (s *fakeSubscriber) channels() map[string]int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return maps.Clone(s.refs)
+}
+
 type fakeSessions struct {
 	mu      sync.Mutex
 	revoked map[ulid.ULID]bool
@@ -228,21 +314,31 @@ func (s *fakeSessions) SessionActive(_ context.Context, _, sid ulid.ULID) (bool,
 }
 
 type env struct {
-	hub      *realtime.Hub
-	auth     *fakeAuth
-	presence *fakePresence
-	sessions *fakeSessions
+	hub        *realtime.Hub
+	auth       *fakeAuth
+	presence   *fakePresence
+	sessions   *fakeSessions
+	subscriber *fakeSubscriber
 }
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	e := &env{auth: newFakeAuth(), presence: newFakePresence(), sessions: &fakeSessions{revoked: map[ulid.ULID]bool{}}}
+	publisher := &fakePublisher{pending: map[string]chat.Event{}}
+	e := &env{
+		auth:       newFakeAuth(),
+		presence:   &fakePresence{online: map[ulid.ULID]bool{}, typing: map[[2]ulid.ULID]bool{}, publisher: publisher},
+		sessions:   &fakeSessions{revoked: map[ulid.ULID]bool{}},
+		subscriber: &fakeSubscriber{refs: map[string]int{}},
+	}
 	e.hub = realtime.NewHub(realtime.Deps{
 		Authorizer: e.auth,
 		Presence:   e.presence,
 		Sessions:   e.sessions,
+		Publisher:  publisher,
+		Subscriber: e.subscriber,
 		Logger:     slog.New(slog.DiscardHandler),
 	})
+	publisher.hub = e.hub
 	return e
 }
 
@@ -350,7 +446,7 @@ func TestSubscribeAndDeliver(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			e.hub.Deliver(t.Context(), tt.ev)
+			e.hub.DeliverLocal(t.Context(), tt.ev)
 			for name, got := range map[string]struct {
 				got, want []chat.EventType
 			}{
@@ -368,7 +464,7 @@ func TestSubscribeAndDeliver(t *testing.T) {
 
 	e.hub.Unsubscribe(alice, realtime.RoomTopic(w.room))
 	e.hub.Unsubscribe(alice, realtime.RoomTopic(w.room)) // 購読していなくても何もしない
-	e.hub.Deliver(t.Context(), messageTo(w.room))
+	e.hub.DeliverLocal(t.Context(), messageTo(w.room))
 	if got := aliceConn.take(); len(got) != 0 {
 		t.Errorf("after unsubscribe, alice received %v", got)
 	}
@@ -413,7 +509,7 @@ func TestDeliverRevalidatesAccessChanges(t *testing.T) {
 
 	// bob が w.room から外された。ほかの購読は読めるまま。
 	e.auth.revoke(w.bob, w.room)
-	e.hub.Deliver(t.Context(), chat.Event{
+	e.hub.DeliverLocal(t.Context(), chat.Event{
 		Type:          chat.EventRoomMemberRemoved,
 		To:            chat.Audience{Users: []ulid.ULID{w.bob}},
 		AccessChanges: []chat.AccessChange{{UserID: w.bob, WorkspaceID: w.ws}},
@@ -424,8 +520,8 @@ func TestDeliverRevalidatesAccessChanges(t *testing.T) {
 			t.Errorf("%s received %v, want only room.member_removed", name, got)
 		}
 	}
-	e.hub.Deliver(t.Context(), messageTo(w.room))
-	e.hub.Deliver(t.Context(), messageTo(w.other))
+	e.hub.DeliverLocal(t.Context(), messageTo(w.room))
+	e.hub.DeliverLocal(t.Context(), messageTo(w.other))
 	if got := bobConn.take(); !equalTypes(got, chat.EventMessageCreated) {
 		t.Errorf("bob received %v, want only the message in the room he can still read", got)
 	}
@@ -433,7 +529,7 @@ func TestDeliverRevalidatesAccessChanges(t *testing.T) {
 	// ワークスペースからキックされた。そのワークスペースの購読だけが外れ、別のワークスペースは残る。
 	e.auth.revoke(w.bob, w.ws)
 	e.auth.revoke(w.bob, w.other)
-	e.hub.Deliver(t.Context(), chat.Event{
+	e.hub.DeliverLocal(t.Context(), chat.Event{
 		Type:          chat.EventWorkspaceMemberRemoved,
 		To:            chat.Audience{Workspaces: []ulid.ULID{w.ws}, Users: []ulid.ULID{w.bob}},
 		AccessChanges: []chat.AccessChange{{UserID: w.bob, WorkspaceID: w.ws}},
@@ -441,9 +537,9 @@ func TestDeliverRevalidatesAccessChanges(t *testing.T) {
 	if got := bobConn.take(); !equalTypes(got, chat.EventWorkspaceMemberRemoved) {
 		t.Errorf("bob received %v, want workspace.member_removed once", got)
 	}
-	e.hub.Deliver(t.Context(), messageTo(w.other))
-	e.hub.Deliver(t.Context(), chat.Event{Type: chat.EventWorkspaceUpdated, To: chat.Audience{Workspaces: []ulid.ULID{w.ws}}})
-	e.hub.Deliver(t.Context(), messageTo(otherRoom))
+	e.hub.DeliverLocal(t.Context(), messageTo(w.other))
+	e.hub.DeliverLocal(t.Context(), chat.Event{Type: chat.EventWorkspaceUpdated, To: chat.Audience{Workspaces: []ulid.ULID{w.ws}}})
+	e.hub.DeliverLocal(t.Context(), messageTo(otherRoom))
 	if got := bobConn.take(); !equalTypes(got, chat.EventMessageCreated) {
 		t.Errorf("bob received %v, want only the message in the other workspace", got)
 	}
@@ -465,7 +561,7 @@ func TestSubscribeRetriesWhenAccessChangesConcurrently(t *testing.T) {
 		}
 		// 1 回目の authz が「読める」を読んだ直後に、bob が外されて権限の変更のイベントが届く。
 		e.auth.revoke(w.bob, w.room)
-		e.hub.Deliver(context.Background(), chat.Event{
+		e.hub.DeliverLocal(context.Background(), chat.Event{
 			Type:          chat.EventRoomMemberRemoved,
 			To:            chat.Audience{Users: []ulid.ULID{w.bob}},
 			AccessChanges: []chat.AccessChange{{UserID: w.bob, WorkspaceID: w.ws}},
@@ -478,7 +574,7 @@ func TestSubscribeRetriesWhenAccessChangesConcurrently(t *testing.T) {
 		t.Errorf("AuthorizeRoom calls = %d, want 2", calls)
 	}
 	bobConn.take()
-	e.hub.Deliver(t.Context(), messageTo(w.room))
+	e.hub.DeliverLocal(t.Context(), messageTo(w.room))
 	if got := bobConn.take(); len(got) != 0 {
 		t.Errorf("bob received %v from a room he was removed from", got)
 	}
@@ -494,7 +590,7 @@ func TestRevalidateKeepsSubscriptionsOnError(t *testing.T) {
 	e.auth.revoke(w.bob, w.room)
 	e.hub.Revalidate(t.Context())
 	bobConn.take()
-	e.hub.Deliver(t.Context(), messageTo(w.room))
+	e.hub.DeliverLocal(t.Context(), messageTo(w.room))
 	if got := bobConn.take(); !equalTypes(got, chat.EventMessageCreated) {
 		t.Errorf("bob received %v, want the subscription kept", got)
 	}
@@ -512,7 +608,7 @@ func TestSlowConsumerIsClosed(t *testing.T) {
 	bobConn.mu.Lock()
 	bobConn.full = true
 	bobConn.mu.Unlock()
-	e.hub.Deliver(t.Context(), messageTo(w.room))
+	e.hub.DeliverLocal(t.Context(), messageTo(w.room))
 
 	// 遅い接続は待たずに閉じさせ、ほかの接続への配信は止めない。
 	if got := bobConn.closeReasons(); !slices.Equal(got, []realtime.CloseReason{realtime.CloseSlowConsumer}) {
@@ -601,8 +697,8 @@ func TestRevalidate(t *testing.T) {
 	if d, ok := evs[0].Data.(chat.RoomMemberRemoved); !ok || d.RoomID != w.room || d.WorkspaceID != w.ws || d.Reason != chat.RemovalRemoved {
 		t.Errorf("room.member_removed data = %+v", evs[0].Data)
 	}
-	e.hub.Deliver(t.Context(), messageTo(w.room))
-	e.hub.Deliver(t.Context(), messageTo(w.other))
+	e.hub.DeliverLocal(t.Context(), messageTo(w.room))
+	e.hub.DeliverLocal(t.Context(), messageTo(w.other))
 	if got := bobConn.take(); !equalTypes(got, chat.EventMessageCreated) {
 		t.Errorf("bob received %v after revalidation", got)
 	}
@@ -662,7 +758,7 @@ func TestPresence(t *testing.T) {
 
 	// 接続中のユーザーの TTL を延ばす。
 	e.presence.mu.Lock()
-	before := e.presence.setOnline
+	before := e.presence.refreshes
 	e.presence.online = map[ulid.ULID]bool{} // TTL で消えた状態
 	e.presence.mu.Unlock()
 	e.hub.RefreshPresence(t.Context())
@@ -670,8 +766,8 @@ func TestPresence(t *testing.T) {
 		t.Errorf("after refresh: bob online = %v, alice online = %v", e.presence.isOnline(w.bob), e.presence.isOnline(w.alice))
 	}
 	e.presence.mu.Lock()
-	if e.presence.setOnline != before+1 {
-		t.Errorf("SetOnline calls = %d, want 1 batched call", e.presence.setOnline-before)
+	if e.presence.refreshes != before+1 {
+		t.Errorf("Refresh calls = %d, want 1 batched call", e.presence.refreshes-before)
 	}
 	e.presence.mu.Unlock()
 }
@@ -804,7 +900,7 @@ func TestRunStopsOnCancel(t *testing.T) {
 	waitFor(t, func() bool {
 		e.presence.mu.Lock()
 		defer e.presence.mu.Unlock()
-		return e.presence.setOnline >= 2
+		return e.presence.refreshes >= 2
 	})
 	cancel()
 	<-done
@@ -822,5 +918,122 @@ func waitFor(t *testing.T, cond func() bool) {
 		case <-timeout:
 			t.Fatal("condition not met within 5s")
 		}
+	}
+}
+
+// 接続・購読・再検証・切断のどの経路で購読が外れても、Redis のチャンネルの購読の数は釣り合う（購読し続けるチャンネルを残さない）。
+func TestSubscriberRefsBalance(t *testing.T) {
+	e := newEnv(t)
+	w := e.world()
+	alice, _ := e.connect(t, w.alice)
+	aliceTab2, _ := e.connect(t, w.alice)
+	bob, _ := e.connect(t, w.bob)
+	for _, c := range []*realtime.Client{alice, aliceTab2, bob} {
+		e.subscribe(t, c, realtime.WorkspaceTopic(w.ws))
+		e.subscribe(t, c, realtime.RoomTopic(w.room))
+	}
+	e.subscribe(t, alice, realtime.RoomTopic(w.room)) // 2 回目は数えない
+	e.subscribe(t, bob, realtime.RoomTopic(w.other))
+
+	want := map[string]int{
+		"user:" + w.alice.String(): 2, "user:" + w.bob.String(): 1,
+		"workspace:" + w.ws.String(): 3, "room:" + w.room.String(): 3, "room:" + w.other.String(): 1,
+	}
+	if got := e.subscriber.channels(); !maps.Equal(got, want) {
+		t.Fatalf("channels = %v, want %v", got, want)
+	}
+
+	e.hub.Unsubscribe(aliceTab2, realtime.RoomTopic(w.room))
+	e.hub.Unsubscribe(aliceTab2, realtime.RoomTopic(w.room))
+	// 権限の変更で外れた購読も数から引く。
+	e.auth.revoke(w.bob, w.other)
+	e.hub.DeliverLocal(t.Context(), chat.Event{
+		Type:          chat.EventRoomMemberRemoved,
+		To:            chat.Audience{Users: []ulid.ULID{w.bob}},
+		AccessChanges: []chat.AccessChange{{UserID: w.bob, WorkspaceID: w.ws}},
+	})
+	if got := e.subscriber.channels()["room:"+w.other.String()]; got != 0 {
+		t.Errorf("room:other refs after removal = %d, want 0", got)
+	}
+	for _, c := range []*realtime.Client{alice, aliceTab2, bob} {
+		e.hub.Unregister(t.Context(), c)
+	}
+	if got := e.subscriber.channels(); len(got) != 0 {
+		t.Fatalf("channels after all connections closed = %v, want none", got)
+	}
+}
+
+// 本人宛てのチャンネルを購読できなければ（Redis の障害）、イベントが届かない接続を登録しない。
+func TestRegisterFailsWithoutUserChannel(t *testing.T) {
+	e := newEnv(t)
+	e.subscriber.err = errors.New("redis is down")
+	if _, err := e.hub.Register(t.Context(), authn.Identity{UserID: ids.New(), SessionID: ids.New()}, &fakeConn{}); err == nil {
+		t.Fatal("Register() error = nil, want error")
+	}
+
+	e.subscriber.mu.Lock()
+	e.subscriber.err = nil
+	e.subscriber.mu.Unlock()
+	w := e.world()
+	alice, _ := e.connect(t, w.alice)
+	e.subscriber.mu.Lock()
+	e.subscriber.err = errors.New("redis is down")
+	e.subscriber.mu.Unlock()
+	if err := e.hub.Subscribe(t.Context(), alice, realtime.RoomTopic(w.room)); err == nil {
+		t.Fatal("Subscribe() error = nil, want error")
+	}
+	e.hub.DeliverLocal(t.Context(), messageTo(w.room))
+}
+
+// Redis Pub/Sub の接続が張り直されたら、すべての接続を閉じさせて再同期させる。
+func TestResyncClosesAllConnections(t *testing.T) {
+	e := newEnv(t)
+	_, conn1 := e.connect(t, ids.New())
+	_, conn2 := e.connect(t, ids.New())
+	e.hub.Resync(t.Context())
+	for _, c := range []*fakeConn{conn1, conn2} {
+		if got := c.closeReasons(); !slices.Equal(got, []realtime.CloseReason{realtime.CloseResync}) {
+			t.Errorf("close reasons = %v, want [CloseResync]", got)
+		}
+	}
+}
+
+// Shutdown は、登録を外した後の後始末（presence の更新）が終わるまで戻らない。
+// 先に戻ると、main が Redis のクライアントを閉じてから presence を更新しようとして失敗する。
+func TestShutdownWaitsForUnregisterCleanup(t *testing.T) {
+	e := newEnv(t)
+	w := e.world()
+	c, _ := e.connect(t, w.alice)
+
+	block := make(chan struct{})
+	entered := make(chan struct{})
+	e.presence.mu.Lock()
+	e.presence.beforeDisconnect = func() {
+		close(entered)
+		<-block
+	}
+	e.presence.mu.Unlock()
+
+	unregistered := make(chan struct{})
+	go func() {
+		defer close(unregistered)
+		e.hub.Unregister(context.Background(), c)
+	}()
+	<-entered // Unregister は登録を外し、presence の更新の途中で止まっている
+
+	done := make(chan error, 1)
+	go func() { done <- e.hub.Shutdown(context.Background()) }()
+	select {
+	case err := <-done:
+		t.Fatalf("Shutdown returned before presence was updated: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(block)
+	<-unregistered
+	if err := <-done; err != nil {
+		t.Fatalf("Shutdown() = %v", err)
+	}
+	if e.presence.isOnline(w.alice) {
+		t.Error("alice is still online after shutdown")
 	}
 }

@@ -48,3 +48,11 @@ WebSocket は常に切れうる（モバイル回線の切り替え、スリー�
 
 - 上の制約は、変更番号（change_seq）と `GET /rooms/{id}/messages?after_change_seq=N` で解決した（ADR 0014）。再接続時の差分取得は `after_seq` ではなく `after_change_seq` で行う。`after_seq` は履歴の取得に残す。
 - `Delivery` の Phase 4 の実装（インメモリの Hub）、購読の単位、イベントの一覧は ADR 0015 と `docs/events.md`。
+
+### 2026-09-15 Redis Pub/Sub の at-most-once と差分取得の関係（Phase 5）
+
+- Redis Pub/Sub は at-most-once で、次のときにイベントが失われる。そのどれでも、Postgres へのコミットは成功しているので、クライアントは差分取得（`after_change_seq`）で取り戻せる。
+  - publish の失敗（Redis の障害）: 送信 API は成功を返し、配信の失敗はログに残すだけ（`PublishTimeout` で打ち切る）
+  - 購読しているインスタンスと Redis の接続が切れている間の publish: 接続が戻ったことを検知して、そのインスタンスの WebSocket を 1012 で切り、クライアントに再接続と差分取得をさせる
+  - サーバーのインスタンスが落ちた: そのインスタンスの WebSocket が切れるので、クライアントは別のインスタンスに再接続して差分を取る
+- 詳細は ADR 0016。

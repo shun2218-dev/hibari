@@ -9,6 +9,7 @@ import (
 
 	"github.com/shun2218-dev/hibari/internal/chat"
 	"github.com/shun2218-dev/hibari/internal/chat/chattest"
+	"github.com/shun2218-dev/hibari/internal/chat/presence"
 )
 
 func TestSubscriptionAuthorizer(t *testing.T) {
@@ -124,11 +125,11 @@ func TestPresenceInRoomResponses(t *testing.T) {
 	if _, err := env.Service.JoinRoom(t.Context(), r.member2, room.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := env.Presence.SetOnline(t.Context(), r.member2); err != nil {
+	if _, err := env.Presence.Connect(t.Context(), r.member2, presence.Announcement{}); err != nil {
 		t.Fatal(err)
 	}
 	// t.Context は Cleanup の前にキャンセルされるので使わない。
-	t.Cleanup(func() { _ = env.Presence.SetOffline(context.Background(), r.member2) })
+	t.Cleanup(func() { _, _ = env.Presence.Disconnect(context.Background(), r.member2, presence.Announcement{}) })
 
 	page, err := env.Service.ListRoomMembers(t.Context(), r.member, room.ID, chat.PageRequest{})
 	if err != nil {

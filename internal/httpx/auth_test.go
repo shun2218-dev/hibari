@@ -9,9 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/oklog/ulid/v2"
+	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/shun2218-dev/hibari/internal/auth/authtest"
 	"github.com/shun2218-dev/hibari/internal/chat"
@@ -32,7 +36,11 @@ type apiClient struct {
 	env      *authtest.Env
 	srv      *httptest.Server
 	hub      *realtime.Hub
+	broker   *realtime.Broker
 	presence *presence.Store
+	redis    *goredis.Client
+	// instanceID はこのサーバー（インスタンス）の ID。presence のフィールドの名前になる。
+	instanceID ulid.ULID
 }
 
 // testWSConfig は WebSocket の設定。ping を待つテスト以外で ping が割り込まないよう、間隔は既定のまま長くする。
@@ -41,8 +49,9 @@ func testWSConfig() httpx.WSConfig {
 }
 
 type apiOptions struct {
-	auth []authtest.Option
-	ws   httpx.WSConfig
+	auth    []authtest.Option
+	ws      httpx.WSConfig
+	trusted httpx.TrustedProxies
 }
 
 // apiOption は newAPI の組み立てを変える。
@@ -56,6 +65,15 @@ func withWSConfig(cfg httpx.WSConfig) apiOption {
 	return func(o *apiOptions) { o.ws = cfg }
 }
 
+// withTrustedProxies は X-Forwarded-For を信用するプロキシを設定する。
+func withTrustedProxies(prefixes ...string) apiOption {
+	return func(o *apiOptions) {
+		for _, p := range prefixes {
+			o.trusted = append(o.trusted, netip.MustParsePrefix(p))
+		}
+	}
+}
+
 func newAPI(t *testing.T, opts ...apiOption) *apiClient {
 	t.Helper()
 	o := apiOptions{ws: testWSConfig()}
@@ -63,27 +81,61 @@ func newAPI(t *testing.T, opts ...apiOption) *apiClient {
 		opt(&o)
 	}
 	env := authtest.New(t, o.auth...)
+	return startInstance(t, env, o)
+}
+
+// newInstance は、同じ DB・Redis・鍵を使う 2 台目のサーバー（インスタンス）を立てる。
+// インスタンスの間の配信は Redis Pub/Sub だけを通る（ADR 0016）。
+func (c *apiClient) newInstance(opts ...apiOption) *apiClient {
+	c.t.Helper()
+	o := apiOptions{ws: testWSConfig()}
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return startInstance(c.t, c.env, o)
+}
+
+// startInstance は 1 台分のサーバー（Hub・Broker・presence・ルーター）を組み立てて起動する。
+func startInstance(t *testing.T, env *authtest.Env, o apiOptions) *apiClient {
+	t.Helper()
 	jwks, err := env.AccessTokens.JWKS()
 	if err != nil {
 		t.Fatal(err)
 	}
 	logger := slog.New(slog.DiscardHandler)
-	presenceStore := chattest.NewPresence(t)
-	hub := realtime.NewHub(realtime.Deps{
-		Authorizer: chat.NewSubscriptionAuthorizer(env.Pool),
-		Presence:   presenceStore,
-		Sessions:   env.Service,
-		Logger:     logger,
-	})
 	rdb, err := redis.Open(t.Context(), testenv.RedisURL(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = rdb.Close() })
+
+	instanceID := env.IDs.New()
+	broker, err := realtime.NewBroker(t.Context(), rdb, instanceID, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delivery := realtime.NewRedisDelivery(rdb, env.IDs, logger)
+	presenceStore := presence.New(rdb, instanceID)
+	hub := realtime.NewHub(realtime.Deps{
+		Authorizer: chat.NewSubscriptionAuthorizer(env.Pool),
+		Presence:   presenceStore,
+		Sessions:   env.Service,
+		Publisher:  delivery,
+		Subscriber: broker,
+		Logger:     logger,
+	})
+	brokerCtx, stopBroker := context.WithCancel(context.Background())
+	brokerDone := make(chan struct{})
+	go func() {
+		defer close(brokerDone)
+		broker.Run(brokerCtx, hub)
+	}()
+
 	h := httpx.NewRouter(httpx.Deps{
 		Logger:              logger,
 		Clock:               env.Clock,
 		IDs:                 id.NewGenerator(env.Clock, rand.Reader),
+		TrustedProxies:      o.trusted,
 		Auth:                env.Service,
 		Verifier:            env.Verifier,
 		JWKS:                jwks,
@@ -92,7 +144,7 @@ func newAPI(t *testing.T, opts ...apiOption) *apiClient {
 		Chat: chat.NewService(chat.Deps{
 			DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Random: rand.Reader, Logger: logger,
 			Storage: chattest.NewStorage(t), AttachmentLimits: chattest.AttachmentLimits,
-			Delivery: hub, Presence: presenceStore,
+			Delivery: delivery, Presence: presenceStore,
 		}),
 		Realtime:  hub,
 		WSTickets: authn.NewWSTickets(rdb, rand.Reader),
@@ -108,8 +160,10 @@ func newAPI(t *testing.T, opts ...apiOption) *apiClient {
 			t.Errorf("hub shutdown: %v", err)
 		}
 		srv.Close()
+		stopBroker()
+		<-brokerDone
 	})
-	return &apiClient{t: t, env: env, srv: srv, hub: hub, presence: presenceStore}
+	return &apiClient{t: t, env: env, srv: srv, hub: hub, broker: broker, presence: presenceStore, redis: rdb, instanceID: instanceID}
 }
 
 type request struct {
@@ -544,4 +598,44 @@ func TestLoginRateLimitedResponse(t *testing.T) {
 	if got := r.header.Get("Retry-After"); got != "900" {
 		t.Fatalf("Retry-After = %q, want 900", got)
 	}
+}
+
+// クライアント IP（ADR 0017）は、レート制限と refresh_tokens.ip の両方で同じ値になる。
+func TestClientIPForRateLimitAndRefreshToken(t *testing.T) {
+	limits := authtest.GenerousRateLimits
+	limits.RegisterPerIP = ratelimit.Rule{Name: authtest.RuleName("register-ip"), Limit: 1, Window: time.Hour}
+	register := func(c *apiClient, xff string) response {
+		return c.do(request{method: http.MethodPost, path: "/api/v1/auth/register", body: registerBody(c), headers: map[string]string{"X-Forwarded-For": xff}})
+	}
+
+	t.Run("信頼するプロキシ経由なら XFF のクライアントごとに数え、その IP を保存する", func(t *testing.T) {
+		// httptest のサーバーへの接続元はループバックなので、それを前段のプロキシとして信頼する。
+		c := newAPI(t, withAuthOptions(authtest.WithRateLimits(limits)), withTrustedProxies("127.0.0.0/8", "::1/128"))
+		r := register(c, "198.51.100.1")
+		if r.status != http.StatusCreated {
+			t.Fatalf("register = %d %s", r.status, r.body)
+		}
+		expectProblem(t, register(c, "198.51.100.1"), http.StatusTooManyRequests, "rate-limited")
+		if r := register(c, "198.51.100.2"); r.status != http.StatusCreated {
+			t.Fatalf("register from another client = %d %s", r.status, r.body)
+		}
+
+		var ip string
+		userID := decode[tokenBody](t, r).User.ID
+		err := c.env.Pool.QueryRow(t.Context(), "SELECT host(ip) FROM refresh_tokens WHERE user_id = $1", ulid.MustParse(userID)).Scan(&ip)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ip != "198.51.100.1" {
+			t.Fatalf("refresh_tokens.ip = %q, want 198.51.100.1", ip)
+		}
+	})
+
+	t.Run("TRUSTED_PROXIES が空なら XFF を変えても制限を逃れられない", func(t *testing.T) {
+		c := newAPI(t, withAuthOptions(authtest.WithRateLimits(limits)))
+		if r := register(c, "198.51.100.1"); r.status != http.StatusCreated {
+			t.Fatalf("register = %d %s", r.status, r.body)
+		}
+		expectProblem(t, register(c, "198.51.100.2"), http.StatusTooManyRequests, "rate-limited")
+	})
 }
