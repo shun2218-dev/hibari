@@ -96,14 +96,18 @@ Phase 6-1 で「API はあるのに操作の入口や状態の画面がない」
 | アカウントメニュー（ワークスペース設定 / 設定 / ログアウト） | `chat/account-menu.png` | `POST /auth/logout` |
 | チャンネル検索の 0 件 | `chat/search-empty.png` | — |
 | メンバーの「…」にキックの入口を足したもの | `workspace/member-menu-with-kick.png` | `DELETE /workspaces/{id}/members/{userID}` |
+| プロフィールのアバター画像（あり / アップロード中 / 失敗） | `settings/profile-avatar.png`、`settings/profile-avatar-uploading.png`、`settings/profile-avatar-failed.png` | `POST` / `DELETE /users/me/avatar` |
+| 一覧での画像のアバター（頭文字と混在） | `chat/avatar-images.png` | `POST /users/avatars` |
 
 - この 10 枚は画面全体ではなく、足した部分だけを切り出したフレーム（他のスクリーンショットは 1280×800 の画面全体）。
 - `workspace/member-menu-role-picker.png` はキックを足す前のメニュー。メニューの中身は `member-menu-with-kick.png` が新しい。
 - 決めたこと: 公開範囲は作成後に変えられない（API に kind の変更がない）、DM は相手ひとりだけ（メンバーを追加できない）、チャンネルの削除は置かない（API がない）、ルームの設定を変えられるのは「そのルームを読める admin 以上」（ADR 0011）。
+- アバター画像（ADR 0020）: 設定していない人はこれまでどおり頭文字と色。画像は円に切り取り（ワークスペースだけ角丸の四角）、読み込みに失敗したら頭文字に戻す。受け付けるのは PNG / JPEG / WebP で 2 MB まで。
 
-### 画面はあるが API がないもの（Phase 6-2 の前に決める）
+### 画面はあるが API がなかったもの（Phase 6 で追加した）
 
-| 画面 | 足りない API |
+| 画面 | 追加した API |
 |---|---|
-| `settings/devices.png`（ログイン中のデバイスの一覧・個別のログアウト・他のすべてのログアウト） | セッション（refresh token の family）の一覧と失効 |
-| `settings/profile.png`（表示名・ハンドルの変更、画像の変更） | プロフィールの更新、アバター画像のアップロード |
+| `settings/devices.png`（ログイン中のデバイスの一覧・個別のログアウト・他のすべてのログアウト） | セッションの一覧と失効（ADR 0019） |
+| `settings/profile.png`（表示名・ハンドルの変更） | プロフィールの更新（ADR 0019） |
+| `settings/profile-avatar*.png`（画像の変更・削除） | アバター画像のアップロードと配布（ADR 0020） |
