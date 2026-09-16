@@ -21,6 +21,10 @@ type AuthService interface {
 	Logout(ctx context.Context, rawToken string) error
 	Me(ctx context.Context, userID ulid.ULID) (auth.User, error)
 	UpdateProfile(ctx context.Context, userID ulid.ULID, in auth.ProfileInput) (auth.User, error)
+	CreateAvatarUpload(ctx context.Context, userID ulid.ULID, in auth.AvatarUploadInput) (auth.AvatarUpload, error)
+	CompleteAvatarUpload(ctx context.Context, userID, uploadID ulid.ULID, in auth.AvatarUploadInput) (auth.User, error)
+	DeleteAvatar(ctx context.Context, userID ulid.ULID) (auth.User, error)
+	AvatarURLs(ctx context.Context, userIDs []ulid.ULID) (map[ulid.ULID]auth.AvatarURL, error)
 	Sessions(ctx context.Context, userID, currentSessionID ulid.ULID) ([]auth.SessionInfo, error)
 	RevokeSession(ctx context.Context, userID, sessionID ulid.ULID) error
 	RevokeOtherSessions(ctx context.Context, userID, keepSessionID ulid.ULID) (int, error)
@@ -51,6 +55,10 @@ func registerAuthRoutes(mux *http.ServeMux, d Deps) {
 	mux.HandleFunc("POST /api/v1/auth/password-reset/confirm", h.resetPassword)
 	mux.Handle("GET /api/v1/users/me", requireAuth(http.HandlerFunc(h.me)))
 	mux.Handle("PATCH /api/v1/users/me", requireAuth(http.HandlerFunc(h.updateProfile)))
+	mux.Handle("POST /api/v1/users/me/avatar", requireAuth(http.HandlerFunc(h.createAvatarUpload)))
+	mux.Handle("POST /api/v1/users/me/avatar/complete", requireAuth(http.HandlerFunc(h.completeAvatarUpload)))
+	mux.Handle("DELETE /api/v1/users/me/avatar", requireAuth(http.HandlerFunc(h.deleteAvatar)))
+	mux.Handle("POST /api/v1/users/avatars", requireAuth(http.HandlerFunc(h.avatarURLs)))
 	mux.Handle("GET /api/v1/auth/sessions", requireAuth(http.HandlerFunc(h.listSessions)))
 	mux.Handle("DELETE /api/v1/auth/sessions", requireAuth(http.HandlerFunc(h.revokeOtherSessions)))
 	mux.Handle("DELETE /api/v1/auth/sessions/{sessionID}", requireAuth(http.HandlerFunc(h.revokeSession)))
@@ -58,12 +66,14 @@ func registerAuthRoutes(mux *http.ServeMux, d Deps) {
 }
 
 type userResponse struct {
-	ID            string    `json:"id"`
-	Handle        string    `json:"handle"`
-	DisplayName   string    `json:"display_name"`
-	Email         string    `json:"email"`
-	EmailVerified bool      `json:"email_verified"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID            string `json:"id"`
+	Handle        string `json:"handle"`
+	DisplayName   string `json:"display_name"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+	// AvatarURL は署名付きの GET URL。画像がなければ入らない（ADR 0020）。
+	AvatarURL string    `json:"avatar_url,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func newUserResponse(u auth.User) *userResponse {
@@ -73,6 +83,7 @@ func newUserResponse(u auth.User) *userResponse {
 		DisplayName:   u.DisplayName,
 		Email:         u.Email,
 		EmailVerified: u.EmailVerified,
+		AvatarURL:     u.AvatarURL,
 		CreatedAt:     u.CreatedAt,
 	}
 }
@@ -347,4 +358,108 @@ func (h *authHandlers) revokeOtherSessions(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, struct {
 		RevokedCount int `json:"revoked_count"`
 	}{RevokedCount: revoked})
+}
+
+// avatarUploadRequest はアバター画像の申告（ADR 0020）。署名に含めるので、実際の PUT と一致していなければ拒否される。
+type avatarUploadRequest struct {
+	ContentType string `json:"content_type"`
+	SizeBytes   *int64 `json:"size_bytes"`
+}
+
+func (h *authHandlers) createAvatarUpload(w http.ResponseWriter, r *http.Request) {
+	id, _ := authn.FromContext(r.Context())
+	var req avatarUploadRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	up, err := h.svc.CreateAvatarUpload(r.Context(), id.UserID, auth.AvatarUploadInput{ContentType: req.ContentType, SizeBytes: req.SizeBytes})
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, struct {
+		UploadID string         `json:"upload_id"`
+		Upload   uploadResponse `json:"upload"`
+	}{
+		UploadID: up.UploadID.String(),
+		Upload:   uploadResponse{Method: up.Method, URL: up.URL, Headers: up.Header, ExpiresAt: up.ExpiresAt},
+	})
+}
+
+// completeAvatarUploadRequest は、発行した upload_id と、PUT したものの申告。
+type completeAvatarUploadRequest struct {
+	UploadID    string `json:"upload_id"`
+	ContentType string `json:"content_type"`
+	SizeBytes   *int64 `json:"size_bytes"`
+}
+
+func (h *authHandlers) completeAvatarUpload(w http.ResponseWriter, r *http.Request) {
+	id, _ := authn.FromContext(r.Context())
+	var req completeAvatarUploadRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	uploadID, err := ulid.ParseStrict(req.UploadID)
+	if err != nil {
+		// 発行していない ID は、置かれていないのと同じ扱いにする。
+		writeError(h.logger, w, r, auth.ErrAvatarNotUploaded)
+		return
+	}
+	u, err := h.svc.CompleteAvatarUpload(r.Context(), id.UserID, uploadID,
+		auth.AvatarUploadInput{ContentType: req.ContentType, SizeBytes: req.SizeBytes})
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newUserResponse(u))
+}
+
+func (h *authHandlers) deleteAvatar(w http.ResponseWriter, r *http.Request) {
+	id, _ := authn.FromContext(r.Context())
+	u, err := h.svc.DeleteAvatar(r.Context(), id.UserID)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newUserResponse(u))
+}
+
+// avatarURLs は、画面に出すユーザーのアバターの URL をまとめて返す（ADR 0020）。
+// 画像を持たないユーザーは結果に入らない（クライアントは頭文字のアバターを出す）。
+func (h *authHandlers) avatarURLs(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserIDs []string `json:"user_ids"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	ids := make([]ulid.ULID, 0, len(req.UserIDs))
+	for _, s := range req.UserIDs {
+		id, err := ulid.ParseStrict(s)
+		if err != nil {
+			// 読めない ID は「その人の画像はない」として黙って落とす。ID の形の違いを画面の分岐にしない。
+			continue
+		}
+		ids = append(ids, id)
+	}
+	urls, err := h.svc.AvatarURLs(r.Context(), ids)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	out := make(map[string]avatarURLResponse, len(urls))
+	for userID, a := range urls {
+		out[userID.String()] = avatarURLResponse{URL: a.URL, ExpiresAt: a.ExpiresAt}
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Avatars map[string]avatarURLResponse `json:"avatars"`
+	}{Avatars: out})
+}
+
+type avatarURLResponse struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expires_at"`
 }

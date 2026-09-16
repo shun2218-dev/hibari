@@ -25,6 +25,7 @@ import (
 	"github.com/shun2218-dev/hibari/internal/platform/id"
 	"github.com/shun2218-dev/hibari/internal/platform/ratelimit"
 	"github.com/shun2218-dev/hibari/internal/platform/redis"
+	"github.com/shun2218-dev/hibari/internal/platform/storage"
 	"github.com/shun2218-dev/hibari/internal/platform/testenv"
 )
 
@@ -47,6 +48,9 @@ const (
 func generous(name string) ratelimit.Rule {
 	return ratelimit.Rule{Name: name, Limit: 1 << 30, Window: time.Hour}
 }
+
+// AvatarLimits はテストで使うアバターの設定値（本番の既定値と同じ）。
+var AvatarLimits = auth.AvatarLimits{MaxBytes: 2 << 20, AllowedTypes: []string{"image/png", "image/jpeg", "image/webp"}}
 
 // GenerousRateLimits は実質的に制限しない RateLimits。
 var GenerousRateLimits = auth.RateLimits{
@@ -80,6 +84,7 @@ func WithRateLimiter(l auth.RateLimiter) Option {
 // Env は組み立て済みの Service とその依存。
 type Env struct {
 	Pool         *pgxpool.Pool
+	Storage      *storage.S3
 	Clock        *clock.Fake
 	IDs          id.Generator
 	Service      *auth.Service
@@ -125,6 +130,18 @@ func New(t testing.TB, opts ...Option) *Env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	st, err := storage.New(storage.Config{
+		Endpoint:        testenv.S3(t).Endpoint,
+		Region:          "us-east-1",
+		Bucket:          testenv.S3(t).Bucket,
+		AccessKeyID:     testenv.S3(t).AccessKeyID,
+		SecretAccessKey: testenv.S3(t).SecretAccessKey,
+		UsePathStyle:    true,
+	})
+	if err != nil {
+		t.Fatalf("open storage: %v", err)
+	}
+
 	rec := &RecordingNotifier{}
 	mailer := &RecordingMailer{}
 	baseURL, _ := url.Parse(AppBaseURL)
@@ -138,12 +155,15 @@ func New(t testing.TB, opts ...Option) *Env {
 		Revocations:  rec,
 		Limiter:      o.limiter,
 		Limits:       o.limits,
+		Storage:      st,
+		AvatarLimits: AvatarLimits,
 		Mailer:       mailer,
 		AppBaseURL:   baseURL,
 		Logger:       slog.New(slog.DiscardHandler),
 	})
 	return &Env{
 		Pool:         pool,
+		Storage:      st,
 		Clock:        clk,
 		IDs:          ids,
 		Service:      svc,

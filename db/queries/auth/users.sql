@@ -46,3 +46,23 @@ UPDATE users
  WHERE id = sqlc.arg(id)
    AND deleted_at IS NULL
 RETURNING *;
+
+-- name: SetUserAvatar :one
+-- アバター画像の差し替え・削除（ADR 0020）。置き換える前のキーも返し、呼び出し側が古いオブジェクトを消す。
+-- 自己結合の before は更新前のスナップショットを見るので、置き換える前のキーを同じ 1 文で取れる。
+UPDATE users u
+   SET avatar_object_key = sqlc.narg(avatar_object_key),
+       updated_at        = sqlc.arg(now)::timestamptz
+  FROM users before
+ WHERE u.id = sqlc.arg(id)
+   AND before.id = u.id
+   AND u.deleted_at IS NULL
+RETURNING sqlc.embed(u), before.avatar_object_key AS previous_avatar_object_key;
+
+-- name: ListUserAvatars :many
+-- 画面に出すユーザーのアバターのキーをまとめて読む（ADR 0020）。退会済みは返さない。
+SELECT id, avatar_object_key
+  FROM users
+ WHERE id = ANY(sqlc.arg(ids)::uuid[])
+   AND avatar_object_key IS NOT NULL
+   AND deleted_at IS NULL;

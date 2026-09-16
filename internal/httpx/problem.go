@@ -115,6 +115,10 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		writeProblem(w, r, problem{Type: "handle-taken", Title: "Handle is already taken", Status: http.StatusConflict})
 	case errors.Is(err, auth.ErrEmailTaken):
 		writeProblem(w, r, problem{Type: "email-taken", Title: "Email is already registered", Status: http.StatusConflict})
+	case errors.Is(err, auth.ErrAvatarNotUploaded):
+		writeProblem(w, r, problem{Type: "avatar-not-uploaded", Title: "The avatar has not been uploaded", Status: http.StatusConflict})
+	case errors.Is(err, auth.ErrAvatarMismatch):
+		writeProblem(w, r, problem{Type: "avatar-mismatch", Title: "The uploaded avatar does not match the request", Status: http.StatusConflict})
 	case errors.Is(err, auth.ErrSessionNotFound):
 		// 他人のセッション ID を指定されても、存在しないものと区別しない（ADR 0019）。
 		writeProblem(w, r, problem{Type: "not-found", Title: "Not found", Status: http.StatusNotFound})

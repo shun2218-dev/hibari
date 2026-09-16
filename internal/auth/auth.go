@@ -48,6 +48,10 @@ const (
 	ReasonTooShort      = "too_short"
 	ReasonTooLong       = "too_long"
 	ReasonInvalidFormat = "invalid_format"
+	// ReasonInvalidValue は形式は正しいが、受け付けない値（許可していない Content-Type など）。
+	ReasonInvalidValue = "invalid_value"
+	// ReasonOutOfRange は範囲の外（サイズの上限、件数の上限）。
+	ReasonOutOfRange = "out_of_range"
 )
 
 func (e *ValidationError) Error() string {
@@ -65,7 +69,9 @@ type User struct {
 	DisplayName   string
 	Email         string
 	EmailVerified bool
-	CreatedAt     time.Time
+	// AvatarURL は署名付きの GET URL。画像がなければ空（頭文字のアバターを出す。ADR 0020）。
+	AvatarURL string
+	CreatedAt time.Time
 }
 
 func toUser(u store.User) User {

@@ -99,6 +99,12 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	if err != nil {
 		return err
 	}
+	// ストレージには起動時に接続しない。落ちていても、添付とアバター以外の機能は動かせるようにする。
+	objectStorage, err := storage.New(cfg.Storage)
+	if err != nil {
+		return err
+	}
+
 	authService := auth.NewService(auth.Deps{
 		DB:           pool,
 		Clock:        clk,
@@ -109,6 +115,8 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		Revocations:  authn.NewRevocationPublisher(rdb),
 		Limiter:      ratelimit.New(rdb, clk),
 		Limits:       auth.DefaultRateLimits,
+		Storage:      objectStorage,
+		AvatarLimits: auth.AvatarLimits{MaxBytes: cfg.AvatarMaxBytes, AllowedTypes: cfg.AvatarAllowedTypes},
 		// 本番用のメール送信はまだない。デプロイ（Phase 7 以降）の前に、非同期で送る実装に差し替える。
 		Mailer:     auth.LogMailer{Logger: logger},
 		AppBaseURL: cfg.AppBaseURL,
@@ -117,11 +125,6 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	// 同じプロセスなので公開鍵を直接渡す。auth を別プロセスに切り出したら、JWKS を取得して渡す形に変える（ADR 0001）。
 	verifier := authn.NewVerifier([]authn.PublicKey{accessTokens.PublicKey()}, cfg.JWTIssuer, cfg.JWTAudience, clk)
 
-	// ストレージには起動時に接続しない。落ちていても、添付以外の機能は動かせるようにする。
-	objectStorage, err := storage.New(cfg.Storage)
-	if err != nil {
-		return err
-	}
 
 	// WebSocket の配信（ADR 0015 / 0016）。イベントは Redis Pub/Sub で全インスタンスに流し、各インスタンスの Hub が自分の接続に届ける。
 	broker, err := realtime.NewBroker(startupCtx, rdb, instanceID, logger)

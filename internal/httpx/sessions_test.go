@@ -23,6 +23,7 @@ type userBody struct {
 	Handle      string `json:"handle"`
 	DisplayName string `json:"display_name"`
 	Email       string `json:"email"`
+	AvatarURL   string `json:"avatar_url"`
 }
 
 // login は同じアカウントでもう 1 つセッションを作り、そのトークンを返す。

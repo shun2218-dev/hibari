@@ -69,6 +69,8 @@ func TestLoad(t *testing.T) {
 				Storage:                storage.Config{Endpoint: "http://minio:9000", Region: "us-east-1", Bucket: "hibari", AccessKeyID: "id", SecretAccessKey: "secret"},
 				AttachmentMaxBytes:     25 << 20,
 				AttachmentAllowedTypes: config.DefaultAttachmentAllowedTypes,
+				AvatarMaxBytes:         2 << 20,
+				AvatarAllowedTypes:     config.DefaultAvatarAllowedTypes,
 			},
 		},
 		{
@@ -102,6 +104,8 @@ func TestLoad(t *testing.T) {
 				},
 				AttachmentMaxBytes:     1 << 20,
 				AttachmentAllowedTypes: []string{"image/png", "application/octet-stream"},
+				AvatarMaxBytes:         config.DefaultAvatarMaxBytes,
+				AvatarAllowedTypes:     config.DefaultAvatarAllowedTypes,
 			},
 		},
 		{
@@ -124,6 +128,16 @@ func TestLoad(t *testing.T) {
 			name:    "invalid attachment max bytes",
 			env:     with("ATTACHMENT_MAX_BYTES", "25MB"),
 			wantErr: []string{"ATTACHMENT_MAX_BYTES"},
+		},
+		{
+			name:    "non-positive avatar max bytes",
+			env:     with("AVATAR_MAX_BYTES", "0"),
+			wantErr: []string{"AVATAR_MAX_BYTES: must be positive"},
+		},
+		{
+			name:    "avatar types with parameters",
+			env:     with("AVATAR_ALLOWED_TYPES", "image/png; charset=utf-8,svg"),
+			wantErr: []string{`AVATAR_ALLOWED_TYPES: invalid media type "image/png; charset=utf-8"`, `"svg"`},
 		},
 		{
 			name:    "attachment types with parameters or upper case",
