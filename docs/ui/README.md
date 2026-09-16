@@ -79,20 +79,29 @@ Claude Design で作った画面を取り込んだもの。**Phase 6 で画面�
 - **表示の密度「詰める」**: 設定画面に選択肢はあるが、行送りや余白の具体的な値がデザインにない。実装するならトークンを追加する前にデザインを足す。
 - **危険な操作のボタンの文字色**: `--color-on-danger` がないので、赤地のボタン（「削除する」「退出する」）の文字は `--color-on-primary` を使っている。ライト / ダークとも読めるが、役割の名前としては合っていない。
 
-### Phase 6-1 で見つかったデザインの抜け（Phase 6-2 で画面をつなぐ前に Claude Design に足す）
+### Phase 6-1 で足した画面
 
-API はあるが、操作の入口や状態の画面がないもの。
+Phase 6-1 で「API はあるのに操作の入口や状態の画面がない」ものを洗い出し、同じトークンでデザインして足した。
+元のデザイン（`hibari chat.dc.html` など）とは別のキャンバスで作ったので、Claude Design 側に取り込むときはそちらに移す。
 
-| 抜けているもの | 関連する API / 画面 |
-|---|---|
-| メンバーの行の「…」メニューにロールの選択しかなく、キック（`dialog-kick.png`）を開く入口がない | `DELETE /workspaces/{id}/members/{userID}` |
-| チャンネルの作成ダイアログ（`empty-rooms.png` の「チャンネルを作成」の先）、DM の開始 | `POST /workspaces/{id}/rooms` |
-| ルームの設定（名前の変更、`is_default`）、private ルームへのメンバーの追加・削除 | `PATCH /rooms/{id}`、`POST` / `DELETE /rooms/{id}/members` |
-| メッセージの「…」メニューの中身、編集中の状態、削除の確認、返信先を選んだ入力欄 | `PATCH` / `DELETE /rooms/{id}/messages/{messageID}` |
-| チャットの画面からワークスペース設定・ユーザー設定・ログアウトへの入口（サイドバーの自分のアバターを押したとき） | `POST /auth/logout` |
-| チャンネル検索の 0 件（「チェックリスト外で追加された状態」にあるが、スクリーンショットがない） | — |
+| 画面 | スクリーンショット | 関連する API |
+|---|---|---|
+| チャンネルを作成（公開範囲は作成時に決める） | `chat/channel-create-dialog.png` | `POST /workspaces/{id}/rooms` |
+| ダイレクトメッセージを開く | `chat/dm-dialog.png` | `POST /workspaces/{id}/rooms`（kind: dm） |
+| チャンネルの設定（名前・非公開のメンバー） | `chat/room-settings-dialog.png` | `PATCH /rooms/{id}`、`POST` / `DELETE /rooms/{id}/members` |
+| メッセージの「…」メニュー | `chat/message-menu.png` | — |
+| メッセージの編集中 | `chat/message-editing.png` | `PATCH /rooms/{id}/messages/{messageID}` |
+| メッセージの削除の確認 | `chat/message-delete-dialog.png` | `DELETE /rooms/{id}/messages/{messageID}` |
+| 返信先を選んだ入力欄 | `chat/composer-reply.png` | `POST /rooms/{id}/messages`（reply_to_id） |
+| アカウントメニュー（ワークスペース設定 / 設定 / ログアウト） | `chat/account-menu.png` | `POST /auth/logout` |
+| チャンネル検索の 0 件 | `chat/search-empty.png` | — |
+| メンバーの「…」にキックの入口を足したもの | `workspace/member-menu-with-kick.png` | `DELETE /workspaces/{id}/members/{userID}` |
 
-逆に、画面はあるが API がないもの。
+- この 10 枚は画面全体ではなく、足した部分だけを切り出したフレーム（他のスクリーンショットは 1280×800 の画面全体）。
+- `workspace/member-menu-role-picker.png` はキックを足す前のメニュー。メニューの中身は `member-menu-with-kick.png` が新しい。
+- 決めたこと: 公開範囲は作成後に変えられない（API に kind の変更がない）、DM は相手ひとりだけ（メンバーを追加できない）、チャンネルの削除は置かない（API がない）、ルームの設定を変えられるのは「そのルームを読める admin 以上」（ADR 0011）。
+
+### 画面はあるが API がないもの（Phase 6-2 の前に決める）
 
 | 画面 | 足りない API |
 |---|---|
