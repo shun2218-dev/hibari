@@ -1,0 +1,259 @@
+/**
+ * /dev/preview のモックデータ。docs/ui/screenshots/ の画面と同じ内容にする。
+ *
+ * ID はアバターの色（ID のハッシュで決まる。lib/avatar.ts）がスクリーンショットと同じになるものを選んである。
+ */
+import type { DmCandidateView, RoomMemberRowView } from "@/components/chat/room-dialogs";
+import type { RoomMemberView, RoomSummaryView, TimelineItem, UserRef, WorkspaceRef } from "@/components/chat/types";
+import type { TransferCandidate } from "@/components/workspace/member-dialogs";
+import type { InviteRowView, MemberRowView, WorkspaceRole } from "@/components/workspace/types";
+import type { DeviceView } from "@/components/settings/settings-sections";
+
+/**
+ * /dev/preview のモックのアバター画像（public/dev/）。
+ * 本物は署名付き URL（ADR 0020）で、ここでは静的なファイルで代用する。
+ */
+export const mockAvatars = {
+  you: "/dev/avatar-1.png",
+  miyuki: "/dev/avatar-2.png",
+  naoki: "/dev/avatar-3.png",
+} as const;
+
+export const users = {
+  you: { id: "01J8ZH5K000000000000000001", name: "あなた", handle: "you" },
+  naoki: { id: "01J8ZH5K000000000000000002", name: "佐藤 直樹", handle: "naoki" },
+  miyuki: { id: "01J8ZH5K000000000000000005", name: "高橋 みゆき", handle: "miyuki" },
+  ryo: { id: "01J8ZH5K000000000000000008", name: "中村 涼", handle: "nakamura" },
+  misaki: { id: "01J8ZH5K000000000000000009", name: "田中 美咲", handle: "misaki" },
+  suzuki: { id: "01J8ZH5K00000000000000000B", name: "鈴木 涼", handle: "ryo" },
+  haru: { id: "01J8ZH5K00000000000000000G", name: "小林 陽向", handle: "haru" },
+  kei: { id: "01J8ZH5K00000000000000000H", name: "森田 圭", handle: "kei" },
+} as const;
+
+export const workspaces = {
+  dev: { id: "01J8ZH5K00000000000000000N", name: "hibari 開発" },
+  memo: { id: "01J8ZH5K00000000000000000Q", name: "個人メモ" },
+  yama: { id: "01J8ZH5K00000000000000000R", name: "山と印刷" },
+} satisfies Record<string, WorkspaceRef>;
+
+export const currentUser: UserRef = users.you;
+
+export const rooms: RoomSummaryView[] = [
+  {
+    id: "room-design",
+    kind: "public",
+    name: "デザインレビュー",
+    lastMessage: "中村 涼: presence 表示を確認しておきます",
+    timeLabel: "11:05",
+    unreadCount: 0,
+  },
+  {
+    id: "room-chat",
+    kind: "public",
+    name: "雑談",
+    lastMessage: "高橋 みゆき: 近所に新しい喫茶店ができたらしい",
+    timeLabel: "10:22",
+    unreadCount: 3,
+  },
+  {
+    id: "room-release",
+    kind: "private",
+    name: "リリース準備",
+    lastMessage: "佐藤 直樹: 金曜の夕方で確定しました",
+    timeLabel: "昨日",
+    unreadCount: 0,
+  },
+  {
+    id: "dm-naoki",
+    kind: "dm",
+    name: users.naoki.name,
+    peer: { id: users.naoki.id, online: true },
+    lastMessage: "縦バーの件、あとで画面で見ます",
+    timeLabel: "10:14",
+    unreadCount: 0,
+  },
+  {
+    id: "dm-miyuki",
+    kind: "dm",
+    name: users.miyuki.name,
+    peer: { id: users.miyuki.id, online: true },
+    lastMessage: "モックのリンク送りますね",
+    timeLabel: "09:58",
+    unreadCount: 1,
+  },
+  {
+    id: "dm-ryo",
+    kind: "dm",
+    name: users.ryo.name,
+    peer: { id: users.ryo.id, online: false },
+    lastMessage: "ありがとうございます、確認しました",
+    timeLabel: "昨日",
+    unreadCount: 0,
+  },
+];
+
+export const selectedRoom = { id: "room-design", kind: "public", name: "デザインレビュー", memberCount: 4 } as const;
+
+const you = { id: users.you.id, name: users.you.name };
+const naoki = { id: users.naoki.id, name: users.naoki.name };
+const miyuki = { id: users.miyuki.id, name: users.miyuki.name };
+const ryo = { id: users.ryo.id, name: users.ryo.name };
+
+
+function message(
+  key: string,
+  sender: UserRef,
+  timeLabel: string,
+  body: string,
+  extra: Partial<Extract<TimelineItem, { type: "message" }>["message"]> = {},
+): TimelineItem {
+  return {
+    type: "message",
+    message: { key, sender, timeLabel, body, status: "sent", deleted: false, edited: false, attachments: [], grouped: false, ...extra },
+  };
+}
+
+/** 送信中のメッセージの key。ホバーの再現に使う。 */
+export const pendingMessageKey = "m-1052";
+
+export const timeline: TimelineItem[] = [
+  { type: "date", key: "d-0912", label: "2026年9月12日" },
+  message("m-1402", miyuki, "14:02", "新しいチャンネル一覧のモック、共有フォルダに置きました。行の高さを少し詰めた版も一緒に入れてあります。", {
+    attachments: [{ kind: "image", id: "a-1", fileName: "サイドバー改訂 01", width: 260, height: 160 }],
+  }),
+  message("m-1402b", miyuki, "14:02", "未読バッジの色だけ、まだ迷っています。", { grouped: true }),
+  message("m-1411", naoki, "14:11", "", { deleted: true }),
+  message("m-1420", ryo, "14:20", "未読バッジは押せる要素ではないので、ボタンと同じ色にしないほうがいいと思います。"),
+  { type: "date", key: "d-0913", label: "2026年9月13日" },
+  message("m-0941", you, "09:41", "おはようございます。昨日の続きで、未読まわりを琥珀に寄せてみました。"),
+  message("m-0941b", you, "09:41", "緑はボタンとリンク、選択中のチャンネルだけに残しています。", { grouped: true }),
+  message("m-0941c", you, "09:41", "「いま起きていること」は琥珀、「操作できるもの」は緑、という分け方です。", { grouped: true }),
+  message("m-0955", miyuki, "09:55", "それ、かなり分かりやすいです。入力中の表示も琥珀にそろえますか？", {
+    replyTo: { senderName: "あなた", body: "「いま起きていること」は琥珀、「操作できるもの」は緑、という分け方です。" },
+  }),
+  message("m-0957", you, "09:57", "はい、そろえるつもりです。", { status: "failed" }),
+  message("m-1012", naoki, "10:12", "賛成です。あとサイドバーの選択中の行、左の縦バーは 2px で十分でした。"),
+  message("m-1012b", naoki, "10:12", "4px だと主張が強すぎて、名前より先に目が行ってしまう。", { grouped: true, edited: true }),
+  message("m-1030", ryo, "10:30", "タイムスタンプを等幅にしたの、地味に効いてますね。数字が揃うと視線が上下に動かない。", {
+    replyTo: { senderName: "佐藤 直樹", body: "4px だと主張が強すぎて、名前より先に目が行ってしまう。" },
+  }),
+  message("m-1041", miyuki, "10:41", "行送りは 1.75 で確定にしましょう。半日開きっぱなしでも目が疲れませんでした。", {
+    attachments: [{ kind: "file", id: "a-2", fileName: "hibari-type-scale.pdf", sizeLabel: "248 KB" }],
+  }),
+  message(pendingMessageKey, you, "10:52", "了解です。今日の夕方までに一覧を更新して、また共有します。", { status: "pending" }),
+  { type: "unread", key: "unread" },
+  message("m-1105", ryo, "11:05", "ありがとうございます。こちらはメンバー一覧の presence 表示を確認しておきます。"),
+];
+
+/**
+ * 画像を設定している人と、していない人が混ざった状態（chat/avatar-images.png）。
+ * 一覧では、画像のある人だけが差し替わる。
+ */
+export const timelineWithAvatars: TimelineItem[] = timeline.map((item) => {
+  if (item.type !== "message") return item;
+  const avatarUrl = { [users.miyuki.id]: mockAvatars.miyuki, [users.naoki.id]: mockAvatars.naoki }[item.message.sender.id];
+  if (!avatarUrl) return item;
+  return { ...item, message: { ...item.message, sender: { ...item.message.sender, avatarUrl } } };
+});
+
+export const roomMembers: RoomMemberView[] = [
+  { ...naoki, online: true, roleLabel: "オーナー" },
+  { ...miyuki, online: true, roleLabel: "管理者" },
+  { ...you, online: true, roleLabel: "メンバー" },
+  { ...ryo, online: false, roleLabel: "メンバー" },
+];
+
+export const typingNames = [users.miyuki.name];
+
+/** DM の相手の候補。hibari 開発のメンバーから自分を除いたもの。 */
+export const dmCandidates: DmCandidateView[] = [
+  { id: users.naoki.id, name: users.naoki.name, handle: users.naoki.handle, online: true },
+  { id: users.miyuki.id, name: users.miyuki.name, handle: users.miyuki.handle, online: true },
+  { id: users.ryo.id, name: users.ryo.name, handle: users.ryo.handle, online: false },
+];
+
+/** 非公開チャンネル「リリース準備」の参加者。 */
+export const roomSettingsMembers: RoomMemberRowView[] = [
+  { id: users.naoki.id, name: users.naoki.name, isSelf: false, canRemove: true },
+  { id: users.you.id, name: users.you.name, isSelf: true, canRemove: false },
+  { id: users.ryo.id, name: users.ryo.name, isSelf: false, canRemove: true },
+];
+
+// ---- ワークスペースの管理（山と印刷） ----
+
+export const lockedReason = "自分と同じか上のロールのメンバーは変更できません。";
+
+type Viewer = Exclude<WorkspaceRole, never>;
+
+const roster: Array<{ user: (typeof users)[keyof typeof users]; online: boolean; role: WorkspaceRole }> = [
+  { user: users.you, online: true, role: "owner" },
+  { user: users.naoki, online: true, role: "admin" },
+  { user: users.misaki, online: true, role: "admin" },
+  { user: users.suzuki, online: false, role: "member" },
+  { user: users.haru, online: false, role: "member" },
+  { user: users.kei, online: false, role: "member" },
+];
+
+const rank: Record<WorkspaceRole, number> = { owner: 3, admin: 2, member: 1 };
+
+/**
+ * 表示する人の立場ごとのメンバー一覧。スクリーンショットでは、オーナーの画面は「あなた」がオーナー、
+ * 管理者とメンバーの画面は佐藤 直樹がオーナーで「あなた」が 3 番目に並ぶ。
+ * 操作できるかは canManage（actor のロールが target より上）と canGrant（actor 以下で owner 以外）で決める。
+ */
+export function membersAs(viewer: Viewer): MemberRowView[] {
+  const people =
+    viewer === "owner"
+      ? roster
+      : [
+          { user: users.naoki, online: true, role: "owner" as const },
+          { user: users.misaki, online: true, role: "admin" as const },
+          { user: users.you, online: true, role: viewer },
+          ...roster.slice(3),
+        ];
+  return people.map(({ user, online, role }) => {
+    const canManage = user.id !== users.you.id && rank[viewer] > rank[role];
+    return {
+      id: user.id,
+      name: user.name,
+      handle: user.handle,
+      online,
+      role,
+      isSelf: user.id === users.you.id,
+      manage: canManage
+        ? {
+            kind: "menu",
+            grantableRoles: (["admin", "member"] as const).filter((r) => rank[r] <= rank[viewer]),
+            canRemove: true,
+          }
+        : { kind: "locked", reason: lockedReason },
+    };
+  });
+}
+
+export function invitesAs(viewer: Viewer): InviteRowView[] {
+  const admin = viewer !== "member";
+  return [
+    { id: "i-1", status: "active", createdByName: users.misaki.name, usesLabel: "3 / 10 回使用", expiryLabel: "9月20日 18:00 まで", canRevoke: admin },
+    { id: "i-2", status: "exhausted", createdByName: users.naoki.name, usesLabel: "10 / 10 回使用", expiryLabel: "9月30日 09:00 まで", canRevoke: admin },
+    { id: "i-3", status: "expired", createdByName: users.misaki.name, usesLabel: "1 / 無制限 回使用", expiryLabel: "9月1日 12:00 に失効", canRevoke: admin },
+    { id: "i-4", status: "revoked", createdByName: users.you.name, usesLabel: "2 / 5 回使用", expiryLabel: "9月18日 20:00 まで", canRevoke: true },
+  ];
+}
+
+export const transferCandidates: TransferCandidate[] = [
+  { id: users.naoki.id, name: users.naoki.name, handle: users.naoki.handle, role: "admin" },
+  { id: users.misaki.id, name: users.misaki.name, handle: users.misaki.handle, role: "admin" },
+  { id: users.suzuki.id, name: users.suzuki.name, handle: users.suzuki.handle, role: "member" },
+  { id: users.haru.id, name: users.haru.name, handle: users.haru.handle, role: "member" },
+  { id: users.kei.id, name: users.kei.name, handle: users.kei.handle, role: "member" },
+];
+
+export const devices: DeviceView[] = [
+  { id: "s-1", kind: "browser", name: "Chrome · macOS", lastActiveLabel: "現在アクティブ", current: true },
+  { id: "s-2", kind: "phone", name: "hibari for iOS · iPhone 15", lastActiveLabel: "2分前", current: false },
+  { id: "s-3", kind: "desktop", name: "hibari for macOS · MacBook Air", lastActiveLabel: "昨日 18:24", current: false },
+  { id: "s-4", kind: "browser", name: "Safari · iPadOS", lastActiveLabel: "3日前", current: false },
+  { id: "s-5", kind: "desktop", name: "Firefox · Windows 11", lastActiveLabel: "9月2日", current: false },
+];
+

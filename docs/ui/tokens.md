@@ -55,13 +55,13 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 | ライト | `#64786e` | `#86765c` | `#5e6e80` | `#746a7d` | `#4f7268` | `#7c6f5b` |
 | ダーク | `#89a096` | `#ad9b7c` | `#8496aa` | `#9c90a8` | `#7fa095` | `#a3947a` |
 
-どの番号を割り当てるかの規則（ID のハッシュなど）は Phase 6 で決める。同じユーザーはどの画面でも同じ色にする。
+番号はユーザー / ワークスペースの ID を FNV-1a でハッシュして決める（`web/lib/avatar.ts`、ADR 0018）。表示名からは決めないので、名前を変えても色は変わらない。
 
 ## 文字
 
 | トークン | 値 | Tailwind | 用途 |
 |---|---|---|---|
-| `--font-sans` | Instrument Sans, Zen Kaku Gothic New, system-ui | `font-sans` | 既定。欧文は Instrument Sans、和文は Zen Kaku Gothic New で描く |
+| `--font-sans` | Instrument Sans, Zen Kaku Gothic New, system-ui | `font-sans` | 既定。欧文は Instrument Sans、和文は Zen Kaku Gothic New で描く。読み込みは `web/app/fonts.ts`（next/font） |
 | `--font-mono` | JetBrains Mono | `font-mono` | 時刻、ハンドル（`@naoki`）、招待リンク、メールアドレス、ブランド名の横の `chat`。桁をそろえて視線を上下させないため |
 
 ### サイズ（7 段階）
@@ -98,6 +98,10 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 | トークン | 値 | 用途 |
 |---|---|---|
 | `--spacing` | 4px（0.25rem） | すべての余白・幅・高さの単位。`p-3` = 12px、`h-11` = 44px、`gap-1.5` = 6px |
+
+4px の倍数を基本にするが、デザインには半分の刻み（2px）も出てくる。Tailwind の `.5` で書く:
+`px-3.5` = 14px（カード・行の左右）、`h-8.5` = 34px（検索欄）、`h-9.5` = 38px（メニューの項目）、`size-6.5` = 26px（小さいアバター）。
+これ以外の端数は使わない。
 
 デザインで繰り返し出てくるサイズ（新しいトークンにはせず、spacing の倍数で書く）:
 

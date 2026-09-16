@@ -55,10 +55,10 @@
   --color-on-avatar: #ffffff;
 
   /* ---- 書体 ---- */
-  /* 欧文を Instrument Sans、和文を Zen Kaku Gothic New で描く。読み込み（next/font）は Phase 6 */
-  --font-sans: "Instrument Sans", "Zen Kaku Gothic New", system-ui, sans-serif;
+  /* 欧文を Instrument Sans、和文を Zen Kaku Gothic New で描く。変数は app/fonts.ts（next/font）が <html> に定義する */
+  --font-sans: var(--font-instrument-sans), var(--font-zen-kaku-gothic-new), system-ui, sans-serif;
   /* 時刻・ハンドル・招待リンクなど、桁や文字をそろえて読ませたいもの */
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
   /* ---- 文字サイズ（7 段階）。rem にしてブラウザの文字サイズ設定に追従させる ---- */
   --text-2xs: 0.6875rem; /* 11px */

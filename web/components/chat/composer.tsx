@@ -1,0 +1,195 @@
+"use client";
+
+import type { KeyboardEvent } from "react";
+
+import { Button, IconButton, TextButton } from "@/components/ui/button";
+import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon, ReplyIcon } from "@/components/ui/icons";
+import { cx } from "@/lib/cx";
+
+import type { AttachmentDraftView } from "./types";
+
+/** 返信先。送信すると reply_to_id として送る。 */
+export type ReplyTargetView = { senderName: string; body: string };
+
+type ComposerProps = {
+  value: string;
+  onChange?: (value: string) => void;
+  onSend?: () => void;
+  onAttach?: () => void;
+  /** 入力中のほかのメンバーの表示名。 */
+  typingNames?: string[];
+  attachments?: AttachmentDraftView[];
+  onRetryAttachment?: (id: string) => void;
+  onRemoveAttachment?: (id: string) => void;
+  replyTo?: ReplyTargetView;
+  onCancelReply?: () => void;
+  /** 送信できる内容があるか（本文が空白だけ、アップロード中の添付がある、などは false）。 */
+  canSend: boolean;
+};
+
+export function Composer({
+  value,
+  onChange,
+  onSend,
+  onAttach,
+  typingNames = [],
+  attachments = [],
+  onRetryAttachment,
+  onRemoveAttachment,
+  replyTo,
+  onCancelReply,
+  canSend,
+}: ComposerProps) {
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    // IME の変換を確定する Enter では送らない
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      if (canSend) onSend?.();
+    }
+  }
+
+  return (
+    <div className="border-t border-border px-3 pt-2 pb-2 md:px-4">
+      <TypingIndicator names={typingNames} />
+      {attachments.length > 0 && (
+        <ul aria-label="添付ファイル" className="flex flex-wrap gap-2 pb-2">
+          {attachments.map((attachment) => (
+            <li key={attachment.id}>
+              <AttachmentChip
+                attachment={attachment}
+                onRetry={() => onRetryAttachment?.(attachment.id)}
+                onRemove={() => onRemoveAttachment?.(attachment.id)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      {replyTo && (
+        <div className="flex items-center gap-2.5 rounded-t-md border border-b-0 border-border bg-surface-muted py-2 pr-2 pl-3">
+          <ReplyIcon className="size-3.5 shrink-0 text-text-secondary" />
+          <span className="shrink-0 text-xs font-semibold text-text-secondary">{replyTo.senderName} に返信</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-text-muted">{replyTo.body}</span>
+          <IconButton label="返信をやめる" onClick={onCancelReply} className="size-7">
+            <CloseIcon className="size-4" />
+          </IconButton>
+        </div>
+      )}
+      <div
+        className={cx(
+          "flex items-end gap-1 border border-border bg-surface p-2 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-primary",
+          replyTo ? "rounded-b-md" : "rounded-md",
+        )}
+      >
+        <IconButton label="ファイルを添付" onClick={onAttach}>
+          <PaperclipIcon className="size-4" />
+        </IconButton>
+        <textarea
+          aria-label="メッセージ"
+          rows={1}
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="メッセージを入力"
+          className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1.5 py-1 text-lg leading-normal text-text focus-visible:outline-none"
+        />
+        <Button size="sm" onClick={onSend} disabled={!canSend}>
+          送信
+        </Button>
+      </div>
+      <p className="pt-1.5 text-right text-2xs text-text-muted">Enter で送信 / Shift + Enter で改行</p>
+    </div>
+  );
+}
+
+/**
+ * 入力中の表示。誰も入力していなくても高さを確保し、表示の出入りで入力欄が上下に動かないようにする。
+ */
+export function TypingIndicator({ names }: { names: string[] }) {
+  return (
+    <p aria-live="polite" className="flex h-6 items-center gap-1 text-xs text-attention-text">
+      {names.length > 0 && (
+        <>
+          <span>{names.join("、")} が入力中</span>
+          <span aria-hidden className="inline-flex gap-1 pl-1">
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="size-1 animate-typing-dot rounded-full bg-attention"
+                // 3 つの点を 0.2 秒ずつずらして点滅させる（docs/ui/tokens.md）
+                style={{ animationDelay: `${i * 0.2}s` }}
+              />
+            ))}
+          </span>
+        </>
+      )}
+    </p>
+  );
+}
+
+export function AttachmentChip({
+  attachment,
+  onRetry,
+  onRemove,
+}: {
+  attachment: AttachmentDraftView;
+  onRetry?: () => void;
+  onRemove?: () => void;
+}) {
+  switch (attachment.status) {
+    case "uploading":
+      return (
+        <div className="flex w-60 items-center gap-2.5 rounded-md border border-border bg-surface py-2 pr-1.5 pl-3">
+          <FileIcon className="size-4 shrink-0 text-text-secondary" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="truncate text-sm font-medium text-text">{attachment.fileName}</p>
+              <span className="font-mono text-2xs text-attention-text">{attachment.progress}%</span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={`${attachment.fileName} をアップロード中`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={attachment.progress}
+              className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-muted"
+            >
+              <div className="h-full rounded-full bg-attention" style={{ width: `${attachment.progress}%` }} />
+            </div>
+          </div>
+          <IconButton label="アップロードを取り消す" onClick={onRemove}>
+            <CloseIcon className="size-4" />
+          </IconButton>
+        </div>
+      );
+    case "failed":
+      return (
+        <div className="flex items-center gap-3 rounded-md border border-danger bg-danger-subtle px-3 py-2">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-text">{attachment.fileName}</p>
+            <p role="alert" className="text-2xs text-danger">
+              アップロードできませんでした
+            </p>
+          </div>
+          <TextButton onClick={onRetry} className="text-xs font-semibold">
+            再試行
+          </TextButton>
+          <TextButton onClick={onRemove} className="text-xs text-text-secondary">
+            取り消し
+          </TextButton>
+        </div>
+      );
+    case "uploaded":
+      return (
+        <div className="flex w-60 items-center gap-2.5 rounded-md border border-border bg-surface py-2 pr-1.5 pl-3">
+          <CheckCircleIcon aria-label="アップロード済み" aria-hidden={false} role="img" className="size-4 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-text">{attachment.fileName}</p>
+            <p className="font-mono text-2xs text-text-muted">{attachment.sizeLabel}</p>
+          </div>
+          <IconButton label="添付を外す" onClick={onRemove}>
+            <CloseIcon className="size-4" />
+          </IconButton>
+        </div>
+      );
+  }
+}

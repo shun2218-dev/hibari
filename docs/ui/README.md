@@ -62,8 +62,52 @@ Claude Design で作った画面を取り込んだもの。**Phase 6 で画面�
 - **招待リンク一覧の閲覧・取り消しの権限**: 閲覧はメンバー全員、取り消しは admin 以上か、自分が作成した招待でいまも作成できる人（ADR 0011）。
 - **招待プレビューの項目**: 要ログイン。有効な招待だけワークスペース名・メンバー数・public ルームの数・招待者・参加済みかを返し、無効 / 期限切れ / 使用上限ではワークスペースの情報を返さない（ADR 0011）。
 
+- **書体の読み込み**: `next/font` で読み込む（`web/app/fonts.ts`、ADR 0018）。
+- **招待リンクの長さ**: コードは 22 文字（ADR 0011）。作成直後のダイアログでは折り返さずに横へスクロールさせる（`InviteCreatedDialog`）。
+
+## 画面の再現（Phase 6-1）
+
+`make web` で起動し、`http://localhost:3000/dev/preview` を開く。スクリーンショットと同じ名前で全画面を並べてある（`/dev/preview/chat/banner-syncing` ↔ `screenshots/chat/banner-syncing.png`）。
+
+- モバイルの画面（`mobile-*`）は、ブラウザの幅を 768px 未満にして見る。
+- ダークの画面（`*-dark`）は、その画面だけ `data-theme="dark"` で描く。
+- 画像の添付のストライプの模様は、モックの画像の中身なので再現していない（寸法の枠だけを出す）。
+- スクリーンショットを足したら、`web/app/dev/preview/catalog.ts` と `screens.tsx` にも足す（足さないと `catalog.test.tsx` が落ちる）。
+
 ## 未解決（実装の前に決める）
 
-- **招待リンクの長さ**: 画面のモックはコードが 10 文字だが、実際は 22 文字（ADR 0011）。レイアウトが崩れないか Phase 6 で確認する。
 - **表示の密度「詰める」**: 設定画面に選択肢はあるが、行送りや余白の具体的な値がデザインにない。実装するならトークンを追加する前にデザインを足す。
-- **書体の読み込み**: トークンは書体名だけを持つ。`next/font` での読み込みは Phase 6 で行う。
+- **危険な操作のボタンの文字色**: `--color-on-danger` がないので、赤地のボタン（「削除する」「退出する」）の文字は `--color-on-primary` を使っている。ライト / ダークとも読めるが、役割の名前としては合っていない。
+
+### Phase 6-1 で足した画面
+
+Phase 6-1 で「API はあるのに操作の入口や状態の画面がない」ものを洗い出し、同じトークンでデザインして足した。
+元のデザイン（`hibari chat.dc.html` など）とは別のキャンバスで作ったので、Claude Design 側に取り込むときはそちらに移す。
+
+| 画面 | スクリーンショット | 関連する API |
+|---|---|---|
+| チャンネルを作成（公開範囲は作成時に決める） | `chat/channel-create-dialog.png` | `POST /workspaces/{id}/rooms` |
+| ダイレクトメッセージを開く | `chat/dm-dialog.png` | `POST /workspaces/{id}/rooms`（kind: dm） |
+| チャンネルの設定（名前・非公開のメンバー） | `chat/room-settings-dialog.png` | `PATCH /rooms/{id}`、`POST` / `DELETE /rooms/{id}/members` |
+| メッセージの「…」メニュー | `chat/message-menu.png` | — |
+| メッセージの編集中 | `chat/message-editing.png` | `PATCH /rooms/{id}/messages/{messageID}` |
+| メッセージの削除の確認 | `chat/message-delete-dialog.png` | `DELETE /rooms/{id}/messages/{messageID}` |
+| 返信先を選んだ入力欄 | `chat/composer-reply.png` | `POST /rooms/{id}/messages`（reply_to_id） |
+| アカウントメニュー（ワークスペース設定 / 設定 / ログアウト） | `chat/account-menu.png` | `POST /auth/logout` |
+| チャンネル検索の 0 件 | `chat/search-empty.png` | — |
+| メンバーの「…」にキックの入口を足したもの | `workspace/member-menu-with-kick.png` | `DELETE /workspaces/{id}/members/{userID}` |
+| プロフィールのアバター画像（あり / アップロード中 / 失敗） | `settings/profile-avatar.png`、`settings/profile-avatar-uploading.png`、`settings/profile-avatar-failed.png` | `POST` / `DELETE /users/me/avatar` |
+| 一覧での画像のアバター（頭文字と混在） | `chat/avatar-images.png` | `POST /users/avatars` |
+
+- この 10 枚は画面全体ではなく、足した部分だけを切り出したフレーム（他のスクリーンショットは 1280×800 の画面全体）。
+- `workspace/member-menu-role-picker.png` はキックを足す前のメニュー。メニューの中身は `member-menu-with-kick.png` が新しい。
+- 決めたこと: 公開範囲は作成後に変えられない（API に kind の変更がない）、DM は相手ひとりだけ（メンバーを追加できない）、チャンネルの削除は置かない（API がない）、ルームの設定を変えられるのは「そのルームを読める admin 以上」（ADR 0011）。
+- アバター画像（ADR 0020）: 設定していない人はこれまでどおり頭文字と色。画像は円に切り取り（ワークスペースだけ角丸の四角）、読み込みに失敗したら頭文字に戻す。受け付けるのは PNG / JPEG / WebP で 2 MB まで。
+
+### 画面はあるが API がなかったもの（Phase 6 で追加した）
+
+| 画面 | 追加した API |
+|---|---|
+| `settings/devices.png`（ログイン中のデバイスの一覧・個別のログアウト・他のすべてのログアウト） | セッションの一覧と失効（ADR 0019） |
+| `settings/profile.png`（表示名・ハンドルの変更） | プロフィールの更新（ADR 0019） |
+| `settings/profile-avatar*.png`（画像の変更・削除） | アバター画像のアップロードと配布（ADR 0020） |
