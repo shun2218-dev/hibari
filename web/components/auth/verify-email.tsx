@@ -13,6 +13,7 @@ export function VerifyEmailPending({
   email: string;
   resending?: boolean;
   onResend?: () => void;
+  /** email を変える API がまだないので、渡さなければ「別のアドレスに変更する」を出さない。 */
   onChangeEmail?: () => void;
 }) {
   return (
@@ -30,9 +31,11 @@ export function VerifyEmailPending({
         <Button variant="primary-outline" size="lg" onClick={onResend} disabled={resending}>
           確認メールを再送する
         </Button>
-        <button type="button" onClick={onChangeEmail} className="text-xs font-medium text-primary hover:underline">
-          別のアドレスに変更する
-        </button>
+        {onChangeEmail && (
+          <button type="button" onClick={onChangeEmail} className="text-xs font-medium text-primary hover:underline">
+            別のアドレスに変更する
+          </button>
+        )}
       </div>
     </StatusContent>
   );
