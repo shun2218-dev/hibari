@@ -101,3 +101,29 @@ describe("AttachmentChip", () => {
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 });
+
+describe("Composer reply", () => {
+  it("shows the message being replied to and lets it be cancelled", async () => {
+    const onCancelReply = vi.fn();
+    render(
+      <Composer
+        value=""
+        canSend={false}
+        replyTo={{ senderName: "佐藤 直樹", body: "4px だと主張が強すぎて、名前より先に目が行ってしまう。" }}
+        onCancelReply={onCancelReply}
+      />,
+    );
+
+    expect(screen.getByText("佐藤 直樹 に返信")).toBeInTheDocument();
+    expect(screen.getByText("4px だと主張が強すぎて、名前より先に目が行ってしまう。")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "返信をやめる" }));
+    expect(onCancelReply).toHaveBeenCalledOnce();
+  });
+
+  it("shows no reply banner by default", () => {
+    render(<Composer value="" canSend={false} />);
+
+    expect(screen.queryByRole("button", { name: "返信をやめる" })).not.toBeInTheDocument();
+  });
+});

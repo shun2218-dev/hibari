@@ -3,9 +3,13 @@
 import type { KeyboardEvent } from "react";
 
 import { Button, IconButton, TextButton } from "@/components/ui/button";
-import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon } from "@/components/ui/icons";
+import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon, ReplyIcon } from "@/components/ui/icons";
+import { cx } from "@/lib/cx";
 
 import type { AttachmentDraftView } from "./types";
+
+/** 返信先。送信すると reply_to_id として送る。 */
+export type ReplyTargetView = { senderName: string; body: string };
 
 type ComposerProps = {
   value: string;
@@ -17,6 +21,8 @@ type ComposerProps = {
   attachments?: AttachmentDraftView[];
   onRetryAttachment?: (id: string) => void;
   onRemoveAttachment?: (id: string) => void;
+  replyTo?: ReplyTargetView;
+  onCancelReply?: () => void;
   /** 送信できる内容があるか（本文が空白だけ、アップロード中の添付がある、などは false）。 */
   canSend: boolean;
 };
@@ -30,6 +36,8 @@ export function Composer({
   attachments = [],
   onRetryAttachment,
   onRemoveAttachment,
+  replyTo,
+  onCancelReply,
   canSend,
 }: ComposerProps) {
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -56,7 +64,22 @@ export function Composer({
           ))}
         </ul>
       )}
-      <div className="flex items-end gap-1 rounded-md border border-border bg-surface p-2 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-primary">
+      {replyTo && (
+        <div className="flex items-center gap-2.5 rounded-t-md border border-b-0 border-border bg-surface-muted py-2 pr-2 pl-3">
+          <ReplyIcon className="size-3.5 shrink-0 text-text-secondary" />
+          <span className="shrink-0 text-xs font-semibold text-text-secondary">{replyTo.senderName} に返信</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-text-muted">{replyTo.body}</span>
+          <IconButton label="返信をやめる" onClick={onCancelReply} className="size-7">
+            <CloseIcon className="size-4" />
+          </IconButton>
+        </div>
+      )}
+      <div
+        className={cx(
+          "flex items-end gap-1 border border-border bg-surface p-2 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-primary",
+          replyTo ? "rounded-b-md" : "rounded-md",
+        )}
+      >
         <IconButton label="ファイルを添付" onClick={onAttach}>
           <PaperclipIcon className="size-4" />
         </IconButton>

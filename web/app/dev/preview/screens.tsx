@@ -25,10 +25,17 @@ import {
   RemovedFromWorkspace,
   ServerUnavailable,
 } from "@/components/chat/chat-states";
+import { AccountMenu } from "@/components/chat/account-menu";
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { MembersPanel } from "@/components/chat/members-panel";
 import { RoomHeader } from "@/components/chat/room-header";
+import {
+  CreateRoomDialog,
+  DeleteMessageDialog,
+  RoomSettingsDialog,
+  StartDmDialog,
+} from "@/components/chat/room-dialogs";
 import { Sidebar } from "@/components/chat/sidebar";
 import { Timeline } from "@/components/chat/timeline";
 import type { AttachmentDraftView, ConnectionBannerStatus } from "@/components/chat/types";
@@ -55,6 +62,8 @@ import { WorkspaceSettings } from "@/components/workspace/workspace-settings";
 import {
   currentUser,
   devices,
+  dmCandidates,
+  roomSettingsMembers,
   invitesAs,
   membersAs,
   pendingMessageKey,
@@ -90,6 +99,13 @@ type ChatOptions = {
   attachments?: AttachmentDraftView[];
   hoveredKey?: string;
   noRooms?: boolean;
+  search?: string;
+  accountMenu?: boolean;
+  menuKey?: string;
+  editingKey?: string;
+  replyTo?: { senderName: string; body: string };
+  /** チャット画面の上に重ねるダイアログ。 */
+  dialog?: ReactNode;
   body?: "timeline" | "empty" | "removed-room" | "removed-workspace";
   footer?: "composer" | "join" | "none";
   members?: boolean;
@@ -103,6 +119,12 @@ function chat({
   attachments,
   hoveredKey,
   noRooms,
+  search,
+  accountMenu,
+  menuKey,
+  editingKey,
+  replyTo,
+  dialog,
   body = "timeline",
   footer = "composer",
   members,
@@ -121,6 +143,9 @@ function chat({
             rooms={noRooms ? [] : rooms}
             selectedRoomId={selectedRoom.id}
             roomHref={roomHref}
+            search={search}
+            accountMenuOpen={accountMenu}
+            accountMenu={<AccountMenu user={{ ...users.you, handle: users.you.handle }} />}
             switcherOpen={switcher}
             switcher={
               <WorkspaceSwitcher workspaces={[workspaces.dev, workspaces.memo]} currentWorkspaceId={workspaces.dev.id} />
@@ -136,15 +161,25 @@ function chat({
           membersOpen={members}
         />
         <ConnectionBanner status={banner ?? null} />
-        {body === "timeline" && <Timeline items={timeline} hoveredKey={hoveredKey} />}
+        {body === "timeline" && (
+          <Timeline
+            items={timeline}
+            hoveredKey={hoveredKey}
+            actionsFor={(key) => ({ canEdit: key === pendingMessageKey, canDelete: key === pendingMessageKey })}
+            openMenuKey={menuKey}
+            editingKey={editingKey}
+            editing={{ value: "了解です。今日の夕方までに一覧を更新して、また共有します。" }}
+          />
+        )}
         {body === "empty" && <EmptyMessages kind={selectedRoom.kind} name={selectedRoom.name} />}
         {body === "removed-room" && <RemovedFromRoom kind={selectedRoom.kind} name={selectedRoom.name} />}
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
         {footer === "composer" && (
-          <Composer value="" canSend={false} typingNames={typingNames} attachments={attachments} />
+          <Composer value="" canSend={false} typingNames={typingNames} attachments={attachments} replyTo={replyTo} />
         )}
         {footer === "join" && <JoinRoomBar />}
       </ChatLayout>
+      {dialog}
       <Dialog
         open={Boolean(createWorkspace)}
         title="ワークスペースを作成"
@@ -271,6 +306,37 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/workspace-switcher": () => chat({ switcher: true }),
   "chat/workspace-create-dialog": () => chat({ createWorkspace: true }),
   "chat/server-error": () => <ServerUnavailable lastConnectedLabel="11:07" retryCount={3} />,
+  "chat/channel-create-dialog": () => chat({ dialog: <CreateRoomDialog open name="デザインレビュー" kind="public" /> }),
+  "chat/dm-dialog": () =>
+    chat({
+      dialog: (
+        <StartDmDialog
+          open
+          candidates={dmCandidates}
+          selectedId={users.naoki.id}
+        />
+      ),
+    }),
+  "chat/room-settings-dialog": () =>
+    chat({
+      dialog: (
+        <RoomSettingsDialog
+          open
+          kind="private"
+          name="リリース準備"
+          canEdit
+          members={roomSettingsMembers}
+        />
+      ),
+    }),
+  "chat/message-menu": () => chat({ menuKey: pendingMessageKey, hoveredKey: pendingMessageKey }),
+  "chat/message-editing": () => chat({ editingKey: pendingMessageKey }),
+  "chat/message-delete-dialog": () =>
+    chat({ dialog: <DeleteMessageDialog open body="了解です。今日の夕方までに一覧を更新して、また共有します。" /> }),
+  "chat/composer-reply": () =>
+    chat({ replyTo: { senderName: users.naoki.name, body: "4px だと主張が強すぎて、名前より先に目が行ってしまう。" } }),
+  "chat/account-menu": () => chat({ accountMenu: true }),
+  "chat/search-empty": () => chat({ noRooms: true, search: "見積" }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),
   "chat/mobile-room": () => chat(),
   "chat/mobile-members-sheet": () => chat({ members: true }),
@@ -293,6 +359,7 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "workspace/mobile-members": () => membersPage("owner"),
   "workspace/member-menu-role-picker": () => membersPage("owner", { userId: users.misaki.id, kind: "roles" }),
   "workspace/member-menu-locked-reason": () => membersPage("admin", { userId: users.misaki.id, kind: "locked" }),
+  "workspace/member-menu-with-kick": () => membersPage("owner", { userId: users.suzuki.id, kind: "roles" }),
   "workspace/dialog-kick": () => membersPage("owner", null, <KickMemberDialog open memberName={users.suzuki.name} />),
   "workspace/dialog-transfer-pick": () =>
     settingsPage("owner", <TransferOwnershipPickDialog open candidates={transferCandidates} selectedId={users.misaki.id} />),

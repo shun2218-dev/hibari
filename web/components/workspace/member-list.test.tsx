@@ -7,7 +7,7 @@ import type { MemberRowView } from "./types";
 
 const members: MemberRowView[] = [
   { id: "u1", name: "あなた", handle: "you", online: true, role: "admin", isSelf: true, manage: { kind: "locked", reason: "自分と同じか上のロールのメンバーは変更できません。" } },
-  { id: "u2", name: "鈴木 涼", handle: "ryo", online: false, role: "member", isSelf: false, manage: { kind: "menu", grantableRoles: ["admin", "member"] } },
+  { id: "u2", name: "鈴木 涼", handle: "ryo", online: false, role: "member", isSelf: false, manage: { kind: "menu", grantableRoles: ["admin", "member"], canRemove: true } },
 ];
 
 describe("MemberList", () => {
@@ -57,5 +57,26 @@ describe("MemberList", () => {
 
     await userEvent.click(within(reason).getByRole("button", { name: "閉じる" }));
     expect(onCloseMenu).toHaveBeenCalledOnce();
+  });
+});
+
+describe("MemberList removal", () => {
+  it("offers removal in the menu when the viewer may kick", async () => {
+    const onRemove = vi.fn();
+    render(<MemberList members={members} openMenu={{ userId: "u2", kind: "roles" }} onRemove={onRemove} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "ワークスペースから削除" }));
+
+    expect(onRemove).toHaveBeenCalledWith("u2");
+  });
+
+  it("hides removal when the viewer may only change the role", () => {
+    const noKick = members.map((m) =>
+      m.id === "u2" ? { ...m, manage: { kind: "menu" as const, grantableRoles: ["member" as const], canRemove: false } } : m,
+    );
+    render(<MemberList members={noKick} openMenu={{ userId: "u2", kind: "roles" }} />);
+
+    expect(screen.queryByRole("button", { name: "ワークスペースから削除" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "メンバー" })).toBeInTheDocument();
   });
 });

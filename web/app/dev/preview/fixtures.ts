@@ -3,6 +3,7 @@
  *
  * ID はアバターの色（ID のハッシュで決まる。lib/avatar.ts）がスクリーンショットと同じになるものを選んである。
  */
+import type { DmCandidateView, RoomMemberRowView } from "@/components/chat/room-dialogs";
 import type { RoomMemberView, RoomSummaryView, TimelineItem, UserRef, WorkspaceRef } from "@/components/chat/types";
 import type { TransferCandidate } from "@/components/workspace/member-dialogs";
 import type { InviteRowView, MemberRowView, WorkspaceRole } from "@/components/workspace/types";
@@ -12,7 +13,7 @@ export const users = {
   you: { id: "01J8ZH5K000000000000000001", name: "あなた", handle: "you" },
   naoki: { id: "01J8ZH5K000000000000000002", name: "佐藤 直樹", handle: "naoki" },
   miyuki: { id: "01J8ZH5K000000000000000005", name: "高橋 みゆき", handle: "miyuki" },
-  ryo: { id: "01J8ZH5K000000000000000008", name: "中村 涼", handle: "ryo" },
+  ryo: { id: "01J8ZH5K000000000000000008", name: "中村 涼", handle: "nakamura" },
   misaki: { id: "01J8ZH5K000000000000000009", name: "田中 美咲", handle: "misaki" },
   suzuki: { id: "01J8ZH5K00000000000000000B", name: "鈴木 涼", handle: "ryo" },
   haru: { id: "01J8ZH5K00000000000000000G", name: "小林 陽向", handle: "haru" },
@@ -142,6 +143,20 @@ export const roomMembers: RoomMemberView[] = [
 
 export const typingNames = [users.miyuki.name];
 
+/** DM の相手の候補。hibari 開発のメンバーから自分を除いたもの。 */
+export const dmCandidates: DmCandidateView[] = [
+  { id: users.naoki.id, name: users.naoki.name, handle: users.naoki.handle, online: true },
+  { id: users.miyuki.id, name: users.miyuki.name, handle: users.miyuki.handle, online: true },
+  { id: users.ryo.id, name: users.ryo.name, handle: users.ryo.handle, online: false },
+];
+
+/** 非公開チャンネル「リリース準備」の参加者。 */
+export const roomSettingsMembers: RoomMemberRowView[] = [
+  { id: users.naoki.id, name: users.naoki.name, isSelf: false, canRemove: true },
+  { id: users.you.id, name: users.you.name, isSelf: true, canRemove: false },
+  { id: users.ryo.id, name: users.ryo.name, isSelf: false, canRemove: true },
+];
+
 // ---- ワークスペースの管理（山と印刷） ----
 
 export const lockedReason = "自分と同じか上のロールのメンバーは変更できません。";
@@ -184,7 +199,11 @@ export function membersAs(viewer: Viewer): MemberRowView[] {
       role,
       isSelf: user.id === users.you.id,
       manage: canManage
-        ? { kind: "menu", grantableRoles: (["admin", "member"] as const).filter((r) => rank[r] <= rank[viewer]) }
+        ? {
+            kind: "menu",
+            grantableRoles: (["admin", "member"] as const).filter((r) => rank[r] <= rank[viewer]),
+            canRemove: true,
+          }
         : { kind: "locked", reason: lockedReason },
     };
   });

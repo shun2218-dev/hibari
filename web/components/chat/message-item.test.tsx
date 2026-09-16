@@ -117,3 +117,82 @@ describe("MessageItem", () => {
     expect(onDownload).toHaveBeenCalledWith("a2");
   });
 });
+
+describe("MessageItem actions", () => {
+  it("offers the menu only when something can be done", async () => {
+    const onToggleMenu = vi.fn();
+    const { rerender } = render(<MessageItem message={message()} />);
+    expect(screen.queryByRole("button", { name: "その他の操作", hidden: true })).not.toBeInTheDocument();
+
+    rerender(<MessageItem message={message()} canEdit onToggleMenu={onToggleMenu} />);
+    await userEvent.click(screen.getByRole("button", { name: "その他の操作", hidden: true }));
+    expect(onToggleMenu).toHaveBeenCalledOnce();
+  });
+
+  it("shows only the permitted menu items", async () => {
+    const onDelete = vi.fn();
+    const { rerender } = render(<MessageItem message={message()} canEdit canDelete menuOpen />);
+
+    const menu = screen.getByRole("dialog", { name: "メッセージの操作" });
+    expect(within(menu).getByRole("button", { name: "メッセージを編集" })).toBeInTheDocument();
+    expect(within(menu).getByRole("button", { name: "メッセージを削除" })).toBeInTheDocument();
+
+    // 他人のメッセージを管理者として消すだけのとき、編集は出さない
+    rerender(<MessageItem message={message()} canDelete menuOpen onDelete={onDelete} />);
+    expect(screen.queryByRole("button", { name: "メッセージを編集" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "メッセージを削除" }));
+    expect(onDelete).toHaveBeenCalledOnce();
+  });
+
+  it("replaces the body with an editor while editing", async () => {
+    const onSave = vi.fn();
+    const onCancel = vi.fn();
+    const onChange = vi.fn();
+    render(
+      <MessageItem
+        message={message({ attachments: [{ kind: "file", id: "a1", fileName: "x.pdf", sizeLabel: "1 KB" }] })}
+        canEdit
+        editing={{ value: "賛成です。", onChange, onSave, onCancel }}
+      />,
+    );
+
+    const editor = screen.getByRole("textbox", { name: "メッセージを編集" });
+    expect(editor).toHaveValue("賛成です。");
+    // 編集中は本文・添付・ホバーの操作を出さない
+    expect(screen.queryByText("x.pdf")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
+
+    await userEvent.type(editor, "！");
+    expect(onChange).toHaveBeenLastCalledWith("賛成です。！");
+
+    await userEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(onSave).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole("button", { name: "キャンセル" }));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("saves with Enter and cancels with Escape", async () => {
+    const onSave = vi.fn();
+    const onCancel = vi.fn();
+    render(<MessageItem message={message()} canEdit editing={{ value: "賛成です。", onSave, onCancel }} />);
+    const editor = screen.getByRole("textbox", { name: "メッセージを編集" });
+
+    await userEvent.type(editor, "{Enter}");
+    expect(onSave).toHaveBeenCalledOnce();
+
+    await userEvent.type(editor, "{Shift>}{Enter}{/Shift}");
+    expect(onSave).toHaveBeenCalledOnce();
+
+    await userEvent.type(editor, "{Escape}");
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("does not save an empty message", async () => {
+    const onSave = vi.fn();
+    render(<MessageItem message={message()} canEdit editing={{ value: "   ", onSave }} />);
+
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    await userEvent.type(screen.getByRole("textbox", { name: "メッセージを編集" }), "{Enter}");
+    expect(onSave).not.toHaveBeenCalled();
+  });
+});

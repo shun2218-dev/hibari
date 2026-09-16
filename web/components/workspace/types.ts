@@ -13,10 +13,12 @@ export const roleLabel: Record<WorkspaceRole, string> = {
 /**
  * メンバーの行で自分ができること。判定（canManage / canGrant）はデータ層が API のルールと同じ関数で行い、
  * ここでは結果だけを受け取る（CLAUDE.md ルール 9: 判断を画面に散らさない）。
- * - menu: ロールを変更できる。grantableRoles は付与できるロール
+ * - menu: ロールを変更できる。grantableRoles は付与できるロール、canRemove ならワークスペースから削除もできる
  * - locked: 操作できない。reason はその理由（鍵のボタンを押すと出す）
  */
-export type MemberManageView = { kind: "menu"; grantableRoles: WorkspaceRole[] } | { kind: "locked"; reason: string };
+export type MemberManageView =
+  | { kind: "menu"; grantableRoles: WorkspaceRole[]; canRemove: boolean }
+  | { kind: "locked"; reason: string };
 
 export type MemberRowView = {
   id: string;

@@ -1,25 +1,57 @@
 import { Avatar } from "@/components/ui/avatar";
-import { IconButton, TextButton } from "@/components/ui/button";
+import { Button, IconButton, TextButton } from "@/components/ui/button";
 import { ClockIcon, FileIcon, MoreIcon, ReplyIcon } from "@/components/ui/icons";
+import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
 
 import type { MessageAttachmentView, MessageView } from "./types";
+
+/** 編集中の本文。null（既定）なら編集していない。編集できるのは自分のメッセージだけ（ADR 0012）。 */
+export type MessageEditingView = {
+  value: string;
+  onChange?: (value: string) => void;
+  onSave?: () => void;
+  onCancel?: () => void;
+  saving?: boolean;
+};
 
 type MessageItemProps = {
   message: MessageView;
   onRetry?: () => void;
   onDiscard?: () => void;
   onReply?: () => void;
-  onMore?: () => void;
   onDownload?: (attachmentId: string) => void;
+  /** 「…」で出せる操作。両方 false なら「…」自体を出さない。 */
+  canEdit?: boolean;
+  canDelete?: boolean;
+  menuOpen?: boolean;
+  onToggleMenu?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  editing?: MessageEditingView | null;
   /** ホバーしたときの見た目を固定で出す（/dev/preview で状態を再現するため）。 */
   forceHover?: boolean;
 };
 
-export function MessageItem({ message, onRetry, onDiscard, onReply, onMore, onDownload, forceHover }: MessageItemProps) {
+export function MessageItem({
+  message,
+  onRetry,
+  onDiscard,
+  onReply,
+  onDownload,
+  canEdit = false,
+  canDelete = false,
+  menuOpen = false,
+  onToggleMenu,
+  onEdit,
+  onDelete,
+  editing = null,
+  forceHover,
+}: MessageItemProps) {
   const { sender, status, deleted } = message;
   // 削除済みには操作の対象がなく、送信失敗には専用の操作（再送・削除）があるので、ホバーの操作を出さない
-  const actionable = status !== "failed" && !deleted;
+  const actionable = status !== "failed" && !deleted && editing === null;
+  const hasMenu = canEdit || canDelete;
 
   return (
     <article
@@ -54,7 +86,9 @@ export function MessageItem({ message, onRetry, onDiscard, onReply, onMore, onDo
           </p>
         )}
 
-        {deleted ? (
+        {editing ? (
+          <MessageEditor editing={editing} />
+        ) : deleted ? (
           <p className="text-lg leading-relaxed text-text-muted italic">このメッセージは削除されました</p>
         ) : (
           <div className="flex items-start gap-2">
@@ -75,7 +109,7 @@ export function MessageItem({ message, onRetry, onDiscard, onReply, onMore, onDo
           </div>
         )}
 
-        {!deleted && message.attachments.length > 0 && (
+        {!deleted && !editing && message.attachments.length > 0 && (
           <ul className="mt-2 flex flex-col gap-2">
             {message.attachments.map((attachment) => (
               <li key={attachment.id}>
@@ -106,12 +140,76 @@ export function MessageItem({ message, onRetry, onDiscard, onReply, onMore, onDo
           <IconButton label="返信" onClick={onReply} className="size-7">
             <ReplyIcon className="size-4" />
           </IconButton>
-          <IconButton label="その他の操作" onClick={onMore} className="size-7">
-            <MoreIcon className="size-4" />
-          </IconButton>
+          {hasMenu && (
+            <IconButton
+              label="その他の操作"
+              aria-expanded={menuOpen}
+              onClick={onToggleMenu}
+              className={cx("size-7", menuOpen && "bg-surface-muted")}
+            >
+              <MoreIcon className="size-4" />
+            </IconButton>
+          )}
         </div>
       )}
+
+      {menuOpen && hasMenu && (
+        <Popover label="メッセージの操作" className="top-6 right-4 w-52">
+          {canEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
+            >
+              メッセージを編集
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base font-medium text-danger hover:bg-surface-muted"
+            >
+              メッセージを削除
+            </button>
+          )}
+        </Popover>
+      )}
     </article>
+  );
+}
+
+/** 本文をその場で書き換える。Enter で保存、Esc で取りやめ（改行は Shift + Enter）。 */
+function MessageEditor({ editing }: { editing: MessageEditingView }) {
+  return (
+    <div className="flex flex-col gap-1.5 pt-0.5">
+      <textarea
+        aria-label="メッセージを編集"
+        autoFocus
+        rows={1}
+        value={editing.value}
+        onChange={(e) => editing.onChange?.(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") editing.onCancel?.();
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            if (editing.value.trim() !== "") editing.onSave?.();
+          }
+        }}
+        className="max-h-60 min-h-11 w-full resize-none rounded-md border border-border bg-surface px-3 py-2 text-lg leading-relaxed text-text focus-visible:-outline-offset-2"
+      />
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-2xs text-text-muted">Enter で保存 / Esc でキャンセル</span>
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" onClick={editing.onCancel}>
+            キャンセル
+          </Button>
+          <Button size="sm" onClick={editing.onSave} disabled={editing.saving || editing.value.trim() === ""}>
+            保存
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

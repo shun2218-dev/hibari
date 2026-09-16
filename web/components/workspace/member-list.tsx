@@ -23,9 +23,11 @@ type MemberListProps = {
   onOpenMenu?: (menu: NonNullable<MemberMenuState>) => void;
   onCloseMenu?: () => void;
   onChangeRole?: (userId: string, role: WorkspaceRole) => void;
+  /** キックの確認ダイアログを開く。 */
+  onRemove?: (userId: string) => void;
 };
 
-export function MemberList({ members, openMenu = null, onOpenMenu, onCloseMenu, onChangeRole }: MemberListProps) {
+export function MemberList({ members, openMenu = null, onOpenMenu, onCloseMenu, onChangeRole, onRemove }: MemberListProps) {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
@@ -99,6 +101,18 @@ export function MemberList({ members, openMenu = null, onOpenMenu, onCloseMenu, 
                     })}
                   </ul>
                   <p className="px-2.5 pt-2 pb-1.5 text-2xs text-text-muted">オーナーは譲渡でのみ移ります。</p>
+                  {member.manage.canRemove && (
+                    <>
+                      <div className="my-1 h-px bg-border" />
+                      <button
+                        type="button"
+                        onClick={() => onRemove?.(member.id)}
+                        className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base font-medium text-danger hover:bg-surface-muted"
+                      >
+                        ワークスペースから削除
+                      </button>
+                    </>
+                  )}
                 </Popover>
               )}
 

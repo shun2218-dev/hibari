@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import { Sidebar } from "./sidebar";
 import type { RoomSummaryView } from "./types";
@@ -88,5 +89,49 @@ describe("Sidebar", () => {
     );
     expect(screen.getByText("switcher")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /hibari 開発/ })).toHaveAttribute("aria-expanded", "true");
+  });
+});
+
+describe("Sidebar empty states", () => {
+  it("distinguishes no rooms from no search results", () => {
+    const { rerender } = renderSidebar({ rooms: [] });
+    expect(screen.getByText("まだチャンネルがありません")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "チャンネルを作成" })).toBeInTheDocument();
+
+    rerender(
+      <Sidebar
+        workspace={workspace}
+        currentUser={currentUser}
+        rooms={[]}
+        search="見積"
+        roomHref={(id) => `/rooms/${id}`}
+      />,
+    );
+    expect(screen.getByText("一致するチャンネルがありません")).toBeInTheDocument();
+    expect(screen.getByText("別の言葉を試すか、チャンネルを作成してください")).toBeInTheDocument();
+    // 検索して 0 件のときは、作成のボタンを出さない（検索を直すほうが先）
+    expect(screen.queryByRole("button", { name: "チャンネルを作成" })).not.toBeInTheDocument();
+  });
+
+  it("opens the account menu from the avatar", async () => {
+    const onToggleAccountMenu = vi.fn();
+    const { rerender } = renderSidebar({ onToggleAccountMenu, accountMenu: <div>menu</div> });
+    expect(screen.queryByText("menu")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "アカウントメニュー" }));
+    expect(onToggleAccountMenu).toHaveBeenCalledOnce();
+
+    rerender(
+      <Sidebar
+        workspace={workspace}
+        currentUser={currentUser}
+        rooms={rooms}
+        roomHref={(id) => `/rooms/${id}`}
+        accountMenuOpen
+        accountMenu={<div>menu</div>}
+      />,
+    );
+    expect(screen.getByText("menu")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "アカウントメニュー" })).toHaveAttribute("aria-expanded", "true");
   });
 });

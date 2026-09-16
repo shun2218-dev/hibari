@@ -21,6 +21,10 @@ type SidebarProps = {
   onToggleSwitcher?: () => void;
   /** ワークスペースの切り替えのポップオーバー。switcherOpen のときだけ出す。 */
   switcher?: ReactNode;
+  accountMenuOpen?: boolean;
+  onToggleAccountMenu?: () => void;
+  /** 自分のアバターから開くメニュー。accountMenuOpen のときだけ出す。 */
+  accountMenu?: ReactNode;
   onCreateRoom?: () => void;
 };
 
@@ -35,10 +39,15 @@ export function Sidebar({
   switcherOpen = false,
   onToggleSwitcher,
   switcher,
+  accountMenuOpen = false,
+  onToggleAccountMenu,
+  accountMenu,
   onCreateRoom,
 }: SidebarProps) {
   const channels = rooms.filter((room) => room.kind !== "dm");
   const dms = rooms.filter((room) => room.kind === "dm");
+  // 検索して 0 件なのか、まだチャンネルがないのかで、出すものが違う
+  const searching = search.trim() !== "";
 
   return (
     <nav aria-label="チャンネル" className="flex h-full flex-col bg-surface">
@@ -57,8 +66,18 @@ export function Sidebar({
           <span className="flex-1 truncate text-base font-bold text-text">{workspace.name}</span>
           <ChevronDownIcon className="size-4 shrink-0 text-text-secondary" />
         </button>
-        <Avatar id={currentUser.id} name={currentUser.name} size="sm" />
+        <button
+          type="button"
+          onClick={onToggleAccountMenu}
+          aria-label="アカウントメニュー"
+          aria-expanded={accountMenuOpen}
+          aria-haspopup="dialog"
+          className="rounded-full"
+        >
+          <Avatar id={currentUser.id} name={currentUser.name} size="sm" />
+        </button>
         {switcherOpen && switcher}
+        {accountMenuOpen && accountMenu}
       </div>
 
       <div className="px-3 pb-2">
@@ -77,11 +96,17 @@ export function Sidebar({
 
       {rooms.length === 0 ? (
         <div className="flex flex-col items-center gap-1 px-4 pt-12 text-center">
-          <p className="text-base font-medium text-text">まだチャンネルがありません</p>
-          <p className="text-xs text-text-muted">誰かを招待して会話を始めましょう</p>
-          <Button onClick={onCreateRoom} className="mt-4">
-            チャンネルを作成
-          </Button>
+          <p className="text-base font-medium text-text">
+            {searching ? "一致するチャンネルがありません" : "まだチャンネルがありません"}
+          </p>
+          <p className="text-xs leading-relaxed text-text-muted">
+            {searching ? "別の言葉を試すか、チャンネルを作成してください" : "誰かを招待して会話を始めましょう"}
+          </p>
+          {!searching && (
+            <Button onClick={onCreateRoom} className="mt-4">
+              チャンネルを作成
+            </Button>
+          )}
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
