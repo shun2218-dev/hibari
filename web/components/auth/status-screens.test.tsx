@@ -2,10 +2,34 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { ForgotPasswordSent, ResetPasswordDone, ResetPasswordInvalid } from "./password-reset";
-import { VerifyEmailDone, VerifyEmailInvalid, VerifyEmailPending } from "./verify-email";
+import {
+  ForgotPasswordForm,
+  ForgotPasswordSent,
+  ResetPasswordDone,
+  ResetPasswordForm,
+  ResetPasswordInvalid,
+} from "./password-reset";
+import { VerifyEmailChecking, VerifyEmailDone, VerifyEmailInvalid, VerifyEmailPending } from "./verify-email";
 
 describe("password reset screens", () => {
+  it.each([
+    ["request form", <ForgotPasswordForm key="forgot" loginHref="/login" error="送信が多すぎます" />],
+    ["new password form", <ResetPasswordForm key="reset" error="パスワードは8文字以上にしてください。" />],
+  ])("shows the error of the %s in the same alert as login", (_name, element) => {
+    render(element);
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["request form", <ForgotPasswordForm key="forgot" loginHref="/login" />],
+    ["new password form", <ResetPasswordForm key="reset" />],
+  ])("has no alert on the %s without an error", (_name, element) => {
+    render(element);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("does not reveal whether the account exists after requesting a reset", () => {
     render(<ForgotPasswordSent loginHref="/login" />);
 
@@ -58,6 +82,7 @@ describe("email verification screens", () => {
   });
 
   it.each([
+    ["checking", <VerifyEmailChecking key="checking" />, "メールアドレスを確認しています"],
     ["done", <VerifyEmailDone key="done" />, "メールアドレスを確認しました"],
     ["invalid", <VerifyEmailInvalid key="invalid" />, "確認リンクが無効です"],
   ])("shows the %s state", (_name, element, heading) => {

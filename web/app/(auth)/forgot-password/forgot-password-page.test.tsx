@@ -35,14 +35,27 @@ describe("ForgotPasswordPage", () => {
     expect(screen.getByLabelText("メールアドレス")).toHaveValue("");
   });
 
-  it("keeps the form usable when the request fails", async () => {
+  it("shows the rate limit and keeps the address to retry later", async () => {
     renderWithSession(<ForgotPasswordPage />, {
       "POST /api/v1/auth/password-reset/request": () => problem(429, "rate-limited", { "Retry-After": "60" }),
     });
 
     await submit("naoki@example.com");
 
+    expect(await screen.findByRole("alert")).toHaveTextContent("再設定メールの送信が多すぎます");
+    expect(screen.getByRole("button", { name: "再設定用のメールを送る" })).toBeEnabled();
+    expect(screen.getByLabelText("メールアドレス")).toHaveValue("naoki@example.com");
+  });
+
+  it("keeps the form usable without an alert when the server cannot be reached", async () => {
+    renderWithSession(<ForgotPasswordPage />, {
+      "POST /api/v1/auth/password-reset/request": () => Promise.reject(new TypeError("fetch failed")),
+    });
+
+    await submit("naoki@example.com");
+
     expect(await screen.findByRole("button", { name: "再設定用のメールを送る" })).toBeEnabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "メールを確認してください" })).not.toBeInTheDocument();
   });
 });

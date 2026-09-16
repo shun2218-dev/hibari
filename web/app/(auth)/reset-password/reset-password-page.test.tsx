@@ -2,7 +2,8 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { problem } from "@/test/fake-api";
+import { PROBLEM_TYPE_PREFIX } from "@/lib/api/types.gen";
+import { json, problem } from "@/test/fake-api";
 import { renderWithSession } from "@/test/render-with-session";
 
 import { ResetPasswordPage } from "./reset-password-page";
@@ -61,18 +62,24 @@ describe("ResetPasswordPage", () => {
     expect(api.calls).toHaveLength(0);
   });
 
-  it("keeps the form so the same link can be retried when the password is rejected", async () => {
+  it("explains a rejected password and lets the same link be retried", async () => {
     const confirm = vi
       .fn()
-      .mockReturnValueOnce(problem(422, "validation-error"))
+      .mockReturnValueOnce(
+        json(422, { type: `${PROBLEM_TYPE_PREFIX}validation-error`, title: "x", status: 422, errors: [{ field: "password", reason: "too_short" }] }, { "Content-Type": "application/problem+json" }),
+      )
       .mockReturnValue(new Response(null, { status: 204 }));
-    renderWithSession(<ResetPasswordPage token="tok-1" />, { "POST /api/v1/auth/password-reset/confirm": confirm });
+    const { api } = renderWithSession(<ResetPasswordPage token="tok-1" />, {
+      "POST /api/v1/auth/password-reset/confirm": confirm,
+    });
 
     await submit("short");
+    expect(await screen.findByRole("alert")).toHaveTextContent("パスワードは8文字以上にしてください。");
     await waitFor(() => expect(screen.getByRole("button", { name: "パスワードを設定する" })).toBeEnabled());
     await userEvent.clear(screen.getByLabelText("新しいパスワード"));
     await submit("new-correct-horse");
 
     expect(await screen.findByRole("heading", { name: "パスワードを変更しました" })).toBeInTheDocument();
+    expect(api.calls.map((c) => JSON.parse(String(c.init.body)).token)).toEqual(["tok-1", "tok-1"]);
   });
 });

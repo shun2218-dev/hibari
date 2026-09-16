@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { AuthShell } from "@/components/auth/auth-shell";
-import { VerifyEmailDone, VerifyEmailInvalid } from "@/components/auth/verify-email";
+import { VerifyEmailChecking, VerifyEmailDone, VerifyEmailInvalid } from "@/components/auth/verify-email";
 import { ApiError } from "@/lib/api/error";
 import { useSession } from "@/lib/auth/session-provider";
 
@@ -34,7 +34,7 @@ export function VerifyEmailPage({ token }: { token: string }) {
       () => setStep("done"),
       (err: unknown) => {
         if (err instanceof ApiError && err.type === "invalid-one-time-token") setStep("invalid");
-        // 通信の失敗の表示はデザインにない（ADR 0024）。何も描かないままにする。
+        // 通信の失敗の表示はデザインにない（docs/ui/README.md の「未解決」）。確認中の表示のままにする。
         else console.error("verifying the email failed", err);
       },
     );
@@ -56,14 +56,11 @@ export function VerifyEmailPage({ token }: { token: string }) {
     }
   }
 
-  if (step === "verifying") return null;
   return (
     <AuthShell>
-      {step === "done" ? (
-        <VerifyEmailDone onOpen={() => router.push("/")} />
-      ) : (
-        <VerifyEmailInvalid resending={resending} onResend={resend} />
-      )}
+      {step === "verifying" && <VerifyEmailChecking />}
+      {step === "done" && <VerifyEmailDone onOpen={() => router.push("/")} />}
+      {step === "invalid" && <VerifyEmailInvalid resending={resending} onResend={resend} />}
     </AuthShell>
   );
 }

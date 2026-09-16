@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { AlertIcon, CheckCircleIcon, MailIcon } from "@/components/ui/icons";
+import { Spinner } from "@/components/ui/spinner";
 
 import { StatusContent } from "./auth-shell";
 
@@ -39,6 +40,11 @@ export function VerifyEmailPending({
       </div>
     </StatusContent>
   );
+}
+
+/** リンクを開いてから結果が返るまで。開いたらすぐ確認するので、操作は置かない。 */
+export function VerifyEmailChecking() {
+  return <StatusContent tone="neutral" icon={<Spinner className="size-5" />} title="メールアドレスを確認しています" />;
 }
 
 export function VerifyEmailDone({ onOpen }: { onOpen?: () => void }) {

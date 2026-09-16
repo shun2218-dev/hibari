@@ -16,7 +16,12 @@ import {
   ResetPasswordInvalid,
 } from "@/components/auth/password-reset";
 import { SignupForm } from "@/components/auth/signup-form";
-import { VerifyEmailDone, VerifyEmailInvalid, VerifyEmailPending } from "@/components/auth/verify-email";
+import {
+  VerifyEmailChecking,
+  VerifyEmailDone,
+  VerifyEmailInvalid,
+  VerifyEmailPending,
+} from "@/components/auth/verify-email";
 import { ChatLayout } from "@/components/chat/chat-layout";
 import {
   EmptyMessages,
@@ -56,6 +61,7 @@ import {
   TransferOwnershipPickDialog,
 } from "@/components/workspace/member-dialogs";
 import { type MemberMenuState, MemberList } from "@/components/workspace/member-list";
+import { NoWorkspaces } from "@/components/workspace/no-workspaces";
 import type { WorkspaceRole } from "@/components/workspace/types";
 import { WorkspaceSettings } from "@/components/workspace/workspace-settings";
 
@@ -284,11 +290,27 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "auth/mobile-login": () => login("credentials"),
   "auth/signup": () => auth(<SignupForm loginHref={noHref} passwordStrength={goodStrength} passwordDefaultValue="correct-horse" />),
   "auth/forgot": () => auth(<ForgotPasswordForm loginHref={noHref} />),
+  "auth/forgot-error-rate-limit": () =>
+    auth(
+      <ForgotPasswordForm
+        loginHref={noHref}
+        error="再設定メールの送信が多すぎます。しばらく時間をおいてから再度お試しください。"
+      />,
+    ),
   "auth/forgot-sent": () => auth(<ForgotPasswordSent loginHref={noHref} />),
   "auth/reset": () => auth(<ResetPasswordForm passwordStrength={goodStrength} passwordDefaultValue="correct-horse" />),
+  "auth/reset-error-invalid-input": () =>
+    auth(
+      <ResetPasswordForm
+        error="パスワードは8文字以上にしてください。"
+        passwordStrength={{ level: 1, label: "短すぎます" }}
+        passwordDefaultValue="horse"
+      />,
+    ),
   "auth/reset-done": () => auth(<ResetPasswordDone />),
   "auth/reset-invalid": () => auth(<ResetPasswordInvalid loginHref={noHref} />),
   "auth/verify-pending": () => auth(<VerifyEmailPending email="naoki@example.com" onChangeEmail={noop} />),
+  "auth/verify-checking": () => auth(<VerifyEmailChecking />),
   "auth/verify-done": () => auth(<VerifyEmailDone />),
   "auth/verify-invalid": () => auth(<VerifyEmailInvalid />),
 
@@ -345,6 +367,7 @@ export const previewScreens: Record<string, () => ReactNode> = {
     chat({ replyTo: { senderName: users.naoki.name, body: "4px だと主張が強すぎて、名前より先に目が行ってしまう。" } }),
   "chat/account-menu": () => chat({ accountMenu: true }),
   "chat/search-empty": () => chat({ noRooms: true, search: "見積" }),
+  "chat/empty-workspaces": () => <NoWorkspaces />,
   "chat/avatar-images": () => chat({ avatars: true }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),
   "chat/mobile-room": () => chat(),

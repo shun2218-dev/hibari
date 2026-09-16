@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { ResetPasswordDone, ResetPasswordForm, ResetPasswordInvalid } from "@/components/auth/password-reset";
 import { ApiError } from "@/lib/api/error";
+import { resetPasswordErrorMessage } from "@/lib/auth/password-reset-error";
 import { passwordStrength } from "@/lib/auth/password-strength";
 import { useSession } from "@/lib/auth/session-provider";
 
@@ -22,17 +23,24 @@ export function ResetPasswordPage({ token }: { token: string }) {
   const session = useSession();
   const [step, setStep] = useState<Step>(token ? "form" : "invalid");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(newPassword: string) {
     setSubmitting(true);
+    setError(undefined);
     try {
       await session.resetPassword({ token, password: newPassword });
       setStep("done");
     } catch (err) {
-      if (err instanceof ApiError && err.type === "invalid-one-time-token") setStep("invalid");
-      // パスワードが制約を満たさない（422）ときの表示はデザインにない（docs/ui/README.md の「未解決」）。
-      // トークンは消費されていないので、フォームを戻して入力し直せるようにする。
+      if (err instanceof ApiError && err.type === "invalid-one-time-token") {
+        setStep("invalid");
+        return;
+      }
+      // パスワードが制約を満たさない（422）ときは、トークンは消費されていないので、同じリンクのまま入力し直せる。
+      const message = resetPasswordErrorMessage(err);
+      if (message) setError(message);
+      // 通信の失敗や 500 の表示はデザインにない（docs/ui/README.md の「未解決」）。
       else console.error("resetting the password failed", err);
     } finally {
       setSubmitting(false);
@@ -43,6 +51,7 @@ export function ResetPasswordPage({ token }: { token: string }) {
     <AuthShell>
       {step === "form" && (
         <ResetPasswordForm
+          error={error}
           passwordStrength={passwordStrength(password)}
           onPasswordChange={setPassword}
           submitting={submitting}

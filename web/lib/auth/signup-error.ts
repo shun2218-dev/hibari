@@ -1,7 +1,7 @@
 import { ApiError } from "@/lib/api/error";
 
 /** 登録の入力エラーの文言。項目と reason はサーバーの検証（internal/auth/validate.go）に合わせる。 */
-const fieldMessages: Record<string, Record<string, string>> = {
+export const fieldMessages: Record<string, Record<string, string>> = {
   display_name: {
     required: "表示名を入力してください。",
     too_long: "表示名は50文字以内にしてください。",

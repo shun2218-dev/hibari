@@ -38,12 +38,12 @@ describe("VerifyEmailPage", () => {
     expect(router.push).toHaveBeenCalledWith("/");
   });
 
-  it("shows nothing until the result arrives", () => {
+  it("shows that it is checking until the result arrives", () => {
     renderWithSession(<VerifyEmailPage token="tok-1" />, {
       "POST /api/v1/auth/verify-email/confirm": () => new Promise<Response>(() => {}),
     });
 
-    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "メールアドレスを確認しています" })).toBeInTheDocument();
   });
 
   it("resends from the invalid link when signed in", async () => {
