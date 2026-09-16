@@ -21,9 +21,9 @@ Phase 6-2 で、Next.js のデータ層が REST のレスポンスと WebSocket 
   - リクエストの struct は、値の検証をドメインが行うので `string` のまま受け、生成器の上書き（`tsFieldTypes`）で union にする。
   - Problem の type（`problemType`）、ack の error（`ackError`）、クライアントのメッセージの type（`clientMessageType`）も名前付きの型の const にする。
 - 変換の規則
-  - ポインタは `T | null`、`omitempty` は `field?:`。リクエストではポインタを「省略してよい」として `field?: T | null`。
+  - ポインタは `T | null`、`omitempty` / `omitzero` は `field?:`。リクエストではポインタを「省略してよい」として `field?: T | null`。
   - 埋め込んだ struct は展開する。`time.Time` は `string`、数値は `number`。
-  - スライスと map は `T[]` / `Record<string, T>`（ハンドラが `make` で作り、`null` にしない前提）。
+  - スライスと map は `T[]` / `Record<string, T>`（`encoding/json/v2` は `nil` を `null` にしない。ADR 0023）。
   - Go のフィールドのコメントを JSDoc として出す。
 - イベントは `ServerEvent`（`type` で `data` が決まる discriminated union）として出す。`data` の型は、生成器が本番の `eventData` に chat のデータを渡して決める。
 - 3 つの検査で登録の漏れを防ぐ。
@@ -47,7 +47,7 @@ Phase 6-2 で、Next.js のデータ層が REST のレスポンスと WebSocket 
 ## 結果（トレードオフ）
 
 - レスポンスの struct を足したら `tsDecls` に登録し、`make ts-types` を実行する必要がある（忘れると `go test` が落ちる）。
-- `null` にならないはずのスライスや map を、ハンドラが `nil` のまま返すと型と食い違う（`encoding/json` の v1 は `nil` を `null` にする）。生成器は検査しない。
-  JSON の処理を `encoding/json/v2`（`nil` のスライスを `[]`、`nil` の map を `{}` にする）に移し、登録した型をゼロ値で書き出して `null` が出ないことを確かめるテストを足して解消する（別の PR）。
+- `encoding/json` の v1 は `nil` のスライスや map を `null` にするので、ハンドラが `make` し忘れると型と食い違う。
+  → ADR 0023 で JSON の処理を `encoding/json/v2` に移し、登録した型をゼロ値で書き出して `null` が出ないことを確かめるテストを足して解消した。
 - テストが `web/` のファイルを読み書きするので、`internal/httpx` のテストはリポジトリ全体がそろった状態で実行する必要がある（compose の `/src` と CI はそうなっている）。
 - エンドポイントの URL やメソッドと、リクエスト・レスポンスの型の対応は生成しない。データ層の API クライアントに手で書く。

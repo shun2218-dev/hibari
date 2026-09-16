@@ -90,13 +90,13 @@ func newUserResponse(u auth.User) *userResponse {
 
 // tokenResponse はトークンを返すレスポンス。フィールド名は OAuth 2.0 のトークンレスポンス（RFC 6749 §5.1）に寄せる。
 type tokenResponse struct {
-	User        *userResponse `json:"user,omitempty"`
+	User        *userResponse `json:"user,omitzero"`
 	AccessToken string        `json:"access_token"`
 	TokenType   string        `json:"token_type"`
 	ExpiresIn   int           `json:"expires_in"`
 	// Refresh Token はボディ方式のときだけ入る。Cookie 方式ではレスポンスのボディに出さない。
 	RefreshToken          string     `json:"refresh_token,omitempty"`
-	RefreshTokenExpiresAt *time.Time `json:"refresh_token_expires_at,omitempty"`
+	RefreshTokenExpiresAt *time.Time `json:"refresh_token_expires_at,omitzero"`
 }
 
 func (h *authHandlers) writeSession(w http.ResponseWriter, r *http.Request, status int, u *auth.User, s auth.Session) {

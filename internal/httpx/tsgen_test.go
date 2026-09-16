@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"bytes"
+	"encoding/json/v2"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -30,9 +31,9 @@ import (
 // 変換の規則
 //   - struct は interface に、ここに登録した名前で出す。登録していない struct を参照したら失敗する。
 //   - 埋め込んだ struct のフィールドは展開する（encoding/json と同じ）。
-//   - ポインタは null になりうる（`T | null`）。omitempty は省略されうる（`field?:`）。
+//   - ポインタは null になりうる（`T | null`）。omitempty / omitzero は省略されうる（`field?:`）。
 //     リクエストでは、ポインタも「省略してよい」の意味なので `field?: T | null` にする。
-//   - スライスと map は、ハンドラが make で作る（null にしない）前提で `T[]` / `Record<string, T>`。
+//   - スライスと map は `T[]` / `Record<string, T>`。encoding/json/v2 は nil を null にしない（TestTypeScriptResponsesHaveNoUnexpectedNull）。
 //   - time.Time は RFC 3339 の文字列。数値は number（seq は 2^53 を超えない）。
 //   - 名前付きの string 型は、登録した値の union にする。値の漏れは Go のソースの const と照らして検査する。
 var updateTS = flag.Bool("update", false, "web/lib/api/types.gen.ts を書き直す")
@@ -438,7 +439,8 @@ func jsonFields(t reflect.Type, request bool) ([]tsField, error) {
 			return nil, fmt.Errorf("%s.%s: missing json tag", t.Name(), sf.Name)
 		}
 		f := tsField{goType: t.Name(), goName: sf.Name, jsonName: name, typ: sf.Type}
-		omitempty := slices.Contains(strings.Split(opts, ","), "omitempty")
+		tagOpts := strings.Split(opts, ",")
+		omitempty := slices.Contains(tagOpts, "omitempty") || slices.Contains(tagOpts, "omitzero")
 		if f.typ.Kind() == reflect.Pointer {
 			f.typ = f.typ.Elem()
 			switch {
@@ -593,3 +595,55 @@ func parsePackageDir(fset *token.FileSet, dir string) ([]*ast.File, error) {
 	}
 	return files, nil
 }
+
+// 登録したレスポンスの型をゼロ値のまま marshalJSON で書き出し、生成した型が null を許さないフィールドに null が出ないこと。
+// nil のスライスや map はゼロ値そのものなので、ハンドラが make し忘れた場合と同じ JSON になる（ADR 0022）。
+func TestTypeScriptResponsesHaveNoUnexpectedNull(t *testing.T) {
+	for _, d := range tsDecls {
+		if d.request {
+			continue
+		}
+		t.Run(d.name, func(t *testing.T) {
+			b, err := marshalJSON(reflect.New(d.typ).Elem().Interface())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var v any
+			if err := unmarshalJSONForTest(b, &v); err != nil {
+				t.Fatal(err)
+			}
+			checkNoUnexpectedNull(t, d.name, d.typ, v)
+		})
+	}
+}
+
+func checkNoUnexpectedNull(t *testing.T, path string, typ reflect.Type, v any) {
+	t.Helper()
+	obj, ok := v.(map[string]any)
+	if !ok {
+		t.Errorf("%s: want a JSON object, got %T", path, v)
+		return
+	}
+	fields, err := jsonFields(typ, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fields {
+		p := path + "." + f.jsonName
+		val, present := obj[f.jsonName]
+		switch {
+		case !present:
+			if !f.optional {
+				t.Errorf("%s: missing, but the TypeScript type requires it", p)
+			}
+		case val == nil:
+			if !f.nullable {
+				t.Errorf("%s: null, but the TypeScript type does not allow null", p)
+			}
+		case f.typ.Kind() == reflect.Struct && f.typ != timeType:
+			checkNoUnexpectedNull(t, p, f.typ, val)
+		}
+	}
+}
+
+func unmarshalJSONForTest(b []byte, v any) error { return json.Unmarshal(b, v) }

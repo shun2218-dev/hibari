@@ -163,7 +163,7 @@ type workspaceResponse struct {
 	InvitePolicy authz.InvitePolicy `json:"invite_policy"`
 	MyRole       authz.Role         `json:"my_role"`
 	// MemberCount は 1 件の取得でだけ返す。
-	MemberCount *int64    `json:"member_count,omitempty"`
+	MemberCount *int64    `json:"member_count,omitzero"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -535,8 +535,8 @@ type roomResponse struct {
 	IsDefault bool    `json:"is_default"`
 	IsMember  bool    `json:"is_member"`
 	// MemberCount は 1 件の取得でだけ返す。
-	MemberCount    *int64          `json:"member_count,omitempty"`
-	DMPeer         *dmPeerResponse `json:"dm_peer,omitempty"`
+	MemberCount    *int64          `json:"member_count,omitzero"`
+	DMPeer         *dmPeerResponse `json:"dm_peer,omitzero"`
 	LastMessageSeq int64           `json:"last_message_seq"`
 	LastMessageAt  *time.Time      `json:"last_message_at"`
 	// LastReadSeq はルームのメンバーでなければ null。

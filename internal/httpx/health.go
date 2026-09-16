@@ -2,7 +2,6 @@ package httpx
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -64,6 +63,8 @@ func Healthz(logger *slog.Logger, timeout time.Duration, checks ...HealthCheck) 
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(resp)
+		if b, err := marshalJSON(resp); err == nil {
+			_, _ = w.Write(b)
+		}
 	})
 }

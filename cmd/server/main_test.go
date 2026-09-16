@@ -7,7 +7,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
-	"encoding/json"
+	"encoding/json/v2"
 	"encoding/pem"
 	"io"
 	"net/http"
@@ -149,7 +149,7 @@ func dialWebSocket(ctx context.Context, t *testing.T, addr string) *websocket.Co
 		}
 		defer func() { _ = resp.Body.Close() }()
 		var out map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || resp.StatusCode >= 300 {
+		if err := json.UnmarshalRead(resp.Body, &out); err != nil || resp.StatusCode >= 300 {
 			t.Fatalf("POST %s = %d, %v: %v", path, resp.StatusCode, err, out)
 		}
 		return out

@@ -2,7 +2,7 @@ package httpx
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -196,7 +196,7 @@ func (h *wsHandlers) serve(ctx context.Context, conn *websocket.Conn, id authn.I
 // clientMessage はクライアントからのメッセージ（docs/events.md「クライアント → サーバー」）。
 type clientMessage struct {
 	Type clientMessageType `json:"type"`
-	ID   *string           `json:"id,omitempty"`
+	ID   *string           `json:"id,omitzero"`
 	// RoomID と WorkspaceID は、subscribe / unsubscribe ではどちらか 1 つ、typing では room_id だけを使う。
 	RoomID      string `json:"room_id,omitempty"`
 	WorkspaceID string `json:"workspace_id,omitempty"`
@@ -217,7 +217,7 @@ const ackType = "ack"
 
 type ackMessage struct {
 	Type  string   `json:"type"`
-	ID    *string  `json:"id,omitempty"`
+	ID    *string  `json:"id,omitzero"`
 	Error ackError `json:"error,omitempty"`
 }
 
@@ -432,7 +432,7 @@ func (c *wsConn) write(f wsFrame) bool {
 		err error
 	)
 	if f.ack != nil {
-		b, err = json.Marshal(f.ack)
+		b, err = marshalJSON(f.ack)
 	} else {
 		b, err = encodeEvent(*f.event)
 	}
@@ -537,7 +537,7 @@ func encodeEvent(ev chat.Event) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode %s: %w", ev.Type, err)
 	}
-	return json.Marshal(serverEvent{Type: ev.Type, Data: data})
+	return marshalJSON(serverEvent{Type: ev.Type, Data: data})
 }
 
 // eventData は chat のイベントのデータを JSON の形に変換する。メッセージは REST と同じ形（newMessageResponse）を使う。

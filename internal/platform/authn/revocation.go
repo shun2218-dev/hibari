@@ -2,7 +2,7 @@ package authn
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -28,9 +28,9 @@ type Revocation struct {
 // revocationMessage はチャンネルに流す JSON の形。
 // {"sid": "..."} または {"user_id": "...", "all": true}（ADR 0007）。
 type revocationMessage struct {
-	SessionID *ulid.ULID `json:"sid,omitempty"`
-	UserID    *ulid.ULID `json:"user_id,omitempty"`
-	All       bool       `json:"all,omitempty"`
+	SessionID *ulid.ULID `json:"sid,omitzero"`
+	UserID    *ulid.ULID `json:"user_id,omitzero"`
+	All       bool       `json:"all,omitzero"`
 }
 
 var errMalformedRevocation = errors.New("authn: malformed revocation message")
