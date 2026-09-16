@@ -125,7 +125,6 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	// 同じプロセスなので公開鍵を直接渡す。auth を別プロセスに切り出したら、JWKS を取得して渡す形に変える（ADR 0001）。
 	verifier := authn.NewVerifier([]authn.PublicKey{accessTokens.PublicKey()}, cfg.JWTIssuer, cfg.JWTAudience, clk)
 
-
 	// WebSocket の配信（ADR 0015 / 0016）。イベントは Redis Pub/Sub で全インスタンスに流し、各インスタンスの Hub が自分の接続に届ける。
 	broker, err := realtime.NewBroker(startupCtx, rdb, instanceID, logger)
 	if err != nil {
@@ -201,7 +200,9 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 			{Name: "redis", Check: func(ctx context.Context) error { return rdb.Ping(ctx).Err() }},
 		},
 		// 前段のプロキシ（ローカルは Caddy、本番は Fly のプロキシ）。空なら X-Forwarded-For を読まない（ADR 0017）。
-		TrustedProxies:      cfg.TrustedProxies,
+		TrustedProxies: cfg.TrustedProxies,
+		// Web クライアントはブラウザから API を直接呼ぶ（ADR 0021）。
+		AllowedOrigins:      []string{httpx.OriginOf(cfg.AppBaseURL)},
 		Auth:                authService,
 		Verifier:            verifier,
 		JWKS:                jwks,
