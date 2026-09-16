@@ -77,7 +77,13 @@ export function LeaveBlockedDialog({
   );
 }
 
-export type TransferCandidate = { id: string; name: string; handle: string; role: Exclude<WorkspaceRole, "owner"> };
+export type TransferCandidate = {
+  id: string;
+  name: string;
+  handle: string;
+  avatarUrl?: string;
+  role: Exclude<WorkspaceRole, "owner">;
+};
 
 export function TransferOwnershipPickDialog({
   open,
@@ -121,7 +127,7 @@ export function TransferOwnershipPickDialog({
             value={candidate.id}
             checked={candidate.id === selectedId}
             onChange={onSelect}
-            leading={<Avatar id={candidate.id} name={candidate.name} size="sm" />}
+            leading={<Avatar id={candidate.id} name={candidate.name} imageUrl={candidate.avatarUrl} size="sm" />}
             title={candidate.name}
             description={<span className="font-mono">@{candidate.handle}</span>}
             trailing={<span className="text-2xs text-text-secondary">{roleLabel[candidate.role]}</span>}

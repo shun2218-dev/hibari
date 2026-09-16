@@ -42,7 +42,7 @@ export function MemberList({ members, openMenu = null, onOpenMenu, onCloseMenu, 
               key={member.id}
               className={cx("relative flex items-center gap-3 px-3.5 py-3", index > 0 && "border-t border-border")}
             >
-              <Avatar id={member.id} name={member.name} size="md" online={member.online} />
+              <Avatar id={member.id} name={member.name} imageUrl={member.avatarUrl} size="md" online={member.online} />
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2">
                   <span className="truncate text-base font-semibold text-text">{member.name}</span>

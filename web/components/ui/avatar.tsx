@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+
 import { type AvatarColor, avatarColor, avatarInitial } from "@/lib/avatar";
 import { cx } from "@/lib/cx";
 
@@ -34,6 +38,11 @@ type AvatarProps = {
   /** 色を決める不変の ID（ユーザー ID / ワークスペース ID）。 */
   id: string;
   name: string;
+  /**
+   * 画像の URL（署名付き。ADR 0020）。設定していない人や、読み込みに失敗したときは頭文字に戻す。
+   * 期限切れの URL でも画面が崩れないよう、失敗したら黙って頭文字にする。
+   */
+  imageUrl?: string;
   size?: AvatarSize;
   /**
    * ユーザーは円、ワークスペースは角丸の四角にする（同じ頭文字でも人と場所を見分けられるように）。
@@ -44,20 +53,33 @@ type AvatarProps = {
   className?: string;
 };
 
-export function Avatar({ id, name, size = "lg", shape = "circle", online = false, className }: AvatarProps) {
+export function Avatar({ id, name, imageUrl, size = "lg", shape = "circle", online = false, className }: AvatarProps) {
+  const [failed, setFailed] = useState(false);
+  const radius = shape === "circle" ? "rounded-full" : size === "xl" ? "rounded-lg" : "rounded-sm";
   return (
     <span className={cx("relative inline-flex shrink-0", className)}>
-      <span
-        aria-hidden
-        className={cx(
-          "inline-flex items-center justify-center font-semibold text-on-avatar select-none",
-          colorClass[avatarColor(id)],
-          sizeClass[size],
-          shape === "circle" ? "rounded-full" : size === "xl" ? "rounded-lg" : "rounded-sm",
-        )}
-      >
-        {avatarInitial(name)}
-      </span>
+      {imageUrl && !failed ? (
+        // 署名付き URL は短命で、next/image の最適化（サーバー経由の取得）も使えないので img を使う
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageUrl}
+          alt=""
+          onError={() => setFailed(true)}
+          className={cx("object-cover", sizeClass[size], radius)}
+        />
+      ) : (
+        <span
+          aria-hidden
+          className={cx(
+            "inline-flex items-center justify-center font-semibold text-on-avatar select-none",
+            colorClass[avatarColor(id)],
+            sizeClass[size],
+            radius,
+          )}
+        >
+          {avatarInitial(name)}
+        </span>
+      )}
       {online && (
         <span
           role="img"

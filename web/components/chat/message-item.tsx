@@ -67,7 +67,7 @@ export function MessageItem({
       {message.grouped ? (
         <span aria-hidden className="w-8 shrink-0 md:w-10" />
       ) : (
-        <Avatar id={sender.id} name={sender.name} size="message" className="mt-0.5" />
+        <Avatar id={sender.id} name={sender.name} imageUrl={sender.avatarUrl} size="message" className="mt-0.5" />
       )}
 
       <div className="min-w-0 flex-1">

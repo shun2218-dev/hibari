@@ -66,6 +66,7 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "chat/composer-reply", title: "返信先を選んだ入力欄" },
   { name: "chat/account-menu", title: "アカウントメニュー" },
   { name: "chat/search-empty", title: "チャンネル検索の 0 件" },
+  { name: "chat/avatar-images", title: "画像のアバター" },
   { name: "chat/server-error", title: "サーバーに接続できない" },
   { name: "chat/mobile-rooms", title: "チャンネル一覧（モバイル）", mobile: true },
   { name: "chat/mobile-room", title: "ルーム（モバイル）", mobile: true },
@@ -103,6 +104,9 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "settings/profile", title: "プロフィール" },
   { name: "settings/devices", title: "ログイン中のデバイス" },
   { name: "settings/devices-dark", title: "ログイン中のデバイス（ダーク）", dark: true },
+  { name: "settings/profile-avatar", title: "プロフィール: 画像あり" },
+  { name: "settings/profile-avatar-uploading", title: "プロフィール: アップロード中" },
+  { name: "settings/profile-avatar-failed", title: "プロフィール: アップロード失敗" },
   { name: "settings/appearance", title: "外観" },
   { name: "settings/mobile-list", title: "設定の一覧（モバイル）", mobile: true },
 ];

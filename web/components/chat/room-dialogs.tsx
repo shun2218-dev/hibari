@@ -143,7 +143,7 @@ export function StartDmDialog({
             value={candidate.id}
             checked={candidate.id === selectedId}
             onChange={onSelect}
-            leading={<Avatar id={candidate.id} name={candidate.name} size="sm" online={candidate.online} />}
+            leading={<Avatar id={candidate.id} name={candidate.name} imageUrl={candidate.avatarUrl} size="sm" online={candidate.online} />}
             title={candidate.name}
             description={<span className="font-mono">@{candidate.handle}</span>}
           />
@@ -230,7 +230,7 @@ export function RoomSettingsDialog({
                 key={member.id}
                 className={`flex items-center gap-2.5 px-3.5 py-2.5 ${index > 0 ? "border-t border-border" : ""}`}
               >
-                <Avatar id={member.id} name={member.name} size="sm" />
+                <Avatar id={member.id} name={member.name} imageUrl={member.avatarUrl} size="sm" />
                 <span className="min-w-0 flex-1 truncate text-base font-semibold text-text">{member.name}</span>
                 {member.isSelf ? (
                   <Badge tone="primary">あなた</Badge>

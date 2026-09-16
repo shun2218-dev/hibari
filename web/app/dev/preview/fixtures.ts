@@ -9,6 +9,16 @@ import type { TransferCandidate } from "@/components/workspace/member-dialogs";
 import type { InviteRowView, MemberRowView, WorkspaceRole } from "@/components/workspace/types";
 import type { DeviceView } from "@/components/settings/settings-sections";
 
+/**
+ * /dev/preview のモックのアバター画像（public/dev/）。
+ * 本物は署名付き URL（ADR 0020）で、ここでは静的なファイルで代用する。
+ */
+export const mockAvatars = {
+  you: "/dev/avatar-1.png",
+  miyuki: "/dev/avatar-2.png",
+  naoki: "/dev/avatar-3.png",
+} as const;
+
 export const users = {
   you: { id: "01J8ZH5K000000000000000001", name: "あなた", handle: "you" },
   naoki: { id: "01J8ZH5K000000000000000002", name: "佐藤 直樹", handle: "naoki" },
@@ -89,6 +99,7 @@ const naoki = { id: users.naoki.id, name: users.naoki.name };
 const miyuki = { id: users.miyuki.id, name: users.miyuki.name };
 const ryo = { id: users.ryo.id, name: users.ryo.name };
 
+
 function message(
   key: string,
   sender: UserRef,
@@ -133,6 +144,17 @@ export const timeline: TimelineItem[] = [
   { type: "unread", key: "unread" },
   message("m-1105", ryo, "11:05", "ありがとうございます。こちらはメンバー一覧の presence 表示を確認しておきます。"),
 ];
+
+/**
+ * 画像を設定している人と、していない人が混ざった状態（chat/avatar-images.png）。
+ * 一覧では、画像のある人だけが差し替わる。
+ */
+export const timelineWithAvatars: TimelineItem[] = timeline.map((item) => {
+  if (item.type !== "message") return item;
+  const avatarUrl = { [users.miyuki.id]: mockAvatars.miyuki, [users.naoki.id]: mockAvatars.naoki }[item.message.sender.id];
+  if (!avatarUrl) return item;
+  return { ...item, message: { ...item.message, sender: { ...item.message.sender, avatarUrl } } };
+});
 
 export const roomMembers: RoomMemberView[] = [
   { ...naoki, online: true, roleLabel: "オーナー" },
@@ -234,3 +256,4 @@ export const devices: DeviceView[] = [
   { id: "s-4", kind: "browser", name: "Safari · iPadOS", lastActiveLabel: "3日前", current: false },
   { id: "s-5", kind: "desktop", name: "Firefox · Windows 11", lastActiveLabel: "9月2日", current: false },
 ];
+

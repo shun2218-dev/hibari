@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { avatarColor } from "@/lib/avatar";
@@ -20,5 +20,29 @@ describe("Avatar", () => {
 
     rerender(<Avatar id="u1" name="あなた" online={false} />);
     expect(screen.queryByRole("img", { name: "オンライン" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Avatar with an image", () => {
+  it("shows the image instead of the initial", () => {
+    render(<Avatar id="u1" name="あなた" imageUrl="https://storage.test/a.png" />);
+
+    expect(screen.getByRole("presentation", { hidden: true })).toHaveAttribute("src", "https://storage.test/a.png");
+    expect(screen.queryByText("あ")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the initial when the image cannot be loaded", () => {
+    // 署名付き URL は期限切れになりうる。失敗しても画面が崩れないよう、頭文字に戻す（ADR 0020）。
+    render(<Avatar id="u1" name="あなた" imageUrl="https://storage.test/expired.png" />);
+
+    fireEvent.error(screen.getByRole("presentation", { hidden: true }));
+
+    expect(screen.getByText("あ")).toBeInTheDocument();
+  });
+
+  it("keeps presence next to the image", () => {
+    render(<Avatar id="u1" name="あなた" imageUrl="https://storage.test/a.png" online />);
+
+    expect(screen.getByRole("img", { name: "オンライン" })).toBeInTheDocument();
   });
 });

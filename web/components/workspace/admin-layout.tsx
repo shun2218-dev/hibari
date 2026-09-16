@@ -12,7 +12,7 @@ export type AdminSection = "settings" | "members" | "invites";
 
 type WorkspaceAdminLayoutProps = {
   workspace: { id: string; name: string };
-  currentUser: { id: string; name: string; role: WorkspaceRole };
+  currentUser: { id: string; name: string; avatarUrl?: string; role: WorkspaceRole };
   section: AdminSection;
   memberCount: number;
   activeInviteCount: number;
@@ -76,7 +76,7 @@ export function WorkspaceAdminLayout({
           </ul>
         </nav>
         <div className="flex h-12.5 items-center gap-3 border-t border-border px-4">
-          <Avatar id={currentUser.id} name={currentUser.name} size="xs" />
+          <Avatar id={currentUser.id} name={currentUser.name} imageUrl={currentUser.avatarUrl} size="xs" />
           <span className="flex-1 truncate text-sm text-text-secondary">{currentUser.name}</span>
           <Badge>{roleLabel[currentUser.role]}</Badge>
         </div>

@@ -7,7 +7,8 @@
 
 export type RoomKind = "public" | "private" | "dm";
 
-export type UserRef = { id: string; name: string };
+/** 画面に出すユーザー。avatarUrl は画像があるときだけ（署名付き。ADR 0020）。 */
+export type UserRef = { id: string; name: string; avatarUrl?: string };
 
 export type WorkspaceRef = { id: string; name: string };
 
@@ -17,7 +18,7 @@ export type RoomSummaryView = {
   /** public / private はルーム名、DM は相手の表示名。 */
   name: string;
   /** DM の相手。アバターと presence に使う。 */
-  peer?: { id: string; online: boolean };
+  peer?: { id: string; online: boolean; avatarUrl?: string };
   /** 最後のメッセージの 1 行。チャンネルは「送信者: 本文」、DM は本文だけ。 */
   lastMessage?: string;
   timeLabel?: string;

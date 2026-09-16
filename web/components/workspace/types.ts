@@ -24,6 +24,8 @@ export type MemberRowView = {
   id: string;
   name: string;
   handle: string;
+  /** アバター画像の URL（署名付き。ADR 0020）。なければ頭文字を出す。 */
+  avatarUrl?: string;
   online: boolean;
   role: WorkspaceRole;
   isSelf: boolean;

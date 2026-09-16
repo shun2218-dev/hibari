@@ -74,7 +74,7 @@ export function Sidebar({
           aria-haspopup="dialog"
           className="rounded-full"
         >
-          <Avatar id={currentUser.id} name={currentUser.name} size="sm" />
+          <Avatar id={currentUser.id} name={currentUser.name} imageUrl={currentUser.avatarUrl} size="sm" />
         </button>
         {switcherOpen && switcher}
         {accountMenuOpen && accountMenu}
@@ -153,7 +153,7 @@ function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string
       >
         {selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-primary" />}
         {room.kind === "dm" ? (
-          <Avatar id={room.peer?.id ?? room.id} name={room.name} size="md" online={room.peer?.online} />
+          <Avatar id={room.peer?.id ?? room.id} name={room.name} imageUrl={room.peer?.avatarUrl} size="md" online={room.peer?.online} />
         ) : (
           <span className="flex w-4 shrink-0 justify-center self-start pt-1 text-text-secondary">
             {room.kind === "public" ? (

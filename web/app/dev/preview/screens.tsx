@@ -63,6 +63,7 @@ import {
   currentUser,
   devices,
   dmCandidates,
+  mockAvatars,
   roomSettingsMembers,
   invitesAs,
   membersAs,
@@ -71,6 +72,7 @@ import {
   rooms,
   selectedRoom,
   timeline,
+  timelineWithAvatars,
   transferCandidates,
   typingNames,
   users,
@@ -95,6 +97,8 @@ function login(error?: "credentials" | "rate_limited") {
 // ---- チャット ----
 
 type ChatOptions = {
+  /** アバター画像を設定している人が混ざったタイムラインにする。 */
+  avatars?: boolean;
   banner?: ConnectionBannerStatus;
   attachments?: AttachmentDraftView[];
   hoveredKey?: string;
@@ -115,6 +119,7 @@ type ChatOptions = {
 };
 
 function chat({
+  avatars,
   banner,
   attachments,
   hoveredKey,
@@ -163,7 +168,7 @@ function chat({
         <ConnectionBanner status={banner ?? null} />
         {body === "timeline" && (
           <Timeline
-            items={timeline}
+            items={avatars ? timelineWithAvatars : timeline}
             hoveredKey={hoveredKey}
             actionsFor={(key) => ({ canEdit: key === pendingMessageKey, canDelete: key === pendingMessageKey })}
             openMenuKey={menuKey}
@@ -337,6 +342,7 @@ export const previewScreens: Record<string, () => ReactNode> = {
     chat({ replyTo: { senderName: users.naoki.name, body: "4px だと主張が強すぎて、名前より先に目が行ってしまう。" } }),
   "chat/account-menu": () => chat({ accountMenu: true }),
   "chat/search-empty": () => chat({ noRooms: true, search: "見積" }),
+  "chat/avatar-images": () => chat({ avatars: true }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),
   "chat/mobile-room": () => chat(),
   "chat/mobile-members-sheet": () => chat({ members: true }),
@@ -387,6 +393,29 @@ export const previewScreens: Record<string, () => ReactNode> = {
     userSettings("profile", <ProfileSettings user={{ id: users.you.id, displayName: users.you.name, handle: users.you.handle }} />),
   "settings/devices": () => userSettings("devices", <DevicesSettings devices={devices} />),
   "settings/devices-dark": () => userSettings("devices", <DevicesSettings devices={devices} />),
+  "settings/profile-avatar": () =>
+    userSettings(
+      "profile",
+      <ProfileSettings
+        user={{ id: users.you.id, displayName: users.you.name, handle: users.you.handle, avatarUrl: mockAvatars.you }}
+      />,
+    ),
+  "settings/profile-avatar-uploading": () =>
+    userSettings(
+      "profile",
+      <ProfileSettings
+        avatarState="uploading"
+        user={{ id: users.you.id, displayName: users.you.name, handle: users.you.handle, avatarUrl: mockAvatars.you }}
+      />,
+    ),
+  "settings/profile-avatar-failed": () =>
+    userSettings(
+      "profile",
+      <ProfileSettings
+        avatarState="failed"
+        user={{ id: users.you.id, displayName: users.you.name, handle: users.you.handle }}
+      />,
+    ),
   "settings/appearance": () => userSettings("appearance", <AppearanceSettings theme="light" density="comfortable" />),
   "settings/mobile-list": () => <SettingsMobileMenu hrefs={settingsHrefs} />,
 };

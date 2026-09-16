@@ -25,7 +25,7 @@ export function MembersPanel({ members, onClose }: { members: RoomMemberView[]; 
         <ul className="min-h-0 overflow-y-auto py-2">
           {members.map((member) => (
             <li key={member.id} className="flex items-center gap-2.5 px-4 py-2">
-              <Avatar id={member.id} name={member.name} size="sm" online={member.online} />
+              <Avatar id={member.id} name={member.name} imageUrl={member.avatarUrl} size="sm" online={member.online} />
               <div className="min-w-0">
                 <p className="truncate text-base font-semibold text-text">{member.name}</p>
                 <p className="text-2xs text-text-muted">{member.roleLabel}</p>
