@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import { SessionProvider } from "@/lib/auth/session-provider";
+
 import { instrumentSans, jetBrainsMono, zenKakuGothicNew } from "./fonts";
 import "./globals.css";
 
@@ -13,7 +15,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="ja"
       className={`${instrumentSans.variable} ${zenKakuGothicNew.variable} ${jetBrainsMono.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        <SessionProvider>{children}</SessionProvider>
+      </body>
     </html>
   );
 }

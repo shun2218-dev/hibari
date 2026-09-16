@@ -41,6 +41,16 @@ describe("email verification screens", () => {
     expect(onResend).toHaveBeenCalledOnce();
   });
 
+  it("offers changing the address only when it is possible", async () => {
+    const { rerender } = render(<VerifyEmailPending email="naoki@example.com" />);
+    expect(screen.queryByRole("button", { name: "別のアドレスに変更する" })).not.toBeInTheDocument();
+
+    const onChangeEmail = vi.fn();
+    rerender(<VerifyEmailPending email="naoki@example.com" onChangeEmail={onChangeEmail} />);
+    await userEvent.click(screen.getByRole("button", { name: "別のアドレスに変更する" }));
+    expect(onChangeEmail).toHaveBeenCalledOnce();
+  });
+
   it("disables resending while a resend is in flight", () => {
     render(<VerifyEmailPending email="naoki@example.com" resending />);
 

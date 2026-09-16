@@ -86,6 +86,9 @@ const roomHref = () => noHref;
 
 const goodStrength = { level: 3, label: "良い" } as const;
 
+// 渡したときだけ出る操作を、スクリーンショットと同じく出しておくための何もしないハンドラ。
+const noop = () => {};
+
 function auth(children: ReactNode, footer?: ReactNode) {
   return <AuthShell footer={footer}>{children}</AuthShell>;
 }
@@ -285,7 +288,7 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "auth/reset": () => auth(<ResetPasswordForm passwordStrength={goodStrength} passwordDefaultValue="correct-horse" />),
   "auth/reset-done": () => auth(<ResetPasswordDone />),
   "auth/reset-invalid": () => auth(<ResetPasswordInvalid loginHref={noHref} />),
-  "auth/verify-pending": () => auth(<VerifyEmailPending email="naoki@example.com" />),
+  "auth/verify-pending": () => auth(<VerifyEmailPending email="naoki@example.com" onChangeEmail={noop} />),
   "auth/verify-done": () => auth(<VerifyEmailDone />),
   "auth/verify-invalid": () => auth(<VerifyEmailInvalid />),
 
