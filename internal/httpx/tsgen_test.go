@@ -81,7 +81,9 @@ type tsDecl struct {
 }
 
 func response[T any](name string) tsDecl { return tsDecl{name: name, typ: reflect.TypeFor[T]()} }
-func request[T any](name string) tsDecl  { return tsDecl{name: name, typ: reflect.TypeFor[T](), request: true} }
+func request[T any](name string) tsDecl {
+	return tsDecl{name: name, typ: reflect.TypeFor[T](), request: true}
+}
 
 // tsDecls は出力する型。出力の順序もこの順。
 var tsDecls = []tsDecl{
