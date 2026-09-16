@@ -124,6 +124,63 @@ func (q *Queries) IsSessionActive(ctx context.Context, arg IsSessionActiveParams
 	return column_1, err
 }
 
+const listActiveSessions = `-- name: ListActiveSessions :many
+SELECT family_id, user_agent, last_used_at, started_at
+  FROM (
+    SELECT DISTINCT ON (rt.family_id)
+           rt.family_id,
+           rt.user_agent,
+           rt.created_at AS last_used_at,
+           (SELECT min(f.created_at) FROM refresh_tokens f WHERE f.family_id = rt.family_id)::timestamptz AS started_at
+      FROM refresh_tokens rt
+     WHERE rt.user_id = $1
+       AND rt.revoked_at IS NULL
+       AND rt.expires_at > $2::timestamptz
+     ORDER BY rt.family_id, rt.created_at DESC
+  ) s
+ ORDER BY s.last_used_at DESC
+`
+
+type ListActiveSessionsParams struct {
+	UserID ulid.ULID
+	Now    time.Time
+}
+
+type ListActiveSessionsRow struct {
+	FamilyID   ulid.ULID
+	UserAgent  *string
+	LastUsedAt time.Time
+	StartedAt  time.Time
+}
+
+// 設定画面の「ログイン中のデバイス」（ADR 0019）。
+// セッション（family）ごとに 1 行にまとめる。family の中で未失効なのは最新の 1 行だけなので、
+// その行の user_agent を「その端末」の情報として使い、family の最初の行の時刻をログインの時刻とする。
+func (q *Queries) ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]ListActiveSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveSessions, arg.UserID, arg.Now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveSessionsRow{}
+	for rows.Next() {
+		var i ListActiveSessionsRow
+		if err := rows.Scan(
+			&i.FamilyID,
+			&i.UserAgent,
+			&i.LastUsedAt,
+			&i.StartedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markRefreshTokenRotated = `-- name: MarkRefreshTokenRotated :exec
 UPDATE refresh_tokens
    SET revoked_at     = $1::timestamptz,
@@ -164,6 +221,50 @@ func (q *Queries) RevokeAllRefreshTokensForUser(ctx context.Context, arg RevokeA
 	return result.RowsAffected(), nil
 }
 
+const revokeOtherSessions = `-- name: RevokeOtherSessions :many
+UPDATE refresh_tokens
+   SET revoked_at     = $1::timestamptz,
+       revoked_reason = $2::text
+ WHERE user_id = $3
+   AND family_id <> $4
+   AND revoked_at IS NULL
+RETURNING family_id
+`
+
+type RevokeOtherSessionsParams struct {
+	Now          time.Time
+	Reason       string
+	UserID       ulid.ULID
+	KeepFamilyID ulid.ULID
+}
+
+// いま使っているセッション以外をすべて失効させ、失効した family を返す（呼び出し側が失効イベントを publish する）。
+// 1 つの family に複数の行があれば同じ family_id が複数返るので、呼び出し側で重複を除く。
+func (q *Queries) RevokeOtherSessions(ctx context.Context, arg RevokeOtherSessionsParams) ([]ulid.ULID, error) {
+	rows, err := q.db.Query(ctx, revokeOtherSessions,
+		arg.Now,
+		arg.Reason,
+		arg.UserID,
+		arg.KeepFamilyID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ulid.ULID{}
+	for rows.Next() {
+		var family_id ulid.ULID
+		if err := rows.Scan(&family_id); err != nil {
+			return nil, err
+		}
+		items = append(items, family_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const revokeRefreshTokenFamily = `-- name: RevokeRefreshTokenFamily :execrows
 UPDATE refresh_tokens
    SET revoked_at     = $1::timestamptz,
@@ -182,6 +283,36 @@ type RevokeRefreshTokenFamilyParams struct {
 // すでに失効している行（rotated を含む）は理由を上書きしない。影響行数が 0 なら、すでに失効済みだったことを表す。
 func (q *Queries) RevokeRefreshTokenFamily(ctx context.Context, arg RevokeRefreshTokenFamilyParams) (int64, error) {
 	result, err := q.db.Exec(ctx, revokeRefreshTokenFamily, arg.Now, arg.Reason, arg.FamilyID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const revokeSessionForUser = `-- name: RevokeSessionForUser :execrows
+UPDATE refresh_tokens
+   SET revoked_at     = $1::timestamptz,
+       revoked_reason = $2::text
+ WHERE user_id = $3
+   AND family_id = $4
+   AND revoked_at IS NULL
+`
+
+type RevokeSessionForUserParams struct {
+	Now      time.Time
+	Reason   string
+	UserID   ulid.ULID
+	FamilyID ulid.ULID
+}
+
+// 自分のセッションだけを失効させる。user_id の条件で、他人のセッション ID を指定しても 0 行になる。
+func (q *Queries) RevokeSessionForUser(ctx context.Context, arg RevokeSessionForUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeSessionForUser,
+		arg.Now,
+		arg.Reason,
+		arg.UserID,
+		arg.FamilyID,
+	)
 	if err != nil {
 		return 0, err
 	}

@@ -151,3 +151,45 @@ func (q *Queries) UpdatePasswordFromReset(ctx context.Context, arg UpdatePasswor
 	}
 	return result.RowsAffected(), nil
 }
+
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE users
+   SET display_name = coalesce($1, display_name),
+       handle       = coalesce($2::citext, handle),
+       updated_at   = $3::timestamptz
+ WHERE id = $4
+   AND deleted_at IS NULL
+RETURNING id, handle, display_name, email, email_verified_at, password_hash, avatar_object_key, created_at, updated_at, deleted_at
+`
+
+type UpdateUserProfileParams struct {
+	DisplayName *string
+	Handle      *string
+	Now         time.Time
+	ID          ulid.ULID
+}
+
+// 表示名とハンドルの変更（ADR 0019）。省略した項目（NULL）は変えない。
+// handle の重複は登録と同じく UNIQUE 制約（users_handle_key）の違反として受け取る。
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserProfile,
+		arg.DisplayName,
+		arg.Handle,
+		arg.Now,
+		arg.ID,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Handle,
+		&i.DisplayName,
+		&i.Email,
+		&i.EmailVerifiedAt,
+		&i.PasswordHash,
+		&i.AvatarObjectKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
