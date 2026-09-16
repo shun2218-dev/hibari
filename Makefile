@@ -84,6 +84,10 @@ migrate-new: ## マイグレーションを作る（例: make migrate-new name=a
 sqlc: ## db/queries から Go のコードを生成する（sqlc.yaml）
 	$(RUN_GO) $(GOTOOL) sqlc generate
 
+.PHONY: ts-types
+ts-types: ## Go の JSON の型から web/lib/api/types.gen.ts を生成する（internal/httpx/tsgen_test.go）
+	$(RUN_GO) go test ./internal/httpx -run '^TestTypeScriptTypes$$' -count=1 -update
+
 # ---- 品質 ----
 
 .PHONY: test

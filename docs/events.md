@@ -5,6 +5,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 - WebSocket は「確定した変更を速く届ける」経路にすぎない。正は常に REST と Postgres にあり、配信は落ちうる（ADR 0004）。
 - JSON のフィールド名は `snake_case`、ID は ULID の文字列、時刻は RFC 3339。
 - メッセージの形は REST（`GET /api/v1/rooms/{id}/messages` の各要素）と同じ。
+- TypeScript の型（`ServerEvent` / `ClientMessage` / `Ack`）は `web/lib/api/types.gen.ts` にある。Go の型から生成する（ADR 0022、`make ts-types`）。
 
 ## 接続
 

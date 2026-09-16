@@ -73,8 +73,8 @@ func bodyID(field, s string) (id ulid.ULID, ok bool, err error) {
 type sendMessageRequest struct {
 	ClientMsgID   string   `json:"client_msg_id"`
 	Body          string   `json:"body"`
-	ReplyToID     string   `json:"reply_to_id"`
-	AttachmentIDs []string `json:"attachment_ids"`
+	ReplyToID     string   `json:"reply_to_id,omitempty"`
+	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
 // sendMessage は新しく作ったら 201、同じ client_msg_id の再送なら既存のメッセージを 200 で返す（ADR 0004）。
@@ -171,16 +171,18 @@ func (h *chatHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	resp := struct {
-		Messages []messageResponse `json:"messages"`
-		HasMore  bool              `json:"has_more"`
-		// LastChangeSeq はメッセージを読む前のルームの last_change_seq。クライアントは change_seq のカーソルをこの値まで進めてよい。
-		LastChangeSeq int64 `json:"last_change_seq"`
-	}{Messages: make([]messageResponse, len(page.Messages)), HasMore: page.HasMore, LastChangeSeq: page.LastChangeSeq}
+	resp := messageListResponse{Messages: make([]messageResponse, len(page.Messages)), HasMore: page.HasMore, LastChangeSeq: page.LastChangeSeq}
 	for i, m := range page.Messages {
 		resp.Messages[i] = newMessageResponse(m)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+type messageListResponse struct {
+	Messages []messageResponse `json:"messages"`
+	HasMore  bool              `json:"has_more"`
+	// LastChangeSeq はメッセージを読む前のルームの last_change_seq。クライアントは change_seq のカーソルをこの値まで進めてよい。
+	LastChangeSeq int64 `json:"last_change_seq"`
 }
 
 type editMessageRequest struct {
