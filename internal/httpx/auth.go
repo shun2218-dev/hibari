@@ -327,9 +327,11 @@ func (h *authHandlers) listSessions(w http.ResponseWriter, r *http.Request) {
 			LastUsedAt: s.LastUsedAt,
 		})
 	}
-	writeJSON(w, http.StatusOK, struct {
-		Sessions []sessionResponse `json:"sessions"`
-	}{Sessions: out})
+	writeJSON(w, http.StatusOK, sessionListResponse{Sessions: out})
+}
+
+type sessionListResponse struct {
+	Sessions []sessionResponse `json:"sessions"`
 }
 
 func (h *authHandlers) revokeSession(w http.ResponseWriter, r *http.Request) {
@@ -355,9 +357,11 @@ func (h *authHandlers) revokeOtherSessions(w http.ResponseWriter, r *http.Reques
 		writeError(h.logger, w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, struct {
-		RevokedCount int `json:"revoked_count"`
-	}{RevokedCount: revoked})
+	writeJSON(w, http.StatusOK, revokeSessionsResponse{RevokedCount: revoked})
+}
+
+type revokeSessionsResponse struct {
+	RevokedCount int `json:"revoked_count"`
 }
 
 // avatarUploadRequest はアバター画像の申告（ADR 0020）。署名に含めるので、実際の PUT と一致していなければ拒否される。
@@ -378,13 +382,15 @@ func (h *authHandlers) createAvatarUpload(w http.ResponseWriter, r *http.Request
 		writeError(h.logger, w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, struct {
-		UploadID string         `json:"upload_id"`
-		Upload   uploadResponse `json:"upload"`
-	}{
+	writeJSON(w, http.StatusCreated, avatarUploadResponse{
 		UploadID: up.UploadID.String(),
 		Upload:   uploadResponse{Method: up.Method, URL: up.URL, Headers: up.Header, ExpiresAt: up.ExpiresAt},
 	})
+}
+
+type avatarUploadResponse struct {
+	UploadID string         `json:"upload_id"`
+	Upload   uploadResponse `json:"upload"`
 }
 
 // completeAvatarUploadRequest は、発行した upload_id と、PUT したものの申告。
@@ -429,9 +435,7 @@ func (h *authHandlers) deleteAvatar(w http.ResponseWriter, r *http.Request) {
 // avatarURLs は、画面に出すユーザーのアバターの URL をまとめて返す（ADR 0020）。
 // 画像を持たないユーザーは結果に入らない（クライアントは頭文字のアバターを出す）。
 func (h *authHandlers) avatarURLs(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		UserIDs []string `json:"user_ids"`
-	}
+	var req avatarURLsRequest
 	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(h.logger, w, r, err)
 		return
@@ -450,16 +454,18 @@ func (h *authHandlers) avatarURLs(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	out := make(map[string]avatarURLResponse, len(urls))
+	out := make(map[string]signedURLResponse, len(urls))
 	for userID, a := range urls {
-		out[userID.String()] = avatarURLResponse{URL: a.URL, ExpiresAt: a.ExpiresAt}
+		out[userID.String()] = signedURLResponse{URL: a.URL, ExpiresAt: a.ExpiresAt}
 	}
-	writeJSON(w, http.StatusOK, struct {
-		Avatars map[string]avatarURLResponse `json:"avatars"`
-	}{Avatars: out})
+	writeJSON(w, http.StatusOK, avatarURLsResponse{Avatars: out})
 }
 
-type avatarURLResponse struct {
-	URL       string    `json:"url"`
-	ExpiresAt time.Time `json:"expires_at"`
+type avatarURLsRequest struct {
+	UserIDs []string `json:"user_ids"`
+}
+
+// avatarURLsResponse のキーはユーザー ID。
+type avatarURLsResponse struct {
+	Avatars map[string]signedURLResponse `json:"avatars"`
 }

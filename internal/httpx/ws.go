@@ -109,7 +109,7 @@ func (h *wsHandlers) issueTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeWSTicketInvalid(w http.ResponseWriter, r *http.Request) {
-	writeProblem(w, r, problem{Type: "ws-ticket-invalid", Title: "The WebSocket ticket is invalid or has expired", Status: http.StatusUnauthorized})
+	writeProblem(w, r, problem{Type: problemWSTicketInvalid, Title: "The WebSocket ticket is invalid or has expired", Status: http.StatusUnauthorized})
 }
 
 // connect は ws-ticket を消費し、セッションが有効なら WebSocket にアップグレードして、切れるまで読み続ける。
@@ -195,42 +195,58 @@ func (h *wsHandlers) serve(ctx context.Context, conn *websocket.Conn, id authn.I
 
 // clientMessage はクライアントからのメッセージ（docs/events.md「クライアント → サーバー」）。
 type clientMessage struct {
-	Type        string  `json:"type"`
-	ID          *string `json:"id"`
-	RoomID      string  `json:"room_id"`
-	WorkspaceID string  `json:"workspace_id"`
+	Type clientMessageType `json:"type"`
+	ID   *string           `json:"id,omitempty"`
+	// RoomID と WorkspaceID は、subscribe / unsubscribe ではどちらか 1 つ、typing では room_id だけを使う。
+	RoomID      string `json:"room_id,omitempty"`
+	WorkspaceID string `json:"workspace_id,omitempty"`
 }
+
+// clientMessageType はクライアントからのメッセージの type。
+type clientMessageType string
+
+const (
+	clientSubscribe   clientMessageType = "subscribe"
+	clientUnsubscribe clientMessageType = "unsubscribe"
+	clientTyping      clientMessageType = "typing"
+	clientPing        clientMessageType = "ping"
+)
+
+// ackType は ack の type。サーバーからのフレームは、イベントか ack のどちらか。
+const ackType = "ack"
 
 type ackMessage struct {
-	Type  string  `json:"type"`
-	ID    *string `json:"id,omitempty"`
-	Error string  `json:"error,omitempty"`
+	Type  string   `json:"type"`
+	ID    *string  `json:"id,omitempty"`
+	Error ackError `json:"error,omitempty"`
 }
 
-// ack の error の値（docs/events.md）。
+// ackError は ack の error の値（docs/events.md）。
+type ackError string
+
 const (
-	ackInvalidMessage       = "invalid_message"
-	ackNotFound             = "not_found"
-	ackNotSubscribed        = "not_subscribed"
-	ackForbidden            = "forbidden"
-	ackTooManySubscriptions = "too_many_subscriptions"
-	ackInternal             = "internal"
+	ackInvalidMessage       ackError = "invalid_message"
+	ackNotFound             ackError = "not_found"
+	ackNotSubscribed        ackError = "not_subscribed"
+	ackForbidden            ackError = "forbidden"
+	ackTooManySubscriptions ackError = "too_many_subscriptions"
+	ackInternal             ackError = "internal"
 )
 
 // handleMessage は 1 件のメッセージを処理し、返す ack を返す。id がなく成功したら nil（返さない）。
 func (h *wsHandlers) handleMessage(ctx context.Context, client *realtime.Client, data []byte) *ackMessage {
 	var m clientMessage
 	if err := json.Unmarshal(data, &m); err != nil {
-		return &ackMessage{Type: "ack", Error: ackInvalidMessage}
+		return &ackMessage{Type: ackType, Error: ackInvalidMessage}
 	}
 	if m.ID != nil && len(*m.ID) > wsMaxMessageID {
-		return &ackMessage{Type: "ack", Error: ackInvalidMessage}
+		return &ackMessage{Type: ackType, Error: ackInvalidMessage}
 	}
 	reply := func(err error) *ackMessage {
 		if err == nil && m.ID == nil {
 			return nil
 		}
-		ack := &ackMessage{Type: "ack", ID: m.ID}
+		ack := &ackMessage{Type: ackType, ID: m.ID}
 		if err != nil {
 			ack.Error = h.ackError(ctx, client, m.Type, err)
 		}
@@ -238,25 +254,25 @@ func (h *wsHandlers) handleMessage(ctx context.Context, client *realtime.Client,
 	}
 
 	switch m.Type {
-	case "subscribe", "unsubscribe":
+	case clientSubscribe, clientUnsubscribe:
 		t, err := parseTopic(m)
 		if err != nil {
 			return reply(err)
 		}
-		if m.Type == "unsubscribe" {
+		if m.Type == clientUnsubscribe {
 			h.hub.Unsubscribe(client, t)
 			return reply(nil)
 		}
 		return reply(h.hub.Subscribe(ctx, client, t))
-	case "typing":
+	case clientTyping:
 		roomID, err := ulid.ParseStrict(m.RoomID)
 		if err != nil || m.WorkspaceID != "" {
 			return reply(errInvalidMessage)
 		}
 		return reply(h.hub.Typing(ctx, client, roomID))
-	case "ping":
+	case clientPing:
 		// ブラウザは WebSocket の ping フレームを送れないので、アプリケーションの ping には id がなくても ack を返す。
-		return &ackMessage{Type: "ack", ID: m.ID}
+		return &ackMessage{Type: ackType, ID: m.ID}
 	default:
 		return reply(errInvalidMessage)
 	}
@@ -285,7 +301,7 @@ func parseTopic(m clientMessage) (realtime.Topic, error) {
 }
 
 // ackError はエラーを ack の error の値に変換する。REST の writeError と同じく、変換はここにだけ書く。
-func (h *wsHandlers) ackError(ctx context.Context, client *realtime.Client, typ string, err error) string {
+func (h *wsHandlers) ackError(ctx context.Context, client *realtime.Client, typ clientMessageType, err error) ackError {
 	switch {
 	case errors.Is(err, errInvalidMessage):
 		return ackInvalidMessage
@@ -299,7 +315,7 @@ func (h *wsHandlers) ackError(ctx context.Context, client *realtime.Client, typ 
 		return ackTooManySubscriptions
 	default:
 		h.logger.ErrorContext(ctx, "websocket message failed",
-			slog.String("user_id", client.Identity().UserID.String()), slog.String("type", typ), slog.Any("error", err))
+			slog.String("user_id", client.Identity().UserID.String()), slog.String("type", string(typ)), slog.Any("error", err))
 		return ackInternal
 	}
 }
@@ -451,75 +467,105 @@ type serverEvent struct {
 	Data any            `json:"data"`
 }
 
-// encodeEvent はイベントを docs/events.md の JSON にする。メッセージは REST と同じ形（newMessageResponse）を使う。
+// イベントの data の形（docs/events.md）。ID は ULID の文字列にする。
+// TypeScript の型は tsgen_test.go がここから生成する。
+
+type memberJoinedData struct {
+	WorkspaceID string              `json:"workspace_id"`
+	RoomID      string              `json:"room_id"`
+	User        userProfileResponse `json:"user"`
+}
+
+type memberLeftData struct {
+	WorkspaceID string `json:"workspace_id"`
+	RoomID      string `json:"room_id"`
+	UserID      string `json:"user_id"`
+}
+
+type roomUpdatedData struct {
+	WorkspaceID string `json:"workspace_id"`
+	RoomID      string `json:"room_id"`
+	Name        string `json:"name"`
+	IsDefault   bool   `json:"is_default"`
+}
+
+type roomMemberRemovedData struct {
+	WorkspaceID string             `json:"workspace_id"`
+	RoomID      string             `json:"room_id"`
+	Reason      chat.RemovalReason `json:"reason"`
+}
+
+type roomReadData struct {
+	WorkspaceID string `json:"workspace_id"`
+	RoomID      string `json:"room_id"`
+	LastReadSeq int64  `json:"last_read_seq"`
+	UnreadCount int64  `json:"unread_count"`
+}
+
+type workspaceUpdatedData struct {
+	WorkspaceID  string            `json:"workspace_id"`
+	Name         string            `json:"name"`
+	InvitePolicy chat.InvitePolicy `json:"invite_policy"`
+}
+
+type workspaceMemberRemovedData struct {
+	WorkspaceID string             `json:"workspace_id"`
+	UserID      string             `json:"user_id"`
+	Reason      chat.RemovalReason `json:"reason"`
+}
+
+type workspaceRoleChangedData struct {
+	WorkspaceID string    `json:"workspace_id"`
+	UserID      string    `json:"user_id"`
+	Role        chat.Role `json:"role"`
+}
+
+type presenceChangedData struct {
+	UserID string `json:"user_id"`
+	Online bool   `json:"online"`
+}
+
+type typingStartedData struct {
+	WorkspaceID string              `json:"workspace_id"`
+	RoomID      string              `json:"room_id"`
+	User        userProfileResponse `json:"user"`
+}
+
+// encodeEvent はイベントを docs/events.md の JSON にする。
 func encodeEvent(ev chat.Event) ([]byte, error) {
-	var data any
-	switch d := ev.Data.(type) {
-	case chat.Message:
-		data = newMessageResponse(d)
-	case chat.MemberJoined:
-		data = struct {
-			WorkspaceID string              `json:"workspace_id"`
-			RoomID      string              `json:"room_id"`
-			User        userProfileResponse `json:"user"`
-		}{d.WorkspaceID.String(), d.RoomID.String(), newUserProfileResponse(d.User)}
-	case chat.MemberLeft:
-		data = struct {
-			WorkspaceID string `json:"workspace_id"`
-			RoomID      string `json:"room_id"`
-			UserID      string `json:"user_id"`
-		}{d.WorkspaceID.String(), d.RoomID.String(), d.UserID.String()}
-	case chat.RoomUpdated:
-		data = struct {
-			WorkspaceID string `json:"workspace_id"`
-			RoomID      string `json:"room_id"`
-			Name        string `json:"name"`
-			IsDefault   bool   `json:"is_default"`
-		}{d.WorkspaceID.String(), d.RoomID.String(), d.Name, d.IsDefault}
-	case chat.RoomMemberRemoved:
-		data = struct {
-			WorkspaceID string `json:"workspace_id"`
-			RoomID      string `json:"room_id"`
-			Reason      string `json:"reason"`
-		}{d.WorkspaceID.String(), d.RoomID.String(), string(d.Reason)}
-	case chat.RoomRead:
-		data = struct {
-			WorkspaceID string `json:"workspace_id"`
-			RoomID      string `json:"room_id"`
-			LastReadSeq int64  `json:"last_read_seq"`
-			UnreadCount int64  `json:"unread_count"`
-		}{d.WorkspaceID.String(), d.RoomID.String(), d.LastReadSeq, d.UnreadCount}
-	case chat.WorkspaceUpdated:
-		data = struct {
-			WorkspaceID  string `json:"workspace_id"`
-			Name         string `json:"name"`
-			InvitePolicy string `json:"invite_policy"`
-		}{d.WorkspaceID.String(), d.Name, string(d.InvitePolicy)}
-	case chat.WorkspaceMemberRemoved:
-		data = struct {
-			WorkspaceID string `json:"workspace_id"`
-			UserID      string `json:"user_id"`
-			Reason      string `json:"reason"`
-		}{d.WorkspaceID.String(), d.UserID.String(), string(d.Reason)}
-	case chat.WorkspaceRoleChanged:
-		data = struct {
-			WorkspaceID string `json:"workspace_id"`
-			UserID      string `json:"user_id"`
-			Role        string `json:"role"`
-		}{d.WorkspaceID.String(), d.UserID.String(), string(d.Role)}
-	case chat.PresenceChanged:
-		data = struct {
-			UserID string `json:"user_id"`
-			Online bool   `json:"online"`
-		}{d.UserID.String(), d.Online}
-	case chat.TypingStarted:
-		data = struct {
-			WorkspaceID string              `json:"workspace_id"`
-			RoomID      string              `json:"room_id"`
-			User        userProfileResponse `json:"user"`
-		}{d.WorkspaceID.String(), d.RoomID.String(), newUserProfileResponse(d.User)}
-	default:
-		return nil, fmt.Errorf("unknown event data %T for %s", ev.Data, ev.Type)
+	data, err := eventData(ev.Data)
+	if err != nil {
+		return nil, fmt.Errorf("encode %s: %w", ev.Type, err)
 	}
 	return json.Marshal(serverEvent{Type: ev.Type, Data: data})
+}
+
+// eventData は chat のイベントのデータを JSON の形に変換する。メッセージは REST と同じ形（newMessageResponse）を使う。
+func eventData(d any) (any, error) {
+	switch d := d.(type) {
+	case chat.Message:
+		return newMessageResponse(d), nil
+	case chat.MemberJoined:
+		return memberJoinedData{d.WorkspaceID.String(), d.RoomID.String(), newUserProfileResponse(d.User)}, nil
+	case chat.MemberLeft:
+		return memberLeftData{d.WorkspaceID.String(), d.RoomID.String(), d.UserID.String()}, nil
+	case chat.RoomUpdated:
+		return roomUpdatedData{d.WorkspaceID.String(), d.RoomID.String(), d.Name, d.IsDefault}, nil
+	case chat.RoomMemberRemoved:
+		return roomMemberRemovedData{d.WorkspaceID.String(), d.RoomID.String(), d.Reason}, nil
+	case chat.RoomRead:
+		return roomReadData{d.WorkspaceID.String(), d.RoomID.String(), d.LastReadSeq, d.UnreadCount}, nil
+	case chat.WorkspaceUpdated:
+		return workspaceUpdatedData{d.WorkspaceID.String(), d.Name, d.InvitePolicy}, nil
+	case chat.WorkspaceMemberRemoved:
+		return workspaceMemberRemovedData{d.WorkspaceID.String(), d.UserID.String(), d.Reason}, nil
+	case chat.WorkspaceRoleChanged:
+		return workspaceRoleChangedData{d.WorkspaceID.String(), d.UserID.String(), d.Role}, nil
+	case chat.PresenceChanged:
+		return presenceChangedData{d.UserID.String(), d.Online}, nil
+	case chat.TypingStarted:
+		return typingStartedData{d.WorkspaceID.String(), d.RoomID.String(), newUserProfileResponse(d.User)}, nil
+	default:
+		return nil, fmt.Errorf("unknown event data %T", d)
+	}
 }

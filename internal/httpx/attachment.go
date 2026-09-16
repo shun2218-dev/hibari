@@ -12,20 +12,20 @@ import (
 // レスポンスには署名付き URL が入る。URL そのものが閲覧の権限なので、ログに出さない（CLAUDE.md「ログ」）。
 
 type attachmentResponse struct {
-	ID          string    `json:"id"`
-	RoomID      string    `json:"room_id"`
-	Status      string    `json:"status"`
-	FileName    string    `json:"file_name"`
-	ContentType string    `json:"content_type"`
-	SizeBytes   int64     `json:"size_bytes"`
-	Width       *int      `json:"width"`
-	Height      *int      `json:"height"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          string                `json:"id"`
+	RoomID      string                `json:"room_id"`
+	Status      chat.AttachmentStatus `json:"status"`
+	FileName    string                `json:"file_name"`
+	ContentType string                `json:"content_type"`
+	SizeBytes   int64                 `json:"size_bytes"`
+	Width       *int                  `json:"width"`
+	Height      *int                  `json:"height"`
+	CreatedAt   time.Time             `json:"created_at"`
 }
 
 func newAttachmentResponse(a chat.Attachment) attachmentResponse {
 	return attachmentResponse{
-		ID: a.ID.String(), RoomID: a.RoomID.String(), Status: string(a.Status), FileName: a.FileName, ContentType: a.ContentType,
+		ID: a.ID.String(), RoomID: a.RoomID.String(), Status: a.Status, FileName: a.FileName, ContentType: a.ContentType,
 		SizeBytes: a.SizeBytes, Width: a.Width, Height: a.Height, CreatedAt: a.CreatedAt,
 	}
 }
@@ -53,6 +53,11 @@ type createAttachmentRequest struct {
 	SizeBytes   *int64 `json:"size_bytes"`
 	Width       *int   `json:"width"`
 	Height      *int   `json:"height"`
+}
+
+type createAttachmentResponse struct {
+	Attachment attachmentResponse `json:"attachment"`
+	Upload     uploadResponse     `json:"upload"`
 }
 
 type uploadResponse struct {
@@ -83,10 +88,7 @@ func (h *chatHandlers) createAttachment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	u := created.Upload
-	writeJSON(w, http.StatusCreated, struct {
-		Attachment attachmentResponse `json:"attachment"`
-		Upload     uploadResponse     `json:"upload"`
-	}{
+	writeJSON(w, http.StatusCreated, createAttachmentResponse{
 		Attachment: newAttachmentResponse(created.Attachment),
 		Upload:     uploadResponse{Method: u.Method, URL: u.URL, Headers: u.Header, ExpiresAt: u.ExpiresAt},
 	})
@@ -119,8 +121,11 @@ func (h *chatHandlers) getAttachmentURL(w http.ResponseWriter, r *http.Request) 
 		writeError(h.logger, w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, struct {
-		URL       string    `json:"url"`
-		ExpiresAt time.Time `json:"expires_at"`
-	}{URL: dl.URL, ExpiresAt: dl.ExpiresAt})
+	writeJSON(w, http.StatusOK, signedURLResponse{URL: dl.URL, ExpiresAt: dl.ExpiresAt})
+}
+
+// signedURLResponse は閲覧用の署名付き GET URL。添付とアバターで同じ形にする。
+type signedURLResponse struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expires_at"`
 }

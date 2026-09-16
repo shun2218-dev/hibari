@@ -157,11 +157,11 @@ func newUserProfileResponse(u chat.UserProfile) userProfileResponse {
 }
 
 type workspaceResponse struct {
-	ID           string `json:"id"`
-	Slug         string `json:"slug"`
-	Name         string `json:"name"`
-	InvitePolicy string `json:"invite_policy"`
-	MyRole       string `json:"my_role"`
+	ID           string             `json:"id"`
+	Slug         string             `json:"slug"`
+	Name         string             `json:"name"`
+	InvitePolicy authz.InvitePolicy `json:"invite_policy"`
+	MyRole       authz.Role         `json:"my_role"`
 	// MemberCount は 1 件の取得でだけ返す。
 	MemberCount *int64    `json:"member_count,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -173,8 +173,8 @@ func newWorkspaceResponse(w chat.Workspace, withCount bool) workspaceResponse {
 		ID:           w.ID.String(),
 		Slug:         w.Slug,
 		Name:         w.Name,
-		InvitePolicy: string(w.InvitePolicy),
-		MyRole:       string(w.MyRole),
+		InvitePolicy: w.InvitePolicy,
+		MyRole:       w.MyRole,
 		CreatedAt:    w.CreatedAt,
 		UpdatedAt:    w.UpdatedAt,
 	}
@@ -186,12 +186,12 @@ func newWorkspaceResponse(w chat.Workspace, withCount bool) workspaceResponse {
 
 type memberResponse struct {
 	User     userProfileResponse `json:"user"`
-	Role     string              `json:"role"`
+	Role     authz.Role          `json:"role"`
 	JoinedAt time.Time           `json:"joined_at"`
 }
 
 func newMemberResponse(m chat.Member) memberResponse {
-	return memberResponse{User: newUserProfileResponse(m.User), Role: string(m.Role), JoinedAt: m.JoinedAt}
+	return memberResponse{User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt}
 }
 
 type createWorkspaceRequest struct {
@@ -218,13 +218,15 @@ func (h *chatHandlers) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	resp := struct {
-		Workspaces []workspaceResponse `json:"workspaces"`
-	}{Workspaces: make([]workspaceResponse, len(list))}
+	resp := workspaceListResponse{Workspaces: make([]workspaceResponse, len(list))}
 	for i, ws := range list {
 		resp.Workspaces[i] = newWorkspaceResponse(ws, false)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+type workspaceListResponse struct {
+	Workspaces []workspaceResponse `json:"workspaces"`
 }
 
 func (h *chatHandlers) getWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -282,14 +284,16 @@ func (h *chatHandlers) listMembers(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	resp := struct {
-		Members    []memberResponse `json:"members"`
-		NextCursor *string          `json:"next_cursor"`
-	}{Members: make([]memberResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
+	resp := memberListResponse{Members: make([]memberResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
 	for i, m := range p.Items {
 		resp.Members[i] = newMemberResponse(m)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+type memberListResponse struct {
+	Members    []memberResponse `json:"members"`
+	NextCursor *string          `json:"next_cursor"`
 }
 
 type changeMemberRoleRequest struct {
@@ -375,7 +379,7 @@ type inviteResponse struct {
 	ExpiresAt   time.Time           `json:"expires_at"`
 	RevokedAt   *time.Time          `json:"revoked_at"`
 	CreatedAt   time.Time           `json:"created_at"`
-	Status      string              `json:"status"`
+	Status      chat.InviteStatus   `json:"status"`
 	// Code は作成のレスポンスでだけ返す。一覧では再表示しない（ADR 0006）。
 	Code string `json:"code,omitempty"`
 }
@@ -390,7 +394,7 @@ func newInviteResponse(inv chat.Invite) inviteResponse {
 		ExpiresAt:   inv.ExpiresAt,
 		RevokedAt:   inv.RevokedAt,
 		CreatedAt:   inv.CreatedAt,
-		Status:      string(inv.Status),
+		Status:      inv.Status,
 	}
 }
 
@@ -444,14 +448,16 @@ func (h *chatHandlers) listInvites(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	resp := struct {
-		Invites    []inviteResponse `json:"invites"`
-		NextCursor *string          `json:"next_cursor"`
-	}{Invites: make([]inviteResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
+	resp := inviteListResponse{Invites: make([]inviteResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
 	for i, inv := range p.Items {
 		resp.Invites[i] = newInviteResponse(inv)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+type inviteListResponse struct {
+	Invites    []inviteResponse `json:"invites"`
+	NextCursor *string          `json:"next_cursor"`
 }
 
 func (h *chatHandlers) revokeInvite(w http.ResponseWriter, r *http.Request) {
@@ -473,15 +479,18 @@ func (h *chatHandlers) revokeInvite(w http.ResponseWriter, r *http.Request) {
 }
 
 type invitePreviewResponse struct {
-	Workspace struct {
-		ID              string `json:"id"`
-		Name            string `json:"name"`
-		MemberCount     int64  `json:"member_count"`
-		PublicRoomCount int64  `json:"public_room_count"`
-	} `json:"workspace"`
-	Inviter       userProfileResponse `json:"inviter"`
-	AlreadyMember bool                `json:"already_member"`
-	ExpiresAt     time.Time           `json:"expires_at"`
+	Workspace     invitePreviewWorkspaceResponse `json:"workspace"`
+	Inviter       userProfileResponse            `json:"inviter"`
+	AlreadyMember bool                           `json:"already_member"`
+	ExpiresAt     time.Time                      `json:"expires_at"`
+}
+
+// invitePreviewWorkspaceResponse は、まだメンバーでない人に見せてよいワークスペースの情報だけを持つ。
+type invitePreviewWorkspaceResponse struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	MemberCount     int64  `json:"member_count"`
+	PublicRoomCount int64  `json:"public_room_count"`
 }
 
 func (h *chatHandlers) previewInvite(w http.ResponseWriter, r *http.Request) {
@@ -518,9 +527,9 @@ func (h *chatHandlers) acceptInvite(w http.ResponseWriter, r *http.Request) {
 }
 
 type roomResponse struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspace_id"`
-	Kind        string `json:"kind"`
+	ID          string         `json:"id"`
+	WorkspaceID string         `json:"workspace_id"`
+	Kind        authz.RoomKind `json:"kind"`
 	// Name は dm では null。
 	Name      *string `json:"name"`
 	IsDefault bool    `json:"is_default"`
@@ -557,7 +566,7 @@ func newRoomResponse(r chat.Room, withCount bool) roomResponse {
 	resp := roomResponse{
 		ID:             r.ID.String(),
 		WorkspaceID:    r.WorkspaceID.String(),
-		Kind:           string(r.Kind),
+		Kind:           r.Kind,
 		IsDefault:      r.IsDefault,
 		IsMember:       r.IsMember,
 		LastMessageSeq: r.LastMessageSeq,
@@ -593,10 +602,11 @@ func bodyUserID(s string) (ulid.ULID, error) {
 	return id, nil
 }
 
+// createRoomRequest の name は public / private で、user_id は dm で使う。
 type createRoomRequest struct {
 	Kind   string `json:"kind"`
-	Name   string `json:"name"`
-	UserID string `json:"user_id"`
+	Name   string `json:"name,omitempty"`
+	UserID string `json:"user_id,omitempty"`
 }
 
 // createRoom は新しく作ったら 201、既存の DM を返したら 200。
@@ -641,13 +651,15 @@ func (h *chatHandlers) listRooms(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	resp := struct {
-		Rooms []roomResponse `json:"rooms"`
-	}{Rooms: make([]roomResponse, len(rooms))}
+	resp := roomListResponse{Rooms: make([]roomResponse, len(rooms))}
 	for i, room := range rooms {
 		resp.Rooms[i] = newRoomResponse(room, false)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+type roomListResponse struct {
+	Rooms []roomResponse `json:"rooms"`
 }
 
 func (h *chatHandlers) getRoom(w http.ResponseWriter, r *http.Request) {
@@ -719,22 +731,25 @@ func (h *chatHandlers) listRoomMembers(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	// ワークスペースのメンバー一覧と同じ形に、presence の初期値（online）を加える（ADR 0015）。
-	type roomMemberResponse struct {
-		memberResponse
-		Online bool `json:"online"`
-	}
-	resp := struct {
-		Members    []roomMemberResponse `json:"members"`
-		NextCursor *string              `json:"next_cursor"`
-	}{Members: make([]roomMemberResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
+	resp := roomMemberListResponse{Members: make([]roomMemberResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
 	for i, m := range p.Items {
 		resp.Members[i] = roomMemberResponse{
-			memberResponse: memberResponse{User: newUserProfileResponse(m.User), Role: string(m.Role), JoinedAt: m.JoinedAt},
+			memberResponse: memberResponse{User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt},
 			Online:         m.Online,
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// roomMemberResponse は、ワークスペースのメンバー一覧と同じ形に presence の初期値（online）を加える（ADR 0015）。
+type roomMemberResponse struct {
+	memberResponse
+	Online bool `json:"online"`
+}
+
+type roomMemberListResponse struct {
+	Members    []roomMemberResponse `json:"members"`
+	NextCursor *string              `json:"next_cursor"`
 }
 
 type addRoomMemberRequest struct {
