@@ -152,6 +152,12 @@ func TestBrokerRoutesByChannel(t *testing.T) {
 		t.Fatalf("b received %v while still subscribed once", types(got))
 	}
 	b.broker.Release("room:" + room.String())
+	// Release は UNSUBSCRIBE を送るだけで、Redis が反映するのを待たない（待つのは Acquire だけ。ADR 0016）。
+	// publish は別の接続から行うので、ここで反映を待たずに配信すると「解除より先に配信が処理される」ことがある。
+	// 購読の接続に PING を往復させると、その前に送った UNSUBSCRIBE も処理済みになる。
+	if got := b.synced(t); len(got) != 0 {
+		t.Fatalf("b received %v while releasing the room", types(got))
+	}
 	delivery.Deliver(t.Context(), chat.Event{Type: chat.EventMessageCreated, To: chat.Audience{Rooms: []ulid.ULID{room}}, Data: chat.Message{RoomID: room}})
 	if got := b.synced(t); len(got) != 0 {
 		t.Fatalf("b received %v after releasing the room", types(got))
