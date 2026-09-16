@@ -20,3 +20,15 @@
 - 最初にデプロイしたら、アクセスログの `client_ip` が自分の IP になっていることを確かめる。プロキシの内部アドレスやアプリの IP になっていたら、`TRUSTED_PROXIES` が足りない。
 - Fly の前に CDN などのプロキシを足したら、その CDN のアドレスの範囲も加える。
 - `172.16.0.0/12` / `fdaa::/16` を信頼すると、同じ Fly の組織の private network にあるほかのアプリも `X-Forwarded-For` を書けてしまう。同じ組織に信頼できないアプリを置かない。
+
+## APP_BASE_URL（ADR 0015 / 0021）
+
+Web クライアントの URL。メールのリンクの起点、WebSocket で許可する Origin、CORS で許可するオリジンに使う。
+
+| 環境 | 値 |
+|---|---|
+| ローカル（compose） | `http://localhost:3000`（`make web`） |
+| 本番 | 未定（Phase 7 以降） |
+
+- **Web と API は同じサイト（登録可能なドメインが同じ）に置く**（例: `app.hibari.example` と `api.hibari.example`）。Refresh Token の Cookie は `SameSite=Strict` なので、サイトが違うと refresh に載らない。
+- `*.vercel.app` や `*.fly.dev` はそれぞれがサイトの単位（Public Suffix List に載っている）なので、別のアプリどうしは同じサイトにならない。独自ドメインを使う。

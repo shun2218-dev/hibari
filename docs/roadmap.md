@@ -359,6 +359,11 @@ POST   /api/v1/users/avatars             画面に出すユーザーの署名付
 ```
 アバター画像の配布は、chat のレスポンスに URL を載せず、クライアントがまとめて取る（ADR 0020）。
 
+**6-2 で確定した内容**
+- ブラウザから Go の API を直接呼び、Go に CORS を足す。Web と API は同じサイトに置く（ADR 0021）
+- TypeScript の型は、`internal/httpx` のパッケージ内のテストが Go の型から生成する（`-update` で更新し、CI で差分がないことを確かめる）
+- クライアントの状態は、自作のストアと `useSyncExternalStore` で持つ（ライブラリを入れない）
+
 **DoD**
 - [x] `/dev/preview` で全画面・全状態が再現できる（6-1。`app/dev/preview/catalog.test.tsx` がスクリーンショットとの 1 対 1 の対応を検査。デスクトップは headless Chrome、モバイルは幅 390px で並べて確認）
 - [ ] ネットワークを切断 → 復帰で正しく同期される

@@ -18,6 +18,8 @@ type Deps struct {
 	HealthChecks []HealthCheck
 	// TrustedProxies は X-Forwarded-For を信用する前段のプロキシ。空なら XFF を読まない（ADR 0017）。
 	TrustedProxies TrustedProxies
+	// AllowedOrigins はブラウザから API を呼んでよいオリジン（scheme://host[:port]）。空なら CORS のヘッダを付けない（ADR 0021）。
+	AllowedOrigins []string
 
 	Auth     AuthService
 	Verifier *authn.Verifier
@@ -50,6 +52,8 @@ func NewRouter(d Deps) http.Handler {
 	registerWSRoutes(mux, d)
 
 	var h http.Handler = mux
+	// プリフライトもアクセスログに残すので、ログより内側に置く。
+	h = withCORS(d.AllowedOrigins, h)
 	h = withAccessLog(d.Logger, d.Clock, h)
 	// アクセスログにも同じクライアント IP を出すので、ログより外側で求める。
 	h = withClientIP(d.TrustedProxies, h)
