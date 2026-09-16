@@ -1,5 +1,13 @@
 import { ApiError, apiErrorFrom } from "@/lib/api/error";
-import type { LoginRequest, RegisterRequest, TokenResponse, User } from "@/lib/api/types.gen";
+import type {
+  LoginRequest,
+  OneTimeTokenRequest,
+  PasswordResetConfirmRequest,
+  PasswordResetRequest,
+  RegisterRequest,
+  TokenResponse,
+  User,
+} from "@/lib/api/types.gen";
 
 import { type LockManagerLike, singleFlight } from "./single-flight";
 
@@ -74,6 +82,19 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+  }
+
+  /**
+   * ログインしていなくても呼べるエンドポイント（パスワードの再設定、メールの確認）。
+   * メールのリンクは別のブラウザで開かれることもあるので、Cookie も Access Token も使わない。
+   */
+  async function publicRequest(path: string, body: unknown): Promise<void> {
+    const res = await fetchImpl(`${baseUrl}/api/v1/auth/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw await apiErrorFrom(res);
   }
 
   const refresh = singleFlight(
@@ -200,6 +221,35 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
         // 上のとおり、届かなくても画面の状態は変える。
       }
       signOutLocally();
+    },
+
+    /** アカウントがなくても成功する（存在の有無を明かさない）。失敗は 429 rate-limited など。 */
+    requestPasswordReset(input: PasswordResetRequest): Promise<void> {
+      return publicRequest("password-reset/request", input);
+    },
+
+    /**
+     * 成功すると、サーバーはそのユーザーの全セッションを失効させるので、このタブもログアウトした状態にする
+     * （手元の Access Token は期限まで検証を通ってしまう。ADR 0007）。リンクの持ち主が別のアカウントでも、ログインし直せば済むので区別しない。
+     * リンクが使えなければ 400 invalid-one-time-token、パスワードが制約を満たさなければ 422 validation-error（トークンは消費されない）。
+     */
+    async resetPassword(input: PasswordResetConfirmRequest): Promise<void> {
+      await publicRequest("password-reset/confirm", input);
+      signOutLocally();
+    },
+
+    /**
+     * リンクのトークンでメールアドレスを確認する。
+     * ログイン中なら user を取り直す（トークンの持ち主がいまのユーザーとは限らないので、email_verified を決め打ちで書き換えない）。
+     */
+    async verifyEmail(input: OneTimeTokenRequest): Promise<void> {
+      await publicRequest("verify-email/confirm", input);
+      if (state.status !== "signed_in") return;
+      try {
+        setState({ status: "signed_in", user: await request<User>("GET", "/api/v1/users/me") });
+      } catch {
+        // 確認そのものは済んでいる。表示が古いだけなので、次に user を取ったときに直る。
+      }
     },
 
     request,
