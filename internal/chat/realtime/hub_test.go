@@ -271,12 +271,16 @@ func (p *fakePublisher) publish(ctx context.Context, ann presence.Announcement) 
 
 // fakeSubscriber はチャンネルごとの購読の数を数える。
 type fakeSubscriber struct {
-	mu   sync.Mutex
-	refs map[string]int
-	err  error // nil でなければ Acquire が失敗する
+	mu        sync.Mutex
+	refs      map[string]int
+	err       error  // nil でなければ Acquire が失敗する
+	onAcquire func() // Acquire の中で起きることを差し込む（停止との競合の再現）
 }
 
 func (s *fakeSubscriber) Acquire(_ context.Context, channel string) error {
+	if s.onAcquire != nil {
+		s.onAcquire()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.err != nil {
@@ -983,6 +987,27 @@ func TestRegisterFailsWithoutUserChannel(t *testing.T) {
 		t.Fatal("Subscribe() error = nil, want error")
 	}
 	e.hub.DeliverLocal(t.Context(), messageTo(w.room))
+}
+
+// 接続を受け付けてから登録するまでの間に停止が終わると、購読は「Redis のクライアントが閉じた」で失敗する。
+// これは内部エラーではなく停止なので、ErrShuttingDown として返す（実装は 1001 で閉じ、クライアントは再接続する）。
+func TestRegisterDuringShutdownIsShuttingDown(t *testing.T) {
+	e := newEnv(t)
+	e.subscriber.onAcquire = func() {
+		// 接続が 1 本もない Hub の Shutdown はすぐ戻る。この後に main が Redis のクライアントを閉じる。
+		if err := e.hub.Shutdown(context.Background()); err != nil {
+			t.Errorf("Shutdown() = %v", err)
+		}
+		e.subscriber.mu.Lock()
+		e.subscriber.err = errors.New("redis: client is closed")
+		e.subscriber.mu.Unlock()
+	}
+
+	_, err := e.hub.Register(t.Context(), authn.Identity{UserID: ids.New(), SessionID: ids.New()}, &fakeConn{})
+
+	if !errors.Is(err, realtime.ErrShuttingDown) {
+		t.Fatalf("Register() during shutdown error = %v, want ErrShuttingDown", err)
+	}
 }
 
 // Redis Pub/Sub の接続が張り直されたら、すべての接続を閉じさせて再同期させる。
