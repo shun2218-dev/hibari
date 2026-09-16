@@ -106,6 +106,40 @@ func (q *Queries) GetActiveUserByID(ctx context.Context, id ulid.ULID) (User, er
 	return i, err
 }
 
+const listUserAvatars = `-- name: ListUserAvatars :many
+SELECT id, avatar_object_key
+  FROM users
+ WHERE id = ANY($1::uuid[])
+   AND avatar_object_key IS NOT NULL
+   AND deleted_at IS NULL
+`
+
+type ListUserAvatarsRow struct {
+	ID              ulid.ULID
+	AvatarObjectKey *string
+}
+
+// 画面に出すユーザーのアバターのキーをまとめて読む（ADR 0020）。退会済みは返さない。
+func (q *Queries) ListUserAvatars(ctx context.Context, ids []ulid.ULID) ([]ListUserAvatarsRow, error) {
+	rows, err := q.db.Query(ctx, listUserAvatars, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserAvatarsRow{}
+	for rows.Next() {
+		var i ListUserAvatarsRow
+		if err := rows.Scan(&i.ID, &i.AvatarObjectKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markEmailVerified = `-- name: MarkEmailVerified :execrows
 UPDATE users
    SET email_verified_at = coalesce(email_verified_at, $1::timestamptz),
@@ -126,6 +160,49 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, arg MarkEmailVerifiedPa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const setUserAvatar = `-- name: SetUserAvatar :one
+UPDATE users u
+   SET avatar_object_key = $1,
+       updated_at        = $2::timestamptz
+  FROM users before
+ WHERE u.id = $3
+   AND before.id = u.id
+   AND u.deleted_at IS NULL
+RETURNING u.id, u.handle, u.display_name, u.email, u.email_verified_at, u.password_hash, u.avatar_object_key, u.created_at, u.updated_at, u.deleted_at, before.avatar_object_key AS previous_avatar_object_key
+`
+
+type SetUserAvatarParams struct {
+	AvatarObjectKey *string
+	Now             time.Time
+	ID              ulid.ULID
+}
+
+type SetUserAvatarRow struct {
+	User                    User
+	PreviousAvatarObjectKey *string
+}
+
+// アバター画像の差し替え・削除（ADR 0020）。置き換える前のキーも返し、呼び出し側が古いオブジェクトを消す。
+// 自己結合の before は更新前のスナップショットを見るので、置き換える前のキーを同じ 1 文で取れる。
+func (q *Queries) SetUserAvatar(ctx context.Context, arg SetUserAvatarParams) (SetUserAvatarRow, error) {
+	row := q.db.QueryRow(ctx, setUserAvatar, arg.AvatarObjectKey, arg.Now, arg.ID)
+	var i SetUserAvatarRow
+	err := row.Scan(
+		&i.User.ID,
+		&i.User.Handle,
+		&i.User.DisplayName,
+		&i.User.Email,
+		&i.User.EmailVerifiedAt,
+		&i.User.PasswordHash,
+		&i.User.AvatarObjectKey,
+		&i.User.CreatedAt,
+		&i.User.UpdatedAt,
+		&i.User.DeletedAt,
+		&i.PreviousAvatarObjectKey,
+	)
+	return i, err
 }
 
 const updatePasswordFromReset = `-- name: UpdatePasswordFromReset :execrows

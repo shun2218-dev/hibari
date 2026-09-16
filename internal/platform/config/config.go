@@ -46,6 +46,10 @@ type Config struct {
 	Storage storage.Config
 	// AttachmentMaxBytes は添付ファイル 1 つのサイズの上限。
 	AttachmentMaxBytes int64
+	// AvatarMaxBytes はアバター画像 1 枚のサイズの上限。
+	AvatarMaxBytes int64
+	// AvatarAllowedTypes はアバター画像として受け付ける Content-Type。
+	AvatarAllowedTypes []string
 	// AttachmentAllowedTypes は添付ファイルとして受け付ける Content-Type。
 	// 種類の分からないファイルはクライアントが application/octet-stream として申告する（ADR 0013）。
 	AttachmentAllowedTypes []string
@@ -53,6 +57,13 @@ type Config struct {
 
 // DefaultAttachmentMaxBytes は ATTACHMENT_MAX_BYTES の既定値（25 MiB）。
 const DefaultAttachmentMaxBytes = 25 << 20
+
+// DefaultAvatarMaxBytes は AVATAR_MAX_BYTES の既定値（2 MiB）。縮小はクライアントに任せる（ADR 0020）。
+const DefaultAvatarMaxBytes = 2 << 20
+
+// DefaultAvatarAllowedTypes は AVATAR_ALLOWED_TYPES の既定値。
+// SVG はスクリプトを含められるので入れない（ADR 0013 / 0020）。
+var DefaultAvatarAllowedTypes = []string{"image/png", "image/jpeg", "image/webp"}
 
 // DefaultAttachmentAllowedTypes は ATTACHMENT_ALLOWED_TYPES の既定値。
 // application/octet-stream を含めて、原則すべてのファイルを添付できるようにする。
@@ -168,32 +179,46 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 	cfg.Storage.UsePathStyle = pathStyle
 
-	maxBytes, err := strconv.ParseInt(optional("ATTACHMENT_MAX_BYTES", strconv.Itoa(DefaultAttachmentMaxBytes)), 10, 64)
-	switch {
-	case err != nil:
-		errs = append(errs, fmt.Errorf("ATTACHMENT_MAX_BYTES: %w", err))
-	case maxBytes <= 0:
-		errs = append(errs, fmt.Errorf("ATTACHMENT_MAX_BYTES: must be positive, got %d", maxBytes))
-	default:
-		cfg.AttachmentMaxBytes = maxBytes
-	}
-
-	cfg.AttachmentAllowedTypes = DefaultAttachmentAllowedTypes
-	if v := optional("ATTACHMENT_ALLOWED_TYPES", ""); v != "" {
-		cfg.AttachmentAllowedTypes = nil
-		for t := range strings.SplitSeq(v, ",") {
-			t = strings.TrimSpace(t)
-			// クライアントの申告と完全一致で比べるので、パラメータのない小文字の type/subtype だけを受け付ける。
-			if mt, params, err := mime.ParseMediaType(t); err != nil || len(params) > 0 || mt != t || !strings.Contains(mt, "/") {
-				errs = append(errs, fmt.Errorf("ATTACHMENT_ALLOWED_TYPES: invalid media type %q", t))
-				continue
-			}
-			cfg.AttachmentAllowedTypes = append(cfg.AttachmentAllowedTypes, t)
-		}
-	}
+	cfg.AttachmentMaxBytes = maxBytesVar(&errs, optional, "ATTACHMENT_MAX_BYTES", DefaultAttachmentMaxBytes)
+	cfg.AttachmentAllowedTypes = mediaTypesVar(&errs, optional, "ATTACHMENT_ALLOWED_TYPES", DefaultAttachmentAllowedTypes)
+	cfg.AvatarMaxBytes = maxBytesVar(&errs, optional, "AVATAR_MAX_BYTES", DefaultAvatarMaxBytes)
+	cfg.AvatarAllowedTypes = mediaTypesVar(&errs, optional, "AVATAR_ALLOWED_TYPES", DefaultAvatarAllowedTypes)
 
 	if len(errs) > 0 {
 		return Config{}, fmt.Errorf("load config: %w", errors.Join(errs...))
 	}
 	return cfg, nil
+}
+
+// maxBytesVar はサイズの上限の環境変数を読む。正の数でなければエラーにする。
+func maxBytesVar(errs *[]error, optional func(string, string) string, name string, def int64) int64 {
+	v, err := strconv.ParseInt(optional(name, strconv.FormatInt(def, 10)), 10, 64)
+	switch {
+	case err != nil:
+		*errs = append(*errs, fmt.Errorf("%s: %w", name, err))
+	case v <= 0:
+		*errs = append(*errs, fmt.Errorf("%s: must be positive, got %d", name, v))
+	default:
+		return v
+	}
+	return def
+}
+
+// mediaTypesVar は Content-Type のコンマ区切りの環境変数を読む。
+// クライアントの申告と完全一致で比べるので、パラメータのない小文字の type/subtype だけを受け付ける。
+func mediaTypesVar(errs *[]error, optional func(string, string) string, name string, def []string) []string {
+	raw := optional(name, "")
+	if raw == "" {
+		return def
+	}
+	var types []string
+	for t := range strings.SplitSeq(raw, ",") {
+		t = strings.TrimSpace(t)
+		if mt, params, err := mime.ParseMediaType(t); err != nil || len(params) > 0 || mt != t || !strings.Contains(mt, "/") {
+			*errs = append(*errs, fmt.Errorf("%s: invalid media type %q", name, t))
+			continue
+		}
+		types = append(types, t)
+	}
+	return types
 }

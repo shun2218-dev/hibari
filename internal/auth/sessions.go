@@ -123,5 +123,5 @@ func (s *Service) UpdateProfile(ctx context.Context, userID ulid.ULID, in Profil
 	case err != nil:
 		return User{}, fmt.Errorf("update profile: %w", err)
 	}
-	return toUser(u), nil
+	return s.userWithAvatarURL(ctx, u), nil
 }

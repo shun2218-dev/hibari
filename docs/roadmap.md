@@ -352,7 +352,12 @@ GET    /api/v1/auth/sessions              ログイン中のセッションの�
 DELETE /api/v1/auth/sessions/{sessionID}  1 つ失効させる
 DELETE /api/v1/auth/sessions              いま使っているセッション以外をすべて失効させる
 PATCH  /api/v1/users/me                   display_name / handle
+POST   /api/v1/users/me/avatar           アバター画像の署名付き PUT URL の発行
+POST   /api/v1/users/me/avatar/complete  HEAD で検証してプロフィールに反映する
+DELETE /api/v1/users/me/avatar           画像を外す
+POST   /api/v1/users/avatars             画面に出すユーザーの署名付き GET URL をまとめて取る
 ```
+アバター画像の配布は、chat のレスポンスに URL を載せず、クライアントがまとめて取る（ADR 0020）。
 
 **DoD**
 - [x] `/dev/preview` で全画面・全状態が再現できる（6-1。`app/dev/preview/catalog.test.tsx` がスクリーンショットとの 1 対 1 の対応を検査。デスクトップは headless Chrome、モバイルは幅 390px で並べて確認）

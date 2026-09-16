@@ -26,6 +26,7 @@
 | [0017](0017-client-ip-and-trusted-proxies.md) | クライアント IP の決定と信頼するプロキシ（TRUSTED_PROXIES と X-Forwarded-For） | 採用 |
 | [0018](0018-web-presentational-components.md) | Web クライアントの presentational コンポーネントと /dev/preview（Phase 6-1。境界、アバターの色、書体とアイコン） | 採用 |
 | [0019](0019-session-list-and-profile-update.md) | セッションの一覧と失効、プロフィールの更新（Phase 6。設定画面に対応する API） | 採用 |
+| [0020](0020-avatar-image.md) | アバター画像のアップロードと配布（Phase 6。署名付き PUT、まとめて署名する GET） | 採用 |
 
 ## テンプレート
 

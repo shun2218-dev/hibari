@@ -104,6 +104,8 @@ type Deps struct {
 	Revocations  RevocationNotifier
 	Limiter      RateLimiter
 	Limits       RateLimits
+	Storage      Storage
+	AvatarLimits AvatarLimits
 	Mailer       Mailer
 	// AppBaseURL はメールに載せるリンクの起点（Web クライアントの URL）。
 	AppBaseURL *url.URL
@@ -121,6 +123,8 @@ type Service struct {
 	revocations  RevocationNotifier
 	limiter      RateLimiter
 	limits       RateLimits
+	storage      Storage
+	avatarLimits AvatarLimits
 	mailer       Mailer
 	appBaseURL   *url.URL
 	logger       *slog.Logger
@@ -138,6 +142,8 @@ func NewService(d Deps) *Service {
 		revocations:  d.Revocations,
 		limiter:      d.Limiter,
 		limits:       d.Limits,
+		storage:      d.Storage,
+		avatarLimits: d.AvatarLimits,
 		mailer:       d.Mailer,
 		appBaseURL:   d.AppBaseURL,
 		logger:       d.Logger,
@@ -374,7 +380,7 @@ func (s *Service) Me(ctx context.Context, userID ulid.ULID) (User, error) {
 	case err != nil:
 		return User{}, fmt.Errorf("get user: %w", err)
 	}
-	return toUser(u), nil
+	return s.userWithAvatarURL(ctx, u), nil
 }
 
 // startSession は familyID のセッションに新しい Refresh Token を保存し、Access Token と組にして返す。
