@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"log/slog"
 	"net/http"
@@ -451,6 +451,28 @@ func TestRegisterErrors(t *testing.T) {
 	t.Run("trailing data", func(t *testing.T) {
 		r := c.do(request{method: http.MethodPost, path: "/api/v1/auth/register", body: `{} {}`})
 		expectProblem(t, r, http.StatusBadRequest, "bad-request")
+	})
+	// encoding/json/v2 の読み込み（ADR 0023）。v1 はどれも受け付けていた。
+	t.Run("duplicate key", func(t *testing.T) {
+		// 後勝ちで読むと、検証を通った値と別の値を使わせる入口になる。
+		r := c.do(request{method: http.MethodPost, path: "/api/v1/auth/register", body: `{"handle":"alice","handle":"bob"}`})
+		expectProblem(t, r, http.StatusBadRequest, "bad-request")
+	})
+	t.Run("invalid utf-8", func(t *testing.T) {
+		r := c.do(request{method: http.MethodPost, path: "/api/v1/auth/register", body: "{\"handle\":\"\xff\"}"})
+		expectProblem(t, r, http.StatusBadRequest, "bad-request")
+	})
+	t.Run("field names are case-sensitive", func(t *testing.T) {
+		// 大文字の Handle は handle として読まない。知らないフィールドとして無視され、handle が空になる。
+		r := c.do(request{method: http.MethodPost, path: "/api/v1/auth/register", body: `{"Handle":"alice"}`})
+		p := expectProblem(t, r, http.StatusUnprocessableEntity, "validation-error")
+		got := map[string]string{}
+		for _, e := range p.Errors {
+			got[e.Field] = e.Reason
+		}
+		if got["handle"] != "required" {
+			t.Errorf("errors = %+v, want handle required", p.Errors)
+		}
 	})
 	t.Run("too large", func(t *testing.T) {
 		r := c.do(request{method: http.MethodPost, path: "/api/v1/auth/register", body: `{"handle":"` + strings.Repeat("a", 70<<10) + `"}`})

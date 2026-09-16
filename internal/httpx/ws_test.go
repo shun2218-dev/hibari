@@ -2,7 +2,8 @@ package httpx_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -23,10 +24,10 @@ import (
 
 // wsFrame はサーバーからのフレーム。
 type wsFrame struct {
-	Type  string          `json:"type"`
-	ID    *string         `json:"id"`
-	Error string          `json:"error"`
-	Data  json.RawMessage `json:"data"`
+	Type  string         `json:"type"`
+	ID    *string        `json:"id"`
+	Error string         `json:"error"`
+	Data  jsontext.Value `json:"data"`
 }
 
 // wsClient はテスト用の WebSocket クライアント。読み取りは goroutine で続け（pong を返すため）、フレームを channel に流す。
@@ -322,8 +323,8 @@ func TestWSDeliversMessages(t *testing.T) {
 	if err := json.Unmarshal(ev.Data, &wsMsg); err != nil {
 		t.Fatal(err)
 	}
-	restJSON, _ := json.Marshal(restMsg)
-	wsJSON, _ := json.Marshal(wsMsg)
+	restJSON, _ := json.Marshal(restMsg, json.Deterministic(true))
+	wsJSON, _ := json.Marshal(wsMsg, json.Deterministic(true))
 	if string(restJSON) != string(wsJSON) {
 		t.Errorf("websocket message differs from REST:\n ws:   %s\n rest: %s", wsJSON, restJSON)
 	}

@@ -30,6 +30,14 @@ linters:
               desc: "platform はドメインに依存しない。auth との共通の約束（クレーム名・失効イベントの形式）は authn に置き、auth がそれを使う"
             - pkg: github.com/shun2218-dev/hibari/internal/chat
               desc: "platform はドメインに依存しない"
+        # JSON は encoding/json/v2 だけを使う。v1 は nil のスライスを null にし、大文字小文字を区別せずに読む（ADR 0023）。
+        # `$` を付けて v1 のパッケージだけに一致させる（encoding/json/v2 と encoding/json/jsontext は許す）。
+        json-v2-only:
+          files:
+            - $all
+          deny:
+            - pkg: encoding/json$
+              desc: "encoding/json/v2 を使う（ADR 0023）"
     forbidigo:
       analyze-types: true
       forbid:
@@ -44,6 +52,9 @@ linters:
       key-naming-case: snake
 
   exclusions:
+    # npm のパッケージに同梱された Go のファイル（flatted など）は自分のコードではない。
+    paths:
+      - web/node_modules
     rules:
       # テストの単発リクエストやリスナーまで context 付きにすると読みにくくなるだけなので、noctx は本体のコードにだけ効かせる。
       - path: _test\.go

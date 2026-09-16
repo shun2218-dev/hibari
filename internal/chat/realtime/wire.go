@@ -1,7 +1,8 @@
 package realtime
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 
 	"github.com/oklog/ulid/v2"
@@ -40,10 +41,10 @@ type wireEvent struct {
 	Rooms         []ulid.ULID         `json:"rooms,omitempty"`
 	Workspaces    []ulid.ULID         `json:"workspaces,omitempty"`
 	Users         []ulid.ULID         `json:"users,omitempty"`
-	ExceptUser    *ulid.ULID          `json:"except_user,omitempty"`
+	ExceptUser    *ulid.ULID          `json:"except_user,omitzero"`
 	AccessChanges []chat.AccessChange `json:"access_changes,omitempty"`
 	// Data はドメインの型をそのまま JSON にしたもの。型は Type で決まる（dataDecoders）。
-	Data json.RawMessage `json:"data"`
+	Data jsontext.Value `json:"data"`
 }
 
 // dataDecoders は、イベントの種類ごとに Data を戻す型（chat.Event の Data の一覧と同じ）。

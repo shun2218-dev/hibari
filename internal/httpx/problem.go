@@ -1,7 +1,6 @@
 package httpx
 
 import (
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"math"
@@ -72,7 +71,9 @@ func writeProblem(w http.ResponseWriter, r *http.Request, p problem) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(p.Status)
-	_ = json.NewEncoder(w).Encode(p)
+	if b, err := marshalJSON(p); err == nil {
+		_, _ = w.Write(b)
+	}
 }
 
 // errBadRequest はリクエストの形式が壊れていることを表す（JSON として読めない、Content-Type が違うなど）。

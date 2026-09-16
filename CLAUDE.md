@@ -125,6 +125,7 @@ hibari/
 - 時刻は必ず `Clock` インターフェースから取得する。`time.Now()` を直接呼ぶのは `platform` の実装だけ。
 - ID は ULID 生成器から取得する。DB の既定値（`gen_random_uuid()` など）に頼らない。
 - goroutine を起動したら、必ず終了条件（context のキャンセル、channel のクローズ）を用意する。リークしないことをテストで確かめる。
+- JSON は `encoding/json/v2` を使う（v1 の import は lint で禁止。ADR 0023）。ポインタと bool の省略は `omitempty` ではなく `omitzero` にする。
 - 命名は Go の慣習に従う（`userID`、`HTTPServer`、パッケージ名は短い単数形）。パッケージ名を繰り返す名前（`chat.ChatService`）にしない。
 
 ### エラーハンドリング

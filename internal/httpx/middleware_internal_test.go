@@ -2,7 +2,7 @@ package httpx
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -47,13 +47,13 @@ func TestAccessLogRecordsDurationFromClock(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 
 	var entry struct {
-		Duration time.Duration `json:"duration"` // slog の JSON はナノ秒の整数で出力する
-		Status   int           `json:"status"`
+		Duration int64 `json:"duration"` // slog の JSON はナノ秒の整数で出力する
+		Status   int   `json:"status"`
 	}
 	if err := json.Unmarshal(logs.Bytes(), &entry); err != nil {
 		t.Fatalf("log is not JSON: %v", err)
 	}
-	if entry.Duration != 250*time.Millisecond || entry.Status != http.StatusTeapot {
+	if time.Duration(entry.Duration) != 250*time.Millisecond || entry.Status != http.StatusTeapot {
 		t.Fatalf("log = %+v, want duration=250ms status=418", entry)
 	}
 }

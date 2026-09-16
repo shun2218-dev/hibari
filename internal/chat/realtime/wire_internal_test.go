@@ -33,7 +33,9 @@ func TestWireRoundTrip(t *testing.T) {
 	events := []chat.Event{
 		{Type: chat.EventMessageCreated, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}}, Data: message},
 		{Type: chat.EventMessageUpdated, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}}, Data: message},
-		{Type: chat.EventMessageDeleted, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}}, Data: chat.Message{ID: u(), DeletedAt: &edited}},
+		// 添付のないメッセージは、store と同じく空のスライスで持つ。encoding/json/v2 は nil のスライスを [] にするので、
+		// nil を送ると空のスライスとして戻る（どちらも len が 0 で、配信の処理は区別しない）。
+		{Type: chat.EventMessageDeleted, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}}, Data: chat.Message{ID: u(), Attachments: []chat.MessageAttachment{}, DeletedAt: &edited}},
 		{Type: chat.EventMemberJoined, To: chat.Audience{Rooms: []ulid.ULID{u()}, Users: []ulid.ULID{user.ID}}, Data: chat.MemberJoined{WorkspaceID: u(), RoomID: u(), User: user}},
 		{Type: chat.EventMemberLeft, To: chat.Audience{Rooms: []ulid.ULID{u()}}, Data: chat.MemberLeft{WorkspaceID: u(), RoomID: u(), UserID: u()}},
 		{Type: chat.EventRoomUpdated, To: chat.Audience{Rooms: []ulid.ULID{u()}, Workspaces: []ulid.ULID{u()}}, Data: chat.RoomUpdated{WorkspaceID: u(), RoomID: u(), Name: "general", IsDefault: true}},

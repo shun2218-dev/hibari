@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -93,7 +93,7 @@ func TestHealthz(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 				t.Fatalf("body is not JSON: %v", err)
 			}
-			if gb, _ := json.Marshal(got); string(gb) != mustJSON(t, tt.wantBody) {
+			if gb, _ := json.Marshal(got, json.Deterministic(true)); string(gb) != mustJSON(t, tt.wantBody) {
 				t.Fatalf("body = %s, want %s", gb, mustJSON(t, tt.wantBody))
 			}
 			// 失敗の詳細はレスポンスに出さない。
@@ -106,7 +106,7 @@ func TestHealthz(t *testing.T) {
 
 func mustJSON(t *testing.T, v any) string {
 	t.Helper()
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(v, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}
