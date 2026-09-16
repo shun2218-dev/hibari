@@ -205,6 +205,15 @@ func (h *Hub) Register(ctx context.Context, id authn.Identity, conn Conn) (*Clie
 		return nil, ErrShuttingDown
 	}
 	if err := h.subscriber.Acquire(ctx, userChannel(id.UserID)); err != nil {
+		// 停止が始まっていれば、購読が失敗した原因は Redis のクライアントが閉じたこと（main の defer）なので、
+		// 内部エラーではなく「サーバーが止まる」として返す。実装（httpx）はこれを 1001 で閉じ、クライアントは再接続する。
+		// 接続の受け付け（websocket.Accept）と登録の間に Shutdown が終わると、この順序になりうる。
+		h.mu.Lock()
+		shuttingDown := h.shuttingDown
+		h.mu.Unlock()
+		if shuttingDown {
+			return nil, ErrShuttingDown
+		}
 		return nil, fmt.Errorf("subscribe user channel: %w", err)
 	}
 	h.mu.Lock()
