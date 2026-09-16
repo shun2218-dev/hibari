@@ -2,7 +2,7 @@
 
 import type { FormEvent } from "react";
 
-import { Note } from "@/components/ui/alert";
+import { Alert, Note } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { type PasswordStrength, PasswordField, TextField } from "@/components/ui/field";
 import { AlertIcon, CheckCircleIcon, MailIcon } from "@/components/ui/icons";
@@ -12,10 +12,13 @@ import { AuthHeading, StatusContent } from "./auth-shell";
 
 /** パスワード再設定のメールを頼む。 */
 export function ForgotPasswordForm({
+  error,
   submitting,
   onSubmit,
   loginHref,
 }: {
+  /** 依頼が受け付けられなかった理由（回数制限）。ログイン・登録と同じ枠で出す。 */
+  error?: string;
   submitting?: boolean;
   onSubmit?: (email: string) => void;
   loginHref: string;
@@ -31,6 +34,7 @@ export function ForgotPasswordForm({
         title="パスワードを再設定"
         description="アカウントのメールアドレスを入力してください。再設定用のリンクをお送りします。"
       />
+      {error && <Alert tone="danger">{error}</Alert>}
       <TextField label="メールアドレス" name="email" type="email" autoComplete="email" placeholder="you@example.com" required />
       <Button type="submit" size="lg" disabled={submitting}>
         再設定用のメールを送る
@@ -65,12 +69,15 @@ export function ForgotPasswordSent({ loginHref, onRetry }: { loginHref: string; 
 }
 
 export function ResetPasswordForm({
+  error,
   passwordStrength,
   passwordDefaultValue,
   onPasswordChange,
   submitting,
   onSubmit,
 }: {
+  /** 新しいパスワードが制約を満たさない理由。ログイン・登録と同じ枠で出す。 */
+  error?: string;
   passwordStrength?: PasswordStrength;
   passwordDefaultValue?: string;
   onPasswordChange?: (password: string) => void;
@@ -85,6 +92,7 @@ export function ResetPasswordForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
       <AuthHeading title="新しいパスワードを設定" description="設定すると、すべてのデバイスからログアウトされます。" />
+      {error && <Alert tone="danger">{error}</Alert>}
       <PasswordField
         label="新しいパスワード"
         name="password"
