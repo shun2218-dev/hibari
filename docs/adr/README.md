@@ -25,6 +25,7 @@
 | [0016](0016-redis-pubsub-delivery.md) | Redis Pub/Sub による複数インスタンスの配信（Phase 5。チャンネル、購読の反映の待ち合わせ、presence、再接続の検知） | 採用 |
 | [0017](0017-client-ip-and-trusted-proxies.md) | クライアント IP の決定と信頼するプロキシ（TRUSTED_PROXIES と X-Forwarded-For） | 採用 |
 | [0018](0018-web-presentational-components.md) | Web クライアントの presentational コンポーネントと /dev/preview（Phase 6-1。境界、アバターの色、書体とアイコン） | 採用 |
+| [0019](0019-session-list-and-profile-update.md) | セッションの一覧と失効、プロフィールの更新（Phase 6。設定画面に対応する API） | 採用 |
 
 ## テンプレート
 

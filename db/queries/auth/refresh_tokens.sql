@@ -57,3 +57,42 @@ SELECT EXISTS (
        AND rt.expires_at > sqlc.arg(now)::timestamptz
        AND u.deleted_at IS NULL
 )::boolean;
+
+-- name: ListActiveSessions :many
+-- 設定画面の「ログイン中のデバイス」（ADR 0019）。
+-- セッション（family）ごとに 1 行にまとめる。family の中で未失効なのは最新の 1 行だけなので、
+-- その行の user_agent を「その端末」の情報として使い、family の最初の行の時刻をログインの時刻とする。
+SELECT *
+  FROM (
+    SELECT DISTINCT ON (rt.family_id)
+           rt.family_id,
+           rt.user_agent,
+           rt.created_at AS last_used_at,
+           (SELECT min(f.created_at) FROM refresh_tokens f WHERE f.family_id = rt.family_id)::timestamptz AS started_at
+      FROM refresh_tokens rt
+     WHERE rt.user_id = sqlc.arg(user_id)
+       AND rt.revoked_at IS NULL
+       AND rt.expires_at > sqlc.arg(now)::timestamptz
+     ORDER BY rt.family_id, rt.created_at DESC
+  ) s
+ ORDER BY s.last_used_at DESC;
+
+-- name: RevokeSessionForUser :execrows
+-- 自分のセッションだけを失効させる。user_id の条件で、他人のセッション ID を指定しても 0 行になる。
+UPDATE refresh_tokens
+   SET revoked_at     = sqlc.arg(now)::timestamptz,
+       revoked_reason = sqlc.arg(reason)::text
+ WHERE user_id = sqlc.arg(user_id)
+   AND family_id = sqlc.arg(family_id)
+   AND revoked_at IS NULL;
+
+-- name: RevokeOtherSessions :many
+-- いま使っているセッション以外をすべて失効させ、失効した family を返す（呼び出し側が失効イベントを publish する）。
+-- 1 つの family に複数の行があれば同じ family_id が複数返るので、呼び出し側で重複を除く。
+UPDATE refresh_tokens
+   SET revoked_at     = sqlc.arg(now)::timestamptz,
+       revoked_reason = sqlc.arg(reason)::text
+ WHERE user_id = sqlc.arg(user_id)
+   AND family_id <> sqlc.arg(keep_family_id)
+   AND revoked_at IS NULL
+RETURNING family_id;

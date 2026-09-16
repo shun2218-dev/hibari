@@ -196,16 +196,19 @@ func (s *Service) Register(ctx context.Context, in RegisterInput, c Client) (Use
 }
 
 func createUserError(err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		switch pgErr.ConstraintName {
-		case "users_handle_key":
-			return ErrHandleTaken
-		case "users_email_key":
-			return ErrEmailTaken
-		}
+	switch {
+	case isUniqueViolation(err, "users_handle_key"):
+		return ErrHandleTaken
+	case isUniqueViolation(err, "users_email_key"):
+		return ErrEmailTaken
 	}
 	return fmt.Errorf("create user: %w", err)
+}
+
+// isUniqueViolation は err が constraint の UNIQUE 制約の違反かを返す。
+func isUniqueViolation(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == constraint
 }
 
 // Login は email とパスワードを検証し、新しいセッションを返す。

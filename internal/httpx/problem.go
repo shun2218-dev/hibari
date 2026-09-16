@@ -115,6 +115,9 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		writeProblem(w, r, problem{Type: "handle-taken", Title: "Handle is already taken", Status: http.StatusConflict})
 	case errors.Is(err, auth.ErrEmailTaken):
 		writeProblem(w, r, problem{Type: "email-taken", Title: "Email is already registered", Status: http.StatusConflict})
+	case errors.Is(err, auth.ErrSessionNotFound):
+		// 他人のセッション ID を指定されても、存在しないものと区別しない（ADR 0019）。
+		writeProblem(w, r, problem{Type: "not-found", Title: "Not found", Status: http.StatusNotFound})
 	case errors.Is(err, authn.ErrMissingToken), errors.Is(err, authn.ErrInvalidToken), errors.Is(err, auth.ErrUserNotFound):
 		writeUnauthorized(w, r, err)
 	default:

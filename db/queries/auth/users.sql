@@ -35,3 +35,14 @@ UPDATE users
        updated_at        = sqlc.arg(now)::timestamptz
  WHERE id = sqlc.arg(id)
    AND deleted_at IS NULL;
+
+-- name: UpdateUserProfile :one
+-- 表示名とハンドルの変更（ADR 0019）。省略した項目（NULL）は変えない。
+-- handle の重複は登録と同じく UNIQUE 制約（users_handle_key）の違反として受け取る。
+UPDATE users
+   SET display_name = coalesce(sqlc.narg(display_name), display_name),
+       handle       = coalesce(sqlc.narg(handle)::citext, handle),
+       updated_at   = sqlc.arg(now)::timestamptz
+ WHERE id = sqlc.arg(id)
+   AND deleted_at IS NULL
+RETURNING *;

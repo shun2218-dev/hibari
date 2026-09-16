@@ -344,7 +344,15 @@ Redis Pub/Sub は使わず、インメモリの Hub だけで実装する。意�
 - コンポーネントは表示用の型を props で受け取り、時刻などの文言は整形済み、操作の可否は判定済みで受け取る。整形・判定・seq による並べ替えは 6-2 のデータ層で行う
 - アバターの色は ID のハッシュ、書体は next/font、アイコンは lucide-react
 - `/dev/preview` の名前はスクリーンショットのパスと同じ。本番のビルドでは 404
-- 6-2 で画面をつなぐ前に、デザインの抜け（キックの入口、チャンネルの作成、メッセージの編集など）と、API の抜け（セッションの一覧、プロフィールの更新）を決める（`docs/ui/README.md`）
+- 6-1 で見つかったデザインの抜け（キックの入口、チャンネルの作成、メッセージの編集など）は、同じトークンで描いて `docs/ui/` に足した
+
+**設定画面のための API**（Phase 6 で追加。ADR 0019）
+```
+GET    /api/v1/auth/sessions              ログイン中のセッションの一覧
+DELETE /api/v1/auth/sessions/{sessionID}  1 つ失効させる
+DELETE /api/v1/auth/sessions              いま使っているセッション以外をすべて失効させる
+PATCH  /api/v1/users/me                   display_name / handle
+```
 
 **DoD**
 - [x] `/dev/preview` で全画面・全状態が再現できる（6-1。`app/dev/preview/catalog.test.tsx` がスクリーンショットとの 1 対 1 の対応を検査。デスクトップは headless Chrome、モバイルは幅 390px で並べて確認）

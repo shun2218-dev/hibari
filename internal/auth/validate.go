@@ -99,3 +99,38 @@ func isPlainEmail(s string) bool {
 	addr, err := mail.ParseAddress(s)
 	return err == nil && addr.Name == "" && addr.Address == s
 }
+
+// normalize はプロフィールの更新の入力を検証する。nil の項目は「変えない」なので検証しない。
+func (in ProfileInput) normalize() (ProfileInput, error) {
+	var fields []FieldError
+	add := func(field, reason string) { fields = append(fields, FieldError{Field: field, Reason: reason}) }
+
+	if in.Handle != nil {
+		handle := strings.TrimSpace(*in.Handle)
+		switch {
+		case handle == "":
+			add("handle", ReasonRequired)
+		case !handlePattern.MatchString(handle):
+			add("handle", ReasonInvalidFormat)
+		}
+		in.Handle = &handle
+	}
+
+	if in.DisplayName != nil {
+		name := strings.TrimSpace(*in.DisplayName)
+		switch {
+		case name == "":
+			add("display_name", ReasonRequired)
+		case utf8.RuneCountInString(name) > displayNameMax:
+			add("display_name", ReasonTooLong)
+		case strings.ContainsFunc(name, unicode.IsControl):
+			add("display_name", ReasonInvalidFormat)
+		}
+		in.DisplayName = &name
+	}
+
+	if len(fields) > 0 {
+		return ProfileInput{}, &ValidationError{Fields: fields}
+	}
+	return in, nil
+}
