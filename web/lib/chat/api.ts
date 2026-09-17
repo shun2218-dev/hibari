@@ -8,6 +8,7 @@ import type {
   RoomList,
   RoomMember,
   RoomMemberList,
+  WSTicket,
   Workspace,
   WorkspaceList,
 } from "@/lib/api/types.gen";
@@ -15,6 +16,9 @@ import type { Session } from "@/lib/auth/session";
 
 /** 1 ページのメッセージの数。API の既定と同じ（ADR 0012）。 */
 export const MESSAGE_PAGE_SIZE = 50;
+
+/** 差分の取得の 1 ページの数。API の上限（ADR 0012）。 */
+export const CHANGE_PAGE_SIZE = 100;
 
 /** メンバー一覧の 1 ページの数。API の上限（ADR 0011）にして、往復を減らす。 */
 const MEMBER_PAGE_SIZE = 200;
@@ -46,8 +50,17 @@ export function createChatApi(request: Session["request"]) {
       return request<MessageList>("GET", `/api/v1/rooms/${encodeURIComponent(roomId)}/messages?${params}`);
     },
 
+    /** change_seq が afterChangeSeq より大きいメッセージを、change_seq の昇順で返す（再接続の差分。ADR 0014）。 */
+    listChanges: (roomId: string, afterChangeSeq: number) => {
+      const params = new URLSearchParams({ after_change_seq: String(afterChangeSeq), limit: String(CHANGE_PAGE_SIZE) });
+      return request<MessageList>("GET", `/api/v1/rooms/${encodeURIComponent(roomId)}/messages?${params}`);
+    },
+
     markRead: (roomId: string, body: MarkRoomReadRequest) =>
       request<ReadState>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/read`, body),
+
+    /** WebSocket の接続に使う ws-ticket（30 秒で失効し、1 回しか使えない。ADR 0007）。 */
+    issueTicket: async () => (await request<WSTicket>("POST", "/api/v1/ws/ticket")).ticket,
 
     /** カーソルをたどって全員を取る。パネルに全員を並べるので、途中のページで止めない。 */
     async listAllRoomMembers(roomId: string): Promise<RoomMember[]> {

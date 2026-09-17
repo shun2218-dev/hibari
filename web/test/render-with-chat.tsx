@@ -6,19 +6,28 @@ import { SessionProvider } from "@/lib/auth/session-provider";
 import { ChatProvider } from "@/lib/chat/chat-provider";
 
 import { type Handler, TEST_API_BASE, fakeApi, json, testUser, tokens } from "./fake-api";
+import { fakeSockets } from "./fake-socket";
 
-/** ログインした状態で、チャットのストアと一緒に描く。routes はログインの分に足される（同じキーなら上書き）。 */
+/**
+ * ログインした状態で、チャットのストアと一緒に描く。routes はログインと ws-ticket の分に足される（同じキーなら上書き）。
+ * WebSocket は偽物で、sockets.last() でサーバーの役を演じる（購読には自動で成功の ack を返す）。
+ */
 export function renderWithChat(ui: ReactElement, routes: Record<string, Handler>) {
+  let tickets = 0;
   const api = fakeApi({
     "POST /api/v1/auth/refresh": () => tokens("at-1"),
     "GET /api/v1/users/me": () => json(200, testUser),
+    "POST /api/v1/ws/ticket": () => json(200, { ticket: `ticket-${++tickets}`, expires_in: 30 }),
     ...routes,
   });
   const session = createSession({ baseUrl: TEST_API_BASE, fetch: api.fetch });
+  const sockets = fakeSockets({ autoAck: true });
   const result = render(
     <SessionProvider session={session}>
-      <ChatProvider>{ui}</ChatProvider>
+      <ChatProvider userId={testUser.id} transport={{ url: "ws://api.test/api/v1/ws", createSocket: sockets.createSocket, random: () => 0 }}>
+        {ui}
+      </ChatProvider>
     </SessionProvider>,
   );
-  return { api, session, ...result };
+  return { api, session, sockets, ...result };
 }

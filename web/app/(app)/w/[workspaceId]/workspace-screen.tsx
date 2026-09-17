@@ -5,10 +5,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AccountMenu } from "@/components/chat/account-menu";
 import { ChatLayout } from "@/components/chat/chat-layout";
+import { RemovedFromWorkspace, ServerUnavailable } from "@/components/chat/chat-states";
 import { Sidebar } from "@/components/chat/sidebar";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { useSession, useSessionState } from "@/lib/auth/session-provider";
-import { useChatState, useChatStore } from "@/lib/chat/chat-provider";
+import { useChatState, useChatStore, useRealtime } from "@/lib/chat/chat-provider";
+import { formatTime } from "@/lib/chat/format";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
 import { toRoomSummaryView } from "@/lib/chat/views";
 
@@ -23,9 +25,12 @@ export function WorkspaceScreen() {
   const session = useSession();
   const { state: sessionState } = useSessionState();
   const store = useChatStore();
+  const realtime = useRealtime();
   const workspaces = useChatState((s) => s.workspaces);
   const roomList = useChatState((s) => s.roomLists[workspaceId]);
   const rooms = useChatState((s) => s.rooms);
+  const unavailable = useChatState((s) => s.connection.unavailable);
+  const removal = useChatState((s) => s.removedWorkspaces[workspaceId]);
 
   const [search, setSearch] = useState("");
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -36,11 +41,20 @@ export function WorkspaceScreen() {
   // モバイルで「一覧に戻る」を押した。URL はルームのままにして、別のルームを開いたら詳細に戻す
   const [listShownFor, setListShownFor] = useState<string>();
 
-  const workspace = workspaces.list.find((w) => w.id === workspaceId);
+  // キックされたワークスペースは一覧から消えるが、「削除されました」を出している間は名前とサイドバーを残す
+  const removedFromWorkspace = removal?.reason === "removed";
+  const workspace =
+    workspaces.list.find((w) => w.id === workspaceId) ?? (removedFromWorkspace ? removal.workspace : undefined);
 
   useEffect(() => {
     store.loadWorkspaces();
   }, [store]);
+
+  // 表示中のワークスペースとそのルームを購読する（lib/chat/realtime.ts）
+  useEffect(() => {
+    store.setActiveWorkspace(workspaceId);
+    return () => store.setActiveWorkspace(null);
+  }, [store, workspaceId]);
 
   useEffect(() => {
     store.loadRooms(workspaceId);
@@ -48,7 +62,8 @@ export function WorkspaceScreen() {
 
   // メンバーではない（URL を直接開いた、キックされた）ワークスペースは覚えている場所から外して、入口に戻す。
   // 404 と「存在しない」を区別しない（ADR 0011）ので、画面も分けない
-  const notMember = (workspaces.status === "ready" && !workspace) || roomList?.status === "not_found";
+  const notMember =
+    !removedFromWorkspace && ((workspaces.status === "ready" && !workspace) || roomList?.status === "not_found");
   useEffect(() => {
     if (!notMember) return;
     forgetLocation(workspaceId);
@@ -81,6 +96,23 @@ export function WorkspaceScreen() {
       })
       .filter((view) => query === "" || view.name.toLowerCase().includes(query));
   }, [roomList, rooms, search]);
+
+  function leaveRemovedWorkspace() {
+    forgetLocation(workspaceId);
+    store.forgetRemovedWorkspace(workspaceId);
+    router.replace("/");
+  }
+
+  // 接続できていたサーバーに、続けて届かない（chat/server-error.png）。端末がオフラインのときは再接続中のバナーで待つ
+  if (unavailable) {
+    return (
+      <ServerUnavailable
+        lastConnectedLabel={formatTime(new Date(unavailable.lastConnectedAt))}
+        retryCount={unavailable.retryCount}
+        onRetry={() => realtime.retryNow()}
+      />
+    );
+  }
 
   if (sessionState.status !== "signed_in" || !workspace || roomList?.status !== "ready") return null;
   const user = sessionState.user;
@@ -140,7 +172,11 @@ export function WorkspaceScreen() {
             membersOpen={membersOpen}
             onToggleMembers={() => setMembersOpen((open) => !open)}
             onBack={() => setListShownFor(roomId)}
+            onLeaveRemovedWorkspace={leaveRemovedWorkspace}
           />
+        )}
+        {!roomId && removedFromWorkspace && (
+          <RemovedFromWorkspace workspaceName={workspace.name} onMove={leaveRemovedWorkspace} />
         )}
       </ChatLayout>
       <CreateWorkspace open={creatingWorkspace} onClose={() => setCreatingWorkspace(false)} />
