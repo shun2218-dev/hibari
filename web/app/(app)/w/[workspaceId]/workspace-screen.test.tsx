@@ -127,13 +127,6 @@ describe("WorkspaceScreen", () => {
       expect(history.queryByText("ここから未読")).not.toBeInTheDocument();
     });
 
-    it("does not show a composer yet", async () => {
-      renderWithChat(<WorkspaceScreen />, routes(openRoom(design)));
-
-      await screen.findByRole("list", { name: "メッセージ" });
-      expect(screen.queryByRole("textbox", { name: /メッセージ/ })).not.toBeInTheDocument();
-    });
-
     it("shows the start of an empty room", async () => {
       nav.params = { workspaceId: "ws-1", roomId: "r-chat" };
 
@@ -284,6 +277,147 @@ describe("WorkspaceScreen", () => {
       await waitFor(() =>
         expect(api.calls.filter((c) => c.path === "/api/v1/rooms/r-design/read").map((c) => JSON.parse(c.init.body as string))).toContainEqual({ seq: 4 }),
       );
+    });
+
+    describe("writing", () => {
+      const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+      const composer = () => screen.getByRole("textbox", { name: "メッセージ" });
+
+      /** 送信の API。client_msg_id ごとに 1 回だけ採番し、同じ値の再送には同じメッセージを返す。 */
+      function sendRoute({ reachable = (): boolean => true } = {}) {
+        const sent: { client_msg_id: string; body: string; reply_to_id?: string }[] = [];
+        const created = new Map<string, ReturnType<typeof message>>();
+        const handler: Handler = (_url, init) => {
+          const req = JSON.parse(init.body as string);
+          sent.push(req);
+          if (!reachable()) throw new TypeError("Failed to fetch");
+          const existing = created.get(req.client_msg_id);
+          if (existing) return json(200, existing);
+          const seq = 4 + created.size;
+          const m = message(seq, { room_id: "r-design", change_seq: seq, sender: naoki, client_msg_id: req.client_msg_id, body: req.body });
+          created.set(req.client_msg_id, m);
+          return json(201, m);
+        };
+        return { sent, handler };
+      }
+
+      it("shows the message while sending, clears the input, and tells others I am typing", async () => {
+        let respond!: () => void;
+        const responded = new Promise<void>((r) => (respond = r));
+        const route = sendRoute();
+        const { sockets } = await connected({
+          "POST /api/v1/rooms/r-design/messages": async (url, init) => {
+            await responded;
+            return route.handler(url, init);
+          },
+        });
+
+        await userEvent.type(composer(), "こんにちは");
+        expect(sockets.last().messages()).toContainEqual({ type: "typing", room_id: "r-design" });
+        await userEvent.keyboard("{Enter}");
+
+        expect(composer()).toHaveValue("");
+        const pending = history().getByRole("article", { name: /佐藤 直樹/ });
+        expect(within(pending).getByText("こんにちは")).toBeInTheDocument();
+        expect(within(pending).getByRole("img", { name: "送信中" })).toBeInTheDocument();
+
+        respond();
+        await waitFor(() => expect(history().queryByRole("img", { name: "送信中" })).not.toBeInTheDocument());
+        expect(history().getAllByText("こんにちは")).toHaveLength(1);
+        expect(route.sent).toEqual([{ client_msg_id: expect.stringMatching(/^[0-9A-Z]{26}$/), body: "こんにちは" }]);
+      });
+
+      it("marks a message sent while offline as failed, and resending it does not post twice", async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        let online = false;
+        const route = sendRoute({ reachable: () => online });
+        const { sockets } = await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+
+        await userEvent.type(composer(), "切断中に送信{Enter}");
+        expect(await history().findByText("送信できませんでした")).toBeInTheDocument();
+
+        online = true;
+        await userEvent.click(history().getByRole("button", { name: "再送する" }));
+        await waitFor(() => expect(history().queryByText("送信できませんでした")).not.toBeInTheDocument());
+        // 同じメッセージの created イベントが後から届いても、1 件のまま
+        sockets.last().receive({
+          type: "message.created",
+          data: message(4, { room_id: "r-design", change_seq: 4, sender: naoki, client_msg_id: route.sent[0]!.client_msg_id, body: "切断中に送信" }),
+        });
+
+        expect(route.sent.map((r) => r.client_msg_id)).toEqual([route.sent[0]!.client_msg_id, route.sent[0]!.client_msg_id]);
+        await waitFor(() => expect(history().getAllByText("切断中に送信")).toHaveLength(1));
+      });
+
+      it("discards a failed message", async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        await connected({ "POST /api/v1/rooms/r-design/messages": sendRoute({ reachable: () => false }).handler });
+
+        await userEvent.type(composer(), "やめる{Enter}");
+        await userEvent.click(await history().findByRole("button", { name: "削除" }));
+
+        expect(history().queryByText("やめる")).not.toBeInTheDocument();
+      });
+
+      it("replies to a message", async () => {
+        const route = sendRoute();
+        await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+
+        const target = history().getAllByRole("article")[2]!;
+        await userEvent.click(within(target).getByRole("button", { name: "返信" }));
+        expect(screen.getByText("高橋 みゆき に返信")).toBeInTheDocument();
+        await userEvent.type(composer(), "了解です{Enter}");
+
+        expect(screen.queryByText("高橋 みゆき に返信")).not.toBeInTheDocument();
+        await waitFor(() => expect(route.sent).toEqual([expect.objectContaining({ body: "了解です", reply_to_id: "m-3" })]));
+      });
+
+      it("edits my own message in place", async () => {
+        const mine = message(3, { sender: naoki, body: "書き間違い" });
+        await connected({
+          ...openRoom(design, [message(1), message(2), mine]),
+          "PATCH /api/v1/rooms/r-design/messages/m-3": (_url, init) =>
+            json(200, { ...mine, room_id: "r-design", change_seq: 4, body: JSON.parse(init.body as string).body, edited_at: "2026-09-13T02:00:00Z" }),
+        });
+
+        const article = history().getAllByRole("article")[2]!;
+        // 他人のメッセージには「…」がない（member なので削除もできない）
+        expect(within(history().getAllByRole("article")[1]!).queryByRole("button", { name: "その他の操作" })).not.toBeInTheDocument();
+        await userEvent.click(within(article).getByRole("button", { name: "その他の操作" }));
+        await userEvent.click(screen.getByRole("button", { name: "メッセージを編集" }));
+        const editor = screen.getByRole("textbox", { name: "メッセージを編集" });
+        await userEvent.clear(editor);
+        await userEvent.type(editor, "書き直し{Enter}");
+
+        expect(await history().findByText("（編集済み）")).toBeInTheDocument();
+        expect(history().getByText(/書き直し/)).toBeInTheDocument();
+        expect(screen.queryByRole("textbox", { name: "メッセージを編集" })).not.toBeInTheDocument();
+      });
+
+      it("deletes a message after confirming", async () => {
+        const mine = message(3, { sender: naoki, body: "消すメッセージ" });
+        const { api } = await connected({
+          ...openRoom(design, [message(1), message(2), mine]),
+          "DELETE /api/v1/rooms/r-design/messages/m-3": () => new Response(null, { status: 204 }),
+          "GET /api/v1/rooms/r-design/messages?after_change_seq=3&limit=100": () =>
+            json(200, {
+              messages: api.paths().includes("DELETE /api/v1/rooms/r-design/messages/m-3")
+                ? [{ ...mine, room_id: "r-design", body: "", change_seq: 4, deleted_at: "2026-09-13T02:00:00Z" }]
+                : [],
+              has_more: false,
+              last_change_seq: api.paths().includes("DELETE /api/v1/rooms/r-design/messages/m-3") ? 4 : 3,
+            }),
+        });
+
+        await userEvent.click(within(history().getAllByRole("article")[2]!).getByRole("button", { name: "その他の操作" }));
+        await userEvent.click(screen.getByRole("button", { name: "メッセージを削除" }));
+        const dialog = screen.getByRole("dialog", { name: "メッセージを削除しますか？" });
+        expect(within(dialog).getByText("消すメッセージ")).toBeInTheDocument();
+        await userEvent.click(within(dialog).getByRole("button", { name: "削除する" }));
+
+        expect(await history().findByText("このメッセージは削除されました")).toBeInTheDocument();
+        expect(screen.queryByRole("dialog", { name: "メッセージを削除しますか？" })).not.toBeInTheDocument();
+      });
     });
 
     it("shows who is typing", async () => {

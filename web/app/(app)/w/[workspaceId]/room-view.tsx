@@ -4,14 +4,21 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { EmptyMessages, JoinRoomBar, RemovedFromRoom, RemovedFromWorkspace } from "@/components/chat/chat-states";
-import { TypingIndicator } from "@/components/chat/composer";
+import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
+import { DeleteMessageDialog } from "@/components/chat/room-dialogs";
 import { RoomHeader } from "@/components/chat/room-header";
 import { Timeline } from "@/components/chat/timeline";
-import { useChatState, useChatStore } from "@/lib/chat/chat-provider";
+import { ApiError } from "@/lib/api/error";
+import { useSessionState } from "@/lib/auth/session-provider";
+import { useChatState, useChatStore, useRealtime } from "@/lib/chat/chat-provider";
 import { forgetLocation } from "@/lib/chat/last-location";
-import { roomName, toTimelineItems } from "@/lib/chat/views";
+import type { OutgoingReply } from "@/lib/chat/store";
+import { messageActions, roomName, toTimelineItems } from "@/lib/chat/views";
 import { useDocumentVisible } from "@/lib/use-document-visible";
+
+/** 本文の上限（rune。ADR 0012）。超えたら送信できないようにする（送っても 422 で失敗にしかならない）。 */
+const MAX_BODY_LENGTH = 4000;
 
 type RoomViewProps = {
   workspaceId: string;
@@ -23,7 +30,7 @@ type RoomViewProps = {
 };
 
 /**
- * ルームのヘッダー・接続状態・履歴・入力中の表示・参加の導線。入力欄は送信（構築順 4）で足す。
+ * ルームのヘッダー・接続状態・履歴・入力欄（返信）・メッセージの編集と削除・参加の導線。
  * ルームごとに key を変えて作り直すので、タイムラインのスクロール位置はルームを開くたびにいちばん下から始まる。
  */
 export function RoomView({
@@ -36,7 +43,13 @@ export function RoomView({
 }: RoomViewProps) {
   const router = useRouter();
   const store = useChatStore();
+  const realtime = useRealtime();
+  const { state: sessionState } = useSessionState();
+  const me = sessionState.status === "signed_in" ? sessionState.user : undefined;
   const room = useChatState((s) => s.rooms[roomId]);
+  const outgoing = useChatState((s) => s.outgoing[roomId]);
+  const myRole = useChatState((s) => s.workspaces.list.find((w) => w.id === workspaceId)?.my_role);
+  const members = useChatState((s) => s.roomMembers[roomId]?.members);
   const timeline = useChatState((s) => s.timelines[roomId]);
   const banner = useChatState((s) => s.connection.banner);
   const typing = useChatState((s) => s.typing[roomId]);
@@ -44,6 +57,13 @@ export function RoomView({
   const workspaceRemoval = useChatState((s) => s.removedWorkspaces[workspaceId]);
   const [joining, setJoining] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
+  // 入力欄の本文と返信先。ルームごとに作り直すので、別のルームに移ると消える
+  const [draft, setDraft] = useState("");
+  const [replyTo, setReplyTo] = useState<OutgoingReply | null>(null);
+  const [sentCount, setSentCount] = useState(0);
+  const [openMenuKey, setOpenMenuKey] = useState<string>();
+  const [editing, setEditing] = useState<{ messageId: string; value: string; saving: boolean } | null>(null);
+  const [deleting, setDeleting] = useState<{ messageId: string; body: string; pending: boolean } | null>(null);
   const visible = useDocumentVisible();
 
   useEffect(() => {
@@ -75,10 +95,86 @@ export function RoomView({
   // 並びが変わったときだけ作り直し、タイムラインのスクロール位置の合わせ直しを起こさない
   const messages = timeline?.messages;
   const unreadAfterSeq = timeline?.unreadAfterSeq ?? null;
-  const items = useMemo(() => toTimelineItems(messages ?? [], { unreadAfterSeq }), [messages, unreadAfterSeq]);
+  const items = useMemo(
+    () => toTimelineItems(messages ?? [], { unreadAfterSeq, outgoing, me }),
+    [messages, unreadAfterSeq, outgoing, me],
+  );
   const typingNames = useMemo(() => (typing ?? []).map((t) => t.user.display_name), [typing]);
 
   if (!room || otherWorkspace) return null;
+
+  const findMessage = (key: string) => messages?.find((m) => m.id === key);
+  const findOutgoing = (key: string) => outgoing?.find((m) => m.clientMsgId === key);
+  // 編集中に削除された（別のタブ、管理者）ら、編集をやめる
+  const editingMessage = editing ? findMessage(editing.messageId) : undefined;
+  const activeEditing = editing && editingMessage?.deleted_at === null ? editing : null;
+  const canSend = draft.trim() !== "" && [...draft].length <= MAX_BODY_LENGTH;
+
+  function changeDraft(value: string) {
+    setDraft(value);
+    if (value.trim() !== "") realtime.sendTyping(roomId);
+  }
+
+  function send() {
+    if (!canSend) return;
+    store.sendMessage(roomId, { body: draft, replyTo });
+    setDraft("");
+    setReplyTo(null);
+    setSentCount((n) => n + 1);
+  }
+
+  function reply(key: string) {
+    const message = findMessage(key);
+    if (message) {
+      setReplyTo({ messageId: message.id, clientMsgId: null, senderName: message.sender.display_name, body: message.body });
+      return;
+    }
+    // 送信中の自分のメッセージにも返信できる。送る時点で確定した ID に置き換える（ADR 0027）
+    const pending = findOutgoing(key);
+    if (pending && me) {
+      setReplyTo({ messageId: null, clientMsgId: pending.clientMsgId, senderName: me.display_name, body: pending.body });
+    }
+  }
+
+  function actionsFor(key: string) {
+    const message = findMessage(key);
+    // 送信中のメッセージはまだ ID がないので、編集も削除もできない
+    if (!message || !me) return { canEdit: false, canDelete: false };
+    const senderRole = members?.find((m) => m.user.id === message.sender.id)?.role;
+    return messageActions(message, { userId: me.id, room: room!, myRole, senderRole });
+  }
+
+  async function saveEdit() {
+    if (!activeEditing || !editingMessage) return;
+    if (activeEditing.value === editingMessage.body) {
+      setEditing(null);
+      return;
+    }
+    setEditing({ ...activeEditing, saving: true });
+    try {
+      await store.editMessage(roomId, activeEditing.messageId, activeEditing.value);
+      setEditing(null);
+    } catch (err) {
+      // 失敗の表示はデザインにない。消されていた（409）・読めなくなった（404）なら閉じ、それ以外は保存し直せるように戻す
+      console.error("failed to edit message", err);
+      if (err instanceof ApiError && (err.status === 404 || err.status === 409)) setEditing(null);
+      else setEditing((current) => current && { ...current, saving: false });
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setDeleting({ ...deleting, pending: true });
+    try {
+      await store.deleteMessage(roomId, deleting.messageId);
+      setDeleting(null);
+    } catch (err) {
+      // 失敗の表示はデザインにない。権限がない（403）・見つからない（404）なら閉じ、それ以外は押し直せるように戻す
+      console.error("failed to delete message", err);
+      if (err instanceof ApiError && (err.status === 403 || err.status === 404)) setDeleting(null);
+      else setDeleting((current) => current && { ...current, pending: false });
+    }
+  }
 
   async function join() {
     setJoining(true);
@@ -142,16 +238,59 @@ export function RoomView({
             onReachStart={() => store.loadOlder(roomId)}
             onMarkAllRead={() => store.dismissUnread(roomId)}
             onAtBottomChange={setAtBottom}
+            scrollToLatestKey={sentCount}
+            onRetry={(key) => store.retryMessage(roomId, key)}
+            onDiscard={(key) => store.discardMessage(roomId, key)}
+            onReply={reply}
+            actionsFor={actionsFor}
+            openMenuKey={openMenuKey}
+            onToggleMenu={(key) => setOpenMenuKey((current) => (current === key ? undefined : key))}
+            onEdit={(key) => {
+              setOpenMenuKey(undefined);
+              const message = findMessage(key);
+              if (message) setEditing({ messageId: message.id, value: message.body, saving: false });
+            }}
+            onDelete={(key) => {
+              setOpenMenuKey(undefined);
+              const message = findMessage(key);
+              if (message) setDeleting({ messageId: message.id, body: message.body, pending: false });
+            }}
+            editingKey={activeEditing?.messageId}
+            editing={
+              activeEditing
+                ? {
+                    value: activeEditing.value,
+                    saving: activeEditing.saving,
+                    onChange: (value) => setEditing({ ...activeEditing, value }),
+                    onSave: saveEdit,
+                    onCancel: () => setEditing(null),
+                  }
+                : undefined
+            }
           />
         ))}
       {room.kind === "public" && !room.is_member ? (
         <JoinRoomBar joining={joining} onJoin={join} />
       ) : (
-        // 入力中の表示は、デザインでは入力欄の上にある。入力欄（構築順 4）を出すまでは、同じ位置に単独で置く
-        <div className="px-3 md:px-4">
-          <TypingIndicator names={typingNames} />
-        </div>
+        ready && (
+          <Composer
+            value={draft}
+            onChange={changeDraft}
+            onSend={send}
+            canSend={canSend}
+            typingNames={typingNames}
+            replyTo={replyTo ?? undefined}
+            onCancelReply={() => setReplyTo(null)}
+          />
+        )
       )}
+      <DeleteMessageDialog
+        open={deleting !== null}
+        body={deleting?.body ?? ""}
+        pending={deleting?.pending}
+        onCancel={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }

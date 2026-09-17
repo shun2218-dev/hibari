@@ -116,6 +116,18 @@ describe("Timeline", () => {
       expect(scroller().scrollTop).toBe(0);
     });
 
+    it("jumps to the newest message when asked, even while reading older ones", () => {
+      const scroller = fakeLayout();
+      const items = [msg("a", "1"), msg("b", "2"), msg("c", "3")];
+      const { rerender } = render(<Timeline items={items} scrollToLatestKey={0} />);
+      scroller().scrollTop = 0;
+      fireEvent.scroll(scroller());
+
+      rerender(<Timeline items={[...items, msg("d", "4", { status: "pending" })]} scrollToLatestKey={1} />);
+
+      expect(scroller().scrollTop).toBe(4 * ROW);
+    });
+
     it("reports when the newest message comes into or goes out of view", () => {
       const scroller = fakeLayout();
       const onAtBottomChange = vi.fn();
