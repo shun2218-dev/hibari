@@ -54,17 +54,18 @@ type AvatarProps = {
 };
 
 export function Avatar({ id, name, imageUrl, size = "lg", shape = "circle", online = false, className }: AvatarProps) {
-  const [failed, setFailed] = useState(false);
+  // 読み込めなかった URL。取り直して URL が変われば、もう一度画像を試す（ADR 0028）
+  const [failedUrl, setFailedUrl] = useState<string>();
   const radius = shape === "circle" ? "rounded-full" : size === "xl" ? "rounded-lg" : "rounded-sm";
   return (
     <span className={cx("relative inline-flex shrink-0", className)}>
-      {imageUrl && !failed ? (
+      {imageUrl && imageUrl !== failedUrl ? (
         // 署名付き URL は短命で、next/image の最適化（サーバー経由の取得）も使えないので img を使う
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={imageUrl}
           alt=""
-          onError={() => setFailed(true)}
+          onError={() => setFailedUrl(imageUrl)}
           className={cx("object-cover", sizeClass[size], radius)}
         />
       ) : (

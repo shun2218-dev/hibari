@@ -495,4 +495,99 @@ describe("WorkspaceScreen", () => {
       expect(lastWorkspaceId()).toBeUndefined();
     });
   });
+
+  describe("attachments and avatars", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+    const expiresAt = "2026-09-17T01:00:00Z";
+
+    it("uploads the chosen file straight to storage and sends it with the message", async () => {
+      const puts: string[] = [];
+      let finishPut!: () => void;
+      const sent: unknown[] = [];
+      const pdf = { id: "att-1", file_name: "scale.pdf", content_type: "application/pdf", size_bytes: 3, width: null, height: null };
+      const { container } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "POST /api/v1/rooms/r-design/attachments": () =>
+            json(201, {
+              attachment: { ...pdf, room_id: "r-design", status: "pending", created_at: "2026-09-17T00:00:00Z" },
+              upload: { method: "PUT", url: "https://storage.test/att-1?sig=x", headers: { "Content-Type": "application/pdf" } },
+            }),
+          "POST /api/v1/attachments/att-1/complete": () =>
+            json(200, { ...pdf, room_id: "r-design", status: "uploaded", created_at: "2026-09-17T00:00:00Z" }),
+          "POST /api/v1/rooms/r-design/messages": (_url, init) => {
+            const req = JSON.parse(init.body as string);
+            sent.push(req);
+            return json(201, message(4, { room_id: "r-design", change_seq: 4, sender: naoki, client_msg_id: req.client_msg_id, body: "", attachments: [pdf] }));
+          },
+        }),
+        {
+          upload: {
+            putFile: (url, _headers, _file, { onProgress }) =>
+              new Promise((resolve) => {
+                puts.push(url);
+                onProgress(0.5);
+                finishPut = resolve;
+              }),
+          },
+        },
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      await userEvent.upload(
+        container.querySelector<HTMLInputElement>('input[type="file"]')!,
+        new File(["pdf"], "scale.pdf", { type: "application/pdf" }),
+      );
+
+      expect(await screen.findByRole("progressbar", { name: "scale.pdf をアップロード中" })).toHaveAttribute("aria-valuenow", "50");
+      expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
+      expect(puts).toEqual(["https://storage.test/att-1?sig=x"]);
+
+      finishPut();
+      expect(await screen.findByRole("img", { name: "アップロード済み" })).toBeInTheDocument();
+      // 添付があれば本文は空でも送れる
+      await userEvent.click(screen.getByRole("button", { name: "送信" }));
+
+      expect(screen.queryByRole("img", { name: "アップロード済み" })).not.toBeInTheDocument();
+      await waitFor(() => expect(sent).toEqual([expect.objectContaining({ body: "", attachment_ids: ["att-1"] })]));
+      expect(await history().findByText("scale.pdf")).toBeInTheDocument();
+    });
+
+    it("shows images and avatars once their urls are loaded, and downloads files with a fresh url", async () => {
+      const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+      const withFiles = [
+        message(1, { attachments: [{ id: "img-1", file_name: "mock.png", content_type: "image/png", size_bytes: 10, width: 260, height: 160 }] }),
+        message(2, { attachments: [{ id: "file-1", file_name: "scale.pdf", content_type: "application/pdf", size_bytes: 10, width: null, height: null }] }),
+      ];
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, withFiles),
+          "POST /api/v1/users/avatars": () =>
+            json(200, { avatars: { [naoki.id]: { url: "https://storage.test/avatars/naoki", expires_at: expiresAt } } }),
+          "GET /api/v1/attachments/img-1/url": () => json(200, { url: "https://storage.test/img-1", expires_at: expiresAt }),
+          "GET /api/v1/attachments/file-1/url": () => json(200, { url: "https://storage.test/file-1", expires_at: expiresAt }),
+        }),
+      );
+
+      expect(await screen.findByRole("img", { name: "mock.png" })).toHaveAttribute("src", "https://storage.test/img-1");
+      // DM の相手（佐藤 直樹）のアバターが画像になる
+      await waitFor(() =>
+        expect(
+          sidebar()
+            .getByRole("link", { name: /佐藤 直樹/ })
+            .querySelector("img"),
+        ).toHaveAttribute("src", "https://storage.test/avatars/naoki"),
+      );
+
+      await userEvent.click(history().getByRole("button", { name: "ダウンロード" }));
+      await waitFor(() => expect(click).toHaveBeenCalledOnce());
+      expect((click.mock.contexts[0] as HTMLAnchorElement).href).toBe("https://storage.test/file-1");
+    });
+  });
 });

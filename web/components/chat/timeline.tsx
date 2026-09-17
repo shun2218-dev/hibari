@@ -19,6 +19,7 @@ type TimelineProps = {
   onDiscard?: (key: string) => void;
   onReply?: (key: string) => void;
   onDownload?: (attachmentId: string) => void;
+  onImageError?: (attachmentId: string, url: string) => void;
   onMarkAllRead?: () => void;
   /** key ごとの操作の可否。渡さなければ「…」を出さない。 */
   actionsFor?: (key: string) => MessageActions;
@@ -66,6 +67,7 @@ export function Timeline({
   onDiscard,
   onReply,
   onDownload,
+  onImageError,
   onMarkAllRead,
   actionsFor,
   openMenuKey,
@@ -171,6 +173,7 @@ export function Timeline({
                     onDiscard={() => onDiscard?.(key)}
                     onReply={() => onReply?.(key)}
                     onDownload={onDownload}
+                    onImageError={onImageError}
                     canEdit={actions?.canEdit}
                     canDelete={actions?.canDelete}
                     menuOpen={openMenuKey === key}

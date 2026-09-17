@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { TimelineItem } from "@/components/chat/types";
+import type { MessageAttachment } from "@/lib/api/types.gen";
 import { message, miyuki, naoki, room, roomMember } from "@/test/chat-data";
 
-import { messageActions, toRoomMemberView, toRoomSummaryView, toTimelineItems } from "./views";
+import {
+  messageActions,
+  previewImageIds,
+  toAttachmentDraftView,
+  toRoomMemberView,
+  toRoomSummaryView,
+  toTimelineItems,
+} from "./views";
 
 const tz = "Asia/Tokyo";
 
@@ -32,7 +40,7 @@ describe("toRoomSummaryView", () => {
         last_message: { id: "m1", sender: miyuki, body: "喫茶店ができたらしい", created_at: "2026-09-13T01:22:00Z", deleted: false },
       }),
       now,
-      tz,
+      { timeZone: tz },
     );
 
     expect(view).toMatchObject({ name: "雑談", lastMessage: "高橋 みゆき: 喫茶店ができたらしい", timeLabel: "10:22", unreadCount: 3 });
@@ -48,12 +56,12 @@ describe("toRoomSummaryView", () => {
         last_message: { id: "m2", sender: naoki, body: "あとで見ます", created_at: "2026-09-12T01:00:00Z", deleted: false },
       }),
       now,
-      tz,
+      { timeZone: tz, avatarUrls: { [naoki.id]: "https://storage.test/naoki.png" } },
     );
 
     expect(view).toMatchObject({
       name: "佐藤 直樹",
-      peer: { id: naoki.id, online: true },
+      peer: { id: naoki.id, online: true, avatarUrl: "https://storage.test/naoki.png" },
       lastMessage: "あとで見ます",
       timeLabel: "昨日",
     });
@@ -66,16 +74,46 @@ describe("toRoomSummaryView", () => {
         last_message: { id: "m3", sender: miyuki, body: "", created_at: "2026-09-13T01:00:00Z", deleted: true },
       }),
       now,
-      tz,
+      { timeZone: tz },
     );
 
     expect(view.lastMessage).toBe("高橋 みゆき: このメッセージは削除されました");
   });
 
+  it("shows a placeholder for a message with only attachments", () => {
+    const view = toRoomSummaryView(
+      room("r5", "雑談", {
+        last_message_at: "2026-09-13T01:00:00Z",
+        last_message: { id: "m5", sender: miyuki, body: "", created_at: "2026-09-13T01:00:00Z", deleted: false },
+      }),
+      now,
+      { timeZone: tz },
+    );
+
+    expect(view.lastMessage).toBe("高橋 みゆき: 添付ファイル");
+  });
+
   it("has no preview for a room without messages", () => {
-    expect(toRoomSummaryView(room("r4", "新しい"), now, tz)).toMatchObject({ lastMessage: undefined, timeLabel: undefined });
+    expect(toRoomSummaryView(room("r4", "新しい"), now, { timeZone: tz })).toMatchObject({ lastMessage: undefined, timeLabel: undefined });
   });
 });
+
+const png: MessageAttachment = {
+  id: "a1",
+  file_name: "mock.png",
+  content_type: "image/png",
+  size_bytes: 10,
+  width: 260,
+  height: 160,
+};
+const pdf: MessageAttachment = {
+  id: "a2",
+  file_name: "scale.pdf",
+  content_type: "application/pdf",
+  size_bytes: 253_952,
+  width: null,
+  height: null,
+};
 
 describe("toTimelineItems", () => {
   it("inserts a date divider whenever the local day changes", () => {
@@ -125,6 +163,31 @@ describe("toTimelineItems", () => {
     expect(items.some((item) => item.type === "unread")).toBe(false);
   });
 
+  it("fills in the avatar and image urls that have been loaded", () => {
+    const items = toTimelineItems(
+      [
+        message(1, { attachments: [png, { ...png, id: "a3" }, { ...png, id: "a4", content_type: "image/svg+xml" }] }),
+        message(2, { sender: naoki }),
+      ],
+      {
+        unreadAfterSeq: null,
+        avatarUrls: { [miyuki.id]: "https://storage.test/miyuki.png", [naoki.id]: null },
+        attachmentUrls: { a1: "https://storage.test/a1", a3: null },
+        timeZone: tz,
+      },
+    );
+    const [first, second] = items.flatMap((item) => (item.type === "message" ? [item.message] : []));
+
+    expect(first.sender.avatarUrl).toBe("https://storage.test/miyuki.png");
+    expect(second.sender.avatarUrl).toBeUndefined();
+    // SVG はブラウザで開かせない（ADR 0013）ので、ファイルとして出す
+    expect(first.attachments).toEqual([
+      expect.objectContaining({ kind: "image", id: "a1", url: "https://storage.test/a1" }),
+      expect.objectContaining({ kind: "image", id: "a3", url: undefined }),
+      expect.objectContaining({ kind: "file", id: "a4" }),
+    ]);
+  });
+
   it("maps deleted, edited, replies and attachments", () => {
     const items = toTimelineItems(
       [
@@ -159,11 +222,19 @@ describe("toTimelineItems", () => {
       unreadAfterSeq: 1,
       me: naoki,
       outgoing: [
-        { clientMsgId: "c-x", body: "送信中", replyTo: null, status: "pending", createdAt: "2026-09-13T01:01:00Z" },
+        {
+          clientMsgId: "c-x",
+          body: "送信中",
+          replyTo: null,
+          attachments: [pdf],
+          status: "pending",
+          createdAt: "2026-09-13T01:01:00Z",
+        },
         {
           clientMsgId: "c-y",
           body: "失敗",
           replyTo: { messageId: "m-2", clientMsgId: null, senderName: "高橋 みゆき", body: "b" },
+          attachments: [],
           status: "failed",
           createdAt: "2026-09-13T01:02:00Z",
         },
@@ -173,16 +244,62 @@ describe("toTimelineItems", () => {
     const messages = items.flatMap((item) => (item.type === "message" ? [item.message] : []));
 
     expect(outline(items)).toEqual(["[2026年9月13日]", "a", "[unread]", "b", "送信中", "失敗"]);
-    expect(messages[2]).toMatchObject({ key: "c-x", status: "pending", sender: { id: naoki.id }, timeLabel: "10:01" });
+    expect(messages[2]).toMatchObject({
+      key: "c-x",
+      status: "pending",
+      sender: { id: naoki.id },
+      timeLabel: "10:01",
+      attachments: [{ kind: "file", id: "a2", fileName: "scale.pdf" }],
+    });
     expect(messages[3]).toMatchObject({ key: "c-y", status: "failed", replyTo: { senderName: "高橋 みゆき", body: "b" } });
+  });
+});
+
+describe("previewImageIds", () => {
+  it("lists the images of messages that are not deleted", () => {
+    expect(
+      previewImageIds([
+        message(1, { attachments: [png, pdf] }),
+        message(2, { attachments: [{ ...png, id: "a5" }], deleted_at: "2026-09-13T01:00:00Z" }),
+        message(3, { attachments: [{ ...png, id: "a6", content_type: "image/jpeg" }] }),
+      ]),
+    ).toEqual(["a1", "a6"]);
+  });
+});
+
+describe("toAttachmentDraftView", () => {
+  const file = new File(["x".repeat(2048)], "サイドバー改訂.fig");
+  const base = { key: "draft-1", file, fileName: file.name, progress: 0, attachment: null };
+
+  it("maps each upload status", () => {
+    expect(toAttachmentDraftView({ ...base, status: "uploading", progress: 62 })).toEqual({
+      id: "draft-1",
+      fileName: "サイドバー改訂.fig",
+      status: "uploading",
+      progress: 62,
+    });
+    expect(toAttachmentDraftView({ ...base, status: "failed" })).toEqual({
+      id: "draft-1",
+      fileName: "サイドバー改訂.fig",
+      status: "failed",
+    });
+    expect(toAttachmentDraftView({ ...base, status: "uploaded", progress: 100, attachment: pdf })).toEqual({
+      id: "draft-1",
+      fileName: "サイドバー改訂.fig",
+      status: "uploaded",
+      sizeLabel: "2 KB",
+    });
   });
 });
 
 describe("toRoomMemberView", () => {
   it("labels the workspace role", () => {
-    expect(toRoomMemberView(roomMember(naoki, { role: "owner", online: true }))).toEqual({
+    expect(
+      toRoomMemberView(roomMember(naoki, { role: "owner", online: true }), { [naoki.id]: "https://storage.test/n" }),
+    ).toEqual({
       id: naoki.id,
       name: "佐藤 直樹",
+      avatarUrl: "https://storage.test/n",
       online: true,
       roleLabel: "オーナー",
     });

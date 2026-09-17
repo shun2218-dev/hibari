@@ -9,7 +9,7 @@ import { RemovedFromWorkspace, ServerUnavailable } from "@/components/chat/chat-
 import { Sidebar } from "@/components/chat/sidebar";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { useSession, useSessionState } from "@/lib/auth/session-provider";
-import { useChatState, useChatStore, useRealtime } from "@/lib/chat/chat-provider";
+import { useAvatarUrls, useChatState, useChatStore, useRealtime } from "@/lib/chat/chat-provider";
 import { formatTime } from "@/lib/chat/format";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
 import { toRoomSummaryView } from "@/lib/chat/views";
@@ -85,6 +85,14 @@ export function WorkspaceScreen() {
     router.replace(`/w/${workspaceId}/r/${target}`);
   }, [roomId, roomList, rooms, workspaceId, router]);
 
+  // サイドバーに出す人（自分と DM の相手）のアバター。自分の avatar_url もログインの応答にあるが、1 時間で切れるので同じ経路で取り直す
+  const me = sessionState.status === "signed_in" ? sessionState.user : undefined;
+  const sidebarUserIds = useMemo(() => {
+    const ids = (roomList?.ids ?? []).flatMap((id) => (rooms[id]?.dm_peer ? [rooms[id].dm_peer.id] : []));
+    return me ? [me.id, ...ids] : ids;
+  }, [roomList, rooms, me]);
+  const avatarUrls = useAvatarUrls(sidebarUserIds);
+
   const roomViews = useMemo(() => {
     if (roomList?.status !== "ready") return [];
     const now = new Date();
@@ -92,10 +100,10 @@ export function WorkspaceScreen() {
     return roomList.ids
       .flatMap((id) => {
         const room = rooms[id];
-        return room ? [toRoomSummaryView(room, now)] : [];
+        return room ? [toRoomSummaryView(room, now, { avatarUrls })] : [];
       })
       .filter((view) => query === "" || view.name.toLowerCase().includes(query));
-  }, [roomList, rooms, search]);
+  }, [roomList, rooms, search, avatarUrls]);
 
   function leaveRemovedWorkspace() {
     forgetLocation(workspaceId);
@@ -116,7 +124,7 @@ export function WorkspaceScreen() {
 
   if (sessionState.status !== "signed_in" || !workspace || roomList?.status !== "ready") return null;
   const user = sessionState.user;
-  const currentUser = { id: user.id, name: user.display_name, avatarUrl: user.avatar_url };
+  const currentUser = { id: user.id, name: user.display_name, avatarUrl: avatarUrls[user.id] ?? user.avatar_url };
 
   return (
     <>

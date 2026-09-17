@@ -11,10 +11,19 @@ import { RoomHeader } from "@/components/chat/room-header";
 import { Timeline } from "@/components/chat/timeline";
 import { ApiError } from "@/lib/api/error";
 import { useSessionState } from "@/lib/auth/session-provider";
-import { useChatState, useChatStore, useRealtime } from "@/lib/chat/chat-provider";
+import {
+  useAttachmentUploader,
+  useAvatarUrls,
+  useChatState,
+  useChatStore,
+  useMedia,
+  useMediaState,
+  useRealtime,
+} from "@/lib/chat/chat-provider";
 import { forgetLocation } from "@/lib/chat/last-location";
 import type { OutgoingReply } from "@/lib/chat/store";
-import { messageActions, roomName, toTimelineItems } from "@/lib/chat/views";
+import { draftsReady } from "@/lib/chat/uploads";
+import { messageActions, previewImageIds, roomName, toAttachmentDraftView, toTimelineItems } from "@/lib/chat/views";
 import { useDocumentVisible } from "@/lib/use-document-visible";
 
 /** 本文の上限（rune。ADR 0012）。超えたら送信できないようにする（送っても 422 で失敗にしかならない）。 */
@@ -30,7 +39,18 @@ type RoomViewProps = {
 };
 
 /**
- * ルームのヘッダー・接続状態・履歴・入力欄（返信）・メッセージの編集と削除・参加の導線。
+ * ブラウザにダウンロードさせる。GET URL は Content-Disposition: attachment で署名してある（ADR 0013）ので、
+ * 開いてもページは移らずに保存が始まる。
+ */
+function startDownload(url: string) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.rel = "noopener";
+  link.click();
+}
+
+/**
+ * ルームのヘッダー・接続状態・履歴・入力欄（返信・添付）・メッセージの編集と削除・参加の導線。
  * ルームごとに key を変えて作り直すので、タイムラインのスクロール位置はルームを開くたびにいちばん下から始まる。
  */
 export function RoomView({
@@ -44,6 +64,7 @@ export function RoomView({
   const router = useRouter();
   const store = useChatStore();
   const realtime = useRealtime();
+  const media = useMedia();
   const { state: sessionState } = useSessionState();
   const me = sessionState.status === "signed_in" ? sessionState.user : undefined;
   const room = useChatState((s) => s.rooms[roomId]);
@@ -60,6 +81,7 @@ export function RoomView({
   // 入力欄の本文と返信先。ルームごとに作り直すので、別のルームに移ると消える
   const [draft, setDraft] = useState("");
   const [replyTo, setReplyTo] = useState<OutgoingReply | null>(null);
+  const { uploader, drafts } = useAttachmentUploader(roomId);
   const [sentCount, setSentCount] = useState(0);
   const [openMenuKey, setOpenMenuKey] = useState<string>();
   const [editing, setEditing] = useState<{ messageId: string; value: string; saving: boolean } | null>(null);
@@ -95,10 +117,21 @@ export function RoomView({
   // 並びが変わったときだけ作り直し、タイムラインのスクロール位置の合わせ直しを起こさない
   const messages = timeline?.messages;
   const unreadAfterSeq = timeline?.unreadAfterSeq ?? null;
+
+  // アバターと画像の URL は、chat のレスポンスに載らないので、画面に出すものの ID を集めて引く（ADR 0013 / 0020 / 0028）
+  const senderIds = useMemo(() => [...(messages ?? []).map((m) => m.sender.id), ...(me ? [me.id] : [])], [messages, me]);
+  const avatarUrls = useAvatarUrls(senderIds);
+  const attachmentUrls = useMediaState((s) => s.attachments);
+  const imageIds = useMemo(() => previewImageIds(messages ?? []).join(" "), [messages]);
+  useEffect(() => {
+    if (imageIds !== "") media.requestAttachmentUrls(imageIds.split(" "));
+  }, [media, imageIds]);
+
   const items = useMemo(
-    () => toTimelineItems(messages ?? [], { unreadAfterSeq, outgoing, me }),
-    [messages, unreadAfterSeq, outgoing, me],
+    () => toTimelineItems(messages ?? [], { unreadAfterSeq, outgoing, me, avatarUrls, attachmentUrls }),
+    [messages, unreadAfterSeq, outgoing, me, avatarUrls, attachmentUrls],
   );
+  const draftViews = useMemo(() => drafts.map(toAttachmentDraftView), [drafts]);
   const typingNames = useMemo(() => (typing ?? []).map((t) => t.user.display_name), [typing]);
 
   if (!room || otherWorkspace) return null;
@@ -108,7 +141,9 @@ export function RoomView({
   // 編集中に削除された（別のタブ、管理者）ら、編集をやめる
   const editingMessage = editing ? findMessage(editing.messageId) : undefined;
   const activeEditing = editing && editingMessage?.deleted_at === null ? editing : null;
-  const canSend = draft.trim() !== "" && [...draft].length <= MAX_BODY_LENGTH;
+  // 添付があれば本文は空でもよい。アップロード中・失敗した添付が残っていたら送らない（ADR 0013 / 0028）
+  const canSend =
+    (draft.trim() !== "" || drafts.length > 0) && draftsReady(drafts) && [...draft].length <= MAX_BODY_LENGTH;
 
   function changeDraft(value: string) {
     setDraft(value);
@@ -117,7 +152,7 @@ export function RoomView({
 
   function send() {
     if (!canSend) return;
-    store.sendMessage(roomId, { body: draft, replyTo });
+    store.sendMessage(roomId, { body: draft, replyTo, attachments: uploader.take() });
     setDraft("");
     setReplyTo(null);
     setSentCount((n) => n + 1);
@@ -173,6 +208,15 @@ export function RoomView({
       console.error("failed to delete message", err);
       if (err instanceof ApiError && (err.status === 403 || err.status === 404)) setDeleting(null);
       else setDeleting((current) => current && { ...current, pending: false });
+    }
+  }
+
+  async function download(attachmentId: string) {
+    try {
+      startDownload(await media.attachmentDownloadUrl(attachmentId));
+    } catch (err) {
+      // 失敗の表示はデザインにない
+      console.error("failed to download an attachment", err);
     }
   }
 
@@ -242,6 +286,8 @@ export function RoomView({
             onRetry={(key) => store.retryMessage(roomId, key)}
             onDiscard={(key) => store.discardMessage(roomId, key)}
             onReply={reply}
+            onDownload={download}
+            onImageError={(id, url) => media.attachmentImageFailed(id, url)}
             actionsFor={actionsFor}
             openMenuKey={openMenuKey}
             onToggleMenu={(key) => setOpenMenuKey((current) => (current === key ? undefined : key))}
@@ -278,6 +324,10 @@ export function RoomView({
             onChange={changeDraft}
             onSend={send}
             canSend={canSend}
+            onSelectFiles={(files) => uploader.add(files)}
+            attachments={draftViews}
+            onRetryAttachment={(key) => uploader.retry(key)}
+            onRemoveAttachment={(key) => uploader.remove(key)}
             typingNames={typingNames}
             replyTo={replyTo ?? undefined}
             onCancelReply={() => setReplyTo(null)}

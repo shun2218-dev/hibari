@@ -1,4 +1,5 @@
 import type {
+  AttachmentDraftView,
   MessageAttachmentView,
   RoleLabel,
   RoomMemberView,
@@ -8,6 +9,7 @@ import type {
 import type { Message, MessageAttachment, Role, Room, RoomMember, UserProfile } from "@/lib/api/types.gen";
 
 import type { OutgoingMessage } from "./store";
+import type { AttachmentDraft } from "./uploads";
 
 import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./format";
 
@@ -19,6 +21,15 @@ import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./f
 /** 削除済みのメッセージの本文の代わり。タイムラインの表示（MessageItem）と同じ文言にする。 */
 export const DELETED_MESSAGE_TEXT = "このメッセージは削除されました";
 
+/**
+ * 添付だけのメッセージ（本文が空）の、サイドバーでの 1 行。表示はデザインにない（docs/ui/README.md の未解決）ので仮の文言。
+ * ルーム一覧の last_message には添付の情報がないので、ファイル名は出せない。
+ */
+export const ATTACHMENT_ONLY_TEXT = "添付ファイル";
+
+/** 署名付き URL の手元の表（media.ts）。undefined と null は、どちらも画像を出さない。 */
+export type UrlTable = Readonly<Record<string, string | null | undefined>>;
+
 /** 続けて表示する（アバターと名前を省く）のは、同じ送信者がこの時間内に送ったときだけ。 */
 const GROUPING_WINDOW_MS = 5 * 60 * 1000;
 
@@ -27,11 +38,15 @@ export function roomName(room: Room): string {
   return room.kind === "dm" ? (room.dm_peer?.display_name ?? "") : (room.name ?? "");
 }
 
-export function toRoomSummaryView(room: Room, now: Date, timeZone?: string): RoomSummaryView {
+export function toRoomSummaryView(
+  room: Room,
+  now: Date,
+  { timeZone, avatarUrls = {} }: { timeZone?: string; avatarUrls?: UrlTable } = {},
+): RoomSummaryView {
   const last = room.last_message;
   let lastMessage: string | undefined;
   if (last) {
-    const body = last.deleted ? DELETED_MESSAGE_TEXT : last.body;
+    const body = last.deleted ? DELETED_MESSAGE_TEXT : last.body === "" ? ATTACHMENT_ONLY_TEXT : last.body;
     // DM は相手と自分しかいないので送信者を省く（sidebar のデザイン）
     lastMessage = room.kind === "dm" ? body : `${last.sender.display_name}: ${body}`;
   }
@@ -39,7 +54,9 @@ export function toRoomSummaryView(room: Room, now: Date, timeZone?: string): Roo
     id: room.id,
     kind: room.kind,
     name: roomName(room),
-    peer: room.dm_peer ? { id: room.dm_peer.id, online: room.dm_peer.online } : undefined,
+    peer: room.dm_peer
+      ? { id: room.dm_peer.id, online: room.dm_peer.online, avatarUrl: avatarUrls[room.dm_peer.id] ?? undefined }
+      : undefined,
     lastMessage,
     timeLabel: room.last_message_at ? formatListTime(new Date(room.last_message_at), now, timeZone) : undefined,
     unreadCount: room.unread_count,
@@ -56,6 +73,10 @@ type TimelineOptions = {
   outgoing?: readonly OutgoingMessage[];
   /** 自分。outgoing の送信者として出す。 */
   me?: UserProfile;
+  /** user_id → アバターの URL。 */
+  avatarUrls?: UrlTable;
+  /** attachment_id → 画像の URL。 */
+  attachmentUrls?: UrlTable;
   timeZone?: string;
 };
 
@@ -70,7 +91,7 @@ type Entry = {
   deleted: boolean;
   edited: boolean;
   replyTo: { senderName: string; body: string } | undefined;
-  attachments: MessageAttachmentView[];
+  attachments: readonly MessageAttachment[];
 };
 
 function fromMessage(message: Message): Entry {
@@ -90,7 +111,7 @@ function fromMessage(message: Message): Entry {
           body: message.reply_to.deleted ? DELETED_MESSAGE_TEXT : message.reply_to.body,
         }
       : undefined,
-    attachments: message.attachments.map(toAttachmentView),
+    attachments: message.attachments,
   };
 }
 
@@ -106,7 +127,7 @@ function fromOutgoing(message: OutgoingMessage, me: UserProfile): Entry {
     deleted: false,
     edited: false,
     replyTo: message.replyTo ? { senderName: message.replyTo.senderName, body: message.replyTo.body } : undefined,
-    attachments: [],
+    attachments: message.attachments,
   };
 }
 
@@ -116,7 +137,7 @@ function fromOutgoing(message: OutgoingMessage, me: UserProfile): Entry {
  */
 export function toTimelineItems(
   messages: readonly Message[],
-  { unreadAfterSeq, outgoing = [], me, timeZone }: TimelineOptions,
+  { unreadAfterSeq, outgoing = [], me, avatarUrls = {}, attachmentUrls = {}, timeZone }: TimelineOptions,
 ): TimelineItem[] {
   const entries = messages.map(fromMessage);
   if (me) entries.push(...outgoing.map((m) => fromOutgoing(m, me)));
@@ -154,14 +175,18 @@ export function toTimelineItems(
       type: "message",
       message: {
         key: entry.key,
-        sender: { id: entry.sender.id, name: entry.sender.display_name },
+        sender: {
+          id: entry.sender.id,
+          name: entry.sender.display_name,
+          avatarUrl: avatarUrls[entry.sender.id] ?? undefined,
+        },
         timeLabel: formatTime(entry.createdAt, timeZone),
         body: entry.body,
         status: entry.status,
         deleted: entry.deleted,
         edited: entry.edited,
         replyTo: entry.replyTo,
-        attachments: entry.attachments,
+        attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
         grouped,
       },
     });
@@ -170,15 +195,34 @@ export function toTimelineItems(
   return items;
 }
 
-function toAttachmentView(attachment: MessageAttachment): MessageAttachmentView {
-  if (attachment.content_type.startsWith("image/")) {
+/**
+ * ブラウザが inline で返す画像（ADR 0013）。それ以外の image/*（SVG など）はダウンロードさせるので、ファイルとして出す。
+ */
+const INLINE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+export function isPreviewImage(attachment: Pick<MessageAttachment, "content_type">): boolean {
+  return INLINE_IMAGE_TYPES.has(attachment.content_type);
+}
+
+/**
+ * 画面に出している（削除されていない）メッセージの、プレビューする画像の ID。GET URL を取る対象（media.ts）。
+ * 送信中のメッセージの添付はまだメッセージに付いていない（URL が 404 になる）ので含めない。
+ */
+export function previewImageIds(messages: readonly Message[]): string[] {
+  return messages.flatMap((m) =>
+    m.deleted_at === null ? m.attachments.filter(isPreviewImage).map((a) => a.id) : [],
+  );
+}
+
+function toAttachmentView(attachment: MessageAttachment, urls: UrlTable): MessageAttachmentView {
+  if (isPreviewImage(attachment)) {
     return {
       kind: "image",
       id: attachment.id,
       fileName: attachment.file_name,
       width: attachment.width ?? undefined,
       height: attachment.height ?? undefined,
-      // GET URL は表示するときに取る（ADR 0013）。構築順 5 で入れる
+      url: urls[attachment.id] ?? undefined,
     };
   }
   return { kind: "file", id: attachment.id, fileName: attachment.file_name, sizeLabel: formatBytes(attachment.size_bytes) };
@@ -209,11 +253,24 @@ export function messageActions(
 
 const roleLabels: Record<Role, RoleLabel> = { owner: "オーナー", admin: "管理者", member: "メンバー" };
 
-export function toRoomMemberView(member: RoomMember): RoomMemberView {
+export function toRoomMemberView(member: RoomMember, avatarUrls: UrlTable = {}): RoomMemberView {
   return {
     id: member.user.id,
     name: member.user.display_name,
+    avatarUrl: avatarUrls[member.user.id] ?? undefined,
     online: member.online,
     roleLabel: roleLabels[member.role],
   };
+}
+
+/** 入力欄に並べる添付。 */
+export function toAttachmentDraftView(draft: AttachmentDraft): AttachmentDraftView {
+  switch (draft.status) {
+    case "uploading":
+      return { id: draft.key, fileName: draft.fileName, status: "uploading", progress: draft.progress };
+    case "failed":
+      return { id: draft.key, fileName: draft.fileName, status: "failed" };
+    case "uploaded":
+      return { id: draft.key, fileName: draft.fileName, status: "uploaded", sizeLabel: formatBytes(draft.file.size) };
+  }
 }

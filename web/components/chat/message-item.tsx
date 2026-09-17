@@ -21,6 +21,8 @@ type MessageItemProps = {
   onDiscard?: () => void;
   onReply?: () => void;
   onDownload?: (attachmentId: string) => void;
+  /** 画像が読み込めなかった（署名付き URL の期限切れなど）。url は読み込みに使った URL。 */
+  onImageError?: (attachmentId: string, url: string) => void;
   /** 「…」で出せる操作。両方 false なら「…」自体を出さない。 */
   canEdit?: boolean;
   canDelete?: boolean;
@@ -39,6 +41,7 @@ export function MessageItem({
   onDiscard,
   onReply,
   onDownload,
+  onImageError,
   canEdit = false,
   canDelete = false,
   menuOpen = false,
@@ -113,7 +116,7 @@ export function MessageItem({
           <ul className="mt-2 flex flex-col gap-2">
             {message.attachments.map((attachment) => (
               <li key={attachment.id}>
-                <Attachment attachment={attachment} onDownload={onDownload} />
+                <Attachment attachment={attachment} onDownload={onDownload} onImageError={onImageError} />
               </li>
             ))}
           </ul>
@@ -216,22 +219,32 @@ function MessageEditor({ editing }: { editing: MessageEditingView }) {
 function Attachment({
   attachment,
   onDownload,
+  onImageError,
 }: {
   attachment: MessageAttachmentView;
   onDownload?: (attachmentId: string) => void;
+  onImageError?: (attachmentId: string, url: string) => void;
 }) {
   if (attachment.kind === "image") {
     // 寸法が分かっていれば先に枠を確保し、画像の読み込みでタイムラインがずれないようにする（ADR 0013）
     const aspectRatio = attachment.width && attachment.height ? `${attachment.width} / ${attachment.height}` : undefined;
     return (
       <div
-        className="flex w-65 max-w-full items-center justify-center overflow-hidden rounded-md border border-border bg-surface-muted"
+        // 縦に長い画像がタイムラインを占めないよう、高さを抑えて切り取る
+        className="flex max-h-80 w-65 max-w-full items-center justify-center overflow-hidden rounded-md border border-border bg-surface-muted"
         style={{ aspectRatio: aspectRatio ?? "13 / 8" }}
       >
         {attachment.url ? (
           // 署名付き URL は短時間で失効し、next/image の最適化（サーバー経由の取得）も使えないので img を使う
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={attachment.url} alt={attachment.fileName} className="size-full object-cover" />
+          <img
+            src={attachment.url}
+            alt={attachment.fileName}
+            // 画面の外の画像は、見えるまで読み込まない（1 枚で最大 25 MiB。ADR 0013）
+            loading="lazy"
+            onError={() => onImageError?.(attachment.id, attachment.url!)}
+            className="size-full object-cover"
+          />
         ) : (
           <span className="font-mono text-2xs text-text-muted">{attachment.fileName}</span>
         )}

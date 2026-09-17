@@ -34,6 +34,7 @@
 | [0025](0025-web-workspace-and-room-pages.md) | Web のワークスペースとルームの画面（Phase 6。ID の URL、最後に開いた場所、表示した所まで既読、開いた時点で未読の区切りを固定） | 採用 |
 | [0026](0026-web-realtime-client.md) | Web の WebSocket クライアント（Phase 6。バックオフ + ジッターと ping、購読の ack の後に取り直す、タイムラインを残して差分で同期、見ている間だけ既読、外されたときの表示） | 採用 |
 | [0027](0027-web-sending-messages.md) | Web のメッセージの送信（Phase 6。送信中は outgoing に持つ、ルームごとに 1 件ずつ送る、時間切れと同じ client_msg_id での再送、端末に保存しない、返信・編集・削除） | 採用 |
+| [0028](0028-web-attachments-and-avatars.md) | Web の添付とアバターの表示（Phase 6。XHR で直接 PUT、uploaded を待ってから送信、許可リストにない種類は octet-stream で発行し直す、アバターはまとめて期限で取り直し、添付の画像は読み込みの失敗で取り直す） | 採用 |
 
 ## テンプレート
 

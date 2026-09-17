@@ -36,6 +36,20 @@ describe("Composer", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it("reports the files chosen from the attach button", async () => {
+    const onSelectFiles = vi.fn();
+    const { container } = render(<Composer value="" canSend={false} onSelectFiles={onSelectFiles} />);
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const click = vi.spyOn(input, "click");
+    const files = [new File(["a"], "a.png", { type: "image/png" }), new File(["b"], "b.fig")];
+
+    await userEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+    expect(click).toHaveBeenCalledOnce();
+    await userEvent.upload(input, files);
+
+    expect(onSelectFiles).toHaveBeenCalledWith(files);
+  });
+
   it("reports typed text", async () => {
     const onChange = vi.fn();
     render(<Composer value="" canSend={false} onChange={onChange} />);

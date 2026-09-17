@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 
 import { MembersPanel } from "@/components/chat/members-panel";
-import { useChatState, useChatStore } from "@/lib/chat/chat-provider";
+import { useAvatarUrls, useChatState, useChatStore } from "@/lib/chat/chat-provider";
 import { toRoomMemberView } from "@/lib/chat/views";
 
 /**
@@ -18,6 +18,11 @@ export function RoomMembers({ roomId, onClose }: { roomId: string; onClose: () =
     store.loadRoomMembers(roomId);
   }, [store, roomId]);
 
-  const views = useMemo(() => (members?.members ?? []).map(toRoomMemberView), [members]);
+  const memberIds = useMemo(() => (members?.members ?? []).map((m) => m.user.id), [members]);
+  const avatarUrls = useAvatarUrls(memberIds);
+  const views = useMemo(
+    () => (members?.members ?? []).map((member) => toRoomMemberView(member, avatarUrls)),
+    [members, avatarUrls],
+  );
   return <MembersPanel members={views} onClose={onClose} />;
 }
