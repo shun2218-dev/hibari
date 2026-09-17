@@ -55,11 +55,15 @@ describe("AppLayout", () => {
       <AppLayout>
         <HomePage />
       </AppLayout>,
-      { ...signedIn, "POST /api/v1/auth/logout": () => new Response(null, { status: 204 }) },
+      {
+        ...signedIn,
+        "GET /api/v1/workspaces": () => json(200, { workspaces: [] }),
+        "POST /api/v1/auth/logout": () => new Response(null, { status: 204 }),
+      },
     );
 
-    expect(await screen.findByText(/でログインしています/)).toHaveTextContent("佐藤 直樹（@naoki）でログインしています");
-    await userEvent.click(screen.getByRole("button", { name: "ログアウト" }));
+    // ワークスペースが 0 件の画面のログアウト
+    await userEvent.click(await screen.findByRole("button", { name: "ログアウト" }));
 
     await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/login"));
   });

@@ -1,30 +1,43 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { useSession, useSessionState } from "@/lib/auth/session-provider";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+import { NoWorkspaces } from "@/components/workspace/no-workspaces";
+import { useSession } from "@/lib/auth/session-provider";
+import { useChatState, useChatStore } from "@/lib/chat/chat-provider";
+import { lastWorkspaceId } from "@/lib/chat/last-location";
+
+import { CreateWorkspace } from "./create-workspace";
 
 /**
- * 仮のトップページ。ログインしてログアウトできることだけを確かめる。
- *
- * ワークスペースの画面への振り分けと、ワークスペースが 0 件のときの表示は、
- * 本番のページの構築順 2（ロードマップ Phase 6-2）で、デザインを足してから作る。
- * Phase 1 の骨組み（API の疎通を出すだけのページ）と同じく、docs/ui の画面ではない。
+ * ログインした後の入口。最後に開いたワークスペース（なければ一覧の先頭）に移る。
+ * どのルームを開くかは、ワークスペースの画面が決める。
  */
 export default function HomePage() {
+  const router = useRouter();
   const session = useSession();
-  const { state } = useSessionState();
-  // レイアウトがログイン済みのときだけ描く。
-  if (state.status !== "signed_in") return null;
+  const store = useChatStore();
+  const workspaces = useChatState((s) => s.workspaces);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    store.loadWorkspaces();
+  }, [store]);
+
+  useEffect(() => {
+    if (workspaces.status !== "ready" || workspaces.list.length === 0) return;
+    const remembered = workspaces.list.find((w) => w.id === lastWorkspaceId());
+    router.replace(`/w/${(remembered ?? workspaces.list[0]).id}`);
+  }, [workspaces, router]);
+
+  // 取得中と、取得できなかったとき（その画面はデザインにない）は何も描かない。
+  if (workspaces.status !== "ready" || workspaces.list.length > 0) return null;
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background px-4 text-center">
-      <p className="text-2xl font-bold tracking-tight text-text">hibari</p>
-      <p className="text-sm text-text-secondary">
-        {state.user.display_name}（<span className="font-mono">@{state.user.handle}</span>）でログインしています
-      </p>
-      <Button variant="secondary" size="md" onClick={() => session.logout()}>
-        ログアウト
-      </Button>
-    </main>
+    <>
+      <NoWorkspaces onCreate={() => setCreating(true)} onLogout={() => session.logout()} />
+      <CreateWorkspace open={creating} onClose={() => setCreating(false)} navigate={false} />
+    </>
   );
 }
