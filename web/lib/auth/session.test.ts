@@ -188,6 +188,52 @@ describe("createSession", () => {
     });
   });
 
+  describe("revalidate", () => {
+    it("refreshes even while the access token is still valid", async () => {
+      let n = 0;
+      const api = fakeApi({
+        "POST /api/v1/auth/login": () => tokens("at-1", true),
+        "POST /api/v1/auth/refresh": () => tokens(`at-refreshed-${++n}`),
+        "GET /api/v1/users/me": (_url, init) => json(200, { ...user, display_name: authorization(init)! }),
+      });
+      const session = createSession({ baseUrl: BASE, fetch: api.fetch });
+      await session.login({ email: user.email, password: "correct-horse" });
+
+      await expect(session.revalidate()).resolves.toBe(true);
+
+      expect(api.paths()).toEqual(["POST /api/v1/auth/login", "POST /api/v1/auth/refresh"]);
+      await expect(session.request("GET", "/api/v1/users/me")).resolves.toMatchObject({
+        display_name: "Bearer at-refreshed-1",
+      });
+    });
+
+    it("signs out and returns false when the session was revoked", async () => {
+      const api = fakeApi({
+        "POST /api/v1/auth/login": () => tokens("at-1", true),
+        "POST /api/v1/auth/refresh": () => problem(401, "invalid-refresh-token"),
+      });
+      const session = createSession({ baseUrl: BASE, fetch: api.fetch });
+      await session.login({ email: user.email, password: "correct-horse" });
+
+      await expect(session.revalidate()).resolves.toBe(false);
+
+      expect(session.getSnapshot()).toEqual({ status: "signed_out" });
+    });
+
+    it("throws without signing out when the server is unreachable", async () => {
+      const api = fakeApi({
+        "POST /api/v1/auth/login": () => tokens("at-1", true),
+        "POST /api/v1/auth/refresh": () => Promise.reject(new TypeError("fetch failed")),
+      });
+      const session = createSession({ baseUrl: BASE, fetch: api.fetch });
+      await session.login({ email: user.email, password: "correct-horse" });
+
+      await expect(session.revalidate()).rejects.toBeInstanceOf(TypeError);
+
+      expect(session.getSnapshot().status).toBe("signed_in");
+    });
+  });
+
   describe("logout", () => {
     it("revokes the session with the cookie and signs out", async () => {
       const api = fakeApi({
