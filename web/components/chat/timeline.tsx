@@ -42,6 +42,10 @@ type TimelineProps = {
    * 最初に描いたときにも 1 回呼ぶ。
    */
   onAtBottomChange?: (atBottom: boolean) => void;
+  /**
+   * この値が変わったら、スクロールの位置に関係なくいちばん下を見せる。自分が送信したときに、上の履歴を読んでいても送ったメッセージを見せるため。
+   */
+  scrollToLatestKey?: number;
 };
 
 /** いちばん上からこの距離より近づいたら、古いメッセージを読み込む。1 ページを読み終える前に次を用意しておく。 */
@@ -73,6 +77,7 @@ export function Timeline({
   hoveredKey,
   onReachStart,
   onAtBottomChange,
+  scrollToLatestKey,
 }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
@@ -80,6 +85,7 @@ export function Timeline({
   // 呼び出し側が毎回新しい関数を渡しても、スクロール位置の合わせ直しは items が変わったときだけにする
   const reachStartAfterRender = useEffectEvent(() => onReachStart?.());
   const atBottomRef = useRef<boolean | null>(null);
+  const scrollToLatestKeyRef = useRef(scrollToLatestKey);
   // スクロールのハンドラからも呼ぶので useEffectEvent は使えない。最新の関数を ref に置き、合わせ直しの effect より先に更新する
   const onAtBottomChangeRef = useRef(onAtBottomChange);
   useLayoutEffect(() => {
@@ -105,7 +111,9 @@ export function Timeline({
     const el = scrollRef.current;
     if (!el) return;
     const anchor = anchorRef.current;
-    if (!anchor || anchor.atBottom) {
+    const jumpToLatest = scrollToLatestKeyRef.current !== scrollToLatestKey;
+    scrollToLatestKeyRef.current = scrollToLatestKey;
+    if (!anchor || anchor.atBottom || jumpToLatest) {
       el.scrollTop = el.scrollHeight;
     } else {
       const previousFirst = Array.from(listRef.current?.children ?? []).find(
@@ -115,7 +123,7 @@ export function Timeline({
     }
     captureAnchor();
     if (el.scrollHeight <= el.clientHeight) reachStartAfterRender();
-  }, [items]);
+  }, [items, scrollToLatestKey]);
 
   return (
     <div

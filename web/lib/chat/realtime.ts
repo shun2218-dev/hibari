@@ -12,6 +12,12 @@ const RESTORED_BANNER_MS = 3_000;
 /** サーバーに届かない試行がこの回数続いたら、バナーではなく「サーバーに接続できません」の画面にする。 */
 const UNAVAILABLE_AFTER_ATTEMPTS = 3;
 
+/**
+ * 入力中を送る間隔。サーバーは 5 秒に 1 回に間引き、受け取った側は 6 秒で表示を消す（docs/events.md）。
+ * 間引かれる前提で少し短くし、入力し続けている間に表示が途切れないようにする。
+ */
+const TYPING_INTERVAL_MS = 3_000;
+
 type Target = { kind: "workspace" | "room"; id: string };
 
 function keyOf(target: Target): string {
@@ -52,6 +58,8 @@ export function createRealtime({ store, ...connectionOptions }: RealtimeOptions)
   let restoredTimer: ReturnType<typeof setTimeout> | undefined;
   let unsubscribeStore: (() => void) | undefined;
   let connectionState: ConnectionState = { status: "closed", lastOpenedAt: null, unreachableAttempts: 0 };
+  const lastTypingAt = new Map<string, number>();
+  const now = connectionOptions.now ?? Date.now;
 
   const connection = createConnection({
     ...connectionOptions,
@@ -202,6 +210,18 @@ export function createRealtime({ store, ...connectionOptions }: RealtimeOptions)
       unsubscribeStore = undefined;
       clearTimeout(restoredTimer);
       connection.stop();
+    },
+
+    /**
+     * 入力中を知らせる。入力欄が変わるたびに呼んでよい（間隔を空けて送る）。
+     * 購読していないルームには送らない（サーバーが not_subscribed を返すだけ）。つながっていなければ落とす。
+     */
+    sendTyping(roomId: string) {
+      if (connectionState.status !== "open" || !subscribed.has(keyOf({ kind: "room", id: roomId }))) return;
+      const last = lastTypingAt.get(roomId);
+      if (last !== undefined && now() - last < TYPING_INTERVAL_MS) return;
+      lastTypingAt.set(roomId, now());
+      connection.notify({ type: "typing", room_id: roomId });
     },
 
     /** 「再試行」ボタン。 */

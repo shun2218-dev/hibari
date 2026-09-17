@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { TimelineItem } from "@/components/chat/types";
 import { message, miyuki, naoki, room, roomMember } from "@/test/chat-data";
 
-import { toRoomMemberView, toRoomSummaryView, toTimelineItems } from "./views";
+import { messageActions, toRoomMemberView, toRoomSummaryView, toTimelineItems } from "./views";
 
 const tz = "Asia/Tokyo";
 
@@ -153,6 +153,29 @@ describe("toTimelineItems", () => {
       ],
     });
   });
+
+  it("appends my unconfirmed messages after the confirmed ones, grouped with my last message", () => {
+    const items = toTimelineItems([message(1, { body: "a", sender: naoki }), message(2, { body: "b" })], {
+      unreadAfterSeq: 1,
+      me: naoki,
+      outgoing: [
+        { clientMsgId: "c-x", body: "送信中", replyTo: null, status: "pending", createdAt: "2026-09-13T01:01:00Z" },
+        {
+          clientMsgId: "c-y",
+          body: "失敗",
+          replyTo: { messageId: "m-2", clientMsgId: null, senderName: "高橋 みゆき", body: "b" },
+          status: "failed",
+          createdAt: "2026-09-13T01:02:00Z",
+        },
+      ],
+      timeZone: tz,
+    });
+    const messages = items.flatMap((item) => (item.type === "message" ? [item.message] : []));
+
+    expect(outline(items)).toEqual(["[2026年9月13日]", "a", "[unread]", "b", "送信中", "失敗"]);
+    expect(messages[2]).toMatchObject({ key: "c-x", status: "pending", sender: { id: naoki.id }, timeLabel: "10:01" });
+    expect(messages[3]).toMatchObject({ key: "c-y", status: "failed", replyTo: { senderName: "高橋 みゆき", body: "b" } });
+  });
 });
 
 describe("toRoomMemberView", () => {
@@ -162,6 +185,38 @@ describe("toRoomMemberView", () => {
       name: "佐藤 直樹",
       online: true,
       roleLabel: "オーナー",
+    });
+  });
+});
+
+describe("messageActions", () => {
+  const channel = room("r1", "雑談");
+  const base = { userId: naoki.id, room: channel, myRole: "member" as const, senderRole: undefined };
+
+  it("lets me edit and delete my own messages while I can post", () => {
+    expect(messageActions(message(1, { sender: naoki }), base)).toEqual({ canEdit: true, canDelete: true });
+    expect(messageActions(message(1, { sender: naoki }), { ...base, room: { ...channel, is_member: false } })).toEqual({
+      canEdit: false,
+      canDelete: false,
+    });
+  });
+
+  it("lets admins and above delete messages of lower roles, but never edit them", () => {
+    const theirs = message(1, { sender: miyuki });
+    expect(messageActions(theirs, base)).toEqual({ canEdit: false, canDelete: false });
+    expect(messageActions(theirs, { ...base, myRole: "admin" })).toEqual({ canEdit: false, canDelete: true });
+    expect(messageActions(theirs, { ...base, myRole: "admin", senderRole: "admin" }).canDelete).toBe(false);
+    expect(messageActions(theirs, { ...base, myRole: "owner", senderRole: "admin" }).canDelete).toBe(true);
+    // 相手のロールが分からなければ出し、サーバーに判断させる
+    expect(messageActions(theirs, { ...base, myRole: "admin", senderRole: undefined }).canDelete).toBe(true);
+  });
+
+  it("does not moderate DMs or deleted messages", () => {
+    const dm = room("d1", "", { kind: "dm" });
+    expect(messageActions(message(1, { sender: miyuki }), { ...base, room: dm, myRole: "owner" }).canDelete).toBe(false);
+    expect(messageActions(message(1, { sender: naoki, deleted_at: "2026-09-13T01:00:00Z" }), base)).toEqual({
+      canEdit: false,
+      canDelete: false,
     });
   });
 });

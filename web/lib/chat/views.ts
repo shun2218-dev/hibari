@@ -5,7 +5,9 @@ import type {
   RoomSummaryView,
   TimelineItem,
 } from "@/components/chat/types";
-import type { Message, MessageAttachment, Role, Room, RoomMember } from "@/lib/api/types.gen";
+import type { Message, MessageAttachment, Role, Room, RoomMember, UserProfile } from "@/lib/api/types.gen";
+
+import type { OutgoingMessage } from "./store";
 
 import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./format";
 
@@ -50,27 +52,91 @@ type TimelineOptions = {
    * null なら入れない（メンバーではない、または区切りを消した）。
    */
   unreadAfterSeq: number | null;
+  /** 確定していない自分のメッセージ。確定したメッセージの後ろに、送った順で並べる（まだ seq がない）。 */
+  outgoing?: readonly OutgoingMessage[];
+  /** 自分。outgoing の送信者として出す。 */
+  me?: UserProfile;
   timeZone?: string;
 };
 
-/** seq の昇順に並んだメッセージから、日付と未読の区切りを挟んだタイムラインを作る。 */
-export function toTimelineItems(messages: readonly Message[], { unreadAfterSeq, timeZone }: TimelineOptions): TimelineItem[] {
+/** タイムラインに並べる 1 件。確定したメッセージと、確定していない自分のメッセージを同じ形にそろえる。 */
+type Entry = {
+  key: string;
+  seq: number | null;
+  sender: UserProfile;
+  createdAt: Date;
+  body: string;
+  status: "pending" | "sent" | "failed";
+  deleted: boolean;
+  edited: boolean;
+  replyTo: { senderName: string; body: string } | undefined;
+  attachments: MessageAttachmentView[];
+};
+
+function fromMessage(message: Message): Entry {
+  return {
+    key: message.id,
+    seq: message.seq,
+    sender: message.sender,
+    createdAt: new Date(message.created_at),
+    body: message.body,
+    // REST と WebSocket で届いたメッセージは seq が採番済み
+    status: "sent",
+    deleted: message.deleted_at !== null,
+    edited: message.edited_at !== null,
+    replyTo: message.reply_to
+      ? {
+          senderName: message.reply_to.sender.display_name,
+          body: message.reply_to.deleted ? DELETED_MESSAGE_TEXT : message.reply_to.body,
+        }
+      : undefined,
+    attachments: message.attachments.map(toAttachmentView),
+  };
+}
+
+function fromOutgoing(message: OutgoingMessage, me: UserProfile): Entry {
+  return {
+    // 確定すると key がメッセージの ID に変わる。確定したメッセージと送信中のメッセージの key は重ならない
+    key: message.clientMsgId,
+    seq: null,
+    sender: me,
+    createdAt: new Date(message.createdAt),
+    body: message.body,
+    status: message.status,
+    deleted: false,
+    edited: false,
+    replyTo: message.replyTo ? { senderName: message.replyTo.senderName, body: message.replyTo.body } : undefined,
+    attachments: [],
+  };
+}
+
+/**
+ * seq の昇順に並んだメッセージから、日付と未読の区切りを挟んだタイムラインを作る。
+ * 確定していない自分のメッセージは、その後ろに送った順で並べる。
+ */
+export function toTimelineItems(
+  messages: readonly Message[],
+  { unreadAfterSeq, outgoing = [], me, timeZone }: TimelineOptions,
+): TimelineItem[] {
+  const entries = messages.map(fromMessage);
+  if (me) entries.push(...outgoing.map((m) => fromOutgoing(m, me)));
+
   const items: TimelineItem[] = [];
-  let previous: Message | undefined;
+  let previous: Entry | undefined;
   let previousDay: string | undefined;
   let unreadInserted = unreadAfterSeq === null;
 
-  for (const message of messages) {
-    const createdAt = new Date(message.created_at);
-    const day = dayKey(createdAt, timeZone);
+  for (const entry of entries) {
+    const day = dayKey(entry.createdAt, timeZone);
     let breakGroup = false;
 
     if (day !== previousDay) {
-      items.push({ type: "date", key: `date-${day}`, label: formatDate(createdAt, timeZone) });
+      items.push({ type: "date", key: `date-${day}`, label: formatDate(entry.createdAt, timeZone) });
       previousDay = day;
       breakGroup = true;
     }
-    if (!unreadInserted && message.seq > unreadAfterSeq!) {
+    // 自分の送信中のメッセージは未読にならない
+    if (!unreadInserted && entry.seq !== null && entry.seq > unreadAfterSeq!) {
       items.push({ type: "unread", key: "unread" });
       unreadInserted = true;
       breakGroup = true;
@@ -79,33 +145,27 @@ export function toTimelineItems(messages: readonly Message[], { unreadAfterSeq, 
     const grouped =
       !breakGroup &&
       previous !== undefined &&
-      previous.sender.id === message.sender.id &&
-      createdAt.getTime() - new Date(previous.created_at).getTime() < GROUPING_WINDOW_MS &&
+      previous.sender.id === entry.sender.id &&
+      entry.createdAt.getTime() - previous.createdAt.getTime() < GROUPING_WINDOW_MS &&
       // 返信は引用を出すので、続けて表示すると誰の発言か分かりにくい
-      message.reply_to === null;
+      entry.replyTo === undefined;
 
     items.push({
       type: "message",
       message: {
-        key: message.id,
-        sender: { id: message.sender.id, name: message.sender.display_name },
-        timeLabel: formatTime(createdAt, timeZone),
-        body: message.body,
-        // REST で取得したメッセージは seq が採番済み。pending / failed は送信（構築順 4）で使う
-        status: "sent",
-        deleted: message.deleted_at !== null,
-        edited: message.edited_at !== null,
-        replyTo: message.reply_to
-          ? {
-              senderName: message.reply_to.sender.display_name,
-              body: message.reply_to.deleted ? DELETED_MESSAGE_TEXT : message.reply_to.body,
-            }
-          : undefined,
-        attachments: message.attachments.map(toAttachmentView),
+        key: entry.key,
+        sender: { id: entry.sender.id, name: entry.sender.display_name },
+        timeLabel: formatTime(entry.createdAt, timeZone),
+        body: entry.body,
+        status: entry.status,
+        deleted: entry.deleted,
+        edited: entry.edited,
+        replyTo: entry.replyTo,
+        attachments: entry.attachments,
         grouped,
       },
     });
-    previous = message;
+    previous = entry;
   }
   return items;
 }
@@ -122,6 +182,29 @@ function toAttachmentView(attachment: MessageAttachment): MessageAttachmentView 
     };
   }
   return { kind: "file", id: attachment.id, fileName: attachment.file_name, sizeLabel: formatBytes(attachment.size_bytes) };
+}
+
+const roleRanks: Record<Role, number> = { member: 1, admin: 2, owner: 3 };
+
+/**
+ * メッセージの「…」に出す操作（ADR 0012 の authz.CanEditMessage / CanDeleteMessage と同じ規則）。
+ *
+ * 判定の正はサーバーで、ここは出すかどうかを決めるだけ。送信者のロールは、手元にメンバー一覧があって
+ * そこにいるときだけ分かる。分からなければ admin 以上には出し、拒否されたらサーバーに従う（ADR 0027）。
+ */
+export function messageActions(
+  message: Message,
+  { userId, room, myRole, senderRole }: { userId: string; room: Room; myRole: Role | undefined; senderRole: Role | undefined },
+): { canEdit: boolean; canDelete: boolean } {
+  if (message.deleted_at !== null) return { canEdit: false, canDelete: false };
+  // 投稿できるのはルームのメンバーだけ（参加していない public は読めるだけ）
+  if (message.sender.id === userId) return { canEdit: room.is_member, canDelete: room.is_member };
+  const canModerate =
+    room.kind !== "dm" &&
+    myRole !== undefined &&
+    roleRanks[myRole] >= roleRanks.admin &&
+    (senderRole === undefined || roleRanks[myRole] > roleRanks[senderRole]);
+  return { canEdit: false, canDelete: canModerate };
 }
 
 const roleLabels: Record<Role, RoleLabel> = { owner: "オーナー", admin: "管理者", member: "メンバー" };
