@@ -1,4 +1,8 @@
 import type {
+  Attachment,
+  AvatarURLs,
+  CreateAttachmentRequest,
+  CreateAttachmentResponse,
   CreateRoomRequest,
   CreateWorkspaceRequest,
   EditMessageRequest,
@@ -11,6 +15,7 @@ import type {
   RoomMember,
   RoomMemberList,
   SendMessageRequest,
+  SignedURL,
   WSTicket,
   Workspace,
   WorkspaceList,
@@ -22,6 +27,9 @@ export const MESSAGE_PAGE_SIZE = 50;
 
 /** 差分の取得の 1 ページの数。API の上限（ADR 0012）。 */
 export const CHANGE_PAGE_SIZE = 100;
+
+/** アバターの URL を 1 回で取れる人数。API の上限（ADR 0020）。 */
+export const AVATAR_BATCH_SIZE = 200;
 
 /** メンバー一覧の 1 ページの数。API の上限（ADR 0011）にして、往復を減らす。 */
 const MEMBER_PAGE_SIZE = 200;
@@ -76,6 +84,24 @@ export function createChatApi(request: Session["request"]) {
 
     markRead: (roomId: string, body: MarkRoomReadRequest) =>
       request<ReadState>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/read`, body),
+
+    /** 添付の署名付き PUT URL を発行する。pending の行ができる（ADR 0013）。 */
+    createAttachment: (roomId: string, body: CreateAttachmentRequest) =>
+      request<CreateAttachmentResponse>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/attachments`, body),
+
+    /** PUT したオブジェクトを HEAD で検証し、メッセージに付けられる状態（uploaded）にする。冪等。 */
+    completeAttachment: (attachmentId: string) =>
+      request<Attachment>("POST", `/api/v1/attachments/${encodeURIComponent(attachmentId)}/complete`),
+
+    /** メッセージに付いた添付の署名付き GET URL（TTL 5 分。ADR 0013）。 */
+    getAttachmentUrl: (attachmentId: string) =>
+      request<SignedURL>("GET", `/api/v1/attachments/${encodeURIComponent(attachmentId)}/url`),
+
+    /**
+     * アバターの署名付き GET URL をまとめて取る（TTL 1 時間。ADR 0020）。画像がある人の分だけ返る。
+     * パスは auth の API だが、chat のレスポンスに URL を載せない代わりに画面の側で引くので、ここに置く。
+     */
+    avatarUrls: (userIds: string[]) => request<AvatarURLs>("POST", "/api/v1/users/avatars", { user_ids: userIds }),
 
     /** WebSocket の接続に使う ws-ticket（30 秒で失効し、1 回しか使えない。ADR 0007）。 */
     issueTicket: async () => (await request<WSTicket>("POST", "/api/v1/ws/ticket")).ticket,

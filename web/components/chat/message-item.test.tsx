@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -115,6 +115,25 @@ describe("MessageItem", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "ダウンロード" }));
     expect(onDownload).toHaveBeenCalledWith("a2");
+  });
+
+  it("shows the file name in the image frame until the url arrives, and reports images that fail to load", () => {
+    const onImageError = vi.fn();
+    const image = { kind: "image" as const, id: "a1", fileName: "sidebar.png", width: 260, height: 160 };
+    const { rerender } = render(<MessageItem onImageError={onImageError} message={message({ attachments: [image] })} />);
+
+    expect(screen.queryByRole("img", { name: "sidebar.png" })).not.toBeInTheDocument();
+    expect(screen.getByText("sidebar.png")).toBeInTheDocument();
+
+    rerender(
+      <MessageItem
+        onImageError={onImageError}
+        message={message({ attachments: [{ ...image, url: "https://storage.test/expired" }] })}
+      />,
+    );
+    fireEvent.error(screen.getByRole("img", { name: "sidebar.png" }));
+
+    expect(onImageError).toHaveBeenCalledWith("a1", "https://storage.test/expired");
   });
 });
 

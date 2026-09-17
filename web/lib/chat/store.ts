@@ -2,6 +2,7 @@ import type { ConnectionBannerStatus } from "@/components/chat/types";
 import { ApiError } from "@/lib/api/error";
 import type {
   Message,
+  MessageAttachment,
   RemovalReason,
   Room,
   RoomKind,
@@ -57,6 +58,8 @@ export type OutgoingMessage = {
   clientMsgId: string;
   body: string;
   replyTo: OutgoingReply | null;
+  /** アップロードを終えた（uploaded の）添付。送信で attachment_ids として付ける（ADR 0013）。 */
+  attachments: MessageAttachment[];
   status: "pending" | "failed";
   /** 手元の時刻（ISO 8601）。表示の時刻と日付の区切りにだけ使い、並びには使わない。 */
   createdAt: string;
@@ -431,6 +434,7 @@ export function createChatStore(
       client_msg_id: item.clientMsgId,
       body: item.body,
       ...(replyToId === undefined ? {} : { reply_to_id: replyToId }),
+      ...(item.attachments.length === 0 ? {} : { attachment_ids: item.attachments.map((a) => a.id) }),
     });
     // 待ちきれずに失敗にした後で応答が届いても、確定として扱う（同じ client_msg_id の再送は同じメッセージを返す）
     sending.then((message) => receiveMessage(message, true)).catch(() => {});
@@ -936,11 +940,15 @@ export function createChatStore(
      * メッセージを送る。すぐに送信中として表示し、同じルームの前の送信が終わってから送る（ADR 0027）。
      * 失敗は投げずに、メッセージを failed にする。
      */
-    sendMessage(roomId: string, input: { body: string; replyTo?: OutgoingReply | null }) {
+    sendMessage(
+      roomId: string,
+      input: { body: string; replyTo?: OutgoingReply | null; attachments?: MessageAttachment[] },
+    ) {
       const item: OutgoingMessage = {
         clientMsgId: ulid(now()),
         body: input.body,
         replyTo: input.replyTo ?? null,
+        attachments: input.attachments ?? [],
         status: "pending",
         createdAt: new Date(now()).toISOString(),
       };

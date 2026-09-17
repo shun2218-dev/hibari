@@ -1,6 +1,6 @@
 "use client";
 
-import type { KeyboardEvent } from "react";
+import { type KeyboardEvent, useRef } from "react";
 
 import { Button, IconButton, TextButton } from "@/components/ui/button";
 import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon, ReplyIcon } from "@/components/ui/icons";
@@ -15,7 +15,8 @@ type ComposerProps = {
   value: string;
   onChange?: (value: string) => void;
   onSend?: () => void;
-  onAttach?: () => void;
+  /** 「ファイルを添付」で選んだファイル。 */
+  onSelectFiles?: (files: File[]) => void;
   /** 入力中のほかのメンバーの表示名。 */
   typingNames?: string[];
   attachments?: AttachmentDraftView[];
@@ -31,7 +32,7 @@ export function Composer({
   value,
   onChange,
   onSend,
-  onAttach,
+  onSelectFiles,
   typingNames = [],
   attachments = [],
   onRetryAttachment,
@@ -40,6 +41,8 @@ export function Composer({
   onCancelReply,
   canSend,
 }: ComposerProps) {
+  const fileInput = useRef<HTMLInputElement>(null);
+
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     // IME の変換を確定する Enter では送らない
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -80,9 +83,22 @@ export function Composer({
           replyTo ? "rounded-b-md" : "rounded-md",
         )}
       >
-        <IconButton label="ファイルを添付" onClick={onAttach}>
+        <IconButton label="ファイルを添付" onClick={() => fileInput.current?.click()}>
           <PaperclipIcon className="size-4" />
         </IconButton>
+        {/* 見た目はボタンで出し、ファイルの選択はブラウザの標準の画面に任せる */}
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            // 同じファイルをもう一度選んでも change が起きるように空にする
+            e.target.value = "";
+            if (files.length > 0) onSelectFiles?.(files);
+          }}
+        />
         <textarea
           aria-label="メッセージ"
           rows={1}

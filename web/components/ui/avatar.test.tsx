@@ -40,6 +40,15 @@ describe("Avatar with an image", () => {
     expect(screen.getByText("あ")).toBeInTheDocument();
   });
 
+  it("tries the image again once a new url arrives", () => {
+    const { rerender } = render(<Avatar id="u1" name="あなた" imageUrl="https://storage.test/expired.png" />);
+    fireEvent.error(screen.getByRole("presentation", { hidden: true }));
+
+    rerender(<Avatar id="u1" name="あなた" imageUrl="https://storage.test/renewed.png" />);
+
+    expect(screen.getByRole("presentation", { hidden: true })).toHaveAttribute("src", "https://storage.test/renewed.png");
+  });
+
   it("keeps presence next to the image", () => {
     render(<Avatar id="u1" name="あなた" imageUrl="https://storage.test/a.png" online />);
 

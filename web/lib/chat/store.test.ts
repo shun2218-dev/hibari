@@ -752,6 +752,31 @@ describe("createChatStore realtime", () => {
       expect(route.sent).toEqual([{ client_msg_id: clientMsgId, body: "こんにちは" }]);
     });
 
+    it("attaches uploaded files and keeps them when retrying", async () => {
+      const route = sendRoute();
+      let fail = true;
+      const { store } = await opened({
+        "POST /api/v1/rooms/r1/messages": (url, init) => (fail ? problem(503, "internal") : route.handler(url, init)),
+      });
+      const pdf = {
+        id: "a1",
+        file_name: "scale.pdf",
+        content_type: "application/pdf",
+        size_bytes: 253_952,
+        width: null,
+        height: null,
+      };
+
+      store.sendMessage("r1", { body: "", attachments: [pdf] });
+      expect(outgoing(store)).toMatchObject([{ body: "", attachments: [pdf], status: "pending" }]);
+      await vi.waitFor(() => expect(outgoing(store)).toMatchObject([{ status: "failed", attachments: [pdf] }]));
+
+      fail = false;
+      store.retryMessage("r1", outgoing(store)[0]!.clientMsgId);
+      await vi.waitFor(() => expect(outgoing(store)).toEqual([]));
+      expect(route.sent).toEqual([expect.objectContaining({ body: "", attachment_ids: ["a1"] })]);
+    });
+
     it("sends one message at a time, in the order they were written", async () => {
       const route = sendRoute();
       const responses = [deferred(), deferred()];
