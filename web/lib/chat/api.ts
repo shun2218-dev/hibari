@@ -1,13 +1,16 @@
 import type {
   CreateRoomRequest,
   CreateWorkspaceRequest,
+  EditMessageRequest,
   MarkRoomReadRequest,
+  Message,
   MessageList,
   ReadState,
   Room,
   RoomList,
   RoomMember,
   RoomMemberList,
+  SendMessageRequest,
   WSTicket,
   Workspace,
   WorkspaceList,
@@ -55,6 +58,21 @@ export function createChatApi(request: Session["request"]) {
       const params = new URLSearchParams({ after_change_seq: String(afterChangeSeq), limit: String(CHANGE_PAGE_SIZE) });
       return request<MessageList>("GET", `/api/v1/rooms/${encodeURIComponent(roomId)}/messages?${params}`);
     },
+
+    /** 同じ client_msg_id の再送は、既存のメッセージを 200 で返す（ADR 0004 / 0012）。 */
+    sendMessage: (roomId: string, body: SendMessageRequest) =>
+      request<Message>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/messages`, body),
+
+    editMessage: (roomId: string, messageId: string, body: EditMessageRequest) =>
+      request<Message>(
+        "PATCH",
+        `/api/v1/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}`,
+        body,
+      ),
+
+    /** 削除済みでも 204（冪等。ADR 0012）。 */
+    deleteMessage: (roomId: string, messageId: string) =>
+      request<void>("DELETE", `/api/v1/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}`),
 
     markRead: (roomId: string, body: MarkRoomReadRequest) =>
       request<ReadState>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/read`, body),

@@ -11,6 +11,8 @@ import type {
   Workspace,
 } from "@/lib/api/types.gen";
 
+import { ulid } from "@/lib/ulid";
+
 import type { ChatApi } from "./api";
 import {
   advanceCursor,
@@ -46,6 +48,31 @@ export type TimelineState = {
   changeSeq: number;
 };
 
+/**
+ * 自分が送って、まだサーバーで確定していないメッセージ（楽観的な表示。ADR 0027）。
+ * - pending: 送信中か、同じルームの前の送信を待っている
+ * - failed: 送れなかった。同じ client_msg_id で再送するので、実は届いていても二重投稿にならない
+ */
+export type OutgoingMessage = {
+  clientMsgId: string;
+  body: string;
+  replyTo: OutgoingReply | null;
+  status: "pending" | "failed";
+  /** 手元の時刻（ISO 8601）。表示の時刻と日付の区切りにだけ使い、並びには使わない。 */
+  createdAt: string;
+};
+
+/**
+ * 返信先。確定したメッセージなら messageId、送信中の自分のメッセージなら clientMsgId を持つ。
+ * 送信中のメッセージへの返信は、同じルームの送信が順に行われるので、送る時点で返信先は確定している（ADR 0027）。
+ */
+export type OutgoingReply = {
+  messageId: string | null;
+  clientMsgId: string | null;
+  senderName: string;
+  body: string;
+};
+
 /** 入力中の人。expiresAt を過ぎたら消す（typing.stopped はない。docs/events.md）。 */
 export type TypingUser = { user: UserProfile; expiresAt: number };
 
@@ -75,6 +102,8 @@ export type ChatState = {
    */
   focus: { roomId: string; caughtUp: boolean } | null;
   typing: Record<string, TypingUser[] | undefined>;
+  /** ルームごとの、確定していない自分のメッセージ。入力した順（送る順）に並ぶ。 */
+  outgoing: Record<string, OutgoingMessage[] | undefined>;
   /**
    * 自分が外されたルーム（非公開と DM）。開いている間は一覧に残して「外されました」を出す（chat/removed-from-channel.png）。
    * public ルームは参加していなくても読めるので、ここには入れず、参加していない状態に戻すだけ。
@@ -89,6 +118,11 @@ export type ChatStoreOptions = {
   /** ログインしているユーザー。自分の送信・入力中・自分宛てのイベントの判定に使う。 */
   userId: string;
   now?: () => number;
+  /**
+   * 送信の応答をこの時間待っても来なければ、失敗として再送できるようにする。
+   * 経路が黙って切れると fetch はなかなか失敗しないので、送信中のまま止めない。
+   */
+  sendTimeoutMs?: number;
 };
 
 function statusOf(err: unknown): LoadStatus {
@@ -97,6 +131,14 @@ function statusOf(err: unknown): LoadStatus {
 
 /** 入力中の表示を、最後に受け取ってから消すまでの時間（docs/events.md）。 */
 const TYPING_TTL_MS = 6_000;
+
+const SEND_TIMEOUT_MS = 10_000;
+
+class SendTimeoutError extends Error {
+  constructor() {
+    super("sending a message timed out");
+  }
+}
 
 /**
  * チャットの状態のストア（ADR 0024 の session と同じく自作で、useSyncExternalStore で購読する）。
@@ -107,7 +149,10 @@ const TYPING_TTL_MS = 6_000;
  * REST で取った状態に、WebSocket のイベント（applyEvent）を重ねる。イベントは落ちうるので、
  * 取りこぼしは change_seq で検出して差分を取り直す（syncTimeline。ADR 0014 / 0026）。
  */
-export function createChatStore(api: ChatApi, { userId, now = Date.now }: ChatStoreOptions) {
+export function createChatStore(
+  api: ChatApi,
+  { userId, now = Date.now, sendTimeoutMs = SEND_TIMEOUT_MS }: ChatStoreOptions,
+) {
   let state: ChatState = {
     workspaces: { status: "loading", list: [] },
     roomLists: {},
@@ -117,6 +162,7 @@ export function createChatStore(api: ChatApi, { userId, now = Date.now }: ChatSt
     activeWorkspaceId: null,
     focus: null,
     typing: {},
+    outgoing: {},
     removedRooms: {},
     removedWorkspaces: {},
     connection: { banner: null, unavailable: null },
@@ -129,6 +175,11 @@ export function createChatStore(api: ChatApi, { userId, now = Date.now }: ChatSt
   const typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const readTargets = new Map<string, number>();
   const reading = new Map<string, Promise<void>>();
+  // ルームごとの送信の順番（client_msg_id）と、送っている途中のループ
+  const sendQueues = new Map<string, string[]>();
+  const sendLoops = new Map<string, Promise<void>>();
+  // 確定した自分のメッセージの client_msg_id → ID。送信中のメッセージへの返信を送るときに引く
+  const confirmedIds = new Map<string, string>();
 
   function update(recipe: (s: ChatState) => ChatState) {
     const next = recipe(state);
@@ -189,6 +240,15 @@ export function createChatStore(api: ChatApi, { userId, now = Date.now }: ChatSt
       return members === current.members
         ? s
         : { ...s, roomMembers: { ...s.roomMembers, [roomId]: { ...current, members } } };
+    });
+  }
+
+  function patchOutgoing(roomId: string, recipe: (list: OutgoingMessage[]) => OutgoingMessage[]) {
+    update((s) => {
+      const current = s.outgoing[roomId] ?? [];
+      const next = recipe(current);
+      if (next === current) return s;
+      return { ...s, outgoing: { ...s.outgoing, [roomId]: next.length > 0 ? next : undefined } };
     });
   }
 
@@ -324,10 +384,104 @@ export function createChatStore(api: ChatApi, { userId, now = Date.now }: ChatSt
     return entry.promise;
   }
 
+  // ---- 送信 ----
+
+  /**
+   * ルームの送信を 1 件ずつ順に送る。
+   *
+   * 並行して送ると、後に入力したメッセージが先に採番されることがある（並びは seq で決まる）。
+   * 1 件が失敗したら、後ろに並んでいるものも送らずに失敗にする。先に送ると、失敗したものを再送したときに順番が入れ替わるため。
+   */
+  function runSendQueue(roomId: string): Promise<void> {
+    let loop = sendLoops.get(roomId);
+    if (loop) return loop;
+    loop = (async () => {
+      try {
+        for (let queue = sendQueues.get(roomId); queue && queue.length > 0; queue = sendQueues.get(roomId)) {
+          const item = state.outgoing[roomId]?.find((m) => m.clientMsgId === queue[0]);
+          // 確定済み（応答より先にイベントが届いた）か、取り消された
+          if (!item || item.status !== "pending") {
+            queue.shift();
+            continue;
+          }
+          try {
+            await sendOne(roomId, item);
+            queue.shift();
+          } catch (err) {
+            failQueue(roomId);
+            if (!(err instanceof SendTimeoutError)) console.error("failed to send a message", err);
+          }
+        }
+      } finally {
+        sendLoops.delete(roomId);
+      }
+    })();
+    sendLoops.set(roomId, loop);
+    return loop;
+  }
+
+  async function sendOne(roomId: string, item: OutgoingMessage) {
+    let replyToId: string | undefined;
+    if (item.replyTo) {
+      replyToId = item.replyTo.messageId ?? confirmedIds.get(item.replyTo.clientMsgId ?? "");
+      // 返信先の送信が失敗して取り消された。返信先のないメッセージとしては送らない
+      if (replyToId === undefined) throw new Error("the message being replied to was not sent");
+    }
+    const sending = api.sendMessage(roomId, {
+      client_msg_id: item.clientMsgId,
+      body: item.body,
+      ...(replyToId === undefined ? {} : { reply_to_id: replyToId }),
+    });
+    // 待ちきれずに失敗にした後で応答が届いても、確定として扱う（同じ client_msg_id の再送は同じメッセージを返す）
+    sending.then((message) => receiveMessage(message, true)).catch(() => {});
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        sending,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new SendTimeoutError()), sendTimeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function failQueue(roomId: string) {
+    const queued = new Set(sendQueues.get(roomId) ?? []);
+    sendQueues.delete(roomId);
+    patchOutgoing(roomId, (list) =>
+      list.some((m) => queued.has(m.clientMsgId) && m.status === "pending")
+        ? list.map((m) => (queued.has(m.clientMsgId) && m.status === "pending" ? { ...m, status: "failed" } : m))
+        : list,
+    );
+  }
+
+  function enqueueSend(roomId: string, clientMsgId: string) {
+    const queue = sendQueues.get(roomId) ?? [];
+    queue.push(clientMsgId);
+    sendQueues.set(roomId, queue);
+    void runSendQueue(roomId);
+  }
+
+  function dropOutgoing(roomId: string) {
+    sendQueues.delete(roomId);
+    update((s) => (s.outgoing[roomId] ? { ...s, outgoing: { ...s.outgoing, [roomId]: undefined } } : s));
+  }
+
   // ---- イベント ----
 
   function receiveMessage(message: Message, created: boolean) {
     const roomId = message.room_id;
+    // 自分の送信が確定した（送信の応答か、message.created のどちらか先に届いた方）。楽観的な表示を外す
+    if (created && message.sender.id === userId) {
+      confirmedIds.set(message.client_msg_id, message.id);
+      patchOutgoing(roomId, (list) =>
+        list.some((m) => m.clientMsgId === message.client_msg_id)
+          ? list.filter((m) => m.clientMsgId !== message.client_msg_id)
+          : list,
+      );
+    }
     const before = state.rooms[roomId];
     patchRoom(roomId, (room) => applyMessageToRoom(room, message, userId, created));
     const after = state.rooms[roomId];
@@ -427,6 +581,8 @@ export function createChatStore(api: ChatApi, { userId, now = Date.now }: ChatSt
       roomMembers: { ...s.roomMembers, [roomId]: undefined },
       typing: { ...s.typing, [roomId]: undefined },
     }));
+    // もう投稿できない。送信中のものは届かず、再送もできない
+    dropOutgoing(roomId);
     // 開いているルームは、「外されました」を出している間だけ一覧に残す（離れたら setFocus が消す）
     if (state.focus?.roomId !== roomId) patchRoomList(workspaceId, (ids) => ids.filter((id) => id !== roomId));
   }
@@ -773,6 +929,59 @@ export function createChatStore(api: ChatApi, { userId, now = Date.now }: ChatSt
     },
 
     loadRoomMembers: reloadRoomMembers,
+
+    // ---- 送信・編集・削除 ----
+
+    /**
+     * メッセージを送る。すぐに送信中として表示し、同じルームの前の送信が終わってから送る（ADR 0027）。
+     * 失敗は投げずに、メッセージを failed にする。
+     */
+    sendMessage(roomId: string, input: { body: string; replyTo?: OutgoingReply | null }) {
+      const item: OutgoingMessage = {
+        clientMsgId: ulid(now()),
+        body: input.body,
+        replyTo: input.replyTo ?? null,
+        status: "pending",
+        createdAt: new Date(now()).toISOString(),
+      };
+      patchOutgoing(roomId, (list) => [...list, item]);
+      enqueueSend(roomId, item.clientMsgId);
+    },
+
+    /** 失敗したメッセージを、同じ client_msg_id で送り直す。 */
+    retryMessage(roomId: string, clientMsgId: string) {
+      const item = state.outgoing[roomId]?.find((m) => m.clientMsgId === clientMsgId);
+      if (item?.status !== "failed") return;
+      patchOutgoing(roomId, (list) =>
+        list.map((m) => (m.clientMsgId === clientMsgId ? { ...m, status: "pending" } : m)),
+      );
+      enqueueSend(roomId, clientMsgId);
+    },
+
+    /**
+     * 失敗したメッセージを表示から消す。待ちきれずに失敗にしたものは実は届いていることがあり、そのときは後で履歴に現れる。
+     */
+    discardMessage(roomId: string, clientMsgId: string) {
+      patchOutgoing(roomId, (list) =>
+        list.some((m) => m.clientMsgId === clientMsgId && m.status === "failed")
+          ? list.filter((m) => m.clientMsgId !== clientMsgId)
+          : list,
+      );
+    },
+
+    /** 本文を編集する。失敗したら ApiError を投げる。 */
+    async editMessage(roomId: string, messageId: string, body: string): Promise<void> {
+      receiveMessage(await api.editMessage(roomId, messageId, { body }), false);
+    },
+
+    /**
+     * メッセージを削除する。応答にメッセージがないので、差分を取って反映する（WebSocket のイベントが先に届いていれば何も起きない）。
+     * 失敗したら ApiError を投げる。
+     */
+    async deleteMessage(roomId: string, messageId: string): Promise<void> {
+      await api.deleteMessage(roomId, messageId);
+      await syncTimeline(roomId);
+    },
 
     // ---- リアルタイム ----
 

@@ -298,6 +298,30 @@ describe("createRealtime", () => {
     realtime.stop();
   });
 
+  it("sends typing only for subscribed rooms, at most once every 3 seconds", async () => {
+    const { store, realtime, sockets, log } = setup({ "GET /api/v1/workspaces/ws-1/rooms": roomsOf("r1") });
+    // つながる前は落とす
+    realtime.sendTyping("r1");
+    await store.loadRooms("ws-1");
+    store.setActiveWorkspace("ws-1");
+    realtime.start();
+    await vi.advanceTimersByTimeAsync(0);
+    sockets.last().open();
+    await vi.advanceTimersByTimeAsync(0);
+    log.length = 0;
+
+    realtime.sendTyping("r1");
+    realtime.sendTyping("r1");
+    realtime.sendTyping("other");
+    await vi.advanceTimersByTimeAsync(2_999);
+    realtime.sendTyping("r1");
+    await vi.advanceTimersByTimeAsync(1);
+    realtime.sendTyping("r1");
+
+    expect(log).toEqual(["ws typing r1", "ws typing r1"]);
+    realtime.stop();
+  });
+
   it("stops listening to the store and closes the socket on stop", async () => {
     const { store, realtime, sockets } = setup({});
     realtime.start();
