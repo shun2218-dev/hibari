@@ -31,6 +31,7 @@
 | [0022](0022-typescript-types-from-go.md) | Go の JSON の型から TypeScript の型を生成する（Phase 6。パッケージ内のテストが reflect で生成し、差分で落とす） | 採用 |
 | [0023](0023-encoding-json-v2.md) | JSON の処理を encoding/json/v2 に統一する（Phase 6。nil のスライスを [] にし、読み込みを厳しくする） | 採用 |
 | [0024](0024-web-session.md) | Web クライアントの認証の状態（Phase 6。Access Token はメモリ、Web Locks でタブ間の refresh を 1 本に、振り分けはブラウザで） | 採用 |
+| [0025](0025-web-workspace-and-room-pages.md) | Web のワークスペースとルームの画面（Phase 6。ID の URL、最後に開いた場所、表示した所まで既読、開いた時点で未読の区切りを固定） | 採用 |
 
 ## テンプレート
 

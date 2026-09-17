@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 
 import { useSessionState } from "@/lib/auth/session-provider";
+import { ChatProvider } from "@/lib/chat/chat-provider";
 
 /**
  * ログインが必要な画面の振り分け。
@@ -25,5 +26,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   // サーバーに届かないときの画面はデザインにない（chat/server-error.png は接続後の切断用）。いまは何も出さない。
   if (state.status !== "signed_in") return null;
-  return children;
+  // user の id を key にして、別の人がログインし直したらチャットの状態を作り直す（前の人のデータを見せない）
+  return <ChatProvider key={state.user.id}>{children}</ChatProvider>;
 }

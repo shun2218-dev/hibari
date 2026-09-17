@@ -48,9 +48,6 @@ import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { InviteAccept } from "@/components/invite/invite-accept";
 import { SettingsLayout, SettingsMobileMenu, type SettingsSection } from "@/components/settings/settings-layout";
 import { AppearanceSettings, DevicesSettings, ProfileSettings } from "@/components/settings/settings-sections";
-import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
-import { TextField } from "@/components/ui/field";
 import { type AdminSection, WorkspaceAdminLayout } from "@/components/workspace/admin-layout";
 import { CreateInviteDialog, InviteCreatedDialog, InviteList } from "@/components/workspace/invites";
 import {
@@ -61,6 +58,7 @@ import {
   TransferOwnershipPickDialog,
 } from "@/components/workspace/member-dialogs";
 import { type MemberMenuState, MemberList } from "@/components/workspace/member-list";
+import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog";
 import { NoWorkspaces } from "@/components/workspace/no-workspaces";
 import type { WorkspaceRole } from "@/components/workspace/types";
 import { WorkspaceSettings } from "@/components/workspace/workspace-settings";
@@ -194,19 +192,7 @@ function chat({
         {footer === "join" && <JoinRoomBar />}
       </ChatLayout>
       {dialog}
-      <Dialog
-        open={Boolean(createWorkspace)}
-        title="ワークスペースを作成"
-        description="あとから名前は変更できます"
-        actions={
-          <>
-            <Button variant="secondary">キャンセル</Button>
-            <Button disabled>作成</Button>
-          </>
-        }
-      >
-        <TextField label="ワークスペース名" placeholder="例: hibari 開発" />
-      </Dialog>
+      <CreateWorkspaceDialog open={Boolean(createWorkspace)} />
     </>
   );
 }

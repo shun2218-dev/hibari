@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Timeline } from "./timeline";
 import type { MessageView, TimelineItem } from "./types";
@@ -55,5 +55,80 @@ describe("Timeline", () => {
     await userEvent.click(screen.getByRole("button", { name: "再送する" }));
 
     expect(onRetry).toHaveBeenCalledWith("client-1");
+  });
+
+  describe("scrolling", () => {
+    const ROW = 100;
+    const VIEWPORT = 250;
+
+    /** jsdom にはレイアウトがないので、行の高さを固定した寸法を与える。 */
+    function fakeLayout() {
+      const scroller = () => screen.getByRole("list", { name: "メッセージ" }).parentElement!;
+      vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) {
+        return this === scroller() ? this.querySelectorAll("ol > li").length * ROW : 0;
+      });
+      vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+        return this === scroller() ? VIEWPORT : 0;
+      });
+      vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
+        const parent = this.parentElement;
+        return parent?.tagName === "OL" ? Array.from(parent.children).indexOf(this) * ROW : 0;
+      });
+      return scroller;
+    }
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it("opens at the newest message", () => {
+      const scroller = fakeLayout();
+      render(<Timeline items={[msg("a", "1"), msg("b", "2"), msg("c", "3"), msg("d", "4")]} />);
+
+      expect(scroller().scrollTop).toBe(4 * ROW);
+    });
+
+    it("keeps the message the reader was looking at in place when older messages are prepended", () => {
+      const scroller = fakeLayout();
+      const items = [msg("c", "3"), msg("d", "4"), msg("e", "5"), msg("f", "6")];
+      const { rerender } = render(<Timeline items={items} />);
+      scroller().scrollTop = 50;
+      fireEvent.scroll(scroller());
+
+      rerender(<Timeline items={[msg("a", "1"), msg("b", "2"), ...items]} />);
+
+      // 先頭だった c は 2 行ぶん下に移ったので、同じだけ下にずらす
+      expect(scroller().scrollTop).toBe(50 + 2 * ROW);
+    });
+
+    it("follows new messages only while at the bottom", () => {
+      const scroller = fakeLayout();
+      const items = [msg("a", "1"), msg("b", "2"), msg("c", "3")];
+      const { rerender } = render(<Timeline items={items} />);
+      expect(scroller().scrollTop).toBe(3 * ROW);
+      scroller().scrollTop = 3 * ROW - VIEWPORT;
+      fireEvent.scroll(scroller());
+
+      rerender(<Timeline items={[...items, msg("d", "4")]} />);
+      expect(scroller().scrollTop).toBe(4 * ROW);
+
+      scroller().scrollTop = 0;
+      fireEvent.scroll(scroller());
+      rerender(<Timeline items={[...items, msg("d", "4"), msg("e", "5")]} />);
+      expect(scroller().scrollTop).toBe(0);
+    });
+
+    it("asks for older messages near the top, or when everything fits on screen", () => {
+      const scroller = fakeLayout();
+      const onReachStart = vi.fn();
+      const { rerender } = render(<Timeline items={[msg("a", "1")]} onReachStart={onReachStart} />);
+      expect(onReachStart).toHaveBeenCalledOnce();
+
+      const many = Array.from({ length: 20 }, (_, i) => msg(`m${i}`, String(i)));
+      rerender(<Timeline items={many} onReachStart={onReachStart} />);
+      expect(onReachStart).toHaveBeenCalledOnce();
+
+      scroller().scrollTop = 300;
+      fireEvent.scroll(scroller());
+      expect(onReachStart).toHaveBeenCalledTimes(2);
+    });
   });
 });
