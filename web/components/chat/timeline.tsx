@@ -37,6 +37,11 @@ type TimelineProps = {
    * 内容が画面に収まってスクロールできないときも呼ぶ。もうないか、取得中かの判断は呼ぶ側が行う。
    */
   onReachStart?: () => void;
+  /**
+   * いちばん下（最新）が見えているかが変わった。データ層は、見ている間に届いたメッセージを既読にする。
+   * 最初に描いたときにも 1 回呼ぶ。
+   */
+  onAtBottomChange?: (atBottom: boolean) => void;
 };
 
 /** いちばん上からこの距離より近づいたら、古いメッセージを読み込む。1 ページを読み終える前に次を用意しておく。 */
@@ -67,22 +72,30 @@ export function Timeline({
   editing,
   hoveredKey,
   onReachStart,
+  onAtBottomChange,
 }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   const anchorRef = useRef<ScrollAnchor | null>(null);
   // 呼び出し側が毎回新しい関数を渡しても、スクロール位置の合わせ直しは items が変わったときだけにする
   const reachStartAfterRender = useEffectEvent(() => onReachStart?.());
+  const atBottomRef = useRef<boolean | null>(null);
+  // スクロールのハンドラからも呼ぶので useEffectEvent は使えない。最新の関数を ref に置き、合わせ直しの effect より先に更新する
+  const onAtBottomChangeRef = useRef(onAtBottomChange);
+  useLayoutEffect(() => {
+    onAtBottomChangeRef.current = onAtBottomChange;
+  });
 
   function captureAnchor() {
     const el = scrollRef.current;
     const first = listRef.current?.firstElementChild;
     if (!el || !(first instanceof HTMLElement)) return;
-    anchorRef.current = {
-      key: first.dataset.key ?? "",
-      offsetTop: first.offsetTop,
-      atBottom: el.scrollHeight - el.scrollTop - el.clientHeight <= AT_BOTTOM_PX,
-    };
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= AT_BOTTOM_PX;
+    anchorRef.current = { key: first.dataset.key ?? "", offsetTop: first.offsetTop, atBottom };
+    if (atBottomRef.current !== atBottom) {
+      atBottomRef.current = atBottom;
+      onAtBottomChangeRef.current?.(atBottom);
+    }
   }
 
   // 描き直した後にスクロール位置を合わせる。

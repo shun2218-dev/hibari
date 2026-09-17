@@ -1,11 +1,11 @@
-import type { Message } from "@/lib/api/types.gen";
+import type { LastMessage, Message, Room } from "@/lib/api/types.gen";
 
 /**
  * 手元のメッセージに、取得したメッセージを合わせる。
  *
  * - 並びは seq の昇順だけで決める（created_at を使わない。CLAUDE.md ルール 3）
  * - 同じメッセージが 2 回届いたら、change_seq の大きい方（新しい編集・削除を反映した方）を残す。
- *   REST のページと、構築順 3 の WebSocket のイベントが前後して届いても、古い内容で上書きしない
+ *   REST のページと WebSocket のイベントが前後して届いても、古い内容で上書きしない
  *
  * 入力の配列は変更せず、新しい配列を返す（useSyncExternalStore のスナップショットとして比較できるように）。
  */
@@ -17,4 +17,91 @@ export function mergeMessages(current: readonly Message[], incoming: readonly Me
     if (!existing || existing.change_seq <= message.change_seq) byId.set(message.id, message);
   }
   return [...byId.values()].sort((a, b) => a.seq - b.seq);
+}
+
+/**
+ * 読み込んである範囲（いちばん古い seq から最新まで）にだけ合わせる。
+ *
+ * 差分の取得とイベントには、読み込んでいない古いメッセージの編集・削除も含まれる。それを足すと、手元の並びの途中に
+ * 抜けができ、古いページの読み込み（before_seq = いちばん古い seq）がその抜けを飛ばしてしまう。
+ * もっと古いメッセージがない（hasOlder が false）なら、全部が範囲に入る。
+ */
+export function mergeIntoWindow(
+  current: readonly Message[],
+  hasOlder: boolean,
+  incoming: readonly Message[],
+): Message[] {
+  const oldest = current[0]?.seq;
+  const inWindow = hasOlder && oldest !== undefined ? incoming.filter((m) => m.seq >= oldest) : incoming;
+  return inWindow.length === 0 ? (current as Message[]) : mergeMessages(current, inWindow);
+}
+
+/**
+ * 同期のカーソル（change_seq）を、手元にある連続した変更の分だけ進める。
+ *
+ * change_seq はルームの中で欠番なく振られ、1 つの番号は 1 つのメッセージにしか付かない（ADR 0014）。
+ * カーソル + 1 の番号を持つメッセージが手元にあれば、その変更は反映済みなので進めてよい。
+ * 順序が入れ替わって先に届いたイベントも、間が埋まった時点で数えられる。
+ */
+export function advanceCursor(cursor: number, messages: readonly Message[]): number {
+  const changes = new Set(messages.map((m) => m.change_seq));
+  let next = cursor;
+  while (changes.has(next + 1)) next++;
+  return next;
+}
+
+/**
+ * 届いたメッセージを、ルームの一覧に出す情報（最後のメッセージ・未読数）に反映する。
+ *
+ * 未読数は last_message_seq - last_read_seq で求め直す（CLAUDE.md「未読数」）。足し引きしないので、
+ * 同じイベントが 2 回届いても（ADR 0016）数がずれない。自分の送信は、サーバーが自分の既読位置も進めている。
+ */
+export function applyMessageToRoom(room: Room, message: Message, userId: string, created: boolean): Room {
+  if (!created) {
+    if (room.last_message?.id !== message.id) return room;
+    return { ...room, last_message: toLastMessage(message) };
+  }
+  if (message.seq <= room.last_message_seq) return room;
+
+  const lastReadSeq =
+    room.last_read_seq !== null && message.sender.id === userId ? message.seq : room.last_read_seq;
+  return {
+    ...room,
+    last_message_seq: message.seq,
+    last_message_at: message.created_at,
+    last_message: toLastMessage(message),
+    last_read_seq: lastReadSeq,
+    unread_count: lastReadSeq === null ? room.unread_count : message.seq - lastReadSeq,
+  };
+}
+
+function toLastMessage(message: Message): LastMessage {
+  return {
+    id: message.id,
+    sender: message.sender,
+    body: message.body,
+    created_at: message.created_at,
+    deleted: message.deleted_at !== null,
+  };
+}
+
+/** 既読位置を進める。後退させず、未読数は手元の最新の seq から求め直す（既読の応答とメッセージのイベントが前後しても揃う）。 */
+export function applyReadToRoom(room: Room, lastReadSeq: number): Room {
+  if (room.last_read_seq === null) return room;
+  const next = Math.max(room.last_read_seq, lastReadSeq);
+  const unread = Math.max(0, room.last_message_seq - next);
+  if (next === room.last_read_seq && unread === room.unread_count) return room;
+  return { ...room, last_read_seq: next, unread_count: unread };
+}
+
+/**
+ * ルームの ID の並びに 1 件足す。API と同じく、最後のメッセージが新しい順（ないものは末尾）に入れる。
+ */
+export function insertByActivity(ids: readonly string[], room: Room, rooms: Record<string, Room | undefined>): string[] {
+  const without = ids.filter((id) => id !== room.id);
+  const at = room.last_message_at === null ? null : Date.parse(room.last_message_at);
+  // 時刻の文字列は小数秒の桁が揃わないことがあるので、文字列ではなく時刻で比べる
+  const index =
+    at === null ? -1 : without.findIndex((id) => Date.parse(rooms[id]?.last_message_at ?? "1970-01-01T00:00:00Z") < at);
+  return index === -1 ? [...without, room.id] : [...without.slice(0, index), room.id, ...without.slice(index)];
 }

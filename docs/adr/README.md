@@ -32,6 +32,7 @@
 | [0023](0023-encoding-json-v2.md) | JSON の処理を encoding/json/v2 に統一する（Phase 6。nil のスライスを [] にし、読み込みを厳しくする） | 採用 |
 | [0024](0024-web-session.md) | Web クライアントの認証の状態（Phase 6。Access Token はメモリ、Web Locks でタブ間の refresh を 1 本に、振り分けはブラウザで） | 採用 |
 | [0025](0025-web-workspace-and-room-pages.md) | Web のワークスペースとルームの画面（Phase 6。ID の URL、最後に開いた場所、表示した所まで既読、開いた時点で未読の区切りを固定） | 採用 |
+| [0026](0026-web-realtime-client.md) | Web の WebSocket クライアント（Phase 6。バックオフ + ジッターと ping、購読の ack の後に取り直す、タイムラインを残して差分で同期、見ている間だけ既読、外されたときの表示） | 採用 |
 
 ## テンプレート
 

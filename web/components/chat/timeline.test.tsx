@@ -116,6 +116,27 @@ describe("Timeline", () => {
       expect(scroller().scrollTop).toBe(0);
     });
 
+    it("reports when the newest message comes into or goes out of view", () => {
+      const scroller = fakeLayout();
+      const onAtBottomChange = vi.fn();
+      const items = Array.from({ length: 5 }, (_, i) => msg(`m${i}`, String(i)));
+      const { rerender } = render(<Timeline items={items} onAtBottomChange={onAtBottomChange} />);
+      expect(onAtBottomChange.mock.calls).toEqual([[true]]);
+
+      scroller().scrollTop = 0;
+      fireEvent.scroll(scroller());
+      fireEvent.scroll(scroller());
+      expect(onAtBottomChange.mock.calls).toEqual([[true], [false]]);
+
+      // 上を読んでいる間に届いても、下には付いていかないので見えていないまま
+      rerender(<Timeline items={[...items, msg("m5", "5")]} onAtBottomChange={onAtBottomChange} />);
+      expect(onAtBottomChange).toHaveBeenCalledTimes(2);
+
+      scroller().scrollTop = 6 * ROW - VIEWPORT;
+      fireEvent.scroll(scroller());
+      expect(onAtBottomChange.mock.calls.at(-1)).toEqual([true]);
+    });
+
     it("asks for older messages near the top, or when everything fits on screen", () => {
       const scroller = fakeLayout();
       const onReachStart = vi.fn();

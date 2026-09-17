@@ -234,4 +234,131 @@ describe("WorkspaceScreen", () => {
     expect(JSON.parse(api.calls.at(-1)!.init.body as string)).toEqual({ kind: "private", name: "リリース準備" });
     expect(sidebar().getByRole("link", { name: /リリース準備/ })).toBeInTheDocument();
   });
+
+  describe("realtime", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    /** 開いた後の差分の取得は、何も変わっていない応答にする。 */
+    function live(overrides: Record<string, Handler> = {}) {
+      return routes({
+        ...openRoom(design),
+        "GET /api/v1/rooms/r-design/messages?after_change_seq=3&limit=100": () =>
+          json(200, { messages: [], has_more: false, last_change_seq: 3 }),
+        ...overrides,
+      });
+    }
+
+    async function connected(overrides: Record<string, Handler> = {}) {
+      const result = renderWithChat(<WorkspaceScreen />, live(overrides));
+      await screen.findByRole("list", { name: "メッセージ" });
+      await waitFor(() => expect(result.sockets.sockets).toHaveLength(1));
+      result.sockets.last().open();
+      // 表示中のワークスペースとサイドバーのルームを購読する
+      await waitFor(() =>
+        expect(result.sockets.last().messages()).toEqual(
+          expect.arrayContaining([
+            { type: "subscribe", workspace_id: "ws-1" },
+            { type: "subscribe", room_id: "r-design" },
+            { type: "subscribe", room_id: "r-chat" },
+            { type: "subscribe", room_id: "r-dm" },
+          ]),
+        ),
+      );
+      return result;
+    }
+
+    it("shows a message from someone else as it arrives and reads it while the latest is in view", async () => {
+      const { sockets, api } = await connected({
+        "POST /api/v1/rooms/r-design/read": (_url, init) =>
+          json(200, { last_read_seq: JSON.parse(init.body as string).seq, unread_count: 0 }),
+      });
+
+      sockets.last().receive({
+        type: "message.created",
+        data: message(4, { room_id: "r-design", change_seq: 4, body: "リアルタイムで届いた" }),
+      });
+
+      expect(await screen.findByText("リアルタイムで届いた")).toBeInTheDocument();
+      await waitFor(() =>
+        expect(api.calls.filter((c) => c.path === "/api/v1/rooms/r-design/read").map((c) => JSON.parse(c.init.body as string))).toContainEqual({ seq: 4 }),
+      );
+    });
+
+    it("shows who is typing", async () => {
+      const { sockets } = await connected();
+
+      sockets.last().receive({ type: "typing.started", data: { workspace_id: "ws-1", room_id: "r-design", user: miyuki } });
+
+      expect(await screen.findByText("高橋 みゆき が入力中")).toBeInTheDocument();
+    });
+
+    it("shows the reconnecting banner, then syncs and shows that it is restored", async () => {
+      const { sockets } = await connected();
+
+      sockets.last().serverClose(1001);
+      expect(await screen.findByText("接続が切れました。再接続しています…")).toBeInTheDocument();
+
+      await waitFor(() => expect(sockets.sockets).toHaveLength(2));
+      sockets.last().open();
+
+      expect(await screen.findByText("接続が復帰しました")).toBeInTheDocument();
+    });
+
+    it("replaces the history with a notice when removed from a private channel", async () => {
+      const secret = { ...design, kind: "private" as const };
+      rememberLocation("ws-1", "r-design");
+      const { sockets } = await connected({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [secret, chat, dm] }),
+        ...openRoom(secret),
+      });
+
+      sockets.last().receive({
+        type: "room.member_removed",
+        data: { workspace_id: "ws-1", room_id: "r-design", reason: "removed" },
+      });
+
+      const notice = await screen.findByRole("heading", { name: "このチャンネルから外されました" });
+      expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
+      // 開いている間は、サイドバーにもヘッダーにも残す（chat/removed-from-channel.png）
+      expect(screen.getByRole("heading", { name: /デザインレビュー/ })).toBeInTheDocument();
+      expect(sidebar().getByRole("link", { name: /デザインレビュー/ })).toBeInTheDocument();
+
+      // ヘッダーのモバイル用の「戻る」と同じ名前なので、お知らせの中のボタンを押す
+      await userEvent.click(within(notice.parentElement!).getByRole("button", { name: "チャンネル一覧に戻る" }));
+      expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1");
+      expect(lastRoomId("ws-1")).toBeUndefined();
+    });
+
+    it("keeps a public channel readable after leaving it elsewhere", async () => {
+      const { sockets } = await connected();
+
+      sockets.last().receive({
+        type: "room.member_removed",
+        data: { workspace_id: "ws-1", room_id: "r-design", reason: "left" },
+      });
+
+      expect(await screen.findByRole("button", { name: "参加する" })).toBeInTheDocument();
+      expect(screen.getByRole("list", { name: "メッセージ" })).toBeInTheDocument();
+    });
+
+    it("shows a notice when kicked from the workspace and moves on", async () => {
+      rememberLocation("ws-1", "r-design");
+      const { sockets } = await connected();
+
+      sockets.last().receive({
+        type: "workspace.member_removed",
+        data: { workspace_id: "ws-1", user_id: naoki.id, reason: "removed" },
+      });
+
+      expect(await screen.findByRole("heading", { name: "ワークスペースから削除されました" })).toBeInTheDocument();
+      expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
+      expect(nav.router.replace).not.toHaveBeenCalledWith("/");
+
+      await userEvent.click(screen.getByRole("button", { name: "別のワークスペースに移動" }));
+      expect(nav.router.replace).toHaveBeenCalledWith("/");
+      expect(lastWorkspaceId()).toBeUndefined();
+    });
+  });
 });

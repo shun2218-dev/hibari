@@ -252,6 +252,25 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
       }
     },
 
+    /**
+     * 手元の Access Token を捨てて refresh し、セッションがまだ有効かを確かめる。
+     *
+     * WebSocket がセッションの失効（close コード 4001）で切られたときに使う。REST の Access Token は期限まで検証を通る
+     * （ADR 0007）ので、手元のトークンで ws-ticket を発行し直せてしまい、接続の失敗を繰り返す。refresh すれば失効が分かる。
+     *
+     * 有効なら true、失効していたら signed_out にして false を返す。通信の失敗は投げる（ログアウトしたと取り違えない）。
+     */
+    async revalidate(): Promise<boolean> {
+      accessToken = undefined;
+      try {
+        await refresh();
+        return true;
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) return false;
+        throw err;
+      }
+    },
+
     request,
   };
 }

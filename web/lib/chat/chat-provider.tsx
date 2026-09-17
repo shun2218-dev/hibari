@@ -1,30 +1,80 @@
 "use client";
 
-import { type ReactNode, createContext, useContext, useState, useSyncExternalStore } from "react";
+import { type ReactNode, createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
 
+import { getApiBaseUrl } from "@/lib/api-base-url";
 import { useSession } from "@/lib/auth/session-provider";
 
 import { createChatApi } from "./api";
+import { type SocketLike, webSocketUrl } from "./connection";
+import { type Realtime, createRealtime } from "./realtime";
 import { type ChatState, type ChatStore, createChatStore } from "./store";
 
-const ChatContext = createContext<ChatStore | null>(null);
+type ChatContextValue = { store: ChatStore; realtime: Realtime };
+
+const ChatContext = createContext<ChatContextValue | null>(null);
+
+/** WebSocket の接続先と作り方。テストでは偽のソケットと、再接続を待たないジッター（random）を渡す。 */
+export type RealtimeTransport = { url: string; createSocket: (url: string) => SocketLike; random?: () => number };
+
+function browserTransport(): RealtimeTransport {
+  return { url: webSocketUrl(getApiBaseUrl()), createSocket: (url) => new WebSocket(url) };
+}
 
 /**
- * チャットの状態を、ログインしている間だけ 1 つ持つ。
+ * チャットの状態と WebSocket の接続を、ログインしている間だけ 1 つ持つ。
  *
- * `(app)` のレイアウトがログイン済みのときだけ置く。ログアウトすると外れて状態ごと捨てられるので、
+ * `(app)` のレイアウトがログイン済みのときだけ置く。ログアウトすると外れて状態ごと捨てられ、接続も閉じるので、
  * 同じタブで別の人がログインしても、前の人のルームやメッセージが残らない。
  */
-export function ChatProvider({ children, store: injected }: { children: ReactNode; store?: ChatStore }) {
+export function ChatProvider({
+  children,
+  userId,
+  transport,
+}: {
+  children: ReactNode;
+  userId: string;
+  transport?: RealtimeTransport;
+}) {
   const session = useSession();
-  const [store] = useState(() => injected ?? createChatStore(createChatApi(session.request)));
-  return <ChatContext value={store}>{children}</ChatContext>;
+  const [value] = useState<ChatContextValue>(() => {
+    const api = createChatApi(session.request);
+    const store = createChatStore(api, { userId });
+    const { url, createSocket, random } = transport ?? browserTransport();
+    const realtime = createRealtime({
+      store,
+      url,
+      createSocket,
+      random,
+      issueTicket: api.issueTicket,
+      revalidateSession: () => session.revalidate(),
+    });
+    return { store, realtime };
+  });
+
+  useEffect(() => {
+    value.realtime.start();
+    return () => {
+      value.realtime.stop();
+      value.store.dispose();
+    };
+  }, [value]);
+
+  return <ChatContext value={value}>{children}</ChatContext>;
+}
+
+function useChatContext(): ChatContextValue {
+  const value = useContext(ChatContext);
+  if (!value) throw new Error("chat hooks must be used inside ChatProvider");
+  return value;
 }
 
 export function useChatStore(): ChatStore {
-  const store = useContext(ChatContext);
-  if (!store) throw new Error("useChatStore must be used inside ChatProvider");
-  return store;
+  return useChatContext().store;
+}
+
+export function useRealtime(): Realtime {
+  return useChatContext().realtime;
 }
 
 /**
