@@ -9,7 +9,9 @@ import type {
   CreateWorkspaceRequest,
   EditMessageRequest,
   Invite,
+  InviteAcceptance,
   InviteList,
+  InvitePreview,
   MarkRoomReadRequest,
   Member,
   MemberList,
@@ -86,6 +88,12 @@ export function createChatApi(request: Session["request"]) {
         "DELETE",
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/invites/${encodeURIComponent(inviteId)}`,
       ),
+    /** 招待リンクのプレビュー。要ログイン（ADR 0011）。使えない招待は 404 / 410 を投げる。 */
+    previewInvite: (code: string) => request<InvitePreview>("GET", `/api/v1/invites/${encodeURIComponent(code)}`),
+
+    /** 招待を受け入れる。すでにメンバーなら使用回数を消費せずに成功する（ADR 0011）。 */
+    acceptInvite: (code: string) =>
+      request<InviteAcceptance>("POST", `/api/v1/invites/${encodeURIComponent(code)}/accept`),
 
     listRooms: (workspaceId: string) =>
       request<RoomList>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/rooms`),

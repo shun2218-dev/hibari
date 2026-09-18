@@ -10,7 +10,8 @@ import { passwordStrength } from "@/lib/auth/password-strength";
 import { useSession, useSessionState } from "@/lib/auth/session-provider";
 import { signupErrorMessage } from "@/lib/auth/signup-error";
 
-export function SignupPage() {
+/** `next` は page.tsx で同じオリジンのパスに絞ってある（招待リンクから来た人の戻り先）。 */
+export function SignupPage({ next = "/" }: { next?: string }) {
   const router = useRouter();
   const session = useSession();
   const { state, unreachable } = useSessionState();
@@ -23,8 +24,8 @@ export function SignupPage() {
   const registering = useRef(false);
 
   useEffect(() => {
-    if (state.status === "signed_in" && !registering.current) router.replace("/");
-  }, [state.status, router]);
+    if (state.status === "signed_in" && !registering.current) router.replace(next);
+  }, [state.status, next, router]);
 
   if (registeredEmail) {
     return (

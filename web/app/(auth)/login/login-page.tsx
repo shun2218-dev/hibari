@@ -55,7 +55,8 @@ export function LoginPage({ next }: { next: string }) {
         submitting={submitting}
         onSubmit={handleSubmit}
         forgotPasswordHref="/forgot-password"
-        signupHref="/signup"
+        // 招待リンクを持っていてアカウントがない人が、登録してから招待に戻れるように next を引き継ぐ
+        signupHref={next === "/" ? "/signup" : `/signup?next=${encodeURIComponent(next)}`}
       />
     </AuthShell>
   );

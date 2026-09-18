@@ -30,6 +30,21 @@ describe("createChatStore", () => {
     expect(store.getSnapshot().workspaces).toEqual({ status: "ready", list: [workspace("ws-1", "hibari 開発")] });
   });
 
+  it("adds the workspace to the list when an invite is accepted", async () => {
+    const joined = workspace("ws-2", "山と印刷");
+    const { store } = setup({
+      "GET /api/v1/workspaces": () => json(200, { workspaces: [workspace("ws-1", "hibari 開発")] }),
+      "POST /api/v1/invites/abc/accept": () => json(200, { workspace: joined, already_member: false }),
+    });
+    await store.loadWorkspaces();
+
+    await store.acceptInvite("abc");
+    // すでにメンバーだった招待は使用回数を消費せず（ADR 0011）、一覧も増やさない
+    await store.acceptInvite("abc");
+
+    expect(store.getSnapshot().workspaces.list.map((w) => w.id)).toEqual(["ws-1", "ws-2"]);
+  });
+
   it("marks a room list as not_found on 404", async () => {
     const { store } = setup({ "GET /api/v1/workspaces/ws-x/rooms": () => problem(404, "not-found") });
 
