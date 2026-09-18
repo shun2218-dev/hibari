@@ -24,6 +24,8 @@ export function ProfileSettings({
   onRetryImage,
   onDisplayNameChange,
   onHandleChange,
+  onDisplayNameCommit,
+  onHandleCommit,
 }: {
   user: { id: string; displayName: string; handle: string; avatarUrl?: string };
   avatarState?: AvatarUploadState;
@@ -32,6 +34,9 @@ export function ProfileSettings({
   onRetryImage?: () => void;
   onDisplayNameChange?: (value: string) => void;
   onHandleChange?: (value: string) => void;
+  /** 変更を確定する（フォーカスを外したとき）。WorkspaceSettings の名前と同じ形。 */
+  onDisplayNameCommit?: () => void;
+  onHandleCommit?: () => void;
 }) {
   const uploading = avatarState === "uploading";
   return (
@@ -80,8 +85,19 @@ export function ProfileSettings({
         )}
         <p className="text-2xs text-text-muted">PNG / JPEG / WebP、2 MB まで。正方形に切り取って表示します。</p>
       </div>
-      <TextField label="表示名" value={user.displayName} onChange={(e) => onDisplayNameChange?.(e.target.value)} />
-      <TextField label="ハンドル" mono value={`@${user.handle}`} onChange={(e) => onHandleChange?.(e.target.value.replace(/^@/, ""))} />
+      <TextField
+        label="表示名"
+        value={user.displayName}
+        onChange={(e) => onDisplayNameChange?.(e.target.value)}
+        onBlur={onDisplayNameCommit}
+      />
+      <TextField
+        label="ハンドル"
+        mono
+        value={`@${user.handle}`}
+        onChange={(e) => onHandleChange?.(e.target.value.replace(/^@/, ""))}
+        onBlur={onHandleCommit}
+      />
     </div>
   );
 }
@@ -167,11 +183,14 @@ export type Density = "comfortable" | "compact";
 export function AppearanceSettings({
   theme,
   density,
+  densityLocked = false,
   onThemeChange,
   onDensityChange,
 }: {
   theme: Theme;
   density: Density;
+  /** 密度を選べなくする。行送りと余白の値がデザインにないため（docs/ui/README.md の未解決）。 */
+  densityLocked?: boolean;
   onThemeChange?: (theme: Theme) => void;
   onDensityChange?: (density: Density) => void;
 }) {
@@ -203,6 +222,7 @@ export function AppearanceSettings({
           value="comfortable"
           checked={density === "comfortable"}
           onChange={() => onDensityChange?.("comfortable")}
+          disabled={densityLocked}
           title="ゆったり"
           description="行送り 1.75。長時間でも読み疲れしにくい"
         />
@@ -211,6 +231,7 @@ export function AppearanceSettings({
           value="compact"
           checked={density === "compact"}
           onChange={() => onDensityChange?.("compact")}
+          disabled={densityLocked}
           title="詰める"
           description="1画面により多くの発言が入る"
         />
