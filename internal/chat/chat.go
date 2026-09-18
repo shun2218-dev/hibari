@@ -107,6 +107,8 @@ type Member struct {
 	User     UserProfile
 	Role     Role
 	JoinedAt time.Time
+	// Online は presence の初期値（ADR 0015）。変化は WebSocket の presence.changed で届く。
+	Online bool
 }
 
 // 一覧のページングの既定値と上限（ADR 0011）。

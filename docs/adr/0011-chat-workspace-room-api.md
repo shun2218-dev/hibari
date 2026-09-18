@@ -128,3 +128,8 @@ Phase 3a の着手時点で、ADR 0006 とロードマップが決めていな�
 
 - 「結果」に書いたロールの変更・キック・譲渡・招待の受け入れの通知は、Delivery で配信するようになった（`workspace.role_changed` / `workspace.member_removed` / `member.joined` など。ADR 0015、`docs/events.md`）。
 - ルームのメンバー一覧（`GET /rooms/{id}/members`）の各メンバーと、ルームの `dm_peer` に presence の初期値 `online` を加えた（ADR 0015）。
+
+### 2026-09-18 メンバー一覧の presence（Phase 6-2 の構築順 6）
+
+- `GET /api/v1/workspaces/{id}/members` のレスポンスに `online`（presence の初期値）を足した。管理画面のメンバー一覧が
+  オンライン / オフラインを出すため。読み方はルームのメンバー一覧と同じで、ページに残した分だけを 1 回の MGET で読む（ADR 0015 / 0029）。
