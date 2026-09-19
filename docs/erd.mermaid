@@ -152,6 +152,7 @@ erDiagram
     text body "削除時は空にする"
     uuid thread_root_id FK "スレッドの親。(room_id, thread_root_id) の複合 FK。チャンネルの投稿なら null（ADR 0036）"
     bigint thread_seq "スレッドの中で何番目の返信か。UNIQUE(thread_root_id, これ)。返信だけ"
+    boolean in_channel "チャンネルのタイムラインに出るか。返信は「チャンネルにも投稿する」のときだけ true（ADR 0039）"
     bigint last_thread_seq "親だけ。thread_seq の採番カウンタ（減らない）"
     int thread_reply_count "親だけ。削除されていない返信の数（表示用）"
     timestamptz thread_last_reply_at "親だけ。最後の返信の時刻"
