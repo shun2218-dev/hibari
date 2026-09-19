@@ -195,7 +195,12 @@ export function toTimelineItems(
   }: TimelineOptions,
 ): TimelineItem[] {
   // スレッドの返信はチャンネルのタイムラインに出さない（ADR 0036）。手元には持っておく（change_seq のカーソルを進めるため）
-  const shown = threadRootId === undefined ? messages.filter((m) => m.thread_root_id === null) : messages;
+  // 削除したメッセージも出さない（ADR 0038）。返信の残っているスレッドの親だけは、返信の置き場所として「削除されました」を残す
+  const shown = messages.filter(
+    (m) =>
+      (threadRootId !== undefined || m.thread_root_id === null) &&
+      (m.deleted_at === null || m.id === threadRootId || (m.thread?.reply_count ?? 0) > 0),
+  );
   const entries = shown.map(fromMessage);
   if (me) {
     const mine = outgoing.filter((m) => m.threadRootId === (threadRootId ?? null));

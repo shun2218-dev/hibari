@@ -713,8 +713,13 @@ describe("WorkspaceScreen", () => {
         expect(within(dialog).getByText("消すメッセージ")).toBeInTheDocument();
         await userEvent.click(within(dialog).getByRole("button", { name: "削除する" }));
 
-        expect(await history().findByText("このメッセージは削除されました")).toBeInTheDocument();
+        // 削除したメッセージは跡を残さずに消える（ADR 0038）
+        await waitFor(() => expect(history().queryByText("消すメッセージ")).not.toBeInTheDocument());
+        expect(history().getAllByRole("article")).toHaveLength(2);
+        expect(history().queryByText("このメッセージは削除されました")).not.toBeInTheDocument();
         expect(screen.queryByRole("dialog", { name: "メッセージを削除しますか？" })).not.toBeInTheDocument();
+        // サイドバーの最後の 1 行は、ひとつ前のメッセージを取り直す
+        await waitFor(() => expect(api.paths().filter((p) => p === "GET /api/v1/rooms/r-design")).toHaveLength(2));
       });
     });
 

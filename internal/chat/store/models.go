@@ -61,7 +61,6 @@ type Room struct {
 	ArchivedAt     *time.Time
 	LastChangeSeq  int64
 	LastUserSeq    int64
-	LastChannelSeq int64
 }
 
 type Workspace struct {

@@ -124,7 +124,6 @@ erDiagram
     bigint last_message_seq "採番カウンタ兼最新 seq。初期値 0"
     bigint last_change_seq "作成・編集・削除の変更番号のカウンタ。初期値 0（ADR 0014）"
     bigint last_user_seq "チャンネルの人の発言の数。未読数に使う（ADR 0033 / 0036）"
-    bigint last_channel_seq "チャンネルに出る最後のメッセージの seq。一覧の最終メッセージ用（ADR 0036）"
     timestamptz last_message_at "一覧のソート用に非正規化。スレッドの返信では進めない"
     timestamptz created_at
     timestamptz archived_at

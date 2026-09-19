@@ -218,3 +218,7 @@ GET  /api/v1/workspaces/{id}/threads                    参加しているスレ
 - 参加中のスレッドの一覧（`GET /workspaces/{id}/threads`）の各行に、`last_thread_seq` と `last_read_thread_seq` を足した。
   クライアントは親の `message.updated` と `thread.read` を受けて、未読数を引き算で求め直す（ADR 0037）。
 
+### 2026-09-19 `rooms.last_channel_seq` を削除した（ADR 0038）
+
+ルーム一覧の最終メッセージを「削除されていない最後のチャンネルの行」にしたので、その位置を持っていた `last_channel_seq` は使わなくなり、削除した（マイグレーション 00009）。
+

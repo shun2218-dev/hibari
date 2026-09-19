@@ -117,8 +117,10 @@ describe("applyMessageToRoom", () => {
   it("reflects an edit or deletion only when it is the last message", () => {
     const withLast = applyMessageToRoom(base, message(6), me, true);
 
+    // 最後のメッセージの削除では、ひとつ前を取り直すまで空にする（ADR 0038）
     expect(applyMessageToRoom(withLast, message(6, { deleted_at: "2026-09-13T02:00:00Z", body: "" }), me, false))
-      .toMatchObject({ last_message: { deleted: true } });
+      .toMatchObject({ last_message: null });
+    expect(applyMessageToRoom(withLast, message(6, { body: "編集" }), me, false)).toMatchObject({ last_message: { body: "編集" } });
     expect(applyMessageToRoom(withLast, message(4, { body: "古い編集" }), me, false)).toBe(withLast);
   });
 });

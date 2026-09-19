@@ -756,3 +756,50 @@ func setLastReadSeq(t *testing.T, env *chattest.Env, roomID, userID ulid.ULID, s
 		t.Fatal(err)
 	}
 }
+
+// サイドバーの最終メッセージは、チャンネルに出ていて削除されていない最後の行（ADR 0038）。
+// 最後のメッセージを削除したら、ひとつ前のメッセージになる（Slack と同じ）。
+func TestRoomLastMessageSkipsDeleted(t *testing.T) {
+	env := chattest.New(t)
+	r := setupRoles(t, env)
+	room := createRoom(t, env, r.member, r.ws.ID, "public", "public")
+	first := send(t, env, r.member, room.ID, "1 件目")
+	second := send(t, env, r.member, room.ID, "2 件目")
+	reply(t, env, r.member, room.ID, first.ID, "スレッドの返信")
+
+	lastMessage := func() *chat.MessagePreview {
+		t.Helper()
+		rooms, err := env.Service.ListRooms(t.Context(), r.member, r.ws.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := env.Service.GetRoom(t.Context(), r.member, room.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, rm := range rooms {
+			// 一覧と 1 件の取得は同じ行を返す
+			if rm.ID == room.ID && (rm.LastMessage == nil) != (got.LastMessage == nil) {
+				t.Fatalf("list %+v, get %+v", rm.LastMessage, got.LastMessage)
+			}
+		}
+		return got.LastMessage
+	}
+
+	if m := lastMessage(); m == nil || m.ID != second.ID {
+		t.Fatalf("last message = %+v, want the second message (not the thread reply)", m)
+	}
+	if err := env.Service.DeleteMessage(t.Context(), r.member, room.ID, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if m := lastMessage(); m == nil || m.ID != first.ID {
+		t.Errorf("after deleting the last message = %+v, want the first message", m)
+	}
+	if err := env.Service.DeleteMessage(t.Context(), r.member, room.ID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	// 人の発言がすべて消えたら、作成のログ（システムメッセージ）が最後の行になる
+	if m := lastMessage(); m == nil || m.Kind != chat.MessageKindSystem {
+		t.Errorf("after deleting all messages = %+v, want the system log", m)
+	}
+}
