@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Room } from "@/lib/api/types.gen";
 import { lastRoomId, lastWorkspaceId, rememberLocation } from "@/lib/chat/last-location";
 import { kei, member, message, miyuki, naoki, room, roomMember, workspace } from "@/test/chat-data";
-import { type Handler, json, problem } from "@/test/fake-api";
+import { type Handler, json, problem, testUser } from "@/test/fake-api";
 import { renderWithChat } from "@/test/render-with-chat";
 
 import { WorkspaceScreen } from "./workspace-screen";
@@ -263,6 +263,62 @@ describe("WorkspaceScreen", () => {
 
       await waitFor(() => expect(api.calls.at(-1)?.init.body).toBe(JSON.stringify({ name: "リリース準備 2" })));
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+
+    it("leaves a private channel from its settings and goes back to the workspace without a notice", async () => {
+      const user = userEvent.setup();
+      const priv = room("r-priv", "リリース準備", { kind: "private", member_count: 2 });
+      nav.params = { workspaceId: "ws-1", roomId: "r-priv" };
+      rememberLocation("ws-1", "r-priv");
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [priv, chat] }),
+          ...openRoom(priv, []),
+          "GET /api/v1/rooms/r-priv/members?limit=200": () => json(200, { members: [roomMember(naoki)], next_cursor: null }),
+          "GET /api/v1/workspaces/ws-1/members?limit=200": () => json(200, { members: [member(naoki)], next_cursor: null }),
+          [`DELETE /api/v1/rooms/r-priv/members/${testUser.id}`]: () => new Response(null, { status: 204 }),
+        }),
+      );
+
+      // member でも（読み取り専用の設定から）退出できる
+      await user.click(await screen.findByRole("button", { name: "チャンネルの設定" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "退出する" }));
+      const confirm = within(await screen.findByRole("dialog"));
+      expect(confirm.getByText(/リリース準備 から退出します。.*読めなくなります/)).toBeInTheDocument();
+      await user.click(confirm.getByRole("button", { name: "退出する" }));
+
+      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1"));
+      expect(api.paths()).toContain(`DELETE /api/v1/rooms/r-priv/members/${testUser.id}`);
+      expect(screen.queryByText(/外されました/)).not.toBeInTheDocument();
+      expect(lastRoomId("ws-1")).toBeUndefined();
+    });
+
+    it("keeps a public channel readable after leaving it, and backs out of the confirmation to the settings", async () => {
+      const user = userEvent.setup();
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          [`DELETE /api/v1/rooms/r-design/members/${testUser.id}`]: () => new Response(null, { status: 204 }),
+        }),
+      );
+
+      await user.click(await screen.findByRole("button", { name: "チャンネルの設定" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "退出する" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "キャンセル" }));
+      expect(await screen.findByRole("heading", { name: "チャンネルの設定" })).toBeInTheDocument();
+
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "退出する" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "退出する" }));
+
+      expect(await screen.findByRole("button", { name: "参加する" })).toBeInTheDocument();
+      expect(screen.getByRole("list", { name: "メッセージ" })).toBeInTheDocument();
+      expect(nav.router.replace).not.toHaveBeenCalled();
+
+      // 参加していないので、設定からはもう退出を出さない
+      await user.click(screen.getByRole("button", { name: "チャンネルの設定" }));
+      expect(within(await screen.findByRole("dialog")).queryByRole("button", { name: "退出する" })).not.toBeInTheDocument();
     });
 
     it("does not offer channel settings for a dm", async () => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { AddRoomMemberDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
+import { AddRoomMemberDialog, LeaveRoomDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
 import { useSessionState } from "@/lib/auth/session-provider";
 import { useAvatarUrls, useChatState, useChatStore } from "@/lib/chat/chat-provider";
 import { roomName, toDmCandidates, toRoomMemberRows } from "@/lib/chat/views";
@@ -12,6 +12,9 @@ import { roomName, toDmCandidates, toRoomMemberRows } from "@/lib/chat/views";
  *
  * 変更できるのは、そのチャンネルを読める admin 以上（ADR 0011）。member にも読み取り専用で開ける。
  * DM は設定を変えられないので、ヘッダーに入口を出さない（RoomView）。
+ *
+ * 参加していれば、ロールに関係なくここから退出できる。退出したあとの画面（非公開なら入口に戻る、
+ * 公開なら参加していない状態で読み続ける）は、別の端末で退出したときと同じく RoomView が決める。
  */
 export function RoomSettings({
   workspaceId,
@@ -37,6 +40,8 @@ export function RoomSettings({
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>();
   const [pending, setPending] = useState(false);
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   const isPrivate = room?.kind === "private";
 
@@ -102,6 +107,20 @@ export function RoomSettings({
     }
   }
 
+  async function leave() {
+    setLeaving(true);
+    try {
+      await store.leaveRoom(roomId);
+      setConfirmingLeave(false);
+      close();
+    } catch (err) {
+      // 退出の失敗の表示はデザインにない（ワークスペースの退出と同じ）。確認を残して押し直せるようにする
+      console.error("failed to leave the room", err);
+    } finally {
+      setLeaving(false);
+    }
+  }
+
   async function removeMember(userId: string) {
     try {
       await store.removeRoomMember(roomId, userId);
@@ -113,7 +132,7 @@ export function RoomSettings({
   return (
     <>
       <RoomSettingsDialog
-        open={open && !adding}
+        open={open && !adding && !confirmingLeave}
         kind={room.kind}
         name={name ?? roomName(room)}
         members={rows.map((row) => ({ ...row, avatarUrl: avatarUrls[row.id] ?? undefined }))}
@@ -121,6 +140,7 @@ export function RoomSettings({
         onNameChange={setName}
         onAddMember={() => setAdding(true)}
         onRemoveMember={removeMember}
+        onLeave={room.is_member ? () => setConfirmingLeave(true) : undefined}
         onCancel={close}
         onSave={save}
         saving={saving}
@@ -139,6 +159,15 @@ export function RoomSettings({
         }}
         onAdd={addMember}
         adding={pending}
+      />
+      <LeaveRoomDialog
+        open={open && confirmingLeave}
+        kind={room.kind}
+        name={roomName(room)}
+        pending={leaving}
+        // やめたら設定に戻る（設定から開いたので）
+        onCancel={() => setConfirmingLeave(false)}
+        onConfirm={leave}
       />
     </>
   );
