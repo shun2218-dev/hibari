@@ -407,9 +407,20 @@ export interface MessageAttachment {
   height: number | null;
 }
 
+export interface MessageAround {
+  seq: number;
+  /** thread_root_id が入っていればスレッドの返信。クライアントはスレッドのパネルを開く。 */
+  thread_root_id: string | null;
+}
+
 export interface MessageList {
   messages: Message[];
+  /** has_more は同じ向き（around_message_id・before_seq・指定なしなら古い方、after_seq / after_change_seq なら新しい方）にまだあるか。 */
   has_more: boolean;
+  /** has_more_after は新しい方にまだあるか。向きが 2 つあるのは around_message_id だけなので、それ以外では常に false（ADR 0042）。 */
+  has_more_after: boolean;
+  /** around は around_message_id の対象が見つかったときだけ入る。見つからなければ null で、最新のページを返している。 */
+  around: MessageAround | null;
   /** last_change_seq はメッセージを読む前のルームの last_change_seq。クライアントは change_seq のカーソルをこの値まで進めてよい。 */
   last_change_seq: number;
 }
@@ -430,7 +441,12 @@ export interface ReadState {
 export interface ThreadMessageList {
   root: Message;
   messages: Message[];
+  /** has_more は同じ向き（around_message_id・before_seq・指定なしなら古い方、after_seq なら新しい方）にまだあるか。 */
   has_more: boolean;
+  /** has_more_after は新しい方にまだあるか。向きが 2 つあるのは around_message_id だけなので、それ以外では常に false（ADR 0042）。 */
+  has_more_after: boolean;
+  /** around は around_message_id の対象が見つかったときだけ入る。見つからなければ null で、最新のページを返している。 */
+  around: MessageAround | null;
   /** last_change_seq は返信を読む前のルームの last_change_seq（messageListResponse と同じ）。 */
   last_change_seq: number;
   /** last_read_thread_seq は自分の既読位置。スレッドに参加していなければ null。 */
