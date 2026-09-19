@@ -607,6 +607,64 @@ describe("WorkspaceScreen", () => {
           expect(history().queryByText("スレッドで答えます")).not.toBeInTheDocument();
         });
 
+        describe("チャンネルにも投稿する（ADR 0039）", () => {
+          function sendRouteWithFlag(sent: unknown[]): Record<string, Handler> {
+            return {
+              "POST /api/v1/rooms/r-design/messages": (_url, init) => {
+                const req = JSON.parse(init.body as string);
+                sent.push(req);
+                return json(201, message(6, {
+                  room_id: "r-design", change_seq: 6, user_seq: 4, sender: naoki, client_msg_id: req.client_msg_id,
+                  body: req.body, thread_root_id: "m-2", thread_seq: 3, also_in_channel: req.also_in_channel,
+                }));
+              },
+            };
+          }
+
+          it("sends the reply to the channel too when the box is checked, and shows it in both", async () => {
+            nav.search = "thread=m-2";
+            const sent: unknown[] = [];
+            await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute(), ...sendRouteWithFlag(sent) });
+            await panel().findByText("返信 2");
+
+            await userEvent.click(screen.getByRole("checkbox", { name: "チャンネルにも投稿する" }));
+            await userEvent.type(screen.getByRole("textbox", { name: "スレッドに返信" }), "みんなにも伝えます{Enter}");
+
+            await waitFor(() => expect(sent).toEqual([expect.objectContaining({ thread_root_id: "m-2", also_in_channel: true })]));
+            expect(await history().findByText("みんなにも伝えます")).toBeInTheDocument();
+            expect(panel().getByText("チャンネルにも投稿しました")).toBeInTheDocument();
+            expect(history().getByRole("button", { name: "スレッドに返信しました" })).toBeInTheDocument();
+            // 送るたびにチェックは外す（次の返信が知らずに流れないように）
+            expect(screen.getByRole("checkbox", { name: "チャンネルにも投稿する" })).not.toBeChecked();
+          });
+
+          it("leaves the reply in the thread when the box is not checked", async () => {
+            nav.search = "thread=m-2";
+            const sent: unknown[] = [];
+            await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute(), ...sendRouteWithFlag(sent) });
+            await panel().findByText("返信 2");
+
+            await userEvent.type(screen.getByRole("textbox", { name: "スレッドに返信" }), "スレッドだけ{Enter}");
+
+            await waitFor(() => expect(sent).toEqual([expect.objectContaining({ also_in_channel: false })]));
+            expect(await panel().findByText("スレッドだけ")).toBeInTheDocument();
+            expect(history().queryByText("スレッドだけ")).not.toBeInTheDocument();
+          });
+
+          it("opens the thread from the label on the channel row", async () => {
+            const broadcast = message(4, {
+              room_id: "r-design", change_seq: 4, user_seq: 4, body: "流した返信",
+              thread_root_id: "m-2", thread_seq: 1, also_in_channel: true,
+            });
+            await connected(openRoom(design, [message(1), root, broadcast]));
+
+            expect(history().getByText("流した返信")).toBeInTheDocument();
+            await userEvent.click(history().getByRole("button", { name: "スレッドに返信しました" }));
+
+            expect(nav.router.push).toHaveBeenLastCalledWith("/w/ws-1/r/r-design?thread=m-2");
+          });
+        });
+
         it("shows typing in the thread only in the panel", async () => {
           nav.search = "thread=m-2";
           const { sockets } = await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute() });

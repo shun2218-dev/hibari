@@ -5,6 +5,8 @@ import type { MessageAttachment, MessageLink } from "@/lib/api/types.gen";
 import { kei, member, message, miyuki, naoki, room, roomMember, systemMessage } from "@/test/chat-data";
 
 import {
+  alsoInChannelDoneLabel,
+  alsoInChannelLabel,
   messageActions,
   previewImageIds,
   toAttachmentDraftView,
@@ -266,6 +268,7 @@ describe("toTimelineItems", () => {
           clientMsgId: "c-x",
           body: "送信中",
           threadRootId: null,
+          alsoInChannel: false,
           attachments: [pdf],
           status: "pending",
           createdAt: "2026-09-13T01:01:00Z",
@@ -274,6 +277,7 @@ describe("toTimelineItems", () => {
           clientMsgId: "c-y",
           body: "失敗",
           threadRootId: null,
+          alsoInChannel: false,
           attachments: [],
           status: "failed",
           createdAt: "2026-09-13T01:02:00Z",
@@ -523,7 +527,7 @@ describe("threads (ADR 0036)", () => {
     const items = toTimelineItems([message(1)], {
       unreadAfterSeq: null,
       me: naoki,
-      outgoing: [{ clientMsgId: "c-t", body: "スレッドへ", threadRootId: "m-1", attachments: [], status: "pending", createdAt: "2026-09-13T01:01:00Z" }],
+      outgoing: [{ clientMsgId: "c-t", body: "スレッドへ", threadRootId: "m-1", alsoInChannel: false, attachments: [], status: "pending", createdAt: "2026-09-13T01:01:00Z" }],
       timeZone: tz,
     });
 
@@ -541,8 +545,8 @@ describe("threads (ADR 0036)", () => {
       {
         me: naoki,
         outgoing: [
-          { clientMsgId: "c-t", body: "送信中の返信", threadRootId: "m-1", attachments: [], status: "pending", createdAt: "2026-09-14T01:02:00Z" },
-          { clientMsgId: "c-c", body: "チャンネルへ", threadRootId: null, attachments: [], status: "pending", createdAt: "2026-09-14T01:02:00Z" },
+          { clientMsgId: "c-t", body: "送信中の返信", threadRootId: "m-1", alsoInChannel: false, attachments: [], status: "pending", createdAt: "2026-09-14T01:02:00Z" },
+          { clientMsgId: "c-c", body: "チャンネルへ", threadRootId: null, alsoInChannel: false, attachments: [], status: "pending", createdAt: "2026-09-14T01:02:00Z" },
         ],
         timeZone: tz,
       },
@@ -551,6 +555,14 @@ describe("threads (ADR 0036)", () => {
     expect(outline(items)).toEqual(["親", "[2 replies]", "返信 1", "+返信 2", "送信中の返信"]);
     expect(items[0]!.type === "message" && items[0].message.thread).toBeUndefined();
     expect(toThreadTimelineItems({ root: null, replies }, { timeZone: tz })).toEqual([]);
+  });
+
+  it("names the channel checkbox and the note by the room kind (ADR 0039)", () => {
+    expect(alsoInChannelLabel("public")).toBe("チャンネルにも投稿する");
+    expect(alsoInChannelLabel("private")).toBe("チャンネルにも投稿する");
+    expect(alsoInChannelLabel("dm")).toBe("DM にも投稿する");
+    expect(alsoInChannelDoneLabel("public")).toBe("チャンネルにも投稿しました");
+    expect(alsoInChannelDoneLabel("dm")).toBe("DM にも投稿しました");
   });
 
   it("maps a followed thread to a list row, naming a dm by the peer", () => {
@@ -728,5 +740,100 @@ describe("toTimelineItems のリンクのカード", () => {
     const result = linkResult({ message: { ...linkMessage(), attachment_count: 3 } });
     const [card] = cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: result }) ?? [];
     expect(card).toMatchObject({ attachmentCount: 3 });
+  });
+});
+
+describe("チャンネルにも投稿する（ADR 0039）", () => {
+  const root = message(1, {
+    body: "親",
+    sender: naoki,
+    thread: { reply_count: 2, last_thread_seq: 2, last_reply_at: "2026-09-13T01:02:00Z" },
+  });
+  const broadcast = message(2, {
+    body: "流した返信",
+    sender: naoki,
+    thread_root_id: "m-1",
+    thread_seq: 1,
+    also_in_channel: true,
+    created_at: "2026-09-13T01:01:00Z",
+  });
+  const plainReply = message(3, {
+    body: "普通の返信",
+    sender: naoki,
+    thread_root_id: "m-1",
+    thread_seq: 2,
+    created_at: "2026-09-13T01:02:00Z",
+  });
+
+  it("puts a reply sent to the channel in the channel timeline, at its room seq", () => {
+    const items = toTimelineItems([root, broadcast, plainReply, message(4, { body: "あと", sender: miyuki })], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+    });
+
+    // 流した返信だけがチャンネルに並ぶ。普通の返信は手元にあっても出さない（ADR 0036）
+    expect(outline(items)).toEqual(["[2026年9月13日]", "親", "流した返信", "あと"]);
+  });
+
+  it("labels the channel row so it opens the thread, and does not group it with the message above", () => {
+    const items = toTimelineItems([root, broadcast, message(4, { body: "続き", sender: naoki })], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+    });
+    const [rootView, broadcastView, next] = items.flatMap((item) => (item.type === "message" ? [item.message] : []));
+
+    expect(broadcastView!.broadcast).toEqual({ in: "channel" });
+    // 同じ人が続けて送っていても、スレッドから来た行だと分かるようにアバターと名前を省かない（docs/ui/README.md）
+    expect(broadcastView!.grouped).toBe(false);
+    expect(next!.grouped).toBe(false);
+    expect(rootView!.broadcast).toBeUndefined();
+  });
+
+  it("counts a reply sent to the channel as unread in the channel", () => {
+    const items = toTimelineItems([root, broadcast], { unreadAfterSeq: 1, timeZone: tz });
+
+    expect(outline(items)).toEqual(["[2026年9月13日]", "親", "[unread]", "流した返信"]);
+  });
+
+  it("adds the note to the thread panel row instead, and only when the wording is given", () => {
+    const withLabel = toThreadTimelineItems(
+      { root, replies: [broadcast, plainReply] },
+      { timeZone: tz, broadcastDoneLabel: alsoInChannelDoneLabel("public") },
+    );
+    const [, sentToChannel, plain] = withLabel.flatMap((item) => (item.type === "message" ? [item.message] : []));
+
+    expect(sentToChannel!.broadcast).toEqual({ in: "thread", label: "チャンネルにも投稿しました" });
+    expect(plain!.broadcast).toBeUndefined();
+    // 注記は普通の返信と同じ見え方のままなので、続けて表示（grouped）は止めない
+    expect(plain!.grouped).toBe(true);
+
+    const withoutLabel = toThreadTimelineItems({ root, replies: [broadcast] }, { timeZone: tz });
+    const shown = withoutLabel.flatMap((item) => (item.type === "message" ? [item.message] : []));
+
+    expect(shown[1]!.broadcast).toBeUndefined();
+  });
+
+  it("shows my unsent reply in both places while it is still sending", () => {
+    const outgoing = [
+      {
+        clientMsgId: "c-b",
+        body: "送信中の返信",
+        threadRootId: "m-1",
+        alsoInChannel: true,
+        attachments: [],
+        status: "pending" as const,
+        createdAt: "2026-09-13T01:03:00Z",
+      },
+    ];
+
+    const channel = toTimelineItems([root], { unreadAfterSeq: null, me: naoki, outgoing, timeZone: tz });
+    const thread = toThreadTimelineItems(
+      { root, replies: [] },
+      { me: naoki, outgoing, timeZone: tz, broadcastDoneLabel: alsoInChannelDoneLabel("public") },
+    );
+
+    expect(outline(channel)).toEqual(["[2026年9月13日]", "親", "送信中の返信"]);
+    expect(channel.flatMap((i) => (i.type === "message" ? [i.message] : []))[1]!.broadcast).toEqual({ in: "channel" });
+    expect(outline(thread)).toEqual(["親", "[2 replies]", "送信中の返信"]);
   });
 });

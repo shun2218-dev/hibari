@@ -2,7 +2,9 @@ import type {
   AttachmentDraftView,
   MessageAttachmentView,
   MessageLinkCardView,
+  MessageView,
   RoleLabel,
+  RoomKind,
   RoomMemberView,
   RoomSummaryView,
   ThreadListItemView,
@@ -26,6 +28,7 @@ import type { AttachmentDraft } from "./uploads";
 
 import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./format";
 import { type Permalink, buildPermalink, clampCardBody, findPermalinks, linkKey } from "./links";
+import { inChannel } from "./messages";
 
 /**
  * API のレスポンスを、presentational コンポーネントの表示用の型に変える（ADR 0018）。
@@ -63,6 +66,18 @@ export const DELETED_MESSAGE_TEXT = "このメッセージは削除されまし�
  * ルーム一覧の last_message には添付の情報がないので、ファイル名は出せない。
  */
 export const ATTACHMENT_ONLY_TEXT = "添付ファイル";
+
+/**
+ * 「チャンネルにも投稿する」まわりの文言（ADR 0039、docs/ui/README.md）。DM には「チャンネル」がないので言い換える。
+ * チャンネルの行の「スレッドに返信しました」だけは、どのルームでも同じなのでコンポーネント側に置いてある。
+ */
+export function alsoInChannelLabel(kind: RoomKind): string {
+  return kind === "dm" ? "DM にも投稿する" : "チャンネルにも投稿する";
+}
+
+export function alsoInChannelDoneLabel(kind: RoomKind): string {
+  return kind === "dm" ? "DM にも投稿しました" : "チャンネルにも投稿しました";
+}
 
 /** 署名付き URL の手元の表（media.ts）。undefined と null は、どちらも画像を出さない。 */
 export type UrlTable = Readonly<Record<string, string | null | undefined>>;
@@ -128,9 +143,14 @@ type TimelineOptions = {
   now?: Date;
   /**
    * スレッドの返信を並べるときの親の ID（ADR 0036）。渡すと messages をそのまま並べ、outgoing はそのスレッドへの返信だけにする。
-   * 省くとチャンネルのタイムラインで、スレッドの返信を除く。
+   * 省くとチャンネルのタイムラインで、「チャンネルにも投稿する」を付けていない返信を除く（ADR 0039）。
    */
   threadRootId?: string;
+  /**
+   * スレッドのパネルで、流した返信に添える注記（alsoInChannelDoneLabel）。ルームの種類で文言が変わるので受け取る。
+   * 省くと注記を出さない。チャンネルのタイムラインでは使わない。
+   */
+  broadcastDoneLabel?: string;
 };
 
 /** タイムラインに並べる 1 件。確定したメッセージと、確定していない自分のメッセージを同じ形にそろえる。 */
@@ -147,10 +167,26 @@ type Entry = {
   edited: boolean;
   /** 返信のついた親の「N 件の返信」。返信が全部消えていれば出さない。 */
   thread: { replyCount: number; lastReplyAt: Date } | undefined;
+  /** 「チャンネルにも投稿する」を付けた返信の見え方（ADR 0039）。並べる場所で変わる。 */
+  broadcast: MessageView["broadcast"];
   attachments: readonly MessageAttachment[];
 };
 
-function fromMessage(message: Message): Entry {
+/**
+ * 流した返信（ADR 0039）の見え方。チャンネルでは押せるラベル、スレッドのパネルでは本文の下の注記にする。
+ * 注記の文言はルームの種類で変わるので、渡されていなければスレッドでは何も添えない。
+ */
+function broadcastView(
+  isBroadcastReply: boolean,
+  inThread: boolean,
+  doneLabel: string | undefined,
+): MessageView["broadcast"] {
+  if (!isBroadcastReply) return undefined;
+  if (!inThread) return { in: "channel" };
+  return doneLabel === undefined ? undefined : { in: "thread", label: doneLabel };
+}
+
+function fromMessage(message: Message, broadcast: MessageView["broadcast"]): Entry {
   return {
     key: message.id,
     seq: message.seq,
@@ -166,11 +202,12 @@ function fromMessage(message: Message): Entry {
       message.thread && message.thread.reply_count > 0
         ? { replyCount: message.thread.reply_count, lastReplyAt: new Date(message.thread.last_reply_at) }
         : undefined,
+    broadcast,
     attachments: message.attachments,
   };
 }
 
-function fromOutgoing(message: OutgoingMessage, me: UserProfile): Entry {
+function fromOutgoing(message: OutgoingMessage, me: UserProfile, broadcast: MessageView["broadcast"]): Entry {
   return {
     // 確定すると key がメッセージの ID に変わる。確定したメッセージと送信中のメッセージの key は重ならない
     key: message.clientMsgId,
@@ -182,6 +219,7 @@ function fromOutgoing(message: OutgoingMessage, me: UserProfile): Entry {
     deleted: false,
     edited: false,
     thread: undefined,
+    broadcast,
     attachments: message.attachments,
   };
 }
@@ -204,19 +242,31 @@ export function toTimelineItems(
     timeZone,
     now = new Date(),
     threadRootId,
+    broadcastDoneLabel,
   }: TimelineOptions,
 ): TimelineItem[] {
-  // スレッドの返信はチャンネルのタイムラインに出さない（ADR 0036）。手元には持っておく（change_seq のカーソルを進めるため）
+  const inThread = threadRootId !== undefined;
+  // チャンネルのタイムラインに出すのは、チャンネルの投稿と、「チャンネルにも投稿する」を付けた返信だけ（ADR 0036 / 0039）。
+  // 出さない返信も手元には持っておく（change_seq のカーソルを進めるため）
   // 削除したメッセージも出さない（ADR 0038）。返信の残っているスレッドの親だけは、返信の置き場所として「削除されました」を残す
   const shown = messages.filter(
     (m) =>
-      (threadRootId !== undefined || m.thread_root_id === null) &&
+      (inThread || inChannel(m)) &&
       (m.deleted_at === null || m.id === threadRootId || (m.thread?.reply_count ?? 0) > 0),
   );
-  const entries = shown.map(fromMessage);
+  const entries = shown.map((m) =>
+    fromMessage(m, broadcastView(m.thread_root_id !== null && m.also_in_channel, inThread, broadcastDoneLabel)),
+  );
   if (me) {
-    const mine = outgoing.filter((m) => m.threadRootId === (threadRootId ?? null));
-    entries.push(...mine.map((m) => fromOutgoing(m, me)));
+    // 送信中の返信も、確定した後と同じ場所に出す。チェックを付けた返信はスレッドとチャンネルの両方に並ぶ
+    const mine = inThread
+      ? outgoing.filter((m) => m.threadRootId === threadRootId)
+      : outgoing.filter((m) => m.threadRootId === null || m.alsoInChannel);
+    entries.push(
+      ...mine.map((m) =>
+        fromOutgoing(m, me, broadcastView(m.threadRootId !== null && m.alsoInChannel, inThread, broadcastDoneLabel)),
+      ),
+    );
   }
 
   const items: TimelineItem[] = [];
@@ -240,6 +290,8 @@ export function toTimelineItems(
       unreadInserted = true;
       breakGroup = true;
     }
+    // 流した返信は、直前が同じ人の発言でも続けて表示にしない。スレッドから来た行だと分かるようにするため（docs/ui/README.md）
+    if (entry.broadcast?.in === "channel") breakGroup = true;
 
     if (entry.systemText !== undefined) {
       // ログは人の発言ではないので、続けて表示（grouped）の基準にもしない
@@ -276,12 +328,14 @@ export function toTimelineItems(
         thread: entry.thread
           ? { replyCount: entry.thread.replyCount, lastReplyLabel: formatListTime(entry.thread.lastReplyAt, now, timeZone) }
           : undefined,
+        broadcast: entry.broadcast,
         attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
         linkCards: origin === undefined ? undefined : toLinkCardViews(entry.body, { origin, linkCards, currentWorkspaceId, avatarUrls, timeZone }),
         grouped,
       },
     });
-    previous = entry;
+    // 流した返信の次の発言も続けて表示にしない（同じ人でも、スレッドの返信の続きに見えてしまうため）
+    previous = entry.broadcast?.in === "channel" ? undefined : entry;
   }
   return items;
 }
