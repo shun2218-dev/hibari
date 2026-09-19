@@ -16,6 +16,7 @@ import { toRoomSummaryView } from "@/lib/chat/views";
 
 import { CreateWorkspace } from "../../../create-workspace";
 import { CreateRoom } from "./create-room";
+import { StartDm } from "./start-dm";
 import { RoomMembers } from "./room-members";
 import { RoomView } from "./room-view";
 
@@ -37,6 +38,7 @@ export function WorkspaceScreen() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [creatingRoom, setCreatingRoom] = useState(false);
+  const [startingDm, setStartingDm] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   // モバイルで「一覧に戻る」を押した。URL はルームのままにして、別のルームを開いたら詳細に戻す
   const [listShownFor, setListShownFor] = useState<string>();
@@ -178,6 +180,7 @@ export function WorkspaceScreen() {
               />
             }
             onCreateRoom={() => setCreatingRoom(true)}
+            onStartDm={() => setStartingDm(true)}
           />
         }
         panel={
@@ -201,6 +204,7 @@ export function WorkspaceScreen() {
       </ChatLayout>
       <CreateWorkspace open={creatingWorkspace} onClose={() => setCreatingWorkspace(false)} />
       <CreateRoom workspaceId={workspaceId} open={creatingRoom} onClose={() => setCreatingRoom(false)} />
+      <StartDm workspaceId={workspaceId} open={startingDm} onClose={() => setStartingDm(false)} />
     </>
   );
 }

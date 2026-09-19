@@ -26,6 +26,7 @@ import {
   Plus,
   Reply,
   Search,
+  Settings,
   Smartphone,
   Users,
   X,
@@ -59,6 +60,7 @@ export const PaperclipIcon = withDefaults(Paperclip);
 export const PlusIcon = withDefaults(Plus);
 export const ReplyIcon = withDefaults(Reply);
 export const SearchIcon = withDefaults(Search);
+export const SettingsIcon = withDefaults(Settings);
 export const PhoneIcon = withDefaults(Smartphone);
 export const UsersIcon = withDefaults(Users);
 export const CloseIcon = withDefaults(X);

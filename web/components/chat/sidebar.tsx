@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { UnreadBadge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ChevronDownIcon, HashIcon, LockIcon, SearchIcon } from "@/components/ui/icons";
+import { Button, IconButton } from "@/components/ui/button";
+import { ChevronDownIcon, HashIcon, LockIcon, PlusIcon, SearchIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
 
 import type { RoomSummaryView, UserRef, WorkspaceRef } from "./types";
@@ -26,6 +26,8 @@ type SidebarProps = {
   /** 自分のアバターから開くメニュー。accountMenuOpen のときだけ出す。 */
   accountMenu?: ReactNode;
   onCreateRoom?: () => void;
+  /** ダイレクトメッセージを始める（相手を選ぶダイアログを開く）。 */
+  onStartDm?: () => void;
 };
 
 export function Sidebar({
@@ -43,6 +45,7 @@ export function Sidebar({
   onToggleAccountMenu,
   accountMenu,
   onCreateRoom,
+  onStartDm,
 }: SidebarProps) {
   const channels = rooms.filter((room) => room.kind !== "dm");
   const dms = rooms.filter((room) => room.kind === "dm");
@@ -110,30 +113,50 @@ export function Sidebar({
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
-          {channels.length > 0 && (
-            <RoomSection title="チャンネル" first>
-              {channels.map((room) => (
-                <RoomRow key={room.id} room={room} href={roomHref(room.id)} selected={room.id === selectedRoomId} />
-              ))}
-            </RoomSection>
-          )}
-          {dms.length > 0 && (
-            <RoomSection title="ダイレクトメッセージ" first={channels.length === 0}>
-              {dms.map((room) => (
-                <RoomRow key={room.id} room={room} href={roomHref(room.id)} selected={room.id === selectedRoomId} />
-              ))}
-            </RoomSection>
-          )}
+          {/* 片方が 0 件でも見出しは出す。「+」がそのまま作成・DM の入口になっている */}
+          <RoomSection title="チャンネル" first action={{ label: "チャンネルを作成", onClick: onCreateRoom }}>
+            {channels.map((room) => (
+              <RoomRow key={room.id} room={room} href={roomHref(room.id)} selected={room.id === selectedRoomId} />
+            ))}
+          </RoomSection>
+          <RoomSection
+            title="ダイレクトメッセージ"
+            first={false}
+            action={{ label: "ダイレクトメッセージを開く", onClick: onStartDm }}
+          >
+            {dms.map((room) => (
+              <RoomRow key={room.id} room={room} href={roomHref(room.id)} selected={room.id === selectedRoomId} />
+            ))}
+          </RoomSection>
         </div>
       )}
     </nav>
   );
 }
 
-function RoomSection({ title, first, children }: { title: string; first: boolean; children: ReactNode }) {
+/**
+ * 見出しの右の「+」は、そのまとまりを増やす入口（チャンネルの作成、DM を開く）。
+ * ルームが 0 件のときは一覧ごと出ないので、空のときの「チャンネルを作成」のボタンは別に残してある。
+ */
+function RoomSection({
+  title,
+  first,
+  action,
+  children,
+}: {
+  title: string;
+  first: boolean;
+  action: { label: string; onClick?: () => void };
+  children: ReactNode;
+}) {
   return (
     <section className={first ? "pt-4" : "pt-3"}>
-      <h2 className="px-4 pb-2 text-2xs font-medium text-text-secondary">{title}</h2>
+      <div className="flex items-center justify-between gap-2 px-4 pb-2 pr-2.5">
+        <h2 className="text-2xs font-medium text-text-secondary">{title}</h2>
+        <IconButton label={action.label} onClick={action.onClick}>
+          <PlusIcon className="size-3.5" />
+        </IconButton>
+      </div>
       <ul>{children}</ul>
     </section>
   );

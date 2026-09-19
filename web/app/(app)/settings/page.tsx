@@ -21,5 +21,5 @@ export default function Page() {
     if (window.matchMedia(DESKTOP).matches) router.replace(settingsHrefs.profile);
   }, [router]);
 
-  return <SettingsMobileMenu hrefs={settingsHrefs} />;
+  return <SettingsMobileMenu hrefs={settingsHrefs} chatHref="/" />;
 }

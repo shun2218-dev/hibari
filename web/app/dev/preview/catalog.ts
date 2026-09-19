@@ -72,6 +72,9 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "chat/empty-workspaces", title: "ワークスペースが 0 件" },
   { name: "chat/avatar-images", title: "画像のアバター" },
   { name: "chat/server-error", title: "サーバーに接続できない" },
+  { name: "chat/sidebar-add-entries", title: "サイドバーの作成・DM の入口" },
+  { name: "chat/room-header-settings", title: "ルームのヘッダーの設定" },
+  { name: "chat/member-add-dialog", title: "チャンネルにメンバーを追加" },
   { name: "chat/mobile-rooms", title: "チャンネル一覧（モバイル）", mobile: true },
   { name: "chat/mobile-room", title: "ルーム（モバイル）", mobile: true },
   { name: "chat/mobile-members-sheet", title: "メンバーシート（モバイル）", mobile: true },
@@ -98,6 +101,7 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "workspace/dialog-transfer-confirm", title: "譲渡の確認" },
   { name: "workspace/dialog-leave", title: "退出の確認" },
   { name: "workspace/dialog-leave-blocked-owner", title: "オーナーは退出できない" },
+  { name: "workspace/back-to-chat", title: "管理画面からチャットに戻る" },
   { name: "workspace/invites-as-owner", title: "招待リンク（オーナー）" },
   { name: "workspace/invites-as-admin", title: "招待リンク（管理者）" },
   { name: "workspace/invites-as-member", title: "招待リンク（メンバー）" },
@@ -112,7 +116,9 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "settings/profile-avatar-uploading", title: "プロフィール: アップロード中" },
   { name: "settings/profile-avatar-failed", title: "プロフィール: アップロード失敗" },
   { name: "settings/appearance", title: "外観" },
+  { name: "settings/back-to-chat", title: "設定からチャットに戻る" },
   { name: "settings/mobile-list", title: "設定の一覧（モバイル）", mobile: true },
+  { name: "settings/mobile-back-to-chat", title: "設定からチャットに戻る（モバイル）", mobile: true },
 ];
 
 export function findPreviewEntry(name: string): PreviewEntry | undefined {

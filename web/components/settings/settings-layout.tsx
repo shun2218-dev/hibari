@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { BackToChatLink } from "@/components/workspace/admin-layout";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
 
@@ -17,19 +18,22 @@ const order: SettingsSection[] = ["profile", "devices", "appearance"];
 type SettingsLayoutProps = {
   section: SettingsSection;
   hrefs: Record<SettingsSection, string>;
-  /** モバイルで項目の一覧に戻る先。 */
+  /** モバイルで項目の一覧に戻る先（`/settings`）。 */
   backHref: string;
+  /** チャットに戻る先。左のナビの上に出す。 */
+  chatHref: string;
   children: ReactNode;
 };
 
 /** ユーザー設定。md 以上は左にナビ、モバイルは一覧（SettingsMobileMenu）と各項目を別の画面にする。 */
-export function SettingsLayout({ section, hrefs, backHref, children }: SettingsLayoutProps) {
+export function SettingsLayout({ section, hrefs, backHref, chatHref, children }: SettingsLayoutProps) {
   return (
     <div className="flex h-dvh bg-surface">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-border md:flex">
         <div className="flex h-14 items-center border-b border-border px-4">
           <p className="text-xl font-bold text-text">設定</p>
         </div>
+        <BackToChatLink href={chatHref} />
         <nav aria-label="設定" className="p-2">
           <ul className="flex flex-col">
             {order.map((key) => (
@@ -69,11 +73,25 @@ export function SettingsLayout({ section, hrefs, backHref, children }: SettingsL
 }
 
 /** モバイルの設定のトップ。md 以上では左のナビがあるので使わない。 */
-export function SettingsMobileMenu({ hrefs }: { hrefs: Record<SettingsSection, string> }) {
+export function SettingsMobileMenu({
+  hrefs,
+  chatHref,
+}: {
+  hrefs: Record<SettingsSection, string>;
+  /** チャットに戻る先。モバイルではここが設定のいちばん上の画面になる。 */
+  chatHref: string;
+}) {
   return (
     <div className="flex h-dvh flex-col bg-surface">
-      <header className="flex h-14 shrink-0 items-center border-b border-border px-4">
-        <h1 className="text-xl font-bold text-text">設定</h1>
+      <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border px-2">
+        <Link
+          href={chatHref}
+          aria-label="チャットに戻る"
+          className="inline-flex size-8 items-center justify-center rounded-sm text-text-secondary hover:bg-surface-muted"
+        >
+          <ChevronLeftIcon className="size-5" />
+        </Link>
+        <h1 className="pl-1 text-xl font-bold text-text">設定</h1>
       </header>
       <nav aria-label="設定" className="p-2">
         <ul className="flex flex-col">

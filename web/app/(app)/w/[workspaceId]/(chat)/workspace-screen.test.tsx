@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Room } from "@/lib/api/types.gen";
 import { lastRoomId, lastWorkspaceId, rememberLocation } from "@/lib/chat/last-location";
-import { message, miyuki, naoki, room, roomMember, workspace } from "@/test/chat-data";
+import { kei, member, message, miyuki, naoki, room, roomMember, workspace } from "@/test/chat-data";
 import { type Handler, json, problem } from "@/test/fake-api";
 import { renderWithChat } from "@/test/render-with-chat";
 
@@ -188,6 +188,87 @@ describe("WorkspaceScreen", () => {
       expect(panel.getByText("オーナー")).toBeInTheDocument();
       await userEvent.click(panel.getByRole("button", { name: "閉じる" }));
       expect(screen.queryByRole("complementary", { name: "メンバー" })).not.toBeInTheDocument();
+    });
+
+    it("opens a dm with a member picked from the sidebar", async () => {
+      const user = userEvent.setup();
+      const dmRoom = room("r-new-dm", "", { kind: "dm", name: null, dm_peer: { ...miyuki, online: true } });
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "GET /api/v1/workspaces/ws-1/members?limit=200": () =>
+            json(200, { members: [member(naoki, { role: "owner" }), member(miyuki)], next_cursor: null }),
+          "POST /api/v1/workspaces/ws-1/rooms": () => json(201, dmRoom),
+        }),
+      );
+
+      await user.click(await screen.findByRole("button", { name: "ダイレクトメッセージを開く" }));
+      // 自分（佐藤 直樹）は候補に出ない
+      expect(await screen.findByRole("radio", { name: /高橋 みゆき/ })).toBeInTheDocument();
+      expect(screen.queryByRole("radio", { name: /佐藤 直樹/ })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("radio", { name: /高橋 みゆき/ }));
+      await user.click(screen.getByRole("button", { name: "開く" }));
+
+      await waitFor(() => expect(api.calls.at(-1)?.init.body).toBe(JSON.stringify({ kind: "dm", user_id: miyuki.id })));
+      await waitFor(() => expect(nav.router.push).toHaveBeenCalledWith("/w/ws-1/r/r-new-dm"));
+    });
+
+    it("renames a channel and manages its members from the header", async () => {
+      const user = userEvent.setup();
+      const priv = room("r-priv", "リリース準備", { kind: "private", member_count: 2 });
+      nav.params = { workspaceId: "ws-1", roomId: "r-priv" };
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces": () => json(200, { workspaces: [workspace("ws-1", "hibari 開発", { my_role: "admin" })] }),
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [priv] }),
+          ...openRoom(priv, []),
+          "GET /api/v1/rooms/r-priv/members?limit=200": () =>
+            json(200, { members: [roomMember(naoki, { role: "admin" }), roomMember(miyuki)], next_cursor: null }),
+          "GET /api/v1/workspaces/ws-1/members?limit=200": () =>
+            json(200, {
+              members: [member(naoki, { role: "admin" }), member(miyuki), member(kei)],
+              next_cursor: null,
+            }),
+          "PATCH /api/v1/rooms/r-priv": (_url, init) => json(200, { ...priv, ...JSON.parse(init.body as string) }),
+          "POST /api/v1/rooms/r-priv/members": () => new Response(null, { status: 204 }),
+          [`DELETE /api/v1/rooms/r-priv/members/${miyuki.id}`]: () => new Response(null, { status: 204 }),
+        }),
+      );
+
+      await user.click(await screen.findByRole("button", { name: "チャンネルの設定" }));
+      const dialog = within(await screen.findByRole("dialog"));
+
+      // 参加していない人だけを候補に出す
+      await user.click(await dialog.findByRole("button", { name: "メンバーを追加" }));
+      const picker = within(await screen.findByRole("dialog"));
+      expect(await picker.findByRole("radio", { name: /森田 圭/ })).toBeInTheDocument();
+      expect(picker.queryByRole("radio", { name: /高橋 みゆき/ })).not.toBeInTheDocument();
+      await user.click(picker.getByRole("radio", { name: /森田 圭/ }));
+      await user.click(picker.getByRole("button", { name: "追加する" }));
+      await waitFor(() => expect(api.paths()).toContain("POST /api/v1/rooms/r-priv/members"));
+
+      // 外す
+      await user.click(within(await screen.findByRole("dialog")).getAllByRole("button", { name: "外す" })[0]);
+      await waitFor(() => expect(api.paths()).toContain(`DELETE /api/v1/rooms/r-priv/members/${miyuki.id}`));
+
+      // 名前を変える
+      const field = within(screen.getByRole("dialog")).getByLabelText("チャンネル名");
+      await user.clear(field);
+      await user.type(field, "リリース準備 2");
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "保存する" }));
+
+      await waitFor(() => expect(api.calls.at(-1)?.init.body).toBe(JSON.stringify({ name: "リリース準備 2" })));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+
+    it("does not offer channel settings for a dm", async () => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-dm" };
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(dm)));
+
+      expect(await screen.findByRole("button", { name: "メンバー" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "チャンネルの設定" })).not.toBeInTheDocument();
     });
 
     it("filters the rooms by name", async () => {

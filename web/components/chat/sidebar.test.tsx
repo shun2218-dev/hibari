@@ -32,13 +32,34 @@ describe("Sidebar", () => {
   it("splits channels and direct messages", () => {
     renderSidebar();
 
-    const channels = screen.getByRole("heading", { name: "チャンネル" }).parentElement!;
-    const dms = screen.getByRole("heading", { name: "ダイレクトメッセージ" }).parentElement!;
+    const channels = screen.getByRole("heading", { name: "チャンネル" }).closest("section")!;
+    const dms = screen.getByRole("heading", { name: "ダイレクトメッセージ" }).closest("section")!;
     expect(within(channels).getAllByRole("link").map((a) => a.textContent)).toEqual([
       expect.stringContaining("デザインレビュー"),
       expect.stringContaining("リリース準備"),
     ]);
     expect(within(dms).getAllByRole("link")).toHaveLength(2);
+  });
+
+  it("offers a way to add to each section (チャンネルを作成 / DM を開く)", async () => {
+    const user = userEvent.setup();
+    const onCreateRoom = vi.fn();
+    const onStartDm = vi.fn();
+    renderSidebar({ onCreateRoom, onStartDm });
+
+    await user.click(screen.getByRole("button", { name: "チャンネルを作成" }));
+    await user.click(screen.getByRole("button", { name: "ダイレクトメッセージを開く" }));
+
+    expect(onCreateRoom).toHaveBeenCalled();
+    expect(onStartDm).toHaveBeenCalled();
+  });
+
+  it("keeps both section headings even when one of them is empty", () => {
+    renderSidebar({ rooms: rooms.filter((r) => r.kind !== "dm") });
+
+    // DM が 0 件でも、見出しの「+」から相手を選べる
+    expect(screen.getByRole("heading", { name: "ダイレクトメッセージ" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ダイレクトメッセージを開く" })).toBeInTheDocument();
   });
 
   it("marks the selected room and links every room", () => {

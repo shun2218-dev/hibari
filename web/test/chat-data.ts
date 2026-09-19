@@ -4,6 +4,7 @@ import type { Invite, Member, Message, Room, RoomMember, UserProfile, Workspace 
 
 export const naoki: UserProfile = { id: "01J8ZK3X5R8Q2W4E6T8Y0U2I4O", handle: "naoki", display_name: "佐藤 直樹" };
 export const miyuki: UserProfile = { id: "01J8ZK3X5R8Q2W4E6T8Y0U2I5A", handle: "miyuki", display_name: "高橋 みゆき" };
+export const kei: UserProfile = { id: "01J8ZK3X5R8Q2W4E6T8Y0U2I5B", handle: "kei", display_name: "森田 圭" };
 
 export function workspace(id: string, name: string, overrides: Partial<Workspace> = {}): Workspace {
   return {

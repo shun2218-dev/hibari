@@ -344,6 +344,13 @@ export function createChatStore(
     });
   }
 
+  /** 作った（または開いた）ルームを手元に置き、一覧に足す。作成者にも member.joined が届くので、先に足してあれば足さない。 */
+  function addRoom(workspaceId: string, room: Room): Room {
+    putRoom(room);
+    patchRoomList(workspaceId, (ids) => (ids.includes(room.id) ? ids : insertByActivity(ids, room, state.rooms)));
+    return room;
+  }
+
   function patchOutgoing(roomId: string, recipe: (list: OutgoingMessage[]) => OutgoingMessage[]) {
     update((s) => {
       const current = s.outgoing[roomId] ?? [];
@@ -1027,11 +1034,41 @@ export function createChatStore(
 
     /** 失敗したら ApiError を投げる。 */
     async createRoom(workspaceId: string, input: { kind: Exclude<RoomKind, "dm">; name: string }): Promise<Room> {
-      const room = await api.createRoom(workspaceId, input);
-      putRoom(room);
-      // 作成者にも member.joined が届くので、先に足してあれば足さない
-      patchRoomList(workspaceId, (ids) => (ids.includes(room.id) ? ids : insertByActivity(ids, room, state.rooms)));
-      return room;
+      return addRoom(workspaceId, await api.createRoom(workspaceId, input));
+    },
+
+    /**
+     * 相手との DM を開く。すでにあれば同じルームが返る（`dm_key` の UNIQUE。ADR 0011）。
+     * 失敗したら ApiError を投げる。
+     */
+    async openDm(workspaceId: string, userId: string): Promise<Room> {
+      return addRoom(workspaceId, await api.createRoom(workspaceId, { kind: "dm", user_id: userId }));
+    },
+
+    /** ルームの名前を変える。失敗したら ApiError を投げる。 */
+    async updateRoom(roomId: string, patch: { name?: string; isDefault?: boolean }): Promise<void> {
+      putRoom(
+        await api.updateRoom(roomId, {
+          ...(patch.name === undefined ? {} : { name: patch.name }),
+          ...(patch.isDefault === undefined ? {} : { is_default: patch.isDefault }),
+        }),
+      );
+    },
+
+    /**
+     * 非公開ルームに人を追加する。応答に本文がないので、メンバー一覧とルーム（人数）を取り直す。
+     * 失敗したら ApiError を投げる。
+     */
+    async addRoomMember(roomId: string, userId: string): Promise<void> {
+      await api.addRoomMember(roomId, userId);
+      await Promise.all([reloadRoomMembers(roomId), refreshRoom(roomId)]);
+    },
+
+    /** ルームから外す。失敗したら ApiError を投げる。 */
+    async removeRoomMember(roomId: string, userId: string): Promise<void> {
+      await api.removeRoomMember(roomId, userId);
+      patchMembers(roomId, (members) => members.filter((m) => m.user.id !== userId));
+      await refreshRoom(roomId);
     },
 
     /**

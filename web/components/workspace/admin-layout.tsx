@@ -17,7 +17,7 @@ type WorkspaceAdminLayoutProps = {
   memberCount: number;
   activeInviteCount: number;
   hrefs: Record<AdminSection, string>;
-  /** モバイルのヘッダーの「戻る」。 */
+  /** チャットに戻る先（`/w/{id}`）。左のナビの上と、モバイルのヘッダーの「戻る」に使う。 */
   backHref: string;
   children: ReactNode;
 };
@@ -27,6 +27,19 @@ const titles: Record<AdminSection, string> = {
   members: "メンバー",
   invites: "招待リンク",
 };
+
+/** 管理画面と設定は全画面なので、チャットに戻る道をナビの上に置く。 */
+export function BackToChatLink({ href }: { href: string }) {
+  return (
+    <Link
+      href={href}
+      className="flex h-9.5 items-center gap-1.5 px-2.5 pt-2.5 text-sm font-medium text-text-secondary hover:text-text"
+    >
+      <ChevronLeftIcon className="size-4" />
+      チャットに戻る
+    </Link>
+  );
+}
 
 export function WorkspaceAdminLayout({
   workspace,
@@ -51,6 +64,7 @@ export function WorkspaceAdminLayout({
           <Avatar id={workspace.id} name={workspace.name} size="xs" shape="square" />
           <span className="truncate text-base font-bold text-text">{workspace.name}</span>
         </div>
+        <BackToChatLink href={backHref} />
         <nav aria-label="ワークスペースの管理" className="flex-1 p-2">
           <ul className="flex flex-col">
             {items.map((item) => {

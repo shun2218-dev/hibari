@@ -986,6 +986,56 @@ describe("createChatStore realtime", () => {
   });
 });
 
+describe("createChatStore rooms", () => {
+  it("opens a dm and puts it in the list only once", async () => {
+    const dm = room("r-dm", "", { kind: "dm", name: null, dm_peer: { ...miyuki, online: true } });
+    const { store, api } = setup({
+      "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "雑談")] }),
+      "POST /api/v1/workspaces/ws-1/rooms": () => json(200, dm),
+    });
+    await store.loadRooms("ws-1");
+
+    await store.openDm("ws-1", miyuki.id);
+    // 同じ相手をもう一度開いてもサーバーは同じルームを返す（dm_key の UNIQUE。ADR 0011）
+    await store.openDm("ws-1", miyuki.id);
+
+    expect(body(api.calls.at(-1)!.init)).toEqual({ kind: "dm", user_id: miyuki.id });
+    // 並びは最後のメッセージが新しい順。まだ何も送っていない DM は後ろに入る
+    expect(store.getSnapshot().roomLists["ws-1"]?.ids).toEqual(["r1", "r-dm"]);
+  });
+
+  it("renames a room", async () => {
+    const { store } = setup({
+      "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "雑談")] }),
+      "PATCH /api/v1/rooms/r1": (_url, init) => json(200, room("r1", JSON.parse(init.body as string).name)),
+    });
+    await store.loadRooms("ws-1");
+
+    await store.updateRoom("r1", { name: "雑談 改" });
+
+    expect(store.getSnapshot().rooms.r1?.name).toBe("雑談 改");
+  });
+
+  it("reloads the members and the room after adding someone, and drops the row after removing", async () => {
+    let members = [roomMember(naoki, { role: "admin" })];
+    const { store, requests } = setup({
+      "GET /api/v1/rooms/r1": () => json(200, room("r1", "リリース準備", { kind: "private", member_count: members.length })),
+      "GET /api/v1/rooms/r1/members?limit=200": () => json(200, { members, next_cursor: null }),
+      "POST /api/v1/rooms/r1/members": () => new Response(null, { status: 204 }),
+      [`DELETE /api/v1/rooms/r1/members/${miyuki.id}`]: () => new Response(null, { status: 204 }),
+    });
+    await store.loadRoomMembers("r1");
+    members = [roomMember(naoki, { role: "admin" }), roomMember(miyuki)];
+
+    await store.addRoomMember("r1", miyuki.id);
+    expect(store.getSnapshot().roomMembers.r1?.members).toHaveLength(2);
+    expect(requests()).toContain("POST /api/v1/rooms/r1/members");
+
+    await store.removeRoomMember("r1", miyuki.id);
+    expect(store.getSnapshot().roomMembers.r1?.members.map((m) => m.user.id)).toEqual([naoki.id]);
+  });
+});
+
 describe("createChatStore workspace admin", () => {
   const ws = workspace("ws-1", "山と印刷", { my_role: "owner" });
   const roster = [member(naoki, { role: "owner" }), member(miyuki, { role: "member" })];
