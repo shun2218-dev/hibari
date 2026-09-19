@@ -85,10 +85,12 @@ import {
   threadList,
   threadReplies,
   threadRoot,
+  threadRepliesWithBroadcast,
   threadRootWithoutReplies,
   timeline,
   timelineWithAvatars,
   timelineWithSystemMessages,
+  timelineWithBroadcast,
   timelineWithThreads,
   unreadThreadCount,
   transferCandidates,
@@ -139,7 +141,9 @@ type ChatOptions = {
   createWorkspace?: boolean;
   mobileView?: "list" | "room";
   /** スレッドのパネルを開く（ADR 0036）。 */
-  thread?: "replies" | "empty" | "root-deleted";
+  thread?: "replies" | "empty" | "root-deleted" | "broadcast";
+  /** スレッドを開かずに、チャンネルに流した返信のあるタイムラインを出す（ADR 0039。モバイルではパネルが全画面になるため）。 */
+  broadcastInChannel?: boolean;
   /** ルームの代わりに、参加しているスレッドの一覧を出す。 */
   threads?: "list" | "empty";
 };
@@ -153,11 +157,14 @@ function threadPanelContent(thread: NonNullable<ChatOptions["thread"]>) {
       return { root: threadRootWithoutReplies, replies: [], typing: [] };
     case "root-deleted":
       return { root: deletedThreadRoot, replies: deletedThreadReplies, typing: [] };
+    case "broadcast":
+      return { root: threadRoot, replies: threadRepliesWithBroadcast, typing: [] };
   }
 }
 
 /** スレッドの画面のタイムライン。親が削除されたスレッドは、その親（tombstone と「N 件の返信」）を先頭に足す。 */
 function threadTimeline(thread: NonNullable<ChatOptions["thread"]>) {
+  if (thread === "broadcast") return timelineWithBroadcast;
   if (thread !== "root-deleted") return timelineWithThreads;
   const [date, ...rest] = timelineWithThreads;
   return [date, { type: "message" as const, message: deletedThreadRoot }, ...rest];
@@ -182,6 +189,7 @@ function chat({
   createWorkspace,
   mobileView = "room",
   thread,
+  broadcastInChannel,
   threads,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
@@ -220,7 +228,15 @@ function chat({
           ) : threadContent ? (
             <ThreadPanel
               room={{ kind: selectedRoom.kind, name: selectedRoom.name }}
-              footer={<Composer value="" canSend={false} target="thread" typingNames={threadContent.typing} />}
+              footer={
+                <Composer
+                  value=""
+                  canSend={false}
+                  target="thread"
+                  typingNames={threadContent.typing}
+                  alsoInChannel={{ label: "チャンネルにも投稿する", checked: thread === "broadcast" }}
+                />
+              }
             >
               <Timeline items={threadItems(threadContent.root, threadContent.replies)} />
             </ThreadPanel>
@@ -243,7 +259,9 @@ function chat({
             items={
               thread
                 ? threadTimeline(thread)
-                : systemMessages
+                : broadcastInChannel
+                  ? timelineWithBroadcast
+                  : systemMessages
                   ? timelineWithSystemMessages
                   : avatars
                     ? timelineWithAvatars
@@ -484,9 +502,12 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/thread-panel": () => chat({ thread: "replies" }),
   "chat/thread-panel-empty": () => chat({ thread: "empty" }),
   "chat/thread-root-deleted": () => chat({ thread: "root-deleted" }),
+  "chat/thread-broadcast": () => chat({ thread: "broadcast" }),
   "chat/threads": () => chat({ threads: "list" }),
   "chat/threads-empty": () => chat({ threads: "empty" }),
   "chat/mobile-thread": () => chat({ thread: "replies" }),
+  "chat/mobile-thread-broadcast": () => chat({ thread: "broadcast" }),
+  "chat/mobile-room-broadcast": () => chat({ broadcastInChannel: true }),
   "chat/mobile-threads": () => chat({ threads: "list" }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),
   "chat/mobile-room": () => chat(),

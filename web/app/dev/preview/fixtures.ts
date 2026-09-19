@@ -242,6 +242,22 @@ export const deletedThreadReplies: MessageView[] = [
   messageView(message("r-0948", ryo, "09:48", "了解です。まとめは午後に出します。")),
 ];
 
+/**
+ * 「チャンネルにも投稿する」を付けた返信（chat/thread-broadcast.png。ADR 0039）。
+ * スレッドでは最後の返信に控えめな注記が付き、チャンネルではルームの seq の位置（10:12 と 10:30 の間）に「スレッドに返信しました」付きで並ぶ。
+ */
+const broadcastReplyKey = "r-1018";
+
+export const threadRepliesWithBroadcast: MessageView[] = threadReplies.map((reply) =>
+  reply.key === broadcastReplyKey ? { ...reply, broadcast: { in: "thread", label: "チャンネルにも投稿しました" } } : reply,
+);
+
+export const timelineWithBroadcast: TimelineItem[] = timelineWithThreads.flatMap((item): TimelineItem[] => {
+  if (item.type !== "message" || item.message.key !== "m-1012b") return [item];
+  const reply = threadReplies.find((r) => r.key === broadcastReplyKey)!;
+  return [item, { type: "message", message: { ...reply, grouped: false, broadcast: { in: "channel" } } }];
+});
+
 /** 参加しているスレッドの一覧（chat/threads.png）。最後の返信が新しい順。 */
 export const threadList: ThreadListItemView[] = [
   {

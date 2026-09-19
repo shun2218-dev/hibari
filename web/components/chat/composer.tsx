@@ -22,6 +22,11 @@ type ComposerProps = {
   canSend: boolean;
   /** スレッドのパネルの入力欄か。同じ画面に 2 つ並ぶので、読み上げの名前と案内を分ける（ADR 0036）。 */
   target?: "room" | "thread";
+  /**
+   * スレッドの入力欄の「チャンネルにも投稿する」（ADR 0039）。渡したときだけ出す。
+   * 文言はルームの種類で変わる（DM なら「DM にも投稿する」）ので、呼ぶ側が作る。
+   */
+  alsoInChannel?: { label: string; checked: boolean; onChange?: (checked: boolean) => void };
 };
 
 export function Composer({
@@ -35,6 +40,7 @@ export function Composer({
   onRemoveAttachment,
   canSend,
   target = "room",
+  alsoInChannel,
 }: ComposerProps) {
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -94,7 +100,21 @@ export function Composer({
           送信
         </Button>
       </div>
-      <p className="pt-1.5 text-right text-2xs text-text-muted">Enter で送信 / Shift + Enter で改行</p>
+      <div className="flex items-center justify-between gap-3 pt-1.5">
+        {alsoInChannel && (
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-secondary">
+            {/* 本物の checkbox を使い、キーボード操作と読み上げはブラウザに任せる。色だけ primary にそろえる */}
+            <input
+              type="checkbox"
+              checked={alsoInChannel.checked}
+              onChange={(e) => alsoInChannel.onChange?.(e.target.checked)}
+              className="size-3.5 cursor-pointer accent-primary"
+            />
+            {alsoInChannel.label}
+          </label>
+        )}
+        <p className="ml-auto text-2xs text-text-muted">Enter で送信 / Shift + Enter で改行</p>
+      </div>
     </div>
   );
 }

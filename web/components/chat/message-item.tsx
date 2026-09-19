@@ -1,6 +1,6 @@
 import { Avatar } from "@/components/ui/avatar";
 import { Button, IconButton, TextButton } from "@/components/ui/button";
-import { ChevronRightIcon, ClockIcon, FileIcon, MoreIcon, ReplyIcon } from "@/components/ui/icons";
+import { ChevronRightIcon, ClockIcon, FileIcon, MoreIcon, ReplyIcon, ThreadIcon } from "@/components/ui/icons";
 import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
 
@@ -22,7 +22,10 @@ type MessageItemProps = {
   onReply?: () => void;
   /** 「返信」を出すか。スレッドの中（親と返信）では出さない（スレッドは入れ子にしない。ADR 0036）。 */
   canReply?: boolean;
-  /** 「N 件の返信」を押した（スレッドのパネルを開く。ADR 0036）。 */
+  /**
+   * 「N 件の返信」を押した（スレッドのパネルを開く。ADR 0036）。
+   * チャンネルに流した返信の「スレッドに返信しました」でも呼ぶ（ADR 0039）。どの親を開くかは呼ぶ側が key から引く。
+   */
   onOpenThread?: () => void;
   /** スレッドのパネルで開いている親。選択中のチャンネルと同じ色で示す。 */
   threadOpen?: boolean;
@@ -94,6 +97,17 @@ export function MessageItem({
           </header>
         )}
 
+        {message.broadcast?.in === "channel" && !deleted && (
+          <button
+            type="button"
+            onClick={onOpenThread}
+            className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+          >
+            <ThreadIcon className="size-3.5" />
+            スレッドに返信しました
+          </button>
+        )}
+
         {editing ? (
           <MessageEditor editing={editing} />
         ) : deleted ? (
@@ -125,6 +139,10 @@ export function MessageItem({
               </li>
             ))}
           </ul>
+        )}
+
+        {message.broadcast?.in === "thread" && !deleted && !editing && (
+          <p className="pt-0.5 text-2xs text-text-muted">{message.broadcast.label}</p>
         )}
 
         {message.thread && !editing && (
