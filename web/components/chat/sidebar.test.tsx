@@ -77,7 +77,7 @@ describe("Sidebar", () => {
     expect(screen.queryByLabelText("未読 0 件")).not.toBeInTheDocument();
   });
 
-  it("メンションがあるとバッジが @N になる（ADR 0042）", () => {
+  it("メンションがあるとバッジが @N になる（ADR 0043）", () => {
     renderSidebar({
       rooms: [
         { id: "r1", kind: "public", name: "デザインレビュー", timeLabel: "11:05", unreadCount: 7, mentionCount: 2 },

@@ -1,6 +1,7 @@
 import type {
   AttachmentDraftView,
   MessageAttachmentView,
+  MessageLinkCardView,
   MessageView,
   RoleLabel,
   RoomKind,
@@ -15,6 +16,7 @@ import type {
   Member,
   Message,
   MessageAttachment,
+  MessageLink,
   Role,
   Room,
   RoomMember,
@@ -25,6 +27,7 @@ import type { OutgoingMessage, ThreadState } from "./store";
 import type { AttachmentDraft } from "./uploads";
 
 import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./format";
+import { type Permalink, buildPermalink, clampCardBody, findPermalinks, linkKey } from "./links";
 import { inChannel } from "./messages";
 
 /**
@@ -130,6 +133,12 @@ type TimelineOptions = {
   avatarUrls?: UrlTable;
   /** attachment_id → 画像の URL。 */
   attachmentUrls?: UrlTable;
+  /** 本文に貼られたパーマリンクのカードの中身（ADR 0040）。linkKey → 取得結果。 */
+  linkCards?: Record<string, MessageLink | undefined>;
+  /** パーマリンクを見分けるためのこの画面のオリジン。省くとカードを出さない（サーバー側の描画では window がない）。 */
+  origin?: string;
+  /** 今いるワークスペース。カードのワークスペース名は、これと違うときだけ出す。 */
+  currentWorkspaceId?: string;
   timeZone?: string;
   /** 「最終返信」の相対的な時刻（「昨日」など）の基準。省けば今。 */
   now?: Date;
@@ -228,6 +237,9 @@ export function toTimelineItems(
     me,
     avatarUrls = {},
     attachmentUrls = {},
+    linkCards = {},
+    origin,
+    currentWorkspaceId,
     timeZone,
     now = new Date(),
     threadRootId,
@@ -319,6 +331,7 @@ export function toTimelineItems(
           : undefined,
         broadcast: entry.broadcast,
         attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
+        linkCards: origin === undefined ? undefined : toLinkCardViews(entry.body, { origin, linkCards, currentWorkspaceId, avatarUrls, timeZone }),
         grouped,
       },
     });
@@ -388,6 +401,82 @@ export function previewImageIds(messages: readonly Message[]): string[] {
   return messages.flatMap((m) =>
     m.deleted_at === null ? m.attachments.filter(isPreviewImage).map((a) => a.id) : [],
   );
+}
+
+/**
+ * 画面に出すメッセージの本文から、パーマリンクを集める（ADR 0040）。
+ * 削除したメッセージの本文は空なので、自然に対象から外れる。
+ */
+export function permalinksIn(messages: readonly Message[], origin: string): Permalink[] {
+  const found = new Map<string, Permalink>();
+  for (const m of messages) {
+    if (m.deleted_at !== null) continue;
+    for (const link of findPermalinks(m.body, origin)) found.set(linkKey(link), link);
+  }
+  return [...found.values()];
+}
+
+/**
+ * 本文に貼られたパーマリンクを、カードの表示用の型に変える（ADR 0040）。
+ *
+ * まだ取れていないリンクは loading。読めない・存在しない・**削除済み**はすべて unavailable にする
+ * （削除は跡も残さず消える。ADR 0038。オーナーの確認: 2026-09-19）。
+ */
+function toLinkCardViews(
+  body: string,
+  {
+    origin,
+    linkCards,
+    currentWorkspaceId,
+    avatarUrls,
+    timeZone,
+  }: {
+    origin: string;
+    linkCards: Record<string, MessageLink | undefined>;
+    currentWorkspaceId?: string;
+    avatarUrls: UrlTable;
+    timeZone?: string;
+  },
+): MessageLinkCardView[] | undefined {
+  const links = findPermalinks(body, origin);
+  if (links.length === 0) return undefined;
+
+  return links.map((link): MessageLinkCardView => {
+    const key = linkKey(link);
+    const card = linkCards[key];
+    if (card === undefined) return { key, state: "loading" };
+    // 削除済みも読めないリンクと同じ見え方にする（ADR 0040）。
+    if (card.status !== "ok" || !card.message || !card.room || card.message.deleted_at !== null) {
+      return { key, state: "unavailable" };
+    }
+    const { message, room, workspace } = card;
+    const clamped = clampCardBody(message.body);
+    return {
+      key,
+      state: "ok",
+      href: buildPermalink(origin, {
+        workspaceId: workspace?.id ?? link.workspaceId,
+        roomId: room.id,
+        messageId: message.id,
+        ...(message.thread_root_id !== null ? { threadRootId: message.thread_root_id } : {}),
+      }),
+      // 同じワークスペースならいつも同じ名前が並ぶだけなので出さない。
+      ...(workspace && workspace.id !== currentWorkspaceId ? { workspaceName: workspace.name } : {}),
+      // dm にはルーム名がないので、相手の名前を出す（サイドバーと同じ扱い）。
+      room: { kind: room.kind, name: room.kind === "dm" ? (room.dm_peer?.display_name ?? "ダイレクトメッセージ") : room.name },
+      sender: {
+        id: message.sender.id,
+        name: message.sender.display_name,
+        avatarUrl: avatarUrls[message.sender.id] ?? undefined,
+      },
+      timeLabel: formatTime(new Date(message.created_at), timeZone),
+      body: message.body,
+      clampedBody: clamped.text,
+      clamped: clamped.clamped,
+      attachmentCount: message.attachment_count,
+      inThread: message.thread_root_id !== null,
+    };
+  });
 }
 
 function toAttachmentView(attachment: MessageAttachment, urls: UrlTable): MessageAttachmentView {

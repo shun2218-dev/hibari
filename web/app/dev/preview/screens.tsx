@@ -149,9 +149,9 @@ type ChatOptions = {
   broadcastInChannel?: boolean;
   /** ルームの代わりに、参加しているスレッドの一覧を出す。 */
   threads?: "list" | "empty";
-  /** メンションのあるタイムラインとサイドバーにする（ADR 0042）。 */
+  /** メンションのあるタイムラインとサイドバーにする（ADR 0043）。 */
   mentions?: boolean;
-  /** 入力欄の `@` の補完を開いた状態で出す（`@` の後ろに打った文字。ADR 0042）。 */
+  /** 入力欄の `@` の補完を開いた状態で出す（`@` の後ろに打った文字。ADR 0043）。 */
   mentionQuery?: string;
 };
 

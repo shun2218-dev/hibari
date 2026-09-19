@@ -3,7 +3,7 @@ import { Fragment } from "react";
 import { splitBody } from "@/lib/chat/mentions";
 
 /**
- * メッセージの本文（ADR 0042）。`<@ULID>` / `<!channel>` / `<!here>` をチップにして、残りはそのまま出す。
+ * メッセージの本文（ADR 0043）。`<@ULID>` / `<!channel>` / `<!here>` をチップにして、残りはそのまま出す。
  *
  * 色は `docs/ui/tokens.md` の決まりどおり、押せるものだけを緑にする。
  * 個人のチップは Phase 6.9 でプロフィールのカードを開くので緑、`@channel` / `@here` は押せないので灰色。

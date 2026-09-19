@@ -104,7 +104,7 @@ describe("Composer", () => {
   });
 });
 
-describe("Composer の @ 補完（ADR 0042）", () => {
+describe("Composer の @ 補完（ADR 0043）", () => {
   /** 親が本文を持つので、テストの中でも同じように持ち回る。 */
   function Harness({ onSend }: { onSend?: () => void } = {}) {
     const [value, setValue] = useState("");

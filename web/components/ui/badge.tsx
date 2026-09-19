@@ -36,7 +36,7 @@ export function Badge({ tone = "neutral", children, className }: { tone?: BadgeT
  * 未読数。「いま起きていること」なので琥珀にする（primary にしない。docs/ui/tokens.md）。
  * 0 のときは何も出さない。
  *
- * 自分宛てのメンションがあるときは、中身を `@N` に差し替える（ADR 0042）。バッジを 2 つ並べると
+ * 自分宛てのメンションがあるときは、中身を `@N` に差し替える（ADR 0043）。バッジを 2 つ並べると
  * 同じ色の数字が 2 つ出て、どちらが何か分からなくなるため。`@N` を出している間、未読の数は出ない。
  */
 export function UnreadBadge({ count, mentionCount = 0, className }: { count: number; mentionCount?: number; className?: string }) {

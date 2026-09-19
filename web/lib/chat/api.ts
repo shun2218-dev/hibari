@@ -17,6 +17,7 @@ import type {
   Member,
   MemberList,
   Message,
+  MessageLinks,
   MessageList,
   ReadState,
   Role,
@@ -46,6 +47,9 @@ export const CHANGE_PAGE_SIZE = 100;
 
 /** アバターの URL を 1 回で取れる人数。API の上限（ADR 0020）。 */
 export const AVATAR_BATCH_SIZE = 200;
+
+/** メッセージへのリンクのカードを 1 回で取れる件数。API の上限（ADR 0040）。 */
+export const LINK_BATCH_SIZE = 20;
 
 /** メンバー・招待の一覧の 1 ページの数。API の上限（ADR 0011）にして、往復を減らす。 */
 const PAGE_SIZE = 200;
@@ -134,6 +138,15 @@ export function createChatApi(request: Session["request"]) {
       const params = new URLSearchParams({ after_change_seq: String(afterChangeSeq), limit: String(CHANGE_PAGE_SIZE) });
       return request<MessageList>("GET", `/api/v1/rooms/${encodeURIComponent(roomId)}/messages?${params}`);
     },
+
+    /**
+     * 本文に貼られたパーマリンクのカードの中身をまとめて取る（ADR 0040）。
+     * 副作用はないが ID の配列を渡すので POST。結果は送った順・同じ件数で返る。
+     */
+    resolveMessageLinks: (links: readonly { roomId: string; messageId: string }[]) =>
+      request<MessageLinks>("POST", "/api/v1/messages/links", {
+        links: links.map((l) => ({ room_id: l.roomId, message_id: l.messageId })),
+      }),
 
     /** 同じ client_msg_id の再送は、既存のメッセージを 200 で返す（ADR 0004 / 0012）。 */
     sendMessage: (roomId: string, body: SendMessageRequest) =>

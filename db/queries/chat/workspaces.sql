@@ -136,3 +136,11 @@ SELECT wm.user_id, wm.role
  WHERE wm.workspace_id = sqlc.arg(workspace_id)
    AND wm.user_id = ANY(sqlc.arg(user_ids)::uuid[])
    AND w.deleted_at IS NULL;
+
+-- name: GetWorkspaceNames :many
+-- ワークスペースの名前をまとめて引く。メッセージへのリンクのカードに出す（ADR 0040）。
+-- 認可はルームの単位（CanReadRoom）で済んでいるので、ここではメンバーかどうかを見ない。
+SELECT id, name
+  FROM workspaces
+ WHERE id = ANY(sqlc.arg(ids)::uuid[])
+   AND deleted_at IS NULL;

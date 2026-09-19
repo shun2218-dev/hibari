@@ -31,7 +31,7 @@ type ComposerProps = {
    */
   alsoInChannel?: { label: string; checked: boolean; onChange?: (checked: boolean) => void };
   /**
-   * `@` の補完に出す候補（ADR 0042）。ルームのメンバーと `@channel` / `@here`。
+   * `@` の補完に出す候補（ADR 0043）。ルームのメンバーと `@channel` / `@here`。
    * 渡さなければ補完は開かない。入力中の文字で絞るのはこの中でやる。
    */
   mentionCandidates?: readonly MentionCandidate[];
@@ -200,7 +200,7 @@ export function Composer({
 type MentionQuery = { start: number; query: string; caret: number };
 
 /**
- * `@` の補完（ADR 0042）。入力欄の上に重ねて出す。
+ * `@` の補完（ADR 0043）。入力欄の上に重ねて出す。
  *
  * キャレットの位置には付けない。textarea では文字の座標を測れないので、入力欄の左上に固定で出す。
  * マウスで選ぶときに `onMouseDown` で確定するのは、textarea の blur で閉じてしまう前に拾うため。

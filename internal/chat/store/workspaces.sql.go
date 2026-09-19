@@ -242,6 +242,40 @@ func (q *Queries) GetWorkspaceMemberRoles(ctx context.Context, arg GetWorkspaceM
 	return items, nil
 }
 
+const getWorkspaceNames = `-- name: GetWorkspaceNames :many
+SELECT id, name
+  FROM workspaces
+ WHERE id = ANY($1::uuid[])
+   AND deleted_at IS NULL
+`
+
+type GetWorkspaceNamesRow struct {
+	ID   ulid.ULID
+	Name string
+}
+
+// ワークスペースの名前をまとめて引く。メッセージへのリンクのカードに出す（ADR 0040）。
+// 認可はルームの単位（CanReadRoom）で済んでいるので、ここではメンバーかどうかを見ない。
+func (q *Queries) GetWorkspaceNames(ctx context.Context, ids []ulid.ULID) ([]GetWorkspaceNamesRow, error) {
+	rows, err := q.db.Query(ctx, getWorkspaceNames, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetWorkspaceNamesRow{}
+	for rows.Next() {
+		var i GetWorkspaceNamesRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getWorkspaceRole = `-- name: GetWorkspaceRole :one
 SELECT wm.role
   FROM workspace_members wm

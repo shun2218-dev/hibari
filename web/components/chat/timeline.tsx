@@ -30,6 +30,11 @@ type TimelineProps = {
   onMarkAllRead?: () => void;
   /** key ごとの操作の可否。渡さなければ「…」を出さない。 */
   actionsFor?: (key: string) => MessageActions;
+  /**
+   * key ごとの「リンクをコピー」（ADR 0040）。まだ ID のない送信中のメッセージでは undefined を返す。
+   * 文言は押したあとに変わる（「コピーしました」）ので、呼ぶ側が持つ。
+   */
+  copyLinkFor?: (key: string) => { label: string; onClick: () => void } | undefined;
   /** 「…」を開いているメッセージ。 */
   openMenuKey?: string;
   onToggleMenu?: (key: string) => void;
@@ -80,6 +85,7 @@ export function Timeline({
   onImageError,
   onMarkAllRead,
   actionsFor,
+  copyLinkFor,
   openMenuKey,
   onToggleMenu,
   onEdit,
@@ -213,6 +219,7 @@ export function Timeline({
                     onImageError={onImageError}
                     canEdit={actions?.canEdit}
                     canDelete={actions?.canDelete}
+                    copyLink={copyLinkFor?.(key)}
                     menuOpen={openMenuKey === key}
                     onToggleMenu={() => onToggleMenu?.(key)}
                     onEdit={() => onEdit?.(key)}

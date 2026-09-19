@@ -305,7 +305,7 @@ export const threadList: ThreadListItemView[] = [
 export const unreadThreadCount = threadList.filter((thread) => thread.unreadCount > 0).length;
 
 /**
- * メンションのあるタイムライン（ADR 0042）。本文は保存される形のトークンで持ち、表示のときに名前へ置き換える。
+ * メンションのあるタイムライン（ADR 0043）。本文は保存される形のトークンで持ち、表示のときに名前へ置き換える。
  * 自分宛て（`mentionsMe`）の行だけ琥珀にする。
  */
 export const timelineWithMentions: TimelineItem[] = [
@@ -325,7 +325,7 @@ export const timelineWithMentions: TimelineItem[] = [
   message("m-m05", naoki, "10:27", "確認だけお願いします。", { grouped: true }),
 ];
 
-/** メンションの未読があるサイドバー（バッジが `@N` になる。ADR 0042）。 */
+/** メンションの未読があるサイドバー（バッジが `@N` になる。ADR 0043）。 */
 export const roomsWithMentions: RoomSummaryView[] = rooms.map((room) =>
   room.id === "room-chat"
     ? { ...room, unreadCount: 7, mentionCount: 2 }
@@ -334,7 +334,7 @@ export const roomsWithMentions: RoomSummaryView[] = rooms.map((room) =>
       : room,
 );
 
-/** `@` の補完に出す候補（ルームのメンバーと全員宛て。ADR 0042）。 */
+/** `@` の補完に出す候補（ルームのメンバーと全員宛て。ADR 0043）。 */
 export const mentionCandidates: MentionCandidate[] = [
   { kind: "user", id: users.naoki.id, handle: users.naoki.handle, name: users.naoki.name },
   { kind: "user", id: users.miyuki.id, handle: users.miyuki.handle, name: users.miyuki.name },
