@@ -155,19 +155,25 @@ describe("WorkspaceScreen", () => {
       await waitFor(() => expect(screen.queryByRole("button", { name: "参加する" })).not.toBeInTheDocument());
     });
 
-    it("goes back to the workspace when the room cannot be read", async () => {
+    it("shows the same no-access notice as a removal when the room in the url cannot be read", async () => {
       rememberLocation("ws-1", "r-design");
 
       renderWithChat(
         <WorkspaceScreen />,
         routes({
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [chat, dm] }),
           "GET /api/v1/rooms/r-design": () => problem(404, "not-found"),
           "GET /api/v1/rooms/r-design/messages?limit=50": () => problem(404, "not-found"),
         }),
       );
 
-      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1"));
+      // 存在しないのか読めないのかは区別しない（ADR 0035）。入口から開き直したときに、また開かないように忘れる
+      expect(await screen.findByRole("heading", { name: "このチャンネルにはアクセスできません" })).toBeInTheDocument();
       expect(lastRoomId("ws-1")).toBeUndefined();
+      expect(nav.router.replace).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole("button", { name: "チャンネル一覧に戻る" }));
+      expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1");
     });
 
     it("opens the members panel", async () => {
@@ -579,27 +585,30 @@ describe("WorkspaceScreen", () => {
       expect(await screen.findByText("接続が復帰しました")).toBeInTheDocument();
     });
 
-    it("replaces the history with a notice when removed from a private channel", async () => {
+    it("shows only that the channel cannot be accessed when removed from a private channel, without its name", async () => {
       const secret = { ...design, kind: "private" as const };
       rememberLocation("ws-1", "r-design");
       const { sockets } = await connected({
         "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [secret, chat, dm] }),
         ...openRoom(secret),
+        "GET /api/v1/rooms/r-design/members?limit=200": () => json(200, { members: [roomMember(naoki)], next_cursor: null }),
       });
+      await userEvent.click(screen.getByRole("button", { name: "メンバー" }));
+      expect(await screen.findByRole("complementary", { name: "メンバー" })).toBeInTheDocument();
 
       sockets.last().receive({
         type: "room.member_removed",
         data: { workspace_id: "ws-1", room_id: "r-design", reason: "removed" },
       });
 
-      const notice = await screen.findByRole("heading", { name: "このチャンネルから外されました" });
+      expect(await screen.findByRole("heading", { name: "このチャンネルにはアクセスできません" })).toBeInTheDocument();
       expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
-      // 開いている間は、サイドバーにもヘッダーにも残す（chat/removed-from-channel.png）
-      expect(screen.getByRole("heading", { name: /デザインレビュー/ })).toBeInTheDocument();
-      expect(sidebar().getByRole("link", { name: /デザインレビュー/ })).toBeInTheDocument();
+      // 名前はヘッダーにもサイドバーにも出さず、「外された」とも言わない。メンバーのパネルも閉じる（ADR 0035）
+      expect(screen.queryByText(/デザインレビュー/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/外され/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("complementary", { name: "メンバー" })).not.toBeInTheDocument();
 
-      // ヘッダーのモバイル用の「戻る」と同じ名前なので、お知らせの中のボタンを押す
-      await userEvent.click(within(notice.parentElement!).getByRole("button", { name: "チャンネル一覧に戻る" }));
+      await userEvent.click(screen.getByRole("button", { name: "チャンネル一覧に戻る" }));
       expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1");
       expect(lastRoomId("ws-1")).toBeUndefined();
     });

@@ -26,8 +26,8 @@ import { ChatLayout } from "@/components/chat/chat-layout";
 import {
   EmptyMessages,
   JoinRoomBar,
-  RemovedFromRoom,
   RemovedFromWorkspace,
+  RoomUnavailable,
   ServerUnavailable,
 } from "@/components/chat/chat-states";
 import { AccountMenu } from "@/components/chat/account-menu";
@@ -150,6 +150,8 @@ function chat({
   createWorkspace,
   mobileView = "room",
 }: ChatOptions = {}) {
+  // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
+  const roomRemoved = body === "removed-room";
   return (
     <>
       <ChatLayout
@@ -158,8 +160,8 @@ function chat({
           <Sidebar
             workspace={workspaces.dev}
             currentUser={currentUser}
-            rooms={noRooms ? [] : rooms}
-            selectedRoomId={selectedRoom.id}
+            rooms={noRooms ? [] : roomRemoved ? rooms.filter((r) => r.id !== selectedRoom.id) : rooms}
+            selectedRoomId={roomRemoved ? undefined : selectedRoom.id}
             roomHref={roomHref}
             search={search}
             onCreateRoom={noop}
@@ -174,13 +176,15 @@ function chat({
         }
         panel={members ? <MembersPanel members={roomMembers} /> : undefined}
       >
-        <RoomHeader
-          kind={selectedRoom.kind}
-          name={selectedRoom.name}
-          memberCount={selectedRoom.memberCount}
-          membersOpen={members}
-          onOpenSettings={noop}
-        />
+        {!roomRemoved && (
+          <RoomHeader
+            kind={selectedRoom.kind}
+            name={selectedRoom.name}
+            memberCount={selectedRoom.memberCount}
+            membersOpen={members}
+            onOpenSettings={noop}
+          />
+        )}
         <ConnectionBanner status={banner ?? null} />
         {body === "timeline" && (
           <Timeline
@@ -193,7 +197,7 @@ function chat({
           />
         )}
         {body === "empty" && <EmptyMessages kind={selectedRoom.kind} name={selectedRoom.name} />}
-        {body === "removed-room" && <RemovedFromRoom kind={selectedRoom.kind} name={selectedRoom.name} />}
+        {roomRemoved && <RoomUnavailable />}
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
         {footer === "composer" && (
           <Composer value="" canSend={false} typingNames={typingNames} attachments={attachments} replyTo={replyTo} />

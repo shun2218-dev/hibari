@@ -32,6 +32,10 @@ export function WorkspaceScreen() {
   const rooms = useChatState((s) => s.rooms);
   const unavailable = useChatState((s) => s.connection.unavailable);
   const removal = useChatState((s) => s.removedWorkspaces[workspaceId]);
+  // 開いているルームを読めない（外された、URL のルームが読めない）。メンバーのパネルも閉じる（名前を見せない。ADR 0035）
+  const roomRemoved = useChatState((s) =>
+    roomId ? s.removedRooms[roomId] !== undefined || s.timelines[roomId]?.status === "not_found" : false,
+  );
 
   const [search, setSearch] = useState("");
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -184,7 +188,7 @@ export function WorkspaceScreen() {
           />
         }
         panel={
-          roomId && membersOpen ? <RoomMembers roomId={roomId} onClose={() => setMembersOpen(false)} /> : undefined
+          roomId && membersOpen && !roomRemoved ? <RoomMembers roomId={roomId} onClose={() => setMembersOpen(false)} /> : undefined
         }
       >
         {roomId && (
