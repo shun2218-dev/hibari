@@ -62,6 +62,8 @@ export function applyMessageToRoom(room: Room, message: Message, userId: string,
   if (message.thread_root_id !== null) return room;
   if (!created) {
     if (room.last_message?.id !== message.id) return room;
+    // 最後のメッセージが削除された。ひとつ前のメッセージは手元にあるとは限らないので、いったん空にして取り直す（ADR 0038）
+    if (message.deleted_at !== null) return { ...room, last_message: null };
     return { ...room, last_message: toLastMessage(message) };
   }
   if (message.seq <= room.last_message_seq) return room;

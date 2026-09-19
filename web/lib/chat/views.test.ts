@@ -206,10 +206,34 @@ describe("toTimelineItems", () => {
     ]);
   });
 
-  it("maps deleted, edited and attachments", () => {
+  it("hides deleted messages, except a thread root that still has replies (ADR 0038)", () => {
+    const deleted = { deleted_at: "2026-09-13T01:05:00Z", body: "" };
     const items = toTimelineItems(
       [
-        message(1, { deleted_at: "2026-09-13T01:05:00Z", body: "" }),
+        message(1, { ...deleted }),
+        message(2, { ...deleted, thread: { reply_count: 1, last_thread_seq: 2, last_reply_at: "2026-09-13T01:10:00Z" } }),
+        message(3, { ...deleted, thread: { reply_count: 0, last_thread_seq: 1, last_reply_at: "2026-09-13T01:10:00Z" } }),
+        message(4, { body: "残る" }),
+      ],
+      { unreadAfterSeq: null, timeZone: tz },
+    );
+    const messages = items.flatMap((item) => (item.type === "message" ? [item.message] : []));
+
+    expect(messages.map((m) => [m.key, m.deleted])).toEqual([["m-2", true], ["m-4", false]]);
+  });
+
+  it("puts the unread divider before the first visible message when the first unread one was deleted", () => {
+    const items = toTimelineItems(
+      [message(1, { body: "a" }), message(2, { deleted_at: "2026-09-13T01:05:00Z", body: "" }), message(3, { body: "c" })],
+      { unreadAfterSeq: 1, timeZone: tz },
+    );
+
+    expect(outline(items)).toEqual(["[2026年9月13日]", "a", "[unread]", "c"]);
+  });
+
+  it("maps edited messages and attachments", () => {
+    const items = toTimelineItems(
+      [
         message(2, {
           sender: naoki,
           edited_at: "2026-09-13T01:06:00Z",
@@ -221,9 +245,8 @@ describe("toTimelineItems", () => {
       ],
       { unreadAfterSeq: null, timeZone: tz },
     );
-    const [deleted, edited] = items.flatMap((item) => (item.type === "message" ? [item.message] : []));
+    const [edited] = items.flatMap((item) => (item.type === "message" ? [item.message] : []));
 
-    expect(deleted).toMatchObject({ key: "m-1", deleted: true, status: "sent", timeLabel: "10:00" });
     expect(edited).toMatchObject({
       edited: true,
       attachments: [

@@ -442,8 +442,11 @@ Phase 6 の後に独立したフェーズとして行う（設計 → API → We
 4. WebSocket: `message.updated`（親の返信数）、`thread.read` / `thread.followed`、`typing` の `thread_root_id`。`docs/events.md` の更新 ← 完了（ADR 0036 の追記）
 5. Web: スレッドのパネル、スレッドの未読、引用付きの返信の撤去 ← 完了（ADR 0037。引用付きの返信の撤去は構築順 3 で済ませた）
 
+**追加で決めたこと**（2026-09-19、オーナーの要望）
+- 削除したメッセージを画面から消す（Slack と同じ。返信の残るスレッドの親だけ跡を残し、サイドバーはひとつ前のメッセージ。ADR 0038）
+
 **DoD**
-- [x] メッセージからスレッドを開いて返信でき、チャンネルのタイムラインには出ない（`workspace-screen.test.tsx` の threads。compose の実物での確認は未）
+- [x] メッセージからスレッドを開いて返信でき、チャンネルのタイムラインには出ない（`workspace-screen.test.tsx` の threads。オーナーが compose の実物で確認済み、2026-09-19）
 - [x] 親メッセージに返信数と最終返信が出て、リアルタイムに更新される（返信の削除で返信数が減る）（`TestThreadEvents`、`workspace-screen.test.tsx`）
 - [x] スレッドの返信でチャンネルの未読数が増えず、サイドバーの並びも動かない。参加しているスレッドの未読が分かる（`TestSendThreadReply`、`store.test.ts` / `workspace-screen.test.tsx` の threads）
 - [x] 切断中に届いたスレッドの返信も、再接続の同期（`after_change_seq`）で揃う（`TestSendThreadReply` の差分取得、再接続でパネルと一覧を取り直す `realtime.test.ts`。compose の実物での確認は未）

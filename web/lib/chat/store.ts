@@ -630,6 +630,7 @@ export function createChatStore(
 
     const page = await api.listChanges(roomId, timeline.changeSeq);
     absorbThreadMessages(page.messages, false);
+    for (const message of page.messages) reflectChangeInRoom(message);
     if (!page.has_more) {
       update((s) => {
         const current = s.timelines[roomId];
@@ -785,7 +786,8 @@ export function createChatStore(
       );
     }
     const before = state.rooms[roomId];
-    patchRoom(roomId, (room) => applyMessageToRoom(room, message, userId, created));
+    if (created) patchRoom(roomId, (room) => applyMessageToRoom(room, message, userId, true));
+    else reflectChangeInRoom(message);
     const after = state.rooms[roomId];
     // 新しいメッセージのルームを一覧の先頭に移す（最後のメッセージが新しい順）
     if (created && before && after && after !== before) {
@@ -814,6 +816,16 @@ export function createChatStore(
     afterNewMessages(roomId, previousNewest, [message]);
     // 間の変更が届いていない（落ちたか、順序が入れ替わった）。差分を取り直す
     if (message.change_seq > timeline.changeSeq + 1 && changeSeq < message.change_seq) void syncTimeline(roomId);
+  }
+
+  /**
+   * 既存のメッセージの編集・削除を、サイドバーの最後の 1 行に反映する。イベントでも差分の取得でも同じように通す。
+   * 最後のメッセージが削除されたら、ひとつ前（削除されていない最後の行）をサーバーに聞く（ADR 0038）。
+   */
+  function reflectChangeInRoom(message: Message) {
+    const before = state.rooms[message.room_id];
+    patchRoom(message.room_id, (room) => applyMessageToRoom(room, message, userId, false));
+    if (before?.last_message?.id === message.id && message.deleted_at !== null) void refreshRoom(message.room_id);
   }
 
   function removeTyping(roomId: string, typingUserId: string) {
