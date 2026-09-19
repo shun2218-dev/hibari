@@ -44,6 +44,8 @@ import {
   StartDmDialog,
 } from "@/components/chat/room-dialogs";
 import { Sidebar } from "@/components/chat/sidebar";
+import { ThreadList } from "@/components/chat/thread-list";
+import { ThreadPanel } from "@/components/chat/thread-panel";
 import { Timeline } from "@/components/chat/timeline";
 import type { AttachmentDraftView, ConnectionBannerStatus } from "@/components/chat/types";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
@@ -77,9 +79,17 @@ import {
   roomMembers,
   rooms,
   selectedRoom,
+  deletedThreadReplies,
+  deletedThreadRoot,
+  threadList,
+  threadReplies,
+  threadRoot,
+  threadRootWithoutReplies,
   timeline,
   timelineWithAvatars,
   timelineWithSystemMessages,
+  timelineWithThreads,
+  unreadThreadCount,
   transferCandidates,
   typingNames,
   users,
@@ -128,7 +138,30 @@ type ChatOptions = {
   switcher?: boolean;
   createWorkspace?: boolean;
   mobileView?: "list" | "room";
+  /** スレッドのパネルを開く（ADR 0036）。 */
+  thread?: "replies" | "empty" | "root-deleted";
+  /** ルームの代わりに、参加しているスレッドの一覧を出す。 */
+  threads?: "list" | "empty";
 };
+
+/** スレッドのパネルに出す親と返信。 */
+function threadPanelContent(thread: NonNullable<ChatOptions["thread"]>) {
+  switch (thread) {
+    case "replies":
+      return { root: threadRoot, replies: threadReplies, typing: [users.naoki.name] };
+    case "empty":
+      return { root: threadRootWithoutReplies, replies: [], typing: [] };
+    case "root-deleted":
+      return { root: deletedThreadRoot, replies: deletedThreadReplies, typing: [] };
+  }
+}
+
+/** スレッドの画面のタイムライン。親が削除されたスレッドは、その親（tombstone と「N 件の返信」）を先頭に足す。 */
+function threadTimeline(thread: NonNullable<ChatOptions["thread"]>) {
+  if (thread !== "root-deleted") return timelineWithThreads;
+  const [date, ...rest] = timelineWithThreads;
+  return [date, { type: "message" as const, message: deletedThreadRoot }, ...rest];
+}
 
 function chat({
   avatars,
@@ -149,9 +182,12 @@ function chat({
   switcher,
   createWorkspace,
   mobileView = "room",
+  thread,
+  threads,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
   const roomRemoved = body === "removed-room";
+  const threadContent = thread ? threadPanelContent(thread) : undefined;
   return (
     <>
       <ChatLayout
@@ -161,7 +197,12 @@ function chat({
             workspace={workspaces.dev}
             currentUser={currentUser}
             rooms={noRooms ? [] : roomRemoved ? rooms.filter((r) => r.id !== selectedRoom.id) : rooms}
-            selectedRoomId={roomRemoved ? undefined : selectedRoom.id}
+            selectedRoomId={roomRemoved || threads ? undefined : selectedRoom.id}
+            threads={
+              thread || threads
+                ? { href: noHref, unreadCount: threads === "empty" ? 0 : unreadThreadCount, selected: Boolean(threads) }
+                : undefined
+            }
             roomHref={roomHref}
             search={search}
             onCreateRoom={noop}
@@ -174,9 +215,22 @@ function chat({
             }
           />
         }
-        panel={members ? <MembersPanel members={roomMembers} /> : undefined}
+        panel={
+          members ? (
+            <MembersPanel members={roomMembers} />
+          ) : threadContent ? (
+            <ThreadPanel
+              room={{ kind: selectedRoom.kind, name: selectedRoom.name }}
+              root={threadContent.root}
+              replies={threadContent.replies}
+              replyCount={threadContent.root.thread?.replyCount ?? 0}
+              footer={<Composer value="" canSend={false} target="thread" typingNames={threadContent.typing} />}
+            />
+          ) : undefined
+        }
       >
-        {!roomRemoved && (
+        {threads && <ThreadList threads={threads === "empty" ? [] : threadList} threadHref={roomHref} />}
+        {!roomRemoved && !threads && (
           <RoomHeader
             kind={selectedRoom.kind}
             name={selectedRoom.name}
@@ -186,9 +240,18 @@ function chat({
           />
         )}
         <ConnectionBanner status={banner ?? null} />
-        {body === "timeline" && (
+        {body === "timeline" && !threads && (
           <Timeline
-            items={systemMessages ? timelineWithSystemMessages : avatars ? timelineWithAvatars : timeline}
+            items={
+              thread
+                ? threadTimeline(thread)
+                : systemMessages
+                  ? timelineWithSystemMessages
+                  : avatars
+                    ? timelineWithAvatars
+                    : timeline
+            }
+            openThreadKey={thread === "root-deleted" ? deletedThreadRoot.key : thread ? threadContent?.root.key : undefined}
             hoveredKey={hoveredKey}
             actionsFor={(key) => ({ canEdit: key === pendingMessageKey, canDelete: key === pendingMessageKey })}
             openMenuKey={menuKey}
@@ -199,7 +262,7 @@ function chat({
         {body === "empty" && <EmptyMessages kind={selectedRoom.kind} name={selectedRoom.name} />}
         {roomRemoved && <RoomUnavailable />}
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
-        {footer === "composer" && (
+        {footer === "composer" && !threads && (
           <Composer value="" canSend={false} typingNames={typingNames} attachments={attachments} replyTo={replyTo} />
         )}
         {footer === "join" && <JoinRoomBar />}
@@ -421,6 +484,13 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/dialog-leave-room": () => chat({ dialog: <LeaveRoomDialog open kind="public" name="デザインレビュー" /> }),
   "chat/dialog-leave-room-private": () => chat({ dialog: <LeaveRoomDialog open kind="private" name="リリース準備" /> }),
   "chat/system-messages": () => chat({ systemMessages: true }),
+  "chat/thread-panel": () => chat({ thread: "replies" }),
+  "chat/thread-panel-empty": () => chat({ thread: "empty" }),
+  "chat/thread-root-deleted": () => chat({ thread: "root-deleted" }),
+  "chat/threads": () => chat({ threads: "list" }),
+  "chat/threads-empty": () => chat({ threads: "empty" }),
+  "chat/mobile-thread": () => chat({ thread: "replies" }),
+  "chat/mobile-threads": () => chat({ threads: "list" }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),
   "chat/mobile-room": () => chat(),
   "chat/mobile-members-sheet": () => chat({ members: true }),
