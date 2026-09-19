@@ -14,6 +14,7 @@ import type { DmCandidateView, RoomMemberRowView } from "@/components/chat/room-
 import type {
   FollowedThread,
   Member,
+  Mention,
   Message,
   MessageAttachment,
   MessageLink,
@@ -28,6 +29,7 @@ import type { AttachmentDraft } from "./uploads";
 
 import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./format";
 import { type Permalink, buildPermalink, clampCardBody, findPermalinks, linkKey } from "./links";
+import { type MentionCandidate } from "./mentions";
 import { inChannel } from "./messages";
 
 /**
@@ -139,6 +141,11 @@ type TimelineOptions = {
   origin?: string;
   /** 今いるワークスペース。カードのワークスペース名は、これと違うときだけ出す。 */
   currentWorkspaceId?: string;
+  /**
+   * user_id → 表示名。本文の `<@ID>` をチップにするのに使う（ADR 0043）。ルームのメンバーから作る。
+   * ルームを抜けた人はここにいないが、メッセージ自身の `mentions` が補う。送信中の本文はこちらだけで引く。
+   */
+  memberNames?: Readonly<Record<string, string>>;
   timeZone?: string;
   /** 「最終返信」の相対的な時刻（「昨日」など）の基準。省けば今。 */
   now?: Date;
@@ -171,6 +178,8 @@ type Entry = {
   /** 「チャンネルにも投稿する」を付けた返信の見え方（ADR 0039）。並べる場所で変わる。 */
   broadcast: MessageView["broadcast"];
   attachments: readonly MessageAttachment[];
+  /** 本文にあるメンション（ADR 0041）。送信中のメッセージはまだ分からないので空にする。 */
+  mentions: readonly Mention[];
 };
 
 /**
@@ -185,6 +194,23 @@ function broadcastView(
   if (!isBroadcastReply) return undefined;
   if (!inThread) return { in: "channel" };
   return doneLabel === undefined ? undefined : { in: "thread", label: doneLabel };
+}
+
+/**
+ * 本文の `<@ID>` を名前にするための表（ADR 0043）。ルームのメンバーを土台に、そのメッセージの `mentions` で上書きする。
+ * `mentions` にはルームを抜けた人も入っているので（ADR 0041）、抜けた人の名前もこれで出せる。
+ */
+function mentionNamesFor(entry: Entry, memberNames: Readonly<Record<string, string>> | undefined) {
+  const named = entry.mentions.filter((m) => m.user !== undefined);
+  if (named.length === 0) return memberNames;
+  const names: Record<string, string> = { ...memberNames };
+  for (const m of named) names[m.user!.id] = m.user!.display_name;
+  return names;
+}
+
+/** 自分宛てか。`@channel` / `@here` も自分宛てに数える（ADR 0041）。 */
+function mentionsUser(mentions: readonly Mention[], userId: string): boolean {
+  return mentions.some((m) => (m.kind === "user" ? m.user?.id === userId : true));
 }
 
 function fromMessage(message: Message, broadcast: MessageView["broadcast"]): Entry {
@@ -205,6 +231,7 @@ function fromMessage(message: Message, broadcast: MessageView["broadcast"]): Ent
         : undefined,
     broadcast,
     attachments: message.attachments,
+    mentions: message.mentions,
   };
 }
 
@@ -222,6 +249,8 @@ function fromOutgoing(message: OutgoingMessage, me: UserProfile, broadcast: Mess
     thread: undefined,
     broadcast,
     attachments: message.attachments,
+    // 送信中は、サーバーがまだ本文を解釈していない。名前は memberNames から引く
+    mentions: [],
   };
 }
 
@@ -240,6 +269,7 @@ export function toTimelineItems(
     linkCards = {},
     origin,
     currentWorkspaceId,
+    memberNames,
     timeZone,
     now = new Date(),
     threadRootId,
@@ -330,6 +360,9 @@ export function toTimelineItems(
           ? { replyCount: entry.thread.replyCount, lastReplyLabel: formatListTime(entry.thread.lastReplyAt, now, timeZone) }
           : undefined,
         broadcast: entry.broadcast,
+        mentionNames: mentionNamesFor(entry, memberNames),
+        // 自分の発言では自分に知らせない（ADR 0041）
+        mentionsMe: me !== undefined && entry.sender.id !== me.id && mentionsUser(entry.mentions, me.id),
         attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
         linkCards: origin === undefined ? undefined : toLinkCardViews(entry.body, { origin, linkCards, currentWorkspaceId, avatarUrls, timeZone }),
         grouped,
@@ -526,6 +559,51 @@ export function toRoomMemberView(member: RoomMember, avatarUrls: UrlTable = {}):
     online: member.online,
     roleLabel: roleLabels[member.role],
   };
+}
+
+/**
+ * `@` の補完に出す候補（ADR 0043）。ルームのメンバーと `@channel` / `@here`。
+ *
+ * 自分も候補に残す（Slack と同じ。自分を指して書くことはある）。
+ * メンバーでない人は出さない。メンションしても知らせが飛ばないため（ADR 0041）。
+ * DM では `@channel` / `@here` を出さない（相手は 1 人で、個人のメンションと変わらないため）。
+ */
+export function toMentionCandidates(
+  members: readonly RoomMember[] | undefined,
+  { kind, avatarUrls = {} }: { kind: RoomKind; avatarUrls?: UrlTable },
+): MentionCandidate[] {
+  const users: MentionCandidate[] = (members ?? []).map((m) => ({
+    kind: "user",
+    id: m.user.id,
+    handle: m.user.handle,
+    name: m.user.display_name,
+    avatarUrl: avatarUrls[m.user.id] ?? undefined,
+  }));
+  if (kind === "dm") return users;
+  return [
+    ...users,
+    { kind: "channel", description: "このチャンネルの全員" },
+    { kind: "here", description: "いまオンラインの人" },
+  ];
+}
+
+/** user_id → 表示名。本文の `<@ID>` をチップにするのに使う（ADR 0043）。 */
+export function toMemberNames(members: readonly RoomMember[] | undefined): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const m of members ?? []) names[m.user.id] = m.user.display_name;
+  return names;
+}
+
+/**
+ * `@channel` / `@here` を送るときの確認に出す人数（ADR 0043）。
+ * `@channel` はルームのメンバー、`@here` はそのうちオンラインの人。自分は数に入れない（自分には知らせが要らない）。
+ */
+export function mentionAllRecipients(
+  members: readonly RoomMember[] | undefined,
+  kind: "channel" | "here",
+  meId: string | undefined,
+): number {
+  return (members ?? []).filter((m) => m.user.id !== meId && (kind === "channel" || m.online)).length;
 }
 
 /**

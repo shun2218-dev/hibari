@@ -1,4 +1,4 @@
-import type { LastMessage, Message, Room } from "@/lib/api/types.gen";
+import type { LastMessage, Mention, Message, Room } from "@/lib/api/types.gen";
 
 /**
  * この行がチャンネルのタイムラインに出るか（ADR 0039 の DB の `in_channel` と同じ意味）。
@@ -93,7 +93,16 @@ export function applyMessageToRoom(room: Room, message: Message, userId: string,
     last_read_seq: lastReadSeq,
     last_read_user_seq: lastReadUserSeq,
     unread_count: lastReadUserSeq === null ? room.unread_count : message.user_seq - lastReadUserSeq,
+    // メンションの数だけは求め直せない（本文を全部持っていないと数えられない）ので足す（ADR 0043）。
+    // 上の seq の比較で、同じメッセージが 2 回届いてもここへは来ないので、二重に足さない。
+    // スレッドだけの返信は上で弾かれるので、そこでのメンションは増えない。次の既読やルームの取り直しで揃う
+    mention_count: !mine && mentionsUser(message.mentions, userId) ? room.mention_count + 1 : room.mention_count,
   };
+}
+
+/** 自分宛てか。`@channel` / `@here` も自分宛てに数える（ADR 0041）。 */
+function mentionsUser(mentions: readonly Mention[], userId: string): boolean {
+  return mentions.some((m) => (m.kind === "user" ? m.user?.id === userId : true));
 }
 
 function toLastMessage(message: Message): LastMessage {
@@ -109,14 +118,29 @@ function toLastMessage(message: Message): LastMessage {
 }
 
 /** 既読位置を進める。後退させず、未読数は手元の最新の seq から求め直す（既読の応答とメッセージのイベントが前後しても揃う）。 */
-export function applyReadToRoom(room: Room, read: { lastReadSeq: number; lastReadUserSeq: number }): Room {
+export function applyReadToRoom(
+  room: Room,
+  read: { lastReadSeq: number; lastReadUserSeq: number; mentionCount: number },
+): Room {
   if (room.last_read_seq === null || room.last_read_user_seq === null) return room;
   const next = Math.max(room.last_read_seq, read.lastReadSeq);
   const nextUser = Math.max(room.last_read_user_seq, read.lastReadUserSeq);
   // 未読はシステムメッセージを数えない（ADR 0033）
   const unread = Math.max(0, room.last_user_seq - nextUser);
-  if (next === room.last_read_seq && nextUser === room.last_read_user_seq && unread === room.unread_count) return room;
-  return { ...room, last_read_seq: next, last_read_user_seq: nextUser, unread_count: unread };
+  // メンションの数は手元では数え直せない（どのメッセージが自分宛てかは本文を全部持っていないと分からない）ので、
+  // サーバーが既読の応答とイベントに載せてくる値をそのまま使う（ADR 0043）。
+  // 既読が進まなかった応答（自分より古い seq）では、件数も古い可能性があるので触らない
+  const advanced = next > room.last_read_seq || nextUser > room.last_read_user_seq;
+  const mention = advanced ? read.mentionCount : room.mention_count;
+  if (
+    next === room.last_read_seq &&
+    nextUser === room.last_read_user_seq &&
+    unread === room.unread_count &&
+    mention === room.mention_count
+  ) {
+    return room;
+  }
+  return { ...room, last_read_seq: next, last_read_user_seq: nextUser, unread_count: unread, mention_count: mention };
 }
 
 /**

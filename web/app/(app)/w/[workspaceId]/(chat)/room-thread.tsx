@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { JoinRoomBar } from "@/components/chat/chat-states";
 import { Composer } from "@/components/chat/composer";
+import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
 import { ThreadPanel } from "@/components/chat/thread-panel";
 import { Timeline } from "@/components/chat/timeline";
 import { useSessionState } from "@/lib/auth/session-provider";
@@ -17,15 +18,19 @@ import {
   useMediaState,
   useRealtime,
 } from "@/lib/chat/chat-provider";
+import { mentionAll, toWireBody } from "@/lib/chat/mentions";
 import { draftsReady } from "@/lib/chat/uploads";
 import { useOrigin } from "@/lib/chat/use-origin";
 import {
   alsoInChannelDoneLabel,
   alsoInChannelLabel,
+  mentionAllRecipients,
   permalinksIn,
   previewImageIds,
   roomName,
   toAttachmentDraftView,
+  toMemberNames,
+  toMentionCandidates,
   toThreadTimelineItems,
 } from "@/lib/chat/views";
 import { useDocumentVisible } from "@/lib/use-document-visible";
@@ -79,7 +84,15 @@ export function RoomThread({
   const [alsoInChannel, setAlsoInChannel] = useState(false);
   const [sentCount, setSentCount] = useState(0);
   const [joining, setJoining] = useState(false);
+  // 送る前に確認している `@channel` / `@here`（ADR 0043）。スレッドでは「チャンネルにも投稿する」を付けたときだけ使う
+  const [confirmAll, setConfirmAll] = useState<"channel" | "here" | null>(null);
   const { uploader, drafts } = useAttachmentUploader(roomId);
+
+  // `@` の補完にはルームのメンバーが要る（ADR 0043）。スレッドだけを開いた URL でも引いておく
+  const membersLoaded = members !== undefined;
+  useEffect(() => {
+    if (!membersLoaded) void store.loadRoomMembers(roomId);
+  }, [store, roomId, membersLoaded]);
 
   useEffect(() => {
     void store.openThread(roomId, rootId);
@@ -117,6 +130,11 @@ export function RoomThread({
   const linkCards = useLinkCards(permalinks);
 
   const broadcastDoneLabel = room ? alsoInChannelDoneLabel(room.kind) : undefined;
+  const memberNames = useMemo(() => toMemberNames(members), [members]);
+  const mentionCandidates = useMemo(
+    () => toMentionCandidates(members, { kind: room?.kind ?? "public", avatarUrls }),
+    [members, room?.kind, avatarUrls],
+  );
   const items = useMemo(
     () =>
       toThreadTimelineItems(
@@ -130,6 +148,7 @@ export function RoomThread({
           linkCards,
           origin,
           currentWorkspaceId: workspaceId,
+          memberNames,
         },
       ),
     [
@@ -143,9 +162,19 @@ export function RoomThread({
       linkCards,
       origin,
       workspaceId,
+      memberNames,
     ],
   );
-  const { timelineProps, deleteDialog } = useMessageActions({ workspaceId, roomId, room, messages, me, myRole, members });
+  const { timelineProps, deleteDialog } = useMessageActions({
+    workspaceId,
+    roomId,
+    room,
+    messages,
+    me,
+    myRole,
+    members,
+    mentionCandidates,
+  });
   const draftViews = useMemo(() => drafts.map(toAttachmentDraftView), [drafts]);
   const typingNames = useMemo(() => (typing ?? []).map((t) => t.user.display_name), [typing]);
 
@@ -154,11 +183,28 @@ export function RoomThread({
   const canSend =
     (draft.trim() !== "" || drafts.length > 0) && draftsReady(drafts) && [...draft].length <= MAX_BODY_LENGTH;
 
+  /** 入力欄の `@ハンドル` を保存する形に直す（ADR 0043）。解決できないハンドルはそのまま残る */
+  function wireBody() {
+    return toWireBody(draft, mentionCandidates);
+  }
+
   function send() {
     if (!canSend) return;
-    store.sendMessage(roomId, { body: draft, attachments: uploader.take(), threadRootId: rootId, alsoInChannel });
+    // スレッドだけの返信では `@channel` / `@here` は誰にも飛ばない（ADR 0041）ので、確認も出さない。
+    // 「チャンネルにも投稿する」を付けた返信はルームの全員に飛ぶので、チャンネルの投稿と同じように確認する
+    const all = alsoInChannel ? mentionAll(wireBody()) : null;
+    if (all !== null) {
+      setConfirmAll(all);
+      return;
+    }
+    sendNow();
+  }
+
+  function sendNow() {
+    store.sendMessage(roomId, { body: wireBody(), attachments: uploader.take(), threadRootId: rootId, alsoInChannel });
     setDraft("");
     setAlsoInChannel(false);
+    setConfirmAll(null);
     setSentCount((n) => n + 1);
   }
 
@@ -205,6 +251,7 @@ export function RoomThread({
               onRetryAttachment={(key) => uploader.retry(key)}
               onRemoveAttachment={(key) => uploader.remove(key)}
               typingNames={typingNames}
+              mentionCandidates={mentionCandidates}
               alsoInChannel={{
                 label: alsoInChannelLabel(room.kind),
                 checked: alsoInChannel,
@@ -229,6 +276,13 @@ export function RoomThread({
         )}
       </ThreadPanel>
       {deleteDialog}
+      <ConfirmMentionAllDialog
+        open={confirmAll !== null}
+        kind={confirmAll ?? "channel"}
+        memberCount={mentionAllRecipients(members, confirmAll ?? "channel", me?.id)}
+        onCancel={() => setConfirmAll(null)}
+        onConfirm={sendNow}
+      />
     </>
   );
 }

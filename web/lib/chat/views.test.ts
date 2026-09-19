@@ -7,11 +7,14 @@ import { kei, member, message, miyuki, naoki, room, roomMember, systemMessage } 
 import {
   alsoInChannelDoneLabel,
   alsoInChannelLabel,
+  mentionAllRecipients,
   messageActions,
   previewImageIds,
   toAttachmentDraftView,
   systemMessageText,
   toDmCandidates,
+  toMemberNames,
+  toMentionCandidates,
   toRoomMemberRows,
   toRoomMemberView,
   toRoomSummaryView,
@@ -835,5 +838,145 @@ describe("チャンネルにも投稿する（ADR 0039）", () => {
     expect(outline(channel)).toEqual(["[2026年9月13日]", "親", "送信中の返信"]);
     expect(channel.flatMap((i) => (i.type === "message" ? [i.message] : []))[1]!.broadcast).toEqual({ in: "channel" });
     expect(outline(thread)).toEqual(["親", "[2 replies]", "送信中の返信"]);
+  });
+});
+
+describe("toMentionCandidates", () => {
+  const members = [roomMember(naoki), roomMember(miyuki)];
+
+  it("メンバーを一覧の順に並べ、最後に channel と here を足す", () => {
+    const candidates = toMentionCandidates(members, { kind: "public" });
+    expect(candidates.map((c) => (c.kind === "user" ? c.handle : c.kind))).toEqual([
+      "naoki",
+      "miyuki",
+      "channel",
+      "here",
+    ]);
+    expect(candidates[0]).toMatchObject({ id: naoki.id, name: "佐藤 直樹" });
+  });
+
+  it("DM には全員宛てを出さない（相手 1 人にしか飛ばず、確認の意味がない）", () => {
+    expect(toMentionCandidates(members, { kind: "dm" }).map((c) => c.kind)).toEqual(["user", "user"]);
+  });
+
+  it("アバターがあれば添える", () => {
+    const [first] = toMentionCandidates(members, { kind: "private", avatarUrls: { [naoki.id]: "https://s.test/n" } });
+    expect(first).toMatchObject({ avatarUrl: "https://s.test/n" });
+  });
+
+  it("メンバーが取れていなければ全員宛てだけ", () => {
+    expect(toMentionCandidates(undefined, { kind: "public" }).map((c) => c.kind)).toEqual(["channel", "here"]);
+  });
+});
+
+describe("toMemberNames", () => {
+  it("ID から表示名を引ける表にする", () => {
+    expect(toMemberNames([roomMember(naoki), roomMember(kei)])).toEqual({
+      [naoki.id]: "佐藤 直樹",
+      [kei.id]: "森田 圭",
+    });
+  });
+
+  it("取れていなければ空", () => {
+    expect(toMemberNames(undefined)).toEqual({});
+  });
+});
+
+describe("mentionAllRecipients", () => {
+  const members = [roomMember(naoki, { online: true }), roomMember(miyuki), roomMember(kei, { online: true })];
+
+  it("channel はメンバー全員から自分を引いた数", () => {
+    expect(mentionAllRecipients(members, "channel", naoki.id)).toBe(2);
+  });
+
+  it("here はそのうちオンラインの人だけ", () => {
+    expect(mentionAllRecipients(members, "here", naoki.id)).toBe(1);
+    expect(mentionAllRecipients(members, "here", miyuki.id)).toBe(2);
+  });
+
+  it("メンバーが取れていなければ 0", () => {
+    expect(mentionAllRecipients(undefined, "channel", naoki.id)).toBe(0);
+  });
+});
+
+describe("toTimelineItems のメンション", () => {
+  /** 最初のメッセージの view を取り出す（日付の区切りを飛ばす）。 */
+  function first(items: TimelineItem[]) {
+    const item = items.find((i) => i.type === "message");
+    if (item?.type !== "message") throw new Error("not a message");
+    return item.message;
+  }
+
+  it("メンバーの表示名を引ける表を渡す", () => {
+    const items = toTimelineItems([message(1, { body: `<@${naoki.id}> おはよう` })], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+      memberNames: { [naoki.id]: "佐藤 直樹" },
+    });
+    expect(first(items).mentionNames).toEqual({ [naoki.id]: "佐藤 直樹" });
+  });
+
+  it("ルームを抜けた人の名前は、メッセージの mentions が補う（ADR 0041）", () => {
+    const items = toTimelineItems(
+      [message(1, { body: `<@${kei.id}> ありがとう`, mentions: [{ kind: "user", user: kei }] })],
+      { unreadAfterSeq: null, timeZone: tz, memberNames: { [naoki.id]: "佐藤 直樹" } },
+    );
+    expect(first(items).mentionNames).toEqual({ [naoki.id]: "佐藤 直樹", [kei.id]: "森田 圭" });
+  });
+
+  it("自分宛てに印を付ける", () => {
+    const items = toTimelineItems([message(1, { sender: miyuki, mentions: [{ kind: "user", user: naoki }] })], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+      me: naoki,
+    });
+    expect(first(items).mentionsMe).toBe(true);
+  });
+
+  it("@channel と @here も自分宛てに数える", () => {
+    const items = toTimelineItems([message(1, { sender: miyuki, mentions: [{ kind: "channel" }] })], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+      me: naoki,
+    });
+    expect(first(items).mentionsMe).toBe(true);
+  });
+
+  it("自分の発言は自分宛てにしない（ADR 0041）", () => {
+    const items = toTimelineItems(
+      [message(1, { sender: naoki, mentions: [{ kind: "user", user: naoki }, { kind: "channel" }] })],
+      { unreadAfterSeq: null, timeZone: tz, me: naoki },
+    );
+    expect(first(items).mentionsMe).toBe(false);
+  });
+
+  it("他の人へのメンションだけなら自分宛てにしない", () => {
+    const items = toTimelineItems([message(1, { sender: miyuki, mentions: [{ kind: "user", user: kei }] })], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+      me: naoki,
+    });
+    expect(first(items).mentionsMe).toBe(false);
+  });
+
+  it("送信中のメッセージは、まだ解釈されていないので自分宛てにならない", () => {
+    const items = toTimelineItems([], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+      me: naoki,
+      memberNames: { [naoki.id]: "佐藤 直樹" },
+      outgoing: [
+        {
+          clientMsgId: "c-x",
+          body: `<@${naoki.id}> メモ`,
+          threadRootId: null,
+          alsoInChannel: false,
+          attachments: [],
+          status: "pending",
+          createdAt: "2026-09-13T01:01:00Z",
+        },
+      ],
+    });
+    expect(first(items)).toMatchObject({ mentionsMe: false, mentionNames: { [naoki.id]: "佐藤 直樹" } });
   });
 });
