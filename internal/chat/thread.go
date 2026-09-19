@@ -302,6 +302,9 @@ type FollowedThread struct {
 	RootSeq     int64
 	ReplyCount  int64
 	LastReplyAt time.Time
+	// LastThreadSeq と LastReadThreadSeq は未読数の根拠。クライアントはイベントを受けて未読数を求め直す（ADR 0036）。
+	LastThreadSeq     int64
+	LastReadThreadSeq int64
 	// UnreadCount は親の last_thread_seq - 自分の既読位置。削除された返信も数える近似（ADR 0036）。
 	UnreadCount int64
 }
@@ -377,9 +380,11 @@ func (s *Service) ListThreads(ctx context.Context, actor, workspaceID ulid.ULID,
 				CreatedAt: r.CreatedAt,
 				Deleted:   r.DeletedAt != nil,
 			},
-			RootSeq:     r.Seq,
-			ReplyCount:  int64(r.ThreadReplyCount),
-			UnreadCount: r.LastThreadSeq - r.LastReadThreadSeq,
+			RootSeq:           r.Seq,
+			ReplyCount:        int64(r.ThreadReplyCount),
+			LastThreadSeq:     r.LastThreadSeq,
+			LastReadThreadSeq: r.LastReadThreadSeq,
+			UnreadCount:       r.LastThreadSeq - r.LastReadThreadSeq,
 		}
 		// 参加の行は返信があったときにしかできないので、最後の返信の時刻は必ずある。
 		if r.ThreadLastReplyAt != nil {

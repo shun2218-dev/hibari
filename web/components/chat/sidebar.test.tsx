@@ -173,6 +173,12 @@ describe("Sidebar empty states", () => {
     expect(within(link).queryByLabelText(/未読/)).not.toBeInTheDocument();
   });
 
+  it("hides the threads entry while searching channels", () => {
+    renderSidebar({ search: "デザ", threads: { href: "/threads", unreadCount: 1, selected: false } });
+
+    expect(screen.queryByRole("link", { name: /スレッド/ })).not.toBeInTheDocument();
+  });
+
   it("does not show the threads entry unless given", () => {
     renderSidebar();
 

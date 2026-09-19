@@ -147,7 +147,8 @@ func TestSendThreadReply(t *testing.T) {
 			t.Errorf("replier threads = %+v", replier)
 		}
 		author := threadsOf(t, env, r.member, r.ws.ID)
-		if len(author) != 1 || author[0].UnreadCount != 2 || author[0].Room.ID != room.ID || author[0].Room.Name != "public" {
+		if len(author) != 1 || author[0].UnreadCount != 2 || author[0].LastThreadSeq != 2 || author[0].LastReadThreadSeq != 0 ||
+			author[0].Room.ID != room.ID || author[0].Room.Name != "public" {
 			t.Errorf("author threads = %+v", author)
 		}
 		if unreadThreads(t, env, r.member, r.ws.ID) != 1 || unreadThreads(t, env, r.member2, r.ws.ID) != 0 {

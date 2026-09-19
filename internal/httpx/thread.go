@@ -114,7 +114,10 @@ type followedThreadResponse struct {
 	RootSeq     int64               `json:"root_seq"`
 	ReplyCount  int64               `json:"reply_count"`
 	LastReplyAt time.Time           `json:"last_reply_at"`
-	UnreadCount int64               `json:"unread_count"`
+	// LastThreadSeq - LastReadThreadSeq = UnreadCount。クライアントは message.updated（親）と thread.read で求め直す。
+	LastThreadSeq     int64 `json:"last_thread_seq"`
+	LastReadThreadSeq int64 `json:"last_read_thread_seq"`
+	UnreadCount       int64 `json:"unread_count"`
 }
 
 type threadListResponse struct {
@@ -151,12 +154,14 @@ func (h *chatHandlers) listThreads(w http.ResponseWriter, r *http.Request) {
 			room.DMPeer = &peer
 		}
 		resp.Threads[i] = followedThreadResponse{
-			Room:        room,
-			Root:        newLastMessageResponse(t.Root),
-			RootSeq:     t.RootSeq,
-			ReplyCount:  t.ReplyCount,
-			LastReplyAt: t.LastReplyAt,
-			UnreadCount: t.UnreadCount,
+			Room:              room,
+			Root:              newLastMessageResponse(t.Root),
+			RootSeq:           t.RootSeq,
+			ReplyCount:        t.ReplyCount,
+			LastReplyAt:       t.LastReplyAt,
+			LastThreadSeq:     t.LastThreadSeq,
+			LastReadThreadSeq: t.LastReadThreadSeq,
+			UnreadCount:       t.UnreadCount,
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)

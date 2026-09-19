@@ -119,7 +119,8 @@ export function Sidebar({
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
-          {threads && <ThreadsRow {...threads} />}
+          {/* 検索はチャンネルを探すためのものなので、検索している間は出さない */}
+          {threads && !searching && <ThreadsRow {...threads} />}
           {/* 片方が 0 件でも見出しは出す。「+」がそのまま作成・DM の入口になっている */}
           <RoomSection title="チャンネル" first action={{ label: "チャンネルを作成", onClick: onCreateRoom }}>
             {channels.map((room) => (

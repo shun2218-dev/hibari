@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { AccountMenu } from "@/components/chat/account-menu";
@@ -12,16 +12,22 @@ import { useSession, useSessionState } from "@/lib/auth/session-provider";
 import { useAvatarUrls, useChatState, useChatStore, useRealtime } from "@/lib/chat/chat-provider";
 import { formatTime } from "@/lib/chat/format";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
+import { countUnreadThreads } from "@/lib/chat/threads";
 import { toRoomSummaryView } from "@/lib/chat/views";
 
 import { CreateWorkspace } from "../../../create-workspace";
 import { CreateRoom } from "./create-room";
 import { StartDm } from "./start-dm";
 import { RoomMembers } from "./room-members";
+import { RoomThread } from "./room-thread";
 import { RoomView } from "./room-view";
+import { WorkspaceThreads } from "./workspace-threads";
 
 export function WorkspaceScreen() {
   const { workspaceId, roomId } = useParams<{ workspaceId: string; roomId?: string }>();
+  // 開いているスレッドは URL のクエリに持つ（ADR 0037）。一覧から開いたスレッドも、リロードしても同じ画面になる
+  const threadId = useSearchParams().get("thread") ?? undefined;
+  const threadsView = usePathname() === `/w/${workspaceId}/threads`;
   const router = useRouter();
   const session = useSession();
   const { state: sessionState } = useSessionState();
@@ -32,6 +38,8 @@ export function WorkspaceScreen() {
   const rooms = useChatState((s) => s.rooms);
   const unavailable = useChatState((s) => s.connection.unavailable);
   const removal = useChatState((s) => s.removedWorkspaces[workspaceId]);
+  const threadList = useChatState((s) => s.threadLists[workspaceId]);
+  const unreadThreadCount = useChatState((s) => s.unreadThreadCounts[workspaceId]);
   // 開いているルームを読めない（外された、URL のルームが読めない）。メンバーのパネルも閉じる（名前を見せない。ADR 0035）
   const roomRemoved = useChatState((s) =>
     roomId ? s.removedRooms[roomId] !== undefined || s.timelines[roomId]?.status === "not_found" : false,
@@ -64,6 +72,8 @@ export function WorkspaceScreen() {
 
   useEffect(() => {
     store.loadRooms(workspaceId);
+    // サイドバーの「スレッド」のバッジは、参加しているスレッドの一覧から数える（ADR 0037）
+    store.loadThreads(workspaceId);
   }, [store, workspaceId]);
 
   // メンバーではない（URL を直接開いた、キックされた）ワークスペースは覚えている場所から外して、入口に戻す。
@@ -82,14 +92,14 @@ export function WorkspaceScreen() {
 
   // ルームを選んでいなければ、最後に開いたルーム → is_default のルーム → 一覧の先頭の順に開く
   useEffect(() => {
-    if (roomId || roomList?.status !== "ready" || roomList.ids.length === 0) return;
+    if (roomId || threadsView || roomList?.status !== "ready" || roomList.ids.length === 0) return;
     const remembered = lastRoomId(workspaceId);
     const target =
       roomList.ids.find((id) => id === remembered) ??
       roomList.ids.find((id) => rooms[id]?.is_default && rooms[id]?.is_member) ??
       roomList.ids[0];
     router.replace(`/w/${workspaceId}/r/${target}`);
-  }, [roomId, roomList, rooms, workspaceId, router]);
+  }, [roomId, threadsView, roomList, rooms, workspaceId, router]);
 
   // サイドバーに出す人（自分と DM の相手）のアバター。自分の avatar_url もログインの応答にあるが、1 時間で切れるので同じ経路で取り直す
   const me = sessionState.status === "signed_in" ? sessionState.user : undefined;
@@ -110,6 +120,21 @@ export function WorkspaceScreen() {
       })
       .filter((view) => query === "" || view.name.toLowerCase().includes(query));
   }, [roomList, rooms, search, avatarUrls]);
+
+  function openThread(rootId: string) {
+    setMembersOpen(false);
+    router.push(`/w/${workspaceId}/r/${roomId}?thread=${rootId}`);
+  }
+
+  function closeThread() {
+    router.replace(`/w/${workspaceId}/r/${roomId}`);
+  }
+
+  function toggleMembers() {
+    // 右のパネルは 1 つ。メンバーを開くならスレッドを閉じる
+    if (threadId) closeThread();
+    setMembersOpen((open) => !open || threadId !== undefined);
+  }
 
   function leaveRemovedWorkspace() {
     forgetLocation(workspaceId);
@@ -135,7 +160,7 @@ export function WorkspaceScreen() {
   return (
     <>
       <ChatLayout
-        mobileView={roomId && listShownFor !== roomId ? "room" : "list"}
+        mobileView={(roomId && listShownFor !== roomId) || (threadsView && listShownFor !== "threads") ? "room" : "list"}
         sidebar={
           <Sidebar
             workspace={{ id: workspace.id, name: workspace.name }}
@@ -185,10 +210,20 @@ export function WorkspaceScreen() {
             }
             onCreateRoom={() => setCreatingRoom(true)}
             onStartDm={() => setStartingDm(true)}
+            threads={{
+              href: `/w/${workspaceId}/threads`,
+              // 一覧を取るまではルーム一覧の unread_thread_count を出す
+              unreadCount: threadList?.status === "ready" ? countUnreadThreads(threadList.list) : (unreadThreadCount ?? 0),
+              selected: threadsView,
+            }}
           />
         }
         panel={
-          roomId && membersOpen && !roomRemoved ? <RoomMembers roomId={roomId} onClose={() => setMembersOpen(false)} /> : undefined
+          roomId && threadId && !roomRemoved ? (
+            <RoomThread key={threadId} workspaceId={workspaceId} roomId={roomId} rootId={threadId} onClose={closeThread} />
+          ) : roomId && membersOpen && !roomRemoved ? (
+            <RoomMembers roomId={roomId} onClose={() => setMembersOpen(false)} />
+          ) : undefined
         }
       >
         {roomId && (
@@ -196,11 +231,16 @@ export function WorkspaceScreen() {
             key={roomId}
             workspaceId={workspaceId}
             roomId={roomId}
-            membersOpen={membersOpen}
-            onToggleMembers={() => setMembersOpen((open) => !open)}
+            membersOpen={membersOpen && !threadId}
+            onToggleMembers={toggleMembers}
+            openThreadId={threadId}
+            onOpenThread={openThread}
             onBack={() => setListShownFor(roomId)}
             onLeaveRemovedWorkspace={leaveRemovedWorkspace}
           />
+        )}
+        {threadsView && !removedFromWorkspace && (
+          <WorkspaceThreads workspaceId={workspaceId} onBack={() => setListShownFor("threads")} />
         )}
         {!roomId && removedFromWorkspace && (
           <RemovedFromWorkspace workspaceName={workspace.name} onMove={leaveRemovedWorkspace} />

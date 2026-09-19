@@ -4,12 +4,22 @@ import type {
   RoleLabel,
   RoomMemberView,
   RoomSummaryView,
+  ThreadListItemView,
   TimelineItem,
 } from "@/components/chat/types";
 import type { DmCandidateView, RoomMemberRowView } from "@/components/chat/room-dialogs";
-import type { Member, Message, MessageAttachment, Role, Room, RoomMember, UserProfile } from "@/lib/api/types.gen";
+import type {
+  FollowedThread,
+  Member,
+  Message,
+  MessageAttachment,
+  Role,
+  Room,
+  RoomMember,
+  UserProfile,
+} from "@/lib/api/types.gen";
 
-import type { OutgoingMessage } from "./store";
+import type { OutgoingMessage, ThreadState } from "./store";
 import type { AttachmentDraft } from "./uploads";
 
 import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./format";
@@ -105,6 +115,13 @@ type TimelineOptions = {
   /** attachment_id → 画像の URL。 */
   attachmentUrls?: UrlTable;
   timeZone?: string;
+  /** 「最終返信」の相対的な時刻（「昨日」など）の基準。省けば今。 */
+  now?: Date;
+  /**
+   * スレッドの返信を並べるときの親の ID（ADR 0036）。渡すと messages をそのまま並べ、outgoing はそのスレッドへの返信だけにする。
+   * 省くとチャンネルのタイムラインで、スレッドの返信を除く。
+   */
+  threadRootId?: string;
 };
 
 /** タイムラインに並べる 1 件。確定したメッセージと、確定していない自分のメッセージを同じ形にそろえる。 */
@@ -119,6 +136,8 @@ type Entry = {
   status: "pending" | "sent" | "failed";
   deleted: boolean;
   edited: boolean;
+  /** 返信のついた親の「N 件の返信」。返信が全部消えていれば出さない。 */
+  thread: { replyCount: number; lastReplyAt: Date } | undefined;
   attachments: readonly MessageAttachment[];
 };
 
@@ -134,6 +153,10 @@ function fromMessage(message: Message): Entry {
     status: "sent",
     deleted: message.deleted_at !== null,
     edited: message.edited_at !== null,
+    thread:
+      message.thread && message.thread.reply_count > 0
+        ? { replyCount: message.thread.reply_count, lastReplyAt: new Date(message.thread.last_reply_at) }
+        : undefined,
     attachments: message.attachments,
   };
 }
@@ -149,6 +172,7 @@ function fromOutgoing(message: OutgoingMessage, me: UserProfile): Entry {
     status: message.status,
     deleted: false,
     edited: false,
+    thread: undefined,
     attachments: message.attachments,
   };
 }
@@ -159,11 +183,24 @@ function fromOutgoing(message: OutgoingMessage, me: UserProfile): Entry {
  */
 export function toTimelineItems(
   messages: readonly Message[],
-  { unreadAfterSeq, outgoing = [], me, avatarUrls = {}, attachmentUrls = {}, timeZone }: TimelineOptions,
+  {
+    unreadAfterSeq,
+    outgoing = [],
+    me,
+    avatarUrls = {},
+    attachmentUrls = {},
+    timeZone,
+    now = new Date(),
+    threadRootId,
+  }: TimelineOptions,
 ): TimelineItem[] {
   // スレッドの返信はチャンネルのタイムラインに出さない（ADR 0036）。手元には持っておく（change_seq のカーソルを進めるため）
-  const entries = messages.filter((m) => m.thread_root_id === null).map(fromMessage);
-  if (me) entries.push(...outgoing.map((m) => fromOutgoing(m, me)));
+  const shown = threadRootId === undefined ? messages.filter((m) => m.thread_root_id === null) : messages;
+  const entries = shown.map(fromMessage);
+  if (me) {
+    const mine = outgoing.filter((m) => m.threadRootId === (threadRootId ?? null));
+    entries.push(...mine.map((m) => fromOutgoing(m, me)));
+  }
 
   const items: TimelineItem[] = [];
   let previous: Entry | undefined;
@@ -219,6 +256,9 @@ export function toTimelineItems(
         status: entry.status,
         deleted: entry.deleted,
         edited: entry.edited,
+        thread: entry.thread
+          ? { replyCount: entry.thread.replyCount, lastReplyLabel: formatListTime(entry.thread.lastReplyAt, now, timeZone) }
+          : undefined,
         attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
         grouped,
       },
@@ -235,6 +275,49 @@ const INLINE_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "ima
 
 export function isPreviewImage(attachment: Pick<MessageAttachment, "content_type">): boolean {
   return INLINE_IMAGE_TYPES.has(attachment.content_type);
+}
+
+/**
+ * スレッドのパネルの並び（ADR 0036）: 親、「N 件の返信」の区切り、返信（送信中の自分の返信を含む）。
+ * 親の下の「N 件の返信」はパネルの中では区切りと同じことを言うので出さない。日付の区切りも入れない（デザインにない）。
+ */
+export function toThreadTimelineItems(
+  thread: Pick<ThreadState, "root" | "replies">,
+  options: Omit<TimelineOptions, "unreadAfterSeq" | "threadRootId">,
+): TimelineItem[] {
+  const root = thread.root;
+  if (!root) return [];
+  const rootItems = toTimelineItems([root], { ...options, unreadAfterSeq: null, outgoing: [], threadRootId: root.id });
+  const replyItems = toTimelineItems(thread.replies, { ...options, unreadAfterSeq: null, threadRootId: root.id });
+  const items: TimelineItem[] = [];
+  for (const item of rootItems) {
+    if (item.type === "message") items.push({ type: "message", message: { ...item.message, thread: undefined } });
+  }
+  items.push({ type: "thread-divider", key: `thread-divider-${root.id}`, replyCount: root.thread?.reply_count ?? 0 });
+  for (const item of replyItems) if (item.type !== "date") items.push(item);
+  return items;
+}
+
+/** 参加しているスレッドの一覧の 1 行（ADR 0036）。 */
+export function toThreadListItemView(
+  thread: FollowedThread,
+  now: Date,
+  { timeZone, avatarUrls = {} }: { timeZone?: string; avatarUrls?: UrlTable } = {},
+): ThreadListItemView {
+  const { room, root } = thread;
+  return {
+    key: root.id,
+    room: { kind: room.kind, name: room.kind === "dm" ? (room.dm_peer?.display_name ?? "") : (room.name ?? "") },
+    root: {
+      sender: { id: root.sender.id, name: root.sender.display_name, avatarUrl: avatarUrls[root.sender.id] ?? undefined },
+      timeLabel: formatListTime(new Date(root.created_at), now, timeZone),
+      body: root.body,
+      deleted: root.deleted,
+    },
+    replyCount: thread.reply_count,
+    lastReplyLabel: formatListTime(new Date(thread.last_reply_at), now, timeZone),
+    unreadCount: thread.unread_count,
+  };
 }
 
 /**
