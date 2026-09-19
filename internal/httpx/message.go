@@ -203,7 +203,22 @@ func querySeq(r *http.Request, name string) (*int64, error) {
 	return &v, nil
 }
 
-// listMessages は ?before_seq= / ?after_seq= / ?after_change_seq= / ?limit= で履歴を返す。
+// queryAroundMessageID は ?around_message_id= を読む（ADR 0042）。
+// ULID として読めない文字列も、そのルームにない ID と同じ扱いにしたいので、エラーにせずゼロ値を渡す
+// （400 と 200 を区別できると、メッセージの実在を外から当てられる）。
+func queryAroundMessageID(r *http.Request) *ulid.ULID {
+	s := r.URL.Query().Get("around_message_id")
+	if s == "" {
+		return nil
+	}
+	id, err := ulid.ParseStrict(s)
+	if err != nil {
+		return new(ulid.ULID)
+	}
+	return &id
+}
+
+// listMessages は ?before_seq= / ?after_seq= / ?after_change_seq= / ?around_message_id= / ?limit= で履歴を返す。
 // messages は seq の昇順。after_change_seq のときだけ change_seq の昇順（再接続の差分取得。ADR 0014）。
 func (h *chatHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
 	roomID, err := pathID(r, "roomID")
@@ -224,6 +239,7 @@ func (h *chatHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
+	mq.AroundMessageID = queryAroundMessageID(r)
 	if mq.Limit, err = queryMessageLimit(r); err != nil {
 		writeError(h.logger, w, r, err)
 		return
@@ -233,11 +249,36 @@ func (h *chatHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	resp := messageListResponse{Messages: make([]messageResponse, len(page.Messages)), HasMore: page.HasMore, LastChangeSeq: page.LastChangeSeq}
+	resp := messageListResponse{
+		Messages:      make([]messageResponse, len(page.Messages)),
+		HasMore:       page.HasMore,
+		HasMoreAfter:  page.HasMoreAfter,
+		Around:        newMessageAroundResponse(page.Around),
+		LastChangeSeq: page.LastChangeSeq,
+	}
 	for i, m := range page.Messages {
 		resp.Messages[i] = newMessageResponse(m)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// messageAroundResponse は around_message_id の対象がどこにあったか（ADR 0042）。
+type messageAroundResponse struct {
+	Seq int64 `json:"seq"`
+	// ThreadRootID が入っていればスレッドの返信。クライアントはスレッドのパネルを開く。
+	ThreadRootID *string `json:"thread_root_id"`
+}
+
+func newMessageAroundResponse(a *chat.MessageAround) *messageAroundResponse {
+	if a == nil {
+		return nil
+	}
+	resp := messageAroundResponse{Seq: a.Seq}
+	if a.ThreadRootID != nil {
+		id := a.ThreadRootID.String()
+		resp.ThreadRootID = &id
+	}
+	return &resp
 }
 
 // queryMessageLimit は ?limit= を読む。省略なら 0（chat が既定値にする）。上限を超えた値は chat が切り詰める。
@@ -255,7 +296,12 @@ func queryMessageLimit(r *http.Request) (int, error) {
 
 type messageListResponse struct {
 	Messages []messageResponse `json:"messages"`
-	HasMore  bool              `json:"has_more"`
+	// HasMore は同じ向き（around_message_id・before_seq・指定なしなら古い方、after_seq / after_change_seq なら新しい方）にまだあるか。
+	HasMore bool `json:"has_more"`
+	// HasMoreAfter は新しい方にまだあるか。向きが 2 つあるのは around_message_id だけなので、それ以外では常に false（ADR 0042）。
+	HasMoreAfter bool `json:"has_more_after"`
+	// Around は around_message_id の対象が見つかったときだけ入る。見つからなければ null で、最新のページを返している。
+	Around *messageAroundResponse `json:"around"`
 	// LastChangeSeq はメッセージを読む前のルームの last_change_seq。クライアントは change_seq のカーソルをこの値まで進めてよい。
 	LastChangeSeq int64 `json:"last_change_seq"`
 }
