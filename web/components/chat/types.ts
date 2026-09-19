@@ -46,7 +46,6 @@ export type MessageView = {
   status: MessageStatus;
   deleted: boolean;
   edited: boolean;
-  replyTo?: { senderName: string; body: string };
   /** スレッドの親なら、返信の数と最後の返信の時刻（ADR 0036）。返信が 0 件なら持たない。 */
   thread?: ThreadSummaryLabel;
   attachments: MessageAttachmentView[];

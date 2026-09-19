@@ -20,12 +20,12 @@ type messageBody struct {
 		ID          string `json:"id"`
 		DisplayName string `json:"display_name"`
 	} `json:"sender"`
-	ReplyTo *struct {
-		ID      string `json:"id"`
-		Seq     int64  `json:"seq"`
-		Body    string `json:"body"`
-		Deleted bool   `json:"deleted"`
-	} `json:"reply_to"`
+	ThreadRootID *string `json:"thread_root_id"`
+	ThreadSeq    *int64  `json:"thread_seq"`
+	Thread       *struct {
+		ReplyCount    int64 `json:"reply_count"`
+		LastThreadSeq int64 `json:"last_thread_seq"`
+	} `json:"thread"`
 	EditedAt  *string `json:"edited_at"`
 	DeletedAt *string `json:"deleted_at"`
 }
@@ -72,7 +72,7 @@ func TestMessageFlow(t *testing.T) {
 	first := decode[messageBody](t, r)
 	// seq 1 はルームの作成のログ、2 は alice の参加のログ（ADR 0033）。人の発言はその次から。
 	if first.Seq != 3 || first.Body != "こんにちは" || first.ClientMsgID != clientMsgID || first.Sender.ID != alice.id || first.RoomID != room.ID ||
-		!strings.Contains(string(r.body), `"reply_to":null`) || !strings.Contains(string(r.body), `"deleted_at":null`) {
+		!strings.Contains(string(r.body), `"thread_root_id":null`) || !strings.Contains(string(r.body), `"deleted_at":null`) {
 		t.Fatalf("sent message = %s", r.body)
 	}
 	r = c.as(alice, http.MethodPost, messages, map[string]string{"client_msg_id": clientMsgID, "body": "こんにちは"})
@@ -86,19 +86,19 @@ func TestMessageFlow(t *testing.T) {
 	expectStatus(t, c.as(bob, http.MethodGet, messages, nil), http.StatusOK)
 	expectStatus(t, c.as(bob, http.MethodPost, "/api/v1/rooms/"+room.ID+"/join", nil), http.StatusOK)
 
-	// 返信。別のルームのメッセージへの返信は 422。
-	r = c.as(bob, http.MethodPost, messages, map[string]string{"client_msg_id": ulid.Make().String(), "body": "返信です", "reply_to_id": first.ID})
+	// 参加した bob の発言。間に bob の参加のログ（seq 4）が入る。
+	r = c.as(bob, http.MethodPost, messages, map[string]string{"client_msg_id": ulid.Make().String(), "body": "返事です"})
 	expectStatus(t, r, http.StatusCreated)
 	reply := decode[messageBody](t, r)
-	// 間に bob の参加のログ（seq 4）が入る。
-	if reply.Seq != 5 || reply.ReplyTo == nil || reply.ReplyTo.ID != first.ID || reply.ReplyTo.Body != "こんにちは" {
-		t.Errorf("reply = %s", r.body)
+	if reply.Seq != 5 {
+		t.Errorf("bob's message = %s", r.body)
 	}
+	// 別のルームのメッセージをスレッドの親にはできない（422。seq も消費しない。ADR 0036）。
 	r = c.as(owner, http.MethodPost, "/api/v1/rooms/"+other.ID+"/messages", map[string]string{"client_msg_id": ulid.Make().String(), "body": "別室"})
 	expectStatus(t, r, http.StatusCreated)
 	foreign := decode[messageBody](t, r)
-	p := expectProblem(t, c.as(bob, http.MethodPost, messages, map[string]string{"client_msg_id": ulid.Make().String(), "body": "x", "reply_to_id": foreign.ID}), http.StatusUnprocessableEntity, "validation-error")
-	if len(p.Errors) != 1 || p.Errors[0].Field != "reply_to_id" {
+	p := expectProblem(t, c.as(bob, http.MethodPost, messages, map[string]string{"client_msg_id": ulid.Make().String(), "body": "x", "thread_root_id": foreign.ID}), http.StatusUnprocessableEntity, "validation-error")
+	if len(p.Errors) != 1 || p.Errors[0].Field != "thread_root_id" {
 		t.Errorf("errors = %+v", p.Errors)
 	}
 	p = expectProblem(t, c.as(bob, http.MethodPost, messages, map[string]string{"client_msg_id": "not-a-ulid", "body": " "}), http.StatusUnprocessableEntity, "validation-error")
@@ -119,7 +119,7 @@ func TestMessageFlow(t *testing.T) {
 
 	// 履歴: 最新から、before_seq で古い方へ、after_seq で差分を取る。messages は常に昇順。
 	// このルームの seq の並びは、1=作成のログ、2=alice の参加のログ、3=first、4=bob の参加のログ、
-	// 5=reply、6〜8=続き 0〜2（システムメッセージも seq を消費する。ADR 0033）。
+	// 5=bob の発言、6〜8=続き 0〜2（システムメッセージも seq を消費する。ADR 0033）。
 	seqs := func(b messagesBody) string {
 		s := make([]string, len(b.Messages))
 		for i, m := range b.Messages {
@@ -183,13 +183,8 @@ func TestMessageFlow(t *testing.T) {
 	if m := decode[messagesBody](t, r).Messages[0]; m.ID != first.ID || m.Body != "" || m.DeletedAt == nil {
 		t.Errorf("tombstone = %+v", m)
 	}
-	r = c.as(bob, http.MethodGet, messages+"?after_seq="+strconv.FormatInt(reply.Seq-1, 10)+"&limit=1", nil)
-	expectStatus(t, r, http.StatusOK)
-	if m := decode[messagesBody](t, r).Messages[0]; m.ID != reply.ID || m.ReplyTo == nil || !m.ReplyTo.Deleted || m.ReplyTo.Body != "" {
-		t.Errorf("reply to deleted = %+v", m.ReplyTo)
-	}
 
-	// 既読と未読数。bob は返信（seq 5）まで送信済み（= 既読）で、alice が 3 件送った。
+	// 既読と未読数。bob は自分の発言（seq 5）まで送信済み（= 既読）で、alice が 3 件送った。
 	// 未読は人の発言だけを数える（ADR 0033）ので、間のログは数に入らない。
 	r = c.as(bob, http.MethodGet, "/api/v1/workspaces/"+ws.ID+"/rooms", nil)
 	expectStatus(t, r, http.StatusOK)

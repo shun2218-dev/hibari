@@ -122,11 +122,13 @@ func insertRoom(t *testing.T, tx pgx.Tx, workspaceID, creator ulid.ULID, name st
 	return rid
 }
 
-func insertMessage(t *testing.T, tx pgx.Tx, roomID, sender ulid.ULID, seq int64, replyTo *ulid.ULID) ulid.ULID {
+// insertMessage はメッセージを入れる。threadRoot を渡すとスレッドの返信にする（thread_seq は seq と同じ値。ADR 0036）。
+func insertMessage(t *testing.T, tx pgx.Tx, roomID, sender ulid.ULID, seq int64, threadRoot *ulid.ULID) ulid.ULID {
 	t.Helper()
 	mid := ids.New()
-	mustExec(t, tx, `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, reply_to_id, created_at)
-		VALUES ($1, $2, $3, $3, $3, $4, $5, 'hi', $6, $7)`, mid, roomID, seq, sender, ids.New(), replyTo, now)
+	mustExec(t, tx, `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, created_at)
+		VALUES ($1, $2, $3::bigint, $3::bigint, $3::bigint, $4, $5, 'hi', $6, CASE WHEN $6::uuid IS NULL THEN NULL ELSE $3::bigint END, $7)`,
+		mid, roomID, seq, sender, ids.New(), threadRoot, now)
 	return mid
 }
 
@@ -274,8 +276,8 @@ func TestMessagesConstraints(t *testing.T) {
 		w := insertWorkspace(t, tx, alice)
 		r1 := insertRoom(t, tx, w, alice, "general")
 		r2 := insertRoom(t, tx, w, alice, "random")
-		const insert = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, reply_to_id, created_at)
-			VALUES ($1, $2, $3::bigint, $3::bigint + 1000, $3::bigint, $4, $5, 'hi', $6, $7)`
+		const insert = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, created_at)
+			VALUES ($1, $2, $3::bigint, $3::bigint + 1000, $3::bigint, $4, $5, 'hi', $6, CASE WHEN $6::uuid IS NULL THEN NULL ELSE $3::bigint END, $7)`
 
 		clientMsgID := ids.New()
 		m1 := ids.New()
@@ -309,26 +311,69 @@ func TestMessagesConstraints(t *testing.T) {
 			mustExec(t, tx, insert, ids.New(), r1, 3, bob, clientMsgID, nil, now)
 		})
 
-		t.Run("reply must be in the same room", func(t *testing.T) {
+		t.Run("thread root must be in the same room", func(t *testing.T) {
 			insertMessage(t, tx, r1, bob, 4, &m1)
-			expectViolation(t, tx, sqlstateForeignKey, "messages_reply_to_fkey",
+			expectViolation(t, tx, sqlstateForeignKey, "messages_thread_root_fkey",
 				insert, ids.New(), r2, 2, bob, ids.New(), m1, now)
 		})
 
-		t.Run("hard-deleting the reply target only clears reply_to_id", func(t *testing.T) {
-			target := insertMessage(t, tx, r1, alice, 10, nil)
-			reply := insertMessage(t, tx, r1, bob, 11, &target)
-			mustExec(t, tx, `DELETE FROM messages WHERE id = $1`, target)
-
-			var roomID ulid.ULID
-			var replyTo *ulid.ULID
-			if err := tx.QueryRow(t.Context(), `SELECT room_id, reply_to_id FROM messages WHERE id = $1`, reply).Scan(&roomID, &replyTo); err != nil {
-				t.Fatal(err)
-			}
-			if roomID != r1 || replyTo != nil {
-				t.Fatalf("room_id=%s reply_to_id=%v, want room_id=%s reply_to_id=nil", roomID, replyTo, r1)
-			}
+		t.Run("thread fields go together and a message is not its own root", func(t *testing.T) {
+			const raw = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, created_at)
+				VALUES ($1, $2, $3, $3, $3, $4, $5, 'hi', $6, $7, $8)`
+			expectViolation(t, tx, sqlstateCheck, "messages_thread_fields_check",
+				raw, ids.New(), r1, 20, bob, ids.New(), nil, 1, now)
+			expectViolation(t, tx, sqlstateCheck, "messages_thread_fields_check",
+				raw, ids.New(), r1, 21, bob, ids.New(), m1, nil, now)
+			self := ids.New()
+			expectViolation(t, tx, sqlstateCheck, "messages_thread_fields_check",
+				raw, self, r1, 22, bob, ids.New(), self, 1, now)
+			// システムメッセージはスレッドの返信にならない（ADR 0033 / 0036）。
+			expectViolation(t, tx, sqlstateCheck, "messages_thread_fields_check",
+				`INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, kind, system_type, thread_root_id, thread_seq, created_at)
+				 VALUES ($1, $2, 23, 23, 23, $3, $4, '', 'system', 'member_joined', $5, 1, $6)`,
+				ids.New(), r1, bob, ids.New(), m1, now)
 		})
+
+		t.Run("thread_seq is unique per thread", func(t *testing.T) {
+			const raw = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, created_at)
+				VALUES ($1, $2, $3, $3, $3, $4, $5, 'hi', $6, 1, $7)`
+			root := insertMessage(t, tx, r1, alice, 30, nil)
+			mustExec(t, tx, raw, ids.New(), r1, 31, bob, ids.New(), root, now)
+			expectViolation(t, tx, sqlstateUnique, "messages_thread_root_id_thread_seq_idx",
+				raw, ids.New(), r1, 32, bob, ids.New(), root, now)
+		})
+	})
+}
+
+// ---- スレッド（ADR 0036）----
+
+func TestThreadMembersConstraints(t *testing.T) {
+	pool := openPool(t)
+	inTx(t, pool, func(tx pgx.Tx) {
+		alice := insertUser(t, tx, "alice")
+		bob := insertUser(t, tx, "bob")
+		w := insertWorkspace(t, tx, alice)
+		r1 := insertRoom(t, tx, w, alice, "general")
+		r2 := insertRoom(t, tx, w, alice, "random")
+		root := insertMessage(t, tx, r1, alice, 1, nil)
+		mustExec(t, tx, `INSERT INTO room_members (room_id, user_id, last_read_seq, last_read_user_seq, joined_at) VALUES ($1, $2, 0, 0, $3)`, r1, alice, now)
+		const insert = `INSERT INTO thread_members (room_id, thread_root_id, user_id, last_read_thread_seq, created_at) VALUES ($1, $2, $3, 0, $4)`
+
+		// ルームのメンバーでない人は、スレッドに参加できない。
+		expectViolation(t, tx, sqlstateForeignKey, "thread_members_room_member_fkey", insert, r1, root, bob, now)
+		// 親は同じルームのメッセージ。
+		expectViolation(t, tx, sqlstateForeignKey, "thread_members_thread_root_fkey", insert, r2, root, alice, now)
+
+		// ルームから抜けると、参加も消える。
+		mustExec(t, tx, insert, r1, root, alice, now)
+		mustExec(t, tx, `DELETE FROM room_members WHERE room_id = $1 AND user_id = $2`, r1, alice)
+		var n int
+		if err := tx.QueryRow(t.Context(), `SELECT count(*) FROM thread_members WHERE thread_root_id = $1`, root).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("thread_members after leaving the room = %d, want 0", n)
+		}
 	})
 }
 

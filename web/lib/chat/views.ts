@@ -119,7 +119,6 @@ type Entry = {
   status: "pending" | "sent" | "failed";
   deleted: boolean;
   edited: boolean;
-  replyTo: { senderName: string; body: string } | undefined;
   attachments: readonly MessageAttachment[];
 };
 
@@ -135,12 +134,6 @@ function fromMessage(message: Message): Entry {
     status: "sent",
     deleted: message.deleted_at !== null,
     edited: message.edited_at !== null,
-    replyTo: message.reply_to
-      ? {
-          senderName: message.reply_to.sender.display_name,
-          body: message.reply_to.deleted ? DELETED_MESSAGE_TEXT : message.reply_to.body,
-        }
-      : undefined,
     attachments: message.attachments,
   };
 }
@@ -156,7 +149,6 @@ function fromOutgoing(message: OutgoingMessage, me: UserProfile): Entry {
     status: message.status,
     deleted: false,
     edited: false,
-    replyTo: message.replyTo ? { senderName: message.replyTo.senderName, body: message.replyTo.body } : undefined,
     attachments: message.attachments,
   };
 }
@@ -169,7 +161,8 @@ export function toTimelineItems(
   messages: readonly Message[],
   { unreadAfterSeq, outgoing = [], me, avatarUrls = {}, attachmentUrls = {}, timeZone }: TimelineOptions,
 ): TimelineItem[] {
-  const entries = messages.map(fromMessage);
+  // スレッドの返信はチャンネルのタイムラインに出さない（ADR 0036）。手元には持っておく（change_seq のカーソルを進めるため）
+  const entries = messages.filter((m) => m.thread_root_id === null).map(fromMessage);
   if (me) entries.push(...outgoing.map((m) => fromOutgoing(m, me)));
 
   const items: TimelineItem[] = [];
@@ -210,9 +203,7 @@ export function toTimelineItems(
       !breakGroup &&
       previous !== undefined &&
       previous.sender.id === entry.sender.id &&
-      entry.createdAt.getTime() - previous.createdAt.getTime() < GROUPING_WINDOW_MS &&
-      // 返信は引用を出すので、続けて表示すると誰の発言か分かりにくい
-      entry.replyTo === undefined;
+      entry.createdAt.getTime() - previous.createdAt.getTime() < GROUPING_WINDOW_MS;
 
     items.push({
       type: "message",
@@ -228,7 +219,6 @@ export function toTimelineItems(
         status: entry.status,
         deleted: entry.deleted,
         edited: entry.edited,
-        replyTo: entry.replyTo,
         attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
         grouped,
       },

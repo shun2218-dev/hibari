@@ -136,15 +136,11 @@ export const timeline: TimelineItem[] = [
   message("m-0941", you, "09:41", "おはようございます。昨日の続きで、未読まわりを琥珀に寄せてみました。"),
   message("m-0941b", you, "09:41", "緑はボタンとリンク、選択中のチャンネルだけに残しています。", { grouped: true }),
   message("m-0941c", you, "09:41", "「いま起きていること」は琥珀、「操作できるもの」は緑、という分け方です。", { grouped: true }),
-  message("m-0955", miyuki, "09:55", "それ、かなり分かりやすいです。入力中の表示も琥珀にそろえますか？", {
-    replyTo: { senderName: "あなた", body: "「いま起きていること」は琥珀、「操作できるもの」は緑、という分け方です。" },
-  }),
+  message("m-0955", miyuki, "09:55", "それ、かなり分かりやすいです。入力中の表示も琥珀にそろえますか？"),
   message("m-0957", you, "09:57", "はい、そろえるつもりです。", { status: "failed" }),
   message("m-1012", naoki, "10:12", "賛成です。あとサイドバーの選択中の行、左の縦バーは 2px で十分でした。"),
   message("m-1012b", naoki, "10:12", "4px だと主張が強すぎて、名前より先に目が行ってしまう。", { grouped: true, edited: true }),
-  message("m-1030", ryo, "10:30", "タイムスタンプを等幅にしたの、地味に効いてますね。数字が揃うと視線が上下に動かない。", {
-    replyTo: { senderName: "佐藤 直樹", body: "4px だと主張が強すぎて、名前より先に目が行ってしまう。" },
-  }),
+  message("m-1030", ryo, "10:30", "タイムスタンプを等幅にしたの、地味に効いてますね。数字が揃うと視線が上下に動かない。"),
   message("m-1041", miyuki, "10:41", "行送りは 1.75 で確定にしましょう。半日開きっぱなしでも目が疲れませんでした。", {
     attachments: [{ kind: "file", id: "a-2", fileName: "hibari-type-scale.pdf", sizeLabel: "248 KB" }],
   }),
@@ -197,7 +193,7 @@ export const threadRootKey = "m-0941";
 
 /**
  * 返信がチャンネルから分かれたタイムライン（chat/thread-panel.png）。
- * 引用付きの返信（replyTo）はなくなり、親の下に「N 件の返信」が出る。
+ * 返信はチャンネルに出ず、親の下に「N 件の返信」が出る。
  */
 export const timelineWithThreads: TimelineItem[] = [
   { type: "date", key: "d-0913", label: "2026年9月13日" },

@@ -105,7 +105,6 @@ Phase 6-1 で「API はあるのに操作の入口や状態の画面がない」
 | メッセージの「…」メニュー | `chat/message-menu.png` | — |
 | メッセージの編集中 | `chat/message-editing.png` | `PATCH /rooms/{id}/messages/{messageID}` |
 | メッセージの削除の確認 | `chat/message-delete-dialog.png` | `DELETE /rooms/{id}/messages/{messageID}` |
-| 返信先を選んだ入力欄 | `chat/composer-reply.png` | `POST /rooms/{id}/messages`（reply_to_id） |
 | アカウントメニュー（ワークスペース設定 / 設定 / ログアウト） | `chat/account-menu.png` | `POST /auth/logout` |
 | チャンネル検索の 0 件 | `chat/search-empty.png` | — |
 | メンバーの「…」にキックの入口を足したもの | `workspace/member-menu-with-kick.png` | `DELETE /workspaces/{id}/members/{userID}` |
@@ -216,8 +215,9 @@ Claude Design 側に取り込むときは、ほかの追加画面と同じキャ
   スレッドの返信はチャンネルの未読に数えないので、返信に気づく場所はここになる。
 - **スレッドの一覧**: ルームの代わりにメインの領域に出す。1 行に ルーム・親の冒頭（2 行まで）・返信の数・最後の返信・未読。
   スレッドの中身は展開せず、押すとそのルームのパネルを開く（読む場所と書く場所をパネルの 1 つにそろえる）。
-- **引用付きの返信は消える**: `chat/composer-reply.png` と、`chat/messages-all-states.png` などに写っている引用の行は、Web の実装（Phase 6.5 の構築順 5）でスレッドに置き換えたときに消す。
-  メッセージのホバーの「返信」は、同じアイコンのままスレッドを開く操作になる。
+- **引用付きの返信は消した**: `chat/composer-reply.png`（Phase 6-1 で足した画面）は、API から `reply_to` を消したとき（Phase 6.5 の構築順 3）に削除した。
+  Claude Design 由来の `chat/messages-all-states.png` などには引用の行がまだ写っているが、実装にはない。Claude Design 側を直したら撮り直す。
+  メッセージのホバーの「返信」は、同じアイコンのままスレッドを開く操作になる（構築順 5 でつなぐまでは出さない）。
 
 ### 画面はあるが API がなかったもの（Phase 6 で追加した）
 

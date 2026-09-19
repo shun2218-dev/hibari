@@ -46,6 +46,10 @@ type ChatService interface {
 	EditMessage(ctx context.Context, actor, roomID, messageID ulid.ULID, body string) (chat.Message, error)
 	DeleteMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) error
 	MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq int64) (chat.ReadState, error)
+	ListThreadMessages(ctx context.Context, actor, roomID, rootID ulid.ULID, q chat.ThreadQuery) (chat.ThreadPage, error)
+	MarkThreadRead(ctx context.Context, actor, roomID, rootID ulid.ULID, seq int64) (chat.ThreadReadState, error)
+	ListThreads(ctx context.Context, actor, workspaceID ulid.ULID, page chat.PageRequest) (chat.Page[chat.FollowedThread], error)
+	UnreadThreadCount(ctx context.Context, actor, workspaceID ulid.ULID) (int64, error)
 
 	CreateAttachment(ctx context.Context, actor, roomID ulid.ULID, in chat.AttachmentInput) (chat.CreatedAttachment, error)
 	CompleteAttachment(ctx context.Context, actor, attachmentID ulid.ULID) (chat.Attachment, error)
@@ -94,6 +98,9 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("PATCH /api/v1/rooms/{roomID}/messages/{messageID}", h.editMessage)
 	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}", h.deleteMessage)
 	handle("POST /api/v1/rooms/{roomID}/read", h.markRoomRead)
+	handle("GET /api/v1/rooms/{roomID}/threads/{rootID}/messages", h.listThreadMessages)
+	handle("POST /api/v1/rooms/{roomID}/threads/{rootID}/read", h.markThreadRead)
+	handle("GET /api/v1/workspaces/{workspaceID}/threads", h.listThreads)
 
 	handle("POST /api/v1/rooms/{roomID}/attachments", h.createAttachment)
 	handle("POST /api/v1/attachments/{attachmentID}/complete", h.completeAttachment)
@@ -558,6 +565,13 @@ type dmPeerResponse struct {
 	Online bool `json:"online"`
 }
 
+func newLastMessageResponse(m chat.MessagePreview) lastMessageResponse {
+	return lastMessageResponse{
+		ID: m.ID.String(), Sender: newUserProfileResponse(m.Sender), Kind: m.Kind,
+		System: newSystemEventResponse(m.System), Body: m.Body, CreatedAt: m.CreatedAt, Deleted: m.Deleted,
+	}
+}
+
 // lastMessageResponse はサイドバーの最終メッセージ。相対時刻の表示はクライアントが created_at から作る。
 type lastMessageResponse struct {
 	ID     string              `json:"id"`
@@ -586,10 +600,8 @@ func newRoomResponse(r chat.Room, withCount bool) roomResponse {
 		CreatedAt:       r.CreatedAt,
 	}
 	if m := r.LastMessage; m != nil {
-		resp.LastMessage = &lastMessageResponse{
-			ID: m.ID.String(), Sender: newUserProfileResponse(m.Sender), Kind: m.Kind,
-			System: newSystemEventResponse(m.System), Body: m.Body, CreatedAt: m.CreatedAt, Deleted: m.Deleted,
-		}
+		lm := newLastMessageResponse(*m)
+		resp.LastMessage = &lm
 	}
 	if r.Kind != authz.RoomDM {
 		resp.Name = &r.Name
@@ -664,7 +676,13 @@ func (h *chatHandlers) listRooms(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	resp := roomListResponse{Rooms: make([]roomResponse, len(rooms))}
+	// サイドバーの「スレッド」のバッジも同じ呼び出しで返す（ADR 0036）。ルームと同じ時点である必要はないので、別に数える。
+	unreadThreads, err := h.svc.UnreadThreadCount(r.Context(), actorOf(r), wsID)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	resp := roomListResponse{Rooms: make([]roomResponse, len(rooms)), UnreadThreadCount: unreadThreads}
 	for i, room := range rooms {
 		resp.Rooms[i] = newRoomResponse(room, false)
 	}
@@ -673,6 +691,8 @@ func (h *chatHandlers) listRooms(w http.ResponseWriter, r *http.Request) {
 
 type roomListResponse struct {
 	Rooms []roomResponse `json:"rooms"`
+	// UnreadThreadCount は、未読の返信がある参加中のスレッドの数（ADR 0036）。
+	UnreadThreadCount int64 `json:"unread_thread_count"`
 }
 
 func (h *chatHandlers) getRoom(w http.ResponseWriter, r *http.Request) {

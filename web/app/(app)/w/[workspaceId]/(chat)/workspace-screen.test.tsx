@@ -504,17 +504,13 @@ describe("WorkspaceScreen", () => {
         expect(history().queryByText("やめる")).not.toBeInTheDocument();
       });
 
-      it("replies to a message", async () => {
-        const route = sendRoute();
-        await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+      it("keeps thread replies out of the channel and offers no quote reply (ADR 0036)", async () => {
+        await connected(openRoom(design, [message(1), message(2), message(3, { thread_root_id: "m-1", thread_seq: 1, body: "スレッドの返信" })]));
 
-        const target = history().getAllByRole("article")[2]!;
-        await userEvent.click(within(target).getByRole("button", { name: "返信" }));
-        expect(screen.getByText("高橋 みゆき に返信")).toBeInTheDocument();
-        await userEvent.type(composer(), "了解です{Enter}");
-
-        expect(screen.queryByText("高橋 みゆき に返信")).not.toBeInTheDocument();
-        await waitFor(() => expect(route.sent).toEqual([expect.objectContaining({ body: "了解です", reply_to_id: "m-3" })]));
+        expect(history().getAllByRole("article")).toHaveLength(2);
+        expect(history().queryByText("スレッドの返信")).not.toBeInTheDocument();
+        // 引用付きの返信はなくなった。スレッドを開く「返信」は、スレッドの画面と一緒につなぐ（Phase 6.5 の構築順 5）
+        expect(within(history().getAllByRole("article")[0]!).queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
       });
 
       it("edits my own message in place", async () => {

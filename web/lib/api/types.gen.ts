@@ -287,6 +287,8 @@ export interface Room {
 
 export interface RoomList {
   rooms: Room[];
+  /** unread_thread_count は、未読の返信がある参加中のスレッドの数（ADR 0036）。 */
+  unread_thread_count: number;
 }
 
 export interface DMPeer {
@@ -326,7 +328,7 @@ export interface RoomMemberList {
 export interface SendMessageRequest {
   client_msg_id: string;
   body: string;
-  reply_to_id?: string;
+  thread_root_id?: string;
   attachment_ids?: string[];
 }
 
@@ -350,7 +352,12 @@ export interface Message {
   /** system は kind が system のときだけ入る。文言はクライアントが作る。 */
   system?: SystemEvent;
   body: string;
-  reply_to: ReplyPreview | null;
+  /** thread_root_id はスレッドの親の ID。チャンネルの投稿なら null（ADR 0036）。 */
+  thread_root_id: string | null;
+  /** thread_seq はスレッドの中で何番目の返信か。返信だけが持つ。順序には seq を使う。 */
+  thread_seq: number | null;
+  /** thread は、返信が 1 件以上ついたことのある親だけが持つ。 */
+  thread: ThreadSummary | null;
   /** attachments は削除済みのメッセージでは空配列。GET URL は含めない（ADR 0013）。 */
   attachments: MessageAttachment[];
   created_at: string;
@@ -365,12 +372,12 @@ export interface SystemEvent {
   new_name?: string;
 }
 
-export interface ReplyPreview {
-  id: string;
-  seq: number;
-  sender: UserProfile;
-  body: string;
-  deleted: boolean;
+export interface ThreadSummary {
+  /** reply_count は削除されていない返信の数（表示用）。 */
+  reply_count: number;
+  /** last_thread_seq は thread_seq の採番カウンタ（減らない）。スレッドの未読数 = これ - 自分の last_read_thread_seq。 */
+  last_thread_seq: number;
+  last_reply_at: string;
 }
 
 export interface MessageAttachment {
@@ -398,6 +405,45 @@ export interface ReadState {
   /** last_read_user_seq は既読位置に対応する user_seq。クライアントが未読数を求め直すのに使う（ADR 0033）。 */
   last_read_user_seq: number;
   unread_count: number;
+}
+
+export interface ThreadMessageList {
+  root: Message;
+  messages: Message[];
+  has_more: boolean;
+  /** last_change_seq は返信を読む前のルームの last_change_seq（messageListResponse と同じ）。 */
+  last_change_seq: number;
+  /** last_read_thread_seq は自分の既読位置。スレッドに参加していなければ null。 */
+  last_read_thread_seq: number | null;
+}
+
+export interface ThreadReadState {
+  /** following が false なら、スレッドに参加していないので既読位置を持たない（ほかの値は 0）。 */
+  following: boolean;
+  last_read_thread_seq: number;
+  unread_count: number;
+}
+
+export interface ThreadRoom {
+  id: string;
+  kind: RoomKind;
+  name: string | null;
+  dm_peer?: UserProfile;
+}
+
+export interface FollowedThread {
+  room: ThreadRoom;
+  /** root は親のメッセージ。削除済みなら body は空で deleted が true。 */
+  root: LastMessage;
+  root_seq: number;
+  reply_count: number;
+  last_reply_at: string;
+  unread_count: number;
+}
+
+export interface ThreadList {
+  threads: FollowedThread[];
+  next_cursor: string | null;
 }
 
 export interface CreateAttachmentRequest {

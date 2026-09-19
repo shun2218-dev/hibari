@@ -96,7 +96,7 @@ func TestSendMessage(t *testing.T) {
 		t.Fatalf("SendMessage() = created %v, error %v", created, err)
 	}
 	if msg.Seq != base+1 || msg.RoomID != public.ID || msg.Body != "  字下げを保つ\n2 行目" || msg.ClientMsgID != clientMsgID ||
-		msg.Sender.ID != r.member || msg.Sender.DisplayName == "" || msg.ReplyTo != nil || msg.Kind != chat.MessageKindUser ||
+		msg.Sender.ID != r.member || msg.Sender.DisplayName == "" || msg.ThreadRootID != nil || msg.Thread != nil || msg.Kind != chat.MessageKindUser ||
 		!msg.CreatedAt.Equal(env.Clock.Now()) || msg.EditedAt != nil || msg.DeletedAt != nil {
 		t.Errorf("message = %+v", msg)
 	}
@@ -244,7 +244,7 @@ func TestSendMessageIdempotentConcurrent(t *testing.T) {
 }
 
 // 50 goroutine で同じルームに同時送信しても、seq に欠番も重複もない（ロードマップ Phase 3b の DoD）。
-// 再送（同じ client_msg_id）と、返信先の不正でロールバックする送信を混ぜ、どちらも seq を消費しないことも確かめる。
+// 再送（同じ client_msg_id）と、スレッドの親の不正でロールバックする送信を混ぜ、どちらも seq を消費しないことも確かめる。
 func TestSendMessageConcurrentSeq(t *testing.T) {
 	env := chattest.New(t)
 	users := env.CreateUsers(t, 5)
@@ -280,10 +280,10 @@ func TestSendMessageConcurrentSeq(t *testing.T) {
 			case 0, 3:
 				in.ClientMsgID = retryIDs[u]
 			case 5:
-				in.ReplyToID = &foreign.ID // 別のルームのメッセージへの返信はロールバックされる
+				in.ThreadRootID = &foreign.ID // 別のルームのメッセージへの返信はロールバックされる
 			}
 			_, c, err := env.Service.SendMessage(t.Context(), users[u], room.ID, in)
-			if in.ReplyToID != nil {
+			if in.ThreadRootID != nil {
 				var verr *chat.ValidationError
 				if !errors.As(err, &verr) {
 					t.Errorf("reply to another room error = %v, want ValidationError", err)
@@ -328,48 +328,6 @@ func TestSendMessageConcurrentSeq(t *testing.T) {
 	if roomLastMessageSeq(t, env, room.ID) != want || userMessageCount(t, env, room.ID) != created {
 		t.Errorf("messages = %d, user messages = %d, created = %d, last_message_seq = %d; want the last seq to match the row count and the sends",
 			want, userMessageCount(t, env, room.ID), created, roomLastMessageSeq(t, env, room.ID))
-	}
-}
-
-func TestSendMessageReply(t *testing.T) {
-	env := chattest.New(t)
-	r := setupRoles(t, env)
-	room := createRoom(t, env, r.member, r.ws.ID, "public", "public")
-	other := createRoom(t, env, r.member, r.ws.ID, "public", "other")
-	target := send(t, env, r.member, room.ID, "返信される")
-	foreign := send(t, env, r.member, other.ID, "別のルーム")
-	if _, err := env.Service.JoinRoom(t.Context(), r.member2, room.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	reply, _, err := env.Service.SendMessage(t.Context(), r.member2, room.ID, chat.SendMessageInput{ClientMsgID: env.IDs.New(), Body: "返信", ReplyToID: &target.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p := reply.ReplyTo; p == nil || p.ID != target.ID || p.Seq != target.Seq || p.Body != "返信される" || p.Sender.ID != r.member || p.Deleted {
-		t.Errorf("reply preview = %+v", reply.ReplyTo)
-	}
-
-	// 別のルームのメッセージや存在しないメッセージへの返信は、DB の複合 FK で拒否され、seq も消費しない（ロードマップ Phase 3b の DoD）。
-	// ルームの作成と参加のログ（ADR 0033）も seq を使っているので、拒否の前後で動かないことだけを見る。
-	before := roomLastMessageSeq(t, env, room.ID)
-	for name, replyTo := range map[string]ulid.ULID{"another room": foreign.ID, "unknown": env.IDs.New()} {
-		t.Run(name, func(t *testing.T) {
-			_, _, err := env.Service.SendMessage(t.Context(), r.member2, room.ID, chat.SendMessageInput{ClientMsgID: env.IDs.New(), Body: "x", ReplyToID: &replyTo})
-			expectValidation(t, err, "reply_to_id", chat.ReasonInvalidValue)
-			if roomLastMessageSeq(t, env, room.ID) != before {
-				t.Errorf("last_message_seq = %d, want %d", roomLastMessageSeq(t, env, room.ID), before)
-			}
-		})
-	}
-
-	// 返信先が削除されたら、プレビューは本文を持たず削除済みになる。削除済みのメッセージへの返信も拒否しない（ADR 0012）。
-	if err := env.Service.DeleteMessage(t.Context(), r.member, room.ID, target.ID); err != nil {
-		t.Fatal(err)
-	}
-	late, _, err := env.Service.SendMessage(t.Context(), r.member2, room.ID, chat.SendMessageInput{ClientMsgID: env.IDs.New(), Body: "遅れた返信", ReplyToID: &target.ID})
-	if err != nil || late.ReplyTo == nil || !late.ReplyTo.Deleted || late.ReplyTo.Body != "" {
-		t.Errorf("reply to deleted message = %+v, %v", late.ReplyTo, err)
 	}
 }
 

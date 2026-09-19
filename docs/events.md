@@ -96,10 +96,15 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
   "id": "01J8...", "room_id": "01J8...", "seq": 42, "change_seq": 57, "user_seq": 30, "kind": "user",
   "sender": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" },
   "client_msg_id": "01J8...", "body": "こんにちは",
-  "reply_to": null, "attachments": [],
+  "thread_root_id": null, "thread_seq": null, "thread": null, "attachments": [],
   "created_at": "2026-09-14T12:00:00Z", "edited_at": null, "deleted_at": null
 }
 ```
+
+スレッドの返信（ADR 0036）も `message.created` として同じルームの購読者に届く。`thread_root_id` に親の ID、`thread_seq` にスレッドの中の番号が入る。
+返信はチャンネルのタイムラインに出さない。`seq` と `change_seq` はルームのものを使うので、同期（下記）はチャンネルと同じ 1 本で済む。
+親のメッセージは、返信が 1 件以上ついたことがあれば `thread`（`reply_count`・`last_thread_seq`・`last_reply_at`）を持つ。
+返信の送信と削除では、親の `change_seq` も進む（返信数の変化は `after_change_seq` の差分取得で揃う）。
 
 #### システムメッセージ（`kind: "system"`）
 
@@ -110,7 +115,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
   "id": "01J8...", "room_id": "01J8...", "seq": 43, "change_seq": 58, "user_seq": 30,
   "kind": "system", "system": { "type": "room_renamed", "old_name": "雑談", "new_name": "雑談 改" },
   "sender": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" },
-  "body": "", "reply_to": null, "attachments": [], "created_at": "2026-09-19T01:00:00Z", "edited_at": null, "deleted_at": null
+  "body": "", "thread_root_id": null, "thread_seq": null, "thread": null, "attachments": [], "created_at": "2026-09-19T01:00:00Z", "edited_at": null, "deleted_at": null
 }
 ```
 

@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/chat/authz"
@@ -75,8 +74,12 @@ type Message struct {
 	System *SystemEvent
 	// Body は削除済みなら空。システムメッセージでは常に空（文言はクライアントが作る）。
 	Body string
-	// ReplyTo は返信先。返信でなければ nil。
-	ReplyTo *ReplyPreview
+	// ThreadRootID はスレッドの親。チャンネルの投稿なら nil（ADR 0036）。
+	ThreadRootID *ulid.ULID
+	// ThreadSeq はスレッドの中で何番目の返信か。返信だけが持つ。スレッドの未読に使い、順序には使わない。
+	ThreadSeq *int64
+	// Thread は、返信が 1 件以上ついた親だけが持つ。
+	Thread *ThreadSummary
 	// Attachments は添付。削除済みのメッセージでは空（ADR 0013）。
 	Attachments []MessageAttachment
 	CreatedAt   time.Time
@@ -84,17 +87,17 @@ type Message struct {
 	DeletedAt   *time.Time
 }
 
-// ReplyPreview は返信先のメッセージの表示に必要な情報。
-type ReplyPreview struct {
-	ID     ulid.ULID
-	Seq    int64
-	Sender UserProfile
-	// Body は削除済みなら空。
-	Body    string
-	Deleted bool
+// ThreadSummary は親のメッセージに付く「N 件の返信」（ADR 0036）。
+type ThreadSummary struct {
+	// ReplyCount は削除されていない返信の数（表示用）。
+	ReplyCount int64
+	// LastThreadSeq は thread_seq の採番カウンタ（減らない）。未読数 = これ - 自分の既読位置。
+	LastThreadSeq int64
+	LastReplyAt   time.Time
 }
 
-// messageView は GetMessageView / ListMessagesBefore / ListMessagesAfter / ListMessagesChangedAfter の行。4 つのクエリの列は同じ。
+// messageView は GetMessageView / ListMessagesBefore / ListMessagesAfter / ListMessagesChangedAfter /
+// ListThreadMessagesBefore / ListThreadMessagesAfter の行。6 つのクエリの列は同じ。
 type messageView = store.GetMessageViewRow
 
 func toMessage(r messageView) Message {
@@ -121,15 +124,11 @@ func toMessage(r messageView) Message {
 			}
 		}
 	}
-	// 返信先の行は複合 FK で必ずあるが、LEFT JOIN の列なので nil を確かめてから読む。
-	if r.ReplyToID != nil && r.ReplySeq != nil {
-		m.ReplyTo = &ReplyPreview{
-			ID:      *r.ReplyToID,
-			Seq:     *r.ReplySeq,
-			Sender:  UserProfile{ID: *r.ReplySenderID, Handle: *r.ReplySenderHandle, DisplayName: *r.ReplySenderDisplayName},
-			Body:    *r.ReplyBody,
-			Deleted: r.ReplyDeletedAt != nil,
-		}
+	m.ThreadRootID = r.ThreadRootID
+	m.ThreadSeq = r.ThreadSeq
+	// 一度でも返信がついた親だけが持つ。全部削除されて ReplyCount が 0 でも、スレッドは開けるので残す。
+	if r.LastThreadSeq > 0 && r.ThreadLastReplyAt != nil {
+		m.Thread = &ThreadSummary{ReplyCount: int64(r.ThreadReplyCount), LastThreadSeq: r.LastThreadSeq, LastReplyAt: *r.ThreadLastReplyAt}
 	}
 	return m
 }
@@ -153,8 +152,8 @@ type SendMessageInput struct {
 	// ClientMsgID はクライアントが生成する ULID。同じ値の再送は冪等になる（ADR 0004）。
 	ClientMsgID ulid.ULID
 	Body        string
-	// ReplyToID は同じルームのメッセージ。返信でなければ nil。
-	ReplyToID *ulid.ULID
+	// ThreadRootID は返信するスレッドの親（同じルームの、システムメッセージでも返信でもないメッセージ）。チャンネルへの投稿なら nil。
+	ThreadRootID *ulid.ULID
 	// AttachmentIDs は、送信者が同じルームにアップロードして complete 済みの添付（ADR 0013）。
 	AttachmentIDs []ulid.ULID
 }
@@ -169,6 +168,8 @@ type SendMessageInput struct {
 //
 // 1 のロックで、同じ送信者の同じルームへの送信は直列になる。同じ client_msg_id の 2 本目は 1 本目のコミットを待ってから 2 で既存を見つけるので、
 // seq を採番しない（欠番を作らない）。キック・退出が先にコミットしていれば行が消えているので、1 の判定で拒否される。
+//
+// スレッドの返信（ThreadRootID）は sendThreadReply で、3 と 4 の代わりに親の行をロックしてから採番する（ADR 0036）。
 func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in SendMessageInput) (msg Message, created bool, err error) {
 	var fields fieldErrors
 	if in.ClientMsgID == (ulid.ULID{}) {
@@ -200,6 +201,12 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 			return fmt.Errorf("find by client_msg_id: %w", err)
 		}
 
+		if in.ThreadRootID != nil {
+			msg, err = s.sendThreadReply(ctx, q, actor, roomID, *in.ThreadRootID, in)
+			created = err == nil
+			return err
+		}
+
 		now := s.clock.Now()
 		allocated, err := q.AllocateMessageSeq(ctx, store.AllocateMessageSeqParams{RoomID: roomID, Now: now})
 		if err != nil {
@@ -211,14 +218,9 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 			ID: id, RoomID: roomID, Seq: seq, ChangeSeq: allocated.LastChangeSeq,
 			// user_seq は人の発言だけを数えた番号。未読数に使う（ADR 0033）。
 			UserSeq: allocated.LastUserSeq, SenderID: actor, ClientMsgID: in.ClientMsgID,
-			Body: in.Body, ReplyToID: in.ReplyToID, Now: now,
+			Body: in.Body, Now: now,
 		})
 		if err != nil {
-			// 返信先が存在しない・別のルームにある場合は、先に SELECT で確かめずに複合 FK に任せる（ADR 0012）。
-			// エラーでトランザクションごとロールバックされるので、採番した seq も戻る。
-			if isForeignKeyViolation(err, "messages_reply_to_fkey") {
-				return &ValidationError{Fields: []FieldError{{Field: "reply_to_id", Reason: ReasonInvalidValue}}}
-			}
 			return fmt.Errorf("create message: %w", err)
 		}
 		if err := attachToMessage(ctx, q, actor, roomID, id, in.AttachmentIDs); err != nil {
@@ -239,6 +241,17 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		s.deliver(ctx, messageEvent(EventMessageCreated, msg))
 	}
 	return msg, created, nil
+}
+
+// messageLimit は履歴の件数の指定を丸める。0 以下なら DefaultMessageLimit、MaxMessageLimit を超えたら MaxMessageLimit。
+func messageLimit(limit int) int {
+	switch {
+	case limit <= 0:
+		return DefaultMessageLimit
+	case limit > MaxMessageLimit:
+		return MaxMessageLimit
+	}
+	return limit
 }
 
 func getMessage(ctx context.Context, q *store.Queries, roomID, id ulid.ULID) (Message, error) {
@@ -300,13 +313,7 @@ func (s *Service) ListMessages(ctx context.Context, actor, roomID ulid.ULID, mq 
 	if err := fields.err(); err != nil {
 		return MessagePage{}, err
 	}
-	limit := mq.Limit
-	switch {
-	case limit <= 0:
-		limit = DefaultMessageLimit
-	case limit > MaxMessageLimit:
-		limit = MaxMessageLimit
-	}
+	limit := messageLimit(mq.Limit)
 
 	q := store.New(s.db)
 	// ルームの行（last_change_seq を含む）は、メッセージより先に読む（MessagePage.LastChangeSeq）。
@@ -408,7 +415,7 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 			return err
 		}
 		// メッセージの行ロックの後に rooms の行ロックを取る（ADR 0014「ロックの順序」）。
-		changeSeq, err := q.AllocateChangeSeq(ctx, roomID)
+		changeSeq, err := q.AllocateChangeSeq(ctx, store.AllocateChangeSeqParams{RoomID: roomID, N: 1})
 		if err != nil {
 			return fmt.Errorf("allocate change_seq: %w", err)
 		}
@@ -458,12 +465,8 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, roomID, messageID ul
 			// 削除済みへの削除は冪等な成功。change_seq を採番せず、配信もしない。
 			return nil
 		}
-		changeSeq, err := q.AllocateChangeSeq(ctx, roomID)
-		if err != nil {
-			return fmt.Errorf("allocate change_seq: %w", err)
-		}
-		if err := q.SoftDeleteMessage(ctx, store.SoftDeleteMessageParams{ID: messageID, Now: s.clock.Now(), ChangeSeq: changeSeq}); err != nil {
-			return fmt.Errorf("delete message: %w", err)
+		if err := s.softDeleteMessage(ctx, q, roomID, m); err != nil {
+			return err
 		}
 		// 添付は掃除ジョブに消させる。ストレージの呼び出しをこのトランザクションに入れない（ADR 0013）。
 		if err := q.MarkMessageAttachmentsDeleted(ctx, store.MarkMessageAttachmentsDeletedParams{RoomID: roomID, MessageID: &messageID}); err != nil {
@@ -528,10 +531,4 @@ func (s *Service) MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq
 		},
 	})
 	return st, nil
-}
-
-// isForeignKeyViolation は err が constraint の外部キー違反かを返す。
-func isForeignKeyViolation(err error, constraint string) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23503" && pgErr.ConstraintName == constraint
 }

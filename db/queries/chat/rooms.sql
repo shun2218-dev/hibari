@@ -4,11 +4,13 @@
 -- ルームの次の seq と change_seq を採番して返す（ADR 0002「採番方式の確定」/ ADR 0014）。
 -- 送信と同じトランザクションの中で呼ぶ。rooms の行ロックで同じルームへの送信・編集・削除が直列化され、
 -- ロールバックすれば採番も取り消されるので欠番にならない。
--- 人の発言なので user_seq も 1 進める（ADR 0033）。
+-- 人の発言なので user_seq も 1 進める（ADR 0033）。チャンネルに出るので last_channel_seq も進める（ADR 0036）。
+-- SET の右辺は更新前の値を読むので、last_channel_seq は新しい last_message_seq と同じ値になる。
 UPDATE rooms
    SET last_message_seq = last_message_seq + 1,
        last_change_seq  = last_change_seq + 1,
        last_user_seq    = last_user_seq + 1,
+       last_channel_seq = last_message_seq + 1,
        last_message_at  = sqlc.arg(now)::timestamptz
  WHERE id = sqlc.arg(room_id)
 RETURNING last_message_seq, last_change_seq, last_user_seq;
@@ -18,14 +20,26 @@ RETURNING last_message_seq, last_change_seq, last_user_seq;
 UPDATE rooms
    SET last_message_seq = last_message_seq + 1,
        last_change_seq  = last_change_seq + 1,
+       last_channel_seq = last_message_seq + 1,
        last_message_at  = sqlc.arg(now)::timestamptz
  WHERE id = sqlc.arg(room_id)
 RETURNING last_message_seq, last_change_seq, last_user_seq;
 
--- name: AllocateChangeSeq :one
--- 既存のメッセージの編集・削除のために change_seq だけを採番する（ADR 0014）。seq は進めない。
+-- name: AllocateThreadReplySeq :one
+-- スレッドの返信の採番（ADR 0036）。seq はルームのものを 1 つ、change_seq は返信と親の 2 つ分を進める
+-- （返信は last_change_seq - 1、親は last_change_seq を使う）。
+-- チャンネルには出ないので、user_seq（チャンネルの未読）・last_channel_seq・last_message_at（サイドバーの並び）は進めない。
 UPDATE rooms
-   SET last_change_seq = last_change_seq + 1
+   SET last_message_seq = last_message_seq + 1,
+       last_change_seq  = last_change_seq + 2
+ WHERE id = sqlc.arg(room_id)
+RETURNING last_message_seq, last_change_seq, last_user_seq;
+
+-- name: AllocateChangeSeq :one
+-- 既存のメッセージの編集・削除のために change_seq だけを n 個採番し、最後の番号を返す（ADR 0014）。seq は進めない。
+-- 返信の削除は、返信と親（返信数が減る）の 2 つを使う（ADR 0036）。
+UPDATE rooms
+   SET last_change_seq = last_change_seq + sqlc.arg(n)::bigint
  WHERE id = sqlc.arg(room_id)
 RETURNING last_change_seq;
 
@@ -73,7 +87,8 @@ SELECT user_id
 -- name: ListRoomsForUser :many
 -- サイドバーのルーム一覧: 参加しているルーム（全種類）と、参加していない public ルーム。
 -- 読めない private / dm は含めない。並びは最近メッセージがあった順（インデックス rooms_workspace_id_last_message_at_idx）。
--- 最終メッセージは seq = last_message_seq の行を、ルームごとに UNIQUE インデックスで 1 回引く（N+1 のクエリにしない。ADR 0012）。
+-- 最終メッセージは seq = last_channel_seq の行を、ルームごとに UNIQUE インデックスで 1 回引く（N+1 のクエリにしない。ADR 0012）。
+-- last_message_seq ではないのは、スレッドの返信でも進むため（ADR 0036）。
 -- 未読数はクライアントにも出せるよう last_read_seq をそのまま返し、サービスで last_user_seq との差を取る
 -- （システムメッセージは数えない。ADR 0033）。
 SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq, rm.last_read_user_seq,
@@ -84,7 +99,7 @@ SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_re
        lu.handle AS last_message_sender_handle, lu.display_name AS last_message_sender_display_name
   FROM rooms r
   LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = sqlc.arg(user_id)
-  LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = r.last_message_seq
+  LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = r.last_channel_seq
   LEFT JOIN users lu ON lu.id = lm.sender_id
  WHERE r.workspace_id = sqlc.arg(workspace_id)
    AND (r.kind = 'public' OR rm.user_id IS NOT NULL)
@@ -100,7 +115,7 @@ SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_re
        lu.handle AS last_message_sender_handle, lu.display_name AS last_message_sender_display_name
   FROM rooms r
   LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = sqlc.arg(user_id)
-  LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = r.last_message_seq
+  LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = r.last_channel_seq
   LEFT JOIN users lu ON lu.id = lm.sender_id
  WHERE r.id = sqlc.arg(room_id);
 

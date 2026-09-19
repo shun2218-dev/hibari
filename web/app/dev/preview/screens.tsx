@@ -129,7 +129,6 @@ type ChatOptions = {
   accountMenu?: boolean;
   menuKey?: string;
   editingKey?: string;
-  replyTo?: { senderName: string; body: string };
   /** チャット画面の上に重ねるダイアログ。 */
   dialog?: ReactNode;
   body?: "timeline" | "empty" | "removed-room" | "removed-workspace";
@@ -174,7 +173,6 @@ function chat({
   accountMenu,
   menuKey,
   editingKey,
-  replyTo,
   dialog,
   body = "timeline",
   footer = "composer",
@@ -253,6 +251,7 @@ function chat({
             }
             openThreadKey={thread === "root-deleted" ? deletedThreadRoot.key : thread ? threadContent?.root.key : undefined}
             hoveredKey={hoveredKey}
+            onReply={noop}
             actionsFor={(key) => ({ canEdit: key === pendingMessageKey, canDelete: key === pendingMessageKey })}
             openMenuKey={menuKey}
             editingKey={editingKey}
@@ -263,7 +262,7 @@ function chat({
         {roomRemoved && <RoomUnavailable />}
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
         {footer === "composer" && !threads && (
-          <Composer value="" canSend={false} typingNames={typingNames} attachments={attachments} replyTo={replyTo} />
+          <Composer value="" canSend={false} typingNames={typingNames} attachments={attachments} />
         )}
         {footer === "join" && <JoinRoomBar />}
       </ChatLayout>
@@ -457,8 +456,6 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/message-editing": () => chat({ editingKey: pendingMessageKey }),
   "chat/message-delete-dialog": () =>
     chat({ dialog: <DeleteMessageDialog open body="了解です。今日の夕方までに一覧を更新して、また共有します。" /> }),
-  "chat/composer-reply": () =>
-    chat({ replyTo: { senderName: users.naoki.name, body: "4px だと主張が強すぎて、名前より先に目が行ってしまう。" } }),
   "chat/account-menu": () => chat({ accountMenu: true }),
   "chat/search-empty": () => chat({ noRooms: true, search: "見積" }),
   "chat/empty-workspaces": () => <NoWorkspaces />,

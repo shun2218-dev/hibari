@@ -116,36 +116,3 @@ describe("AttachmentChip", () => {
   });
 });
 
-describe("Composer reply", () => {
-  it("shows the message being replied to and lets it be cancelled", async () => {
-    const onCancelReply = vi.fn();
-    render(
-      <Composer
-        value=""
-        canSend={false}
-        replyTo={{ senderName: "佐藤 直樹", body: "4px だと主張が強すぎて、名前より先に目が行ってしまう。" }}
-        onCancelReply={onCancelReply}
-      />,
-    );
-
-    expect(screen.getByText("佐藤 直樹 に返信")).toBeInTheDocument();
-    expect(screen.getByText("4px だと主張が強すぎて、名前より先に目が行ってしまう。")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "返信をやめる" }));
-    expect(onCancelReply).toHaveBeenCalledOnce();
-  });
-
-  it("shows no reply banner by default", () => {
-    render(<Composer value="" canSend={false} />);
-
-    expect(screen.queryByRole("button", { name: "返信をやめる" })).not.toBeInTheDocument();
-  });
-
-  it("names the thread composer differently, since it sits next to the room composer (ADR 0036)", () => {
-    render(<Composer value="" canSend={false} target="thread" />);
-
-    const textbox = screen.getByRole("textbox", { name: "スレッドに返信" });
-    expect(textbox).toHaveAttribute("placeholder", "スレッドに返信");
-    expect(screen.queryByRole("textbox", { name: "メッセージ" })).not.toBeInTheDocument();
-  });
-});

@@ -71,6 +71,13 @@ describe("applyMessageToRoom", () => {
     last_message_seq: 5, last_read_seq: 3, last_user_seq: 5, last_read_user_seq: 3, unread_count: 2,
   });
 
+  it("ignores thread replies: no unread, last message or order change (ADR 0036)", () => {
+    const threadReply = message(6, { user_seq: 5, body: "返信", thread_root_id: "m-5", thread_seq: 1 });
+
+    expect(applyMessageToRoom(base, threadReply, me, true)).toBe(base);
+    expect(applyMessageToRoom(base, { ...threadReply, sender: naoki }, me, true)).toBe(base);
+  });
+
   it("updates the last message and recomputes unread from seq, so a duplicate does not count twice", () => {
     const created = message(6, { sender: miyuki, body: "新着" });
 

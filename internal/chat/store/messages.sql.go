@@ -12,6 +12,31 @@ import (
 	ulid "github.com/oklog/ulid/v2"
 )
 
+const addThreadReply = `-- name: AddThreadReply :one
+UPDATE messages
+   SET last_thread_seq      = last_thread_seq + 1,
+       thread_reply_count   = thread_reply_count + 1,
+       thread_last_reply_at = $1::timestamptz,
+       change_seq           = $2
+ WHERE id = $3
+RETURNING last_thread_seq
+`
+
+type AddThreadReplyParams struct {
+	Now       time.Time
+	ChangeSeq int64
+	ID        ulid.ULID
+}
+
+// 返信を 1 件足したときの親の更新（ADR 0036）。親の行は GetMessageForUpdate でロック済み。
+// 親の change_seq も進め、返信数の変化を after_change_seq の同期に載せる。RETURNING の last_thread_seq が返信の thread_seq になる。
+func (q *Queries) AddThreadReply(ctx context.Context, arg AddThreadReplyParams) (int64, error) {
+	row := q.db.QueryRow(ctx, addThreadReply, arg.Now, arg.ChangeSeq, arg.ID)
+	var last_thread_seq int64
+	err := row.Scan(&last_thread_seq)
+	return last_thread_seq, err
+}
+
 const advanceLastReadSeq = `-- name: AdvanceLastReadSeq :one
 UPDATE room_members rm
    SET last_read_seq = GREATEST(rm.last_read_seq, LEAST($1::bigint, r.last_message_seq)),
@@ -59,26 +84,105 @@ func (q *Queries) AdvanceLastReadSeq(ctx context.Context, arg AdvanceLastReadSeq
 	return i, err
 }
 
+const advanceThreadRead = `-- name: AdvanceThreadRead :one
+UPDATE thread_members tm
+   SET last_read_thread_seq = GREATEST(tm.last_read_thread_seq, COALESCE((
+           SELECT m.thread_seq
+             FROM messages m
+            WHERE m.thread_root_id = tm.thread_root_id
+              AND m.seq <= $1::bigint
+            ORDER BY m.seq DESC
+            LIMIT 1), 0))
+  FROM messages r
+ WHERE r.id = tm.thread_root_id
+   AND tm.thread_root_id = $2
+   AND tm.user_id = $3
+RETURNING tm.last_read_thread_seq, r.last_thread_seq
+`
+
+type AdvanceThreadReadParams struct {
+	Seq          int64
+	ThreadRootID ulid.ULID
+	UserID       ulid.ULID
+}
+
+type AdvanceThreadReadRow struct {
+	LastReadThreadSeq int64
+	LastThreadSeq     int64
+}
+
+// POST /rooms/{id}/threads/{rootID}/read。seq を受け取り、その seq 以下で最後の返信の thread_seq まで既読を進める（後退させない）。
+// チャンネルの既読と同じく、seq と thread_seq の取り違えを API に持ち込まない（ADR 0033 / 0036）。参加していなければ行を返さない。
+func (q *Queries) AdvanceThreadRead(ctx context.Context, arg AdvanceThreadReadParams) (AdvanceThreadReadRow, error) {
+	row := q.db.QueryRow(ctx, advanceThreadRead, arg.Seq, arg.ThreadRootID, arg.UserID)
+	var i AdvanceThreadReadRow
+	err := row.Scan(&i.LastReadThreadSeq, &i.LastThreadSeq)
+	return i, err
+}
+
+const advanceThreadReadToThreadSeq = `-- name: AdvanceThreadReadToThreadSeq :exec
+UPDATE thread_members
+   SET last_read_thread_seq = GREATEST(last_read_thread_seq, $1::bigint)
+ WHERE thread_root_id = $2
+   AND user_id = $3
+`
+
+type AdvanceThreadReadToThreadSeqParams struct {
+	ThreadSeq    int64
+	ThreadRootID ulid.ULID
+	UserID       ulid.ULID
+}
+
+// 自分の返信の送信で、自分の既読位置をその返信まで進める（後退させない）。
+func (q *Queries) AdvanceThreadReadToThreadSeq(ctx context.Context, arg AdvanceThreadReadToThreadSeqParams) error {
+	_, err := q.db.Exec(ctx, advanceThreadReadToThreadSeq, arg.ThreadSeq, arg.ThreadRootID, arg.UserID)
+	return err
+}
+
+const countUnreadThreads = `-- name: CountUnreadThreads :one
+SELECT count(*)
+  FROM thread_members tm
+  JOIN messages m ON m.id = tm.thread_root_id
+  JOIN rooms r ON r.id = tm.room_id
+ WHERE tm.user_id = $1
+   AND r.workspace_id = $2
+   AND m.last_thread_seq > tm.last_read_thread_seq
+`
+
+type CountUnreadThreadsParams struct {
+	UserID      ulid.ULID
+	WorkspaceID ulid.ULID
+}
+
+// 未読の返信がある参加中のスレッドの数（サイドバーの「スレッド」のバッジ。ADR 0036）。
+func (q *Queries) CountUnreadThreads(ctx context.Context, arg CountUnreadThreadsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUnreadThreads, arg.UserID, arg.WorkspaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createMessage = `-- name: CreateMessage :exec
-INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, reply_to_id, created_at)
+INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, created_at)
 VALUES ($1, $2, $3, $4, $5, $6,
-        $7, $8, $9, $10::timestamptz)
+        $7, $8, $9, $10, $11::timestamptz)
 `
 
 type CreateMessageParams struct {
-	ID          ulid.ULID
-	RoomID      ulid.ULID
-	Seq         int64
-	ChangeSeq   int64
-	UserSeq     int64
-	SenderID    ulid.ULID
-	ClientMsgID ulid.ULID
-	Body        string
-	ReplyToID   *ulid.ULID
-	Now         time.Time
+	ID           ulid.ULID
+	RoomID       ulid.ULID
+	Seq          int64
+	ChangeSeq    int64
+	UserSeq      int64
+	SenderID     ulid.ULID
+	ClientMsgID  ulid.ULID
+	Body         string
+	ThreadRootID *ulid.ULID
+	ThreadSeq    *int64
+	Now          time.Time
 }
 
-// 返信先が別のルームのメッセージなら、複合 FK（messages_reply_to_fkey）の違反になる。
+// スレッドの返信なら thread_root_id と thread_seq を入れる（ADR 0036）。親は呼び出し側でロックして確かめてある。
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) error {
 	_, err := q.db.Exec(ctx, createMessage,
 		arg.ID,
@@ -89,7 +193,8 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.SenderID,
 		arg.ClientMsgID,
 		arg.Body,
-		arg.ReplyToID,
+		arg.ThreadRootID,
+		arg.ThreadSeq,
 		arg.Now,
 	)
 	return err
@@ -133,8 +238,41 @@ func (q *Queries) CreateSystemMessage(ctx context.Context, arg CreateSystemMessa
 	return err
 }
 
+const followThread = `-- name: FollowThread :execrows
+INSERT INTO thread_members (room_id, thread_root_id, user_id, last_read_thread_seq, created_at)
+SELECT rm.room_id, $1, rm.user_id, $2, $3::timestamptz
+  FROM room_members rm
+ WHERE rm.room_id = $4
+   AND rm.user_id = $5
+ON CONFLICT (thread_root_id, user_id) DO NOTHING
+`
+
+type FollowThreadParams struct {
+	ThreadRootID      ulid.ULID
+	LastReadThreadSeq int64
+	Now               time.Time
+	RoomID            ulid.ULID
+	UserID            ulid.ULID
+}
+
+// スレッドに参加する。ルームのメンバーでなければ何もしない（thread_members は room_members への FK を持つ）。
+// すでに参加していれば何もせず 0 を返す。
+func (q *Queries) FollowThread(ctx context.Context, arg FollowThreadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, followThread,
+		arg.ThreadRootID,
+		arg.LastReadThreadSeq,
+		arg.Now,
+		arg.RoomID,
+		arg.UserID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getMessageForUpdate = `-- name: GetMessageForUpdate :one
-SELECT id, room_id, seq, sender_id, client_msg_id, body, reply_to_id, created_at, edited_at, deleted_at, change_seq, kind, system_type, system_data, user_seq
+SELECT id, room_id, seq, sender_id, client_msg_id, body, created_at, edited_at, deleted_at, change_seq, kind, system_type, system_data, user_seq, thread_root_id, thread_seq, last_thread_seq, thread_reply_count, thread_last_reply_at
   FROM messages
  WHERE room_id = $1
    AND id = $2
@@ -147,8 +285,9 @@ type GetMessageForUpdateParams struct {
 }
 
 // 編集・削除の対象を行ロックする。room_id を条件に含め、別のルームの ID では見つからないようにする。
-// FOR UPDATE ではなく FOR NO KEY UPDATE にする（ADR 0014）。返信の送信は rooms の行ロックを持ったまま返信先に FOR KEY SHARE を取るので、
-// FOR UPDATE で持ったまま rooms を待つ編集・削除とデッドロックする。本文と削除時刻の UPDATE はキーを変えないので、この強さで足りる。
+// FOR UPDATE ではなく FOR NO KEY UPDATE にする（ADR 0014）。返信の INSERT は rooms の行ロックを持ったまま親に FOR KEY SHARE（複合 FK）を取るので、
+// FOR UPDATE で持ったまま rooms を待つ編集・削除とデッドロックする。本文・削除時刻・スレッドの集計の UPDATE はキーを変えないので、この強さで足りる。
+// スレッドの返信の送信は、親をこのクエリでロックしてから rooms をロックする（編集と同じ「メッセージ → rooms」の順。ADR 0036）。
 func (q *Queries) GetMessageForUpdate(ctx context.Context, arg GetMessageForUpdateParams) (Message, error) {
 	row := q.db.QueryRow(ctx, getMessageForUpdate, arg.RoomID, arg.ID)
 	var i Message
@@ -159,7 +298,6 @@ func (q *Queries) GetMessageForUpdate(ctx context.Context, arg GetMessageForUpda
 		&i.SenderID,
 		&i.ClientMsgID,
 		&i.Body,
-		&i.ReplyToID,
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
@@ -168,6 +306,11 @@ func (q *Queries) GetMessageForUpdate(ctx context.Context, arg GetMessageForUpda
 		&i.SystemType,
 		&i.SystemData,
 		&i.UserSeq,
+		&i.ThreadRootID,
+		&i.ThreadSeq,
+		&i.LastThreadSeq,
+		&i.ThreadReplyCount,
+		&i.ThreadLastReplyAt,
 	)
 	return i, err
 }
@@ -215,15 +358,13 @@ func (q *Queries) GetMessageSenderID(ctx context.Context, arg GetMessageSenderID
 }
 
 const getMessageView = `-- name: GetMessageView :one
-SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body, m.reply_to_id,
-       m.kind, m.system_type, m.system_data, m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name,
-       p.seq AS reply_seq, p.sender_id AS reply_sender_id, p.body AS reply_body, p.deleted_at AS reply_deleted_at,
-       pu.handle AS reply_sender_handle, pu.display_name AS reply_sender_display_name
+SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
+       m.kind, m.system_type, m.system_data,
+       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.created_at, m.edited_at, m.deleted_at,
+       u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
-  LEFT JOIN messages p ON p.room_id = m.room_id AND p.id = m.reply_to_id
-  LEFT JOIN users pu ON pu.id = p.sender_id
  WHERE m.room_id = $1
    AND m.id = $2
 `
@@ -234,29 +375,27 @@ type GetMessageViewParams struct {
 }
 
 type GetMessageViewRow struct {
-	ID                     ulid.ULID
-	RoomID                 ulid.ULID
-	Seq                    int64
-	ChangeSeq              int64
-	UserSeq                int64
-	SenderID               ulid.ULID
-	ClientMsgID            ulid.ULID
-	Body                   string
-	ReplyToID              *ulid.ULID
-	Kind                   string
-	SystemType             *string
-	SystemData             []byte
-	CreatedAt              time.Time
-	EditedAt               *time.Time
-	DeletedAt              *time.Time
-	SenderHandle           string
-	SenderDisplayName      string
-	ReplySeq               *int64
-	ReplySenderID          *ulid.ULID
-	ReplyBody              *string
-	ReplyDeletedAt         *time.Time
-	ReplySenderHandle      *string
-	ReplySenderDisplayName *string
+	ID                ulid.ULID
+	RoomID            ulid.ULID
+	Seq               int64
+	ChangeSeq         int64
+	UserSeq           int64
+	SenderID          ulid.ULID
+	ClientMsgID       ulid.ULID
+	Body              string
+	Kind              string
+	SystemType        *string
+	SystemData        []byte
+	ThreadRootID      *ulid.ULID
+	ThreadSeq         *int64
+	LastThreadSeq     int64
+	ThreadReplyCount  int32
+	ThreadLastReplyAt *time.Time
+	CreatedAt         time.Time
+	EditedAt          *time.Time
+	DeletedAt         *time.Time
+	SenderHandle      string
+	SenderDisplayName string
 }
 
 func (q *Queries) GetMessageView(ctx context.Context, arg GetMessageViewParams) (GetMessageViewRow, error) {
@@ -271,36 +410,141 @@ func (q *Queries) GetMessageView(ctx context.Context, arg GetMessageViewParams) 
 		&i.SenderID,
 		&i.ClientMsgID,
 		&i.Body,
-		&i.ReplyToID,
 		&i.Kind,
 		&i.SystemType,
 		&i.SystemData,
+		&i.ThreadRootID,
+		&i.ThreadSeq,
+		&i.LastThreadSeq,
+		&i.ThreadReplyCount,
+		&i.ThreadLastReplyAt,
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
 		&i.SenderHandle,
 		&i.SenderDisplayName,
-		&i.ReplySeq,
-		&i.ReplySenderID,
-		&i.ReplyBody,
-		&i.ReplyDeletedAt,
-		&i.ReplySenderHandle,
-		&i.ReplySenderDisplayName,
 	)
 	return i, err
 }
 
-const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body, m.reply_to_id,
-       m.kind, m.system_type, m.system_data, m.created_at, m.edited_at, m.deleted_at,
+const getThreadMembership = `-- name: GetThreadMembership :one
+SELECT last_read_thread_seq
+  FROM thread_members
+ WHERE thread_root_id = $1
+   AND user_id = $2
+`
+
+type GetThreadMembershipParams struct {
+	ThreadRootID ulid.ULID
+	UserID       ulid.ULID
+}
+
+func (q *Queries) GetThreadMembership(ctx context.Context, arg GetThreadMembershipParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getThreadMembership, arg.ThreadRootID, arg.UserID)
+	var last_read_thread_seq int64
+	err := row.Scan(&last_read_thread_seq)
+	return last_read_thread_seq, err
+}
+
+const listFollowedThreads = `-- name: ListFollowedThreads :many
+SELECT m.id, m.room_id, m.seq, m.sender_id, m.body, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.created_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name,
-       p.seq AS reply_seq, p.sender_id AS reply_sender_id, p.body AS reply_body, p.deleted_at AS reply_deleted_at,
-       pu.handle AS reply_sender_handle, pu.display_name AS reply_sender_display_name
+       r.kind AS room_kind, r.name AS room_name, r.dm_key AS room_dm_key,
+       tm.last_read_thread_seq
+  FROM thread_members tm
+  JOIN messages m ON m.id = tm.thread_root_id
+  JOIN rooms r ON r.id = tm.room_id
+  JOIN users u ON u.id = m.sender_id
+ WHERE tm.user_id = $1
+   AND r.workspace_id = $2
+   AND ($3::uuid IS NULL OR (m.thread_last_reply_at, m.id) < (
+           SELECT a.thread_last_reply_at, a.id FROM messages a WHERE a.id = $3::uuid))
+ ORDER BY m.thread_last_reply_at DESC, m.id DESC
+ LIMIT $4
+`
+
+type ListFollowedThreadsParams struct {
+	UserID      ulid.ULID
+	WorkspaceID ulid.ULID
+	After       *ulid.ULID
+	MaxRows     int32
+}
+
+type ListFollowedThreadsRow struct {
+	ID                ulid.ULID
+	RoomID            ulid.ULID
+	Seq               int64
+	SenderID          ulid.ULID
+	Body              string
+	LastThreadSeq     int64
+	ThreadReplyCount  int32
+	ThreadLastReplyAt *time.Time
+	CreatedAt         time.Time
+	DeletedAt         *time.Time
+	SenderHandle      string
+	SenderDisplayName string
+	RoomKind          string
+	RoomName          *string
+	RoomDmKey         *string
+	LastReadThreadSeq int64
+}
+
+// 参加しているスレッドを、最後の返信が新しい順に max_rows 件（ADR 0036）。after は前のページの最後の親の ID。
+// 並びの (thread_last_reply_at, id) は、返信のたびに変わる。ページをまたいだ重複や取りこぼしは、件数が少ない前提で受け入れる。
+// 参加の行は room_members への FK があるので、読めないルームのスレッドは含まれない。
+func (q *Queries) ListFollowedThreads(ctx context.Context, arg ListFollowedThreadsParams) ([]ListFollowedThreadsRow, error) {
+	rows, err := q.db.Query(ctx, listFollowedThreads,
+		arg.UserID,
+		arg.WorkspaceID,
+		arg.After,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListFollowedThreadsRow{}
+	for rows.Next() {
+		var i ListFollowedThreadsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Seq,
+			&i.SenderID,
+			&i.Body,
+			&i.LastThreadSeq,
+			&i.ThreadReplyCount,
+			&i.ThreadLastReplyAt,
+			&i.CreatedAt,
+			&i.DeletedAt,
+			&i.SenderHandle,
+			&i.SenderDisplayName,
+			&i.RoomKind,
+			&i.RoomName,
+			&i.RoomDmKey,
+			&i.LastReadThreadSeq,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMessagesAfter = `-- name: ListMessagesAfter :many
+SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
+       m.kind, m.system_type, m.system_data,
+       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.created_at, m.edited_at, m.deleted_at,
+       u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
-  LEFT JOIN messages p ON p.room_id = m.room_id AND p.id = m.reply_to_id
-  LEFT JOIN users pu ON pu.id = p.sender_id
  WHERE m.room_id = $1
+   AND m.thread_root_id IS NULL
    AND m.seq > $2
  ORDER BY m.seq
  LIMIT $3
@@ -313,33 +557,31 @@ type ListMessagesAfterParams struct {
 }
 
 type ListMessagesAfterRow struct {
-	ID                     ulid.ULID
-	RoomID                 ulid.ULID
-	Seq                    int64
-	ChangeSeq              int64
-	UserSeq                int64
-	SenderID               ulid.ULID
-	ClientMsgID            ulid.ULID
-	Body                   string
-	ReplyToID              *ulid.ULID
-	Kind                   string
-	SystemType             *string
-	SystemData             []byte
-	CreatedAt              time.Time
-	EditedAt               *time.Time
-	DeletedAt              *time.Time
-	SenderHandle           string
-	SenderDisplayName      string
-	ReplySeq               *int64
-	ReplySenderID          *ulid.ULID
-	ReplyBody              *string
-	ReplyDeletedAt         *time.Time
-	ReplySenderHandle      *string
-	ReplySenderDisplayName *string
+	ID                ulid.ULID
+	RoomID            ulid.ULID
+	Seq               int64
+	ChangeSeq         int64
+	UserSeq           int64
+	SenderID          ulid.ULID
+	ClientMsgID       ulid.ULID
+	Body              string
+	Kind              string
+	SystemType        *string
+	SystemData        []byte
+	ThreadRootID      *ulid.ULID
+	ThreadSeq         *int64
+	LastThreadSeq     int64
+	ThreadReplyCount  int32
+	ThreadLastReplyAt *time.Time
+	CreatedAt         time.Time
+	EditedAt          *time.Time
+	DeletedAt         *time.Time
+	SenderHandle      string
+	SenderDisplayName string
 }
 
-// seq が after_seq より大きいメッセージを、古い順に max_rows 件。再接続の差分取得（ADR 0004）。
-// 同じインデックスを逆方向に走査する。
+// チャンネルのタイムラインで、seq が after_seq より大きいメッセージを、古い順に max_rows 件。
+// 同じ部分インデックスを逆方向に走査する。
 func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterParams) ([]ListMessagesAfterRow, error) {
 	rows, err := q.db.Query(ctx, listMessagesAfter, arg.RoomID, arg.AfterSeq, arg.MaxRows)
 	if err != nil {
@@ -358,21 +600,19 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.SenderID,
 			&i.ClientMsgID,
 			&i.Body,
-			&i.ReplyToID,
 			&i.Kind,
 			&i.SystemType,
 			&i.SystemData,
+			&i.ThreadRootID,
+			&i.ThreadSeq,
+			&i.LastThreadSeq,
+			&i.ThreadReplyCount,
+			&i.ThreadLastReplyAt,
 			&i.CreatedAt,
 			&i.EditedAt,
 			&i.DeletedAt,
 			&i.SenderHandle,
 			&i.SenderDisplayName,
-			&i.ReplySeq,
-			&i.ReplySenderID,
-			&i.ReplyBody,
-			&i.ReplyDeletedAt,
-			&i.ReplySenderHandle,
-			&i.ReplySenderDisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -385,16 +625,15 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesBefore = `-- name: ListMessagesBefore :many
-SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body, m.reply_to_id,
-       m.kind, m.system_type, m.system_data, m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name,
-       p.seq AS reply_seq, p.sender_id AS reply_sender_id, p.body AS reply_body, p.deleted_at AS reply_deleted_at,
-       pu.handle AS reply_sender_handle, pu.display_name AS reply_sender_display_name
+SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
+       m.kind, m.system_type, m.system_data,
+       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.created_at, m.edited_at, m.deleted_at,
+       u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
-  LEFT JOIN messages p ON p.room_id = m.room_id AND p.id = m.reply_to_id
-  LEFT JOIN users pu ON pu.id = p.sender_id
  WHERE m.room_id = $1
+   AND m.thread_root_id IS NULL
    AND m.seq < $2
  ORDER BY m.seq DESC
  LIMIT $3
@@ -407,34 +646,33 @@ type ListMessagesBeforeParams struct {
 }
 
 type ListMessagesBeforeRow struct {
-	ID                     ulid.ULID
-	RoomID                 ulid.ULID
-	Seq                    int64
-	ChangeSeq              int64
-	UserSeq                int64
-	SenderID               ulid.ULID
-	ClientMsgID            ulid.ULID
-	Body                   string
-	ReplyToID              *ulid.ULID
-	Kind                   string
-	SystemType             *string
-	SystemData             []byte
-	CreatedAt              time.Time
-	EditedAt               *time.Time
-	DeletedAt              *time.Time
-	SenderHandle           string
-	SenderDisplayName      string
-	ReplySeq               *int64
-	ReplySenderID          *ulid.ULID
-	ReplyBody              *string
-	ReplyDeletedAt         *time.Time
-	ReplySenderHandle      *string
-	ReplySenderDisplayName *string
+	ID                ulid.ULID
+	RoomID            ulid.ULID
+	Seq               int64
+	ChangeSeq         int64
+	UserSeq           int64
+	SenderID          ulid.ULID
+	ClientMsgID       ulid.ULID
+	Body              string
+	Kind              string
+	SystemType        *string
+	SystemData        []byte
+	ThreadRootID      *ulid.ULID
+	ThreadSeq         *int64
+	LastThreadSeq     int64
+	ThreadReplyCount  int32
+	ThreadLastReplyAt *time.Time
+	CreatedAt         time.Time
+	EditedAt          *time.Time
+	DeletedAt         *time.Time
+	SenderHandle      string
+	SenderDisplayName string
 }
 
-// seq が before_seq より小さいメッセージを、新しい順に max_rows 件。最新のページは before_seq に最大値を渡す。
+// チャンネルのタイムライン（スレッドの返信を除く。ADR 0036）で、seq が before_seq より小さいメッセージを、新しい順に max_rows 件。
+// 最新のページは before_seq に最大値を渡す。
 // 「before_seq が NULL なら条件なし」とは書かない。汎用の実行計画でインデックスの範囲条件にならず、ルームの全件を走査しうるため。
-// インデックス messages_room_id_seq_idx (room_id, seq DESC) を順方向に走査する。
+// 部分インデックス messages_room_id_channel_seq_idx (room_id, seq DESC) WHERE thread_root_id IS NULL を順方向に走査する。
 func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBeforeParams) ([]ListMessagesBeforeRow, error) {
 	rows, err := q.db.Query(ctx, listMessagesBefore, arg.RoomID, arg.BeforeSeq, arg.MaxRows)
 	if err != nil {
@@ -453,21 +691,19 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.SenderID,
 			&i.ClientMsgID,
 			&i.Body,
-			&i.ReplyToID,
 			&i.Kind,
 			&i.SystemType,
 			&i.SystemData,
+			&i.ThreadRootID,
+			&i.ThreadSeq,
+			&i.LastThreadSeq,
+			&i.ThreadReplyCount,
+			&i.ThreadLastReplyAt,
 			&i.CreatedAt,
 			&i.EditedAt,
 			&i.DeletedAt,
 			&i.SenderHandle,
 			&i.SenderDisplayName,
-			&i.ReplySeq,
-			&i.ReplySenderID,
-			&i.ReplyBody,
-			&i.ReplyDeletedAt,
-			&i.ReplySenderHandle,
-			&i.ReplySenderDisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -480,15 +716,13 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 }
 
 const listMessagesChangedAfter = `-- name: ListMessagesChangedAfter :many
-SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body, m.reply_to_id,
-       m.kind, m.system_type, m.system_data, m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name,
-       p.seq AS reply_seq, p.sender_id AS reply_sender_id, p.body AS reply_body, p.deleted_at AS reply_deleted_at,
-       pu.handle AS reply_sender_handle, pu.display_name AS reply_sender_display_name
+SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
+       m.kind, m.system_type, m.system_data,
+       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.created_at, m.edited_at, m.deleted_at,
+       u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
-  LEFT JOIN messages p ON p.room_id = m.room_id AND p.id = m.reply_to_id
-  LEFT JOIN users pu ON pu.id = p.sender_id
  WHERE m.room_id = $1
    AND m.change_seq > $2
  ORDER BY m.change_seq
@@ -502,33 +736,32 @@ type ListMessagesChangedAfterParams struct {
 }
 
 type ListMessagesChangedAfterRow struct {
-	ID                     ulid.ULID
-	RoomID                 ulid.ULID
-	Seq                    int64
-	ChangeSeq              int64
-	UserSeq                int64
-	SenderID               ulid.ULID
-	ClientMsgID            ulid.ULID
-	Body                   string
-	ReplyToID              *ulid.ULID
-	Kind                   string
-	SystemType             *string
-	SystemData             []byte
-	CreatedAt              time.Time
-	EditedAt               *time.Time
-	DeletedAt              *time.Time
-	SenderHandle           string
-	SenderDisplayName      string
-	ReplySeq               *int64
-	ReplySenderID          *ulid.ULID
-	ReplyBody              *string
-	ReplyDeletedAt         *time.Time
-	ReplySenderHandle      *string
-	ReplySenderDisplayName *string
+	ID                ulid.ULID
+	RoomID            ulid.ULID
+	Seq               int64
+	ChangeSeq         int64
+	UserSeq           int64
+	SenderID          ulid.ULID
+	ClientMsgID       ulid.ULID
+	Body              string
+	Kind              string
+	SystemType        *string
+	SystemData        []byte
+	ThreadRootID      *ulid.ULID
+	ThreadSeq         *int64
+	LastThreadSeq     int64
+	ThreadReplyCount  int32
+	ThreadLastReplyAt *time.Time
+	CreatedAt         time.Time
+	EditedAt          *time.Time
+	DeletedAt         *time.Time
+	SenderHandle      string
+	SenderDisplayName string
 }
 
 // change_seq が after_change_seq より大きいメッセージ（作成・編集・削除）を、change_seq の古い順に max_rows 件。
 // 再接続の差分取得（ADR 0014）。インデックス messages_room_id_change_seq_idx を順方向に走査する。
+// スレッドの返信と、返信数が変わった親も含める。同期の経路はルームごとに 1 本（ADR 0036）。
 func (q *Queries) ListMessagesChangedAfter(ctx context.Context, arg ListMessagesChangedAfterParams) ([]ListMessagesChangedAfterRow, error) {
 	rows, err := q.db.Query(ctx, listMessagesChangedAfter, arg.RoomID, arg.AfterChangeSeq, arg.MaxRows)
 	if err != nil {
@@ -547,21 +780,194 @@ func (q *Queries) ListMessagesChangedAfter(ctx context.Context, arg ListMessages
 			&i.SenderID,
 			&i.ClientMsgID,
 			&i.Body,
-			&i.ReplyToID,
 			&i.Kind,
 			&i.SystemType,
 			&i.SystemData,
+			&i.ThreadRootID,
+			&i.ThreadSeq,
+			&i.LastThreadSeq,
+			&i.ThreadReplyCount,
+			&i.ThreadLastReplyAt,
 			&i.CreatedAt,
 			&i.EditedAt,
 			&i.DeletedAt,
 			&i.SenderHandle,
 			&i.SenderDisplayName,
-			&i.ReplySeq,
-			&i.ReplySenderID,
-			&i.ReplyBody,
-			&i.ReplyDeletedAt,
-			&i.ReplySenderHandle,
-			&i.ReplySenderDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listThreadMessagesAfter = `-- name: ListThreadMessagesAfter :many
+SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
+       m.kind, m.system_type, m.system_data,
+       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.created_at, m.edited_at, m.deleted_at,
+       u.handle AS sender_handle, u.display_name AS sender_display_name
+  FROM messages m
+  JOIN users u ON u.id = m.sender_id
+ WHERE m.thread_root_id = $1
+   AND m.seq > $2
+ ORDER BY m.seq
+ LIMIT $3
+`
+
+type ListThreadMessagesAfterParams struct {
+	ThreadRootID *ulid.ULID
+	AfterSeq     int64
+	MaxRows      int32
+}
+
+type ListThreadMessagesAfterRow struct {
+	ID                ulid.ULID
+	RoomID            ulid.ULID
+	Seq               int64
+	ChangeSeq         int64
+	UserSeq           int64
+	SenderID          ulid.ULID
+	ClientMsgID       ulid.ULID
+	Body              string
+	Kind              string
+	SystemType        *string
+	SystemData        []byte
+	ThreadRootID      *ulid.ULID
+	ThreadSeq         *int64
+	LastThreadSeq     int64
+	ThreadReplyCount  int32
+	ThreadLastReplyAt *time.Time
+	CreatedAt         time.Time
+	EditedAt          *time.Time
+	DeletedAt         *time.Time
+	SenderHandle      string
+	SenderDisplayName string
+}
+
+// スレッドの返信で、seq が after_seq より大きいものを古い順に max_rows 件。
+func (q *Queries) ListThreadMessagesAfter(ctx context.Context, arg ListThreadMessagesAfterParams) ([]ListThreadMessagesAfterRow, error) {
+	rows, err := q.db.Query(ctx, listThreadMessagesAfter, arg.ThreadRootID, arg.AfterSeq, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListThreadMessagesAfterRow{}
+	for rows.Next() {
+		var i ListThreadMessagesAfterRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Seq,
+			&i.ChangeSeq,
+			&i.UserSeq,
+			&i.SenderID,
+			&i.ClientMsgID,
+			&i.Body,
+			&i.Kind,
+			&i.SystemType,
+			&i.SystemData,
+			&i.ThreadRootID,
+			&i.ThreadSeq,
+			&i.LastThreadSeq,
+			&i.ThreadReplyCount,
+			&i.ThreadLastReplyAt,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.SenderHandle,
+			&i.SenderDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listThreadMessagesBefore = `-- name: ListThreadMessagesBefore :many
+SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
+       m.kind, m.system_type, m.system_data,
+       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.created_at, m.edited_at, m.deleted_at,
+       u.handle AS sender_handle, u.display_name AS sender_display_name
+  FROM messages m
+  JOIN users u ON u.id = m.sender_id
+ WHERE m.thread_root_id = $1
+   AND m.seq < $2
+ ORDER BY m.seq DESC
+ LIMIT $3
+`
+
+type ListThreadMessagesBeforeParams struct {
+	ThreadRootID *ulid.ULID
+	BeforeSeq    int64
+	MaxRows      int32
+}
+
+type ListThreadMessagesBeforeRow struct {
+	ID                ulid.ULID
+	RoomID            ulid.ULID
+	Seq               int64
+	ChangeSeq         int64
+	UserSeq           int64
+	SenderID          ulid.ULID
+	ClientMsgID       ulid.ULID
+	Body              string
+	Kind              string
+	SystemType        *string
+	SystemData        []byte
+	ThreadRootID      *ulid.ULID
+	ThreadSeq         *int64
+	LastThreadSeq     int64
+	ThreadReplyCount  int32
+	ThreadLastReplyAt *time.Time
+	CreatedAt         time.Time
+	EditedAt          *time.Time
+	DeletedAt         *time.Time
+	SenderHandle      string
+	SenderDisplayName string
+}
+
+// スレッドの返信で、seq が before_seq より小さいものを新しい順に max_rows 件（ADR 0036）。並びはルームの seq。
+// 部分インデックス messages_thread_root_id_seq_idx を逆方向に走査する。親がこのルームにあることは呼び出し側で確かめてある。
+func (q *Queries) ListThreadMessagesBefore(ctx context.Context, arg ListThreadMessagesBeforeParams) ([]ListThreadMessagesBeforeRow, error) {
+	rows, err := q.db.Query(ctx, listThreadMessagesBefore, arg.ThreadRootID, arg.BeforeSeq, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListThreadMessagesBeforeRow{}
+	for rows.Next() {
+		var i ListThreadMessagesBeforeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Seq,
+			&i.ChangeSeq,
+			&i.UserSeq,
+			&i.SenderID,
+			&i.ClientMsgID,
+			&i.Body,
+			&i.Kind,
+			&i.SystemType,
+			&i.SystemData,
+			&i.ThreadRootID,
+			&i.ThreadSeq,
+			&i.LastThreadSeq,
+			&i.ThreadReplyCount,
+			&i.ThreadLastReplyAt,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.SenderHandle,
+			&i.SenderDisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -590,8 +996,9 @@ type LockRoomMembershipsParams struct {
 
 // メッセージ（ADR 0002 / 0004 / 0012）。
 //
-// 一覧と 1 件の取得は、送信者と返信先のプレビューを同じ文で JOIN する（N+1 にしない）。
-// sqlc は SELECT の列リストを共有できないので、GetMessageView / ListMessagesBefore / ListMessagesAfter / ListMessagesChangedAfter の列は揃えて書く。
+// 一覧と 1 件の取得は、送信者を同じ文で JOIN する（N+1 にしない）。
+// sqlc は SELECT の列リストを共有できないので、GetMessageView / ListMessagesBefore / ListMessagesAfter / ListMessagesChangedAfter /
+// ListThreadMessagesBefore / ListThreadMessagesAfter の列は揃えて書く。
 // user_ids のうちルームのメンバーである人の行を、FOR NO KEY UPDATE でロックして返す（ADR 0012）。
 // 送信は同じトランザクションで last_read_seq を更新するので、その UPDATE と同じ強さのロックを先に取る。
 // FOR SHARE で読んでから UPDATE すると、同じ人の並行した送信が互いの共有ロックを待ってデッドロックする。
@@ -613,6 +1020,24 @@ func (q *Queries) LockRoomMemberships(ctx context.Context, arg LockRoomMembershi
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeThreadReply = `-- name: RemoveThreadReply :exec
+UPDATE messages
+   SET thread_reply_count = thread_reply_count - 1,
+       change_seq         = $1
+ WHERE id = $2
+`
+
+type RemoveThreadReplyParams struct {
+	ChangeSeq int64
+	ID        ulid.ULID
+}
+
+// 返信を削除したときの親の更新。表示用の返信数だけを減らし、未読のカウンタ（last_thread_seq）は減らさない。
+func (q *Queries) RemoveThreadReply(ctx context.Context, arg RemoveThreadReplyParams) error {
+	_, err := q.db.Exec(ctx, removeThreadReply, arg.ChangeSeq, arg.ID)
+	return err
 }
 
 const softDeleteMessage = `-- name: SoftDeleteMessage :exec

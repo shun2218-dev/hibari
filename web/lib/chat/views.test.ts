@@ -140,17 +140,26 @@ describe("toTimelineItems", () => {
         message(2, { body: "b", created_at: "2026-09-13T01:04:59Z" }),
         message(3, { body: "c", created_at: "2026-09-13T01:10:00Z" }),
         message(4, { body: "d", created_at: "2026-09-13T01:10:30Z", sender: naoki }),
-        message(5, {
-          body: "e",
-          created_at: "2026-09-13T01:10:40Z",
-          sender: naoki,
-          reply_to: { id: "m-1", seq: 1, sender: miyuki, body: "a", deleted: false },
-        }),
+        message(5, { body: "e", created_at: "2026-09-13T01:10:40Z", sender: naoki }),
       ],
       { unreadAfterSeq: null, timeZone: tz },
     );
 
-    expect(outline(items)).toEqual(["[2026年9月13日]", "a", "+b", "c", "d", "e"]);
+    expect(outline(items)).toEqual(["[2026年9月13日]", "a", "+b", "c", "d", "+e"]);
+  });
+
+  it("leaves thread replies out of the channel timeline (ADR 0036)", () => {
+    const items = toTimelineItems(
+      [
+        message(1, { body: "親" }),
+        message(2, { body: "返信", thread_root_id: "m-1", thread_seq: 1 }),
+        message(3, { body: "チャンネル", sender: naoki }),
+      ],
+      { unreadAfterSeq: 1, timeZone: tz },
+    );
+
+    // 返信（seq 2）は出さず、未読の区切りは次のチャンネルの発言の前に出す
+    expect(outline(items)).toEqual(["[2026年9月13日]", "親", "[unread]", "チャンネル"]);
   });
 
   it("puts the unread divider before the first message after the last read seq and breaks the group there", () => {
@@ -193,14 +202,13 @@ describe("toTimelineItems", () => {
     ]);
   });
 
-  it("maps deleted, edited, replies and attachments", () => {
+  it("maps deleted, edited and attachments", () => {
     const items = toTimelineItems(
       [
         message(1, { deleted_at: "2026-09-13T01:05:00Z", body: "" }),
         message(2, {
           sender: naoki,
           edited_at: "2026-09-13T01:06:00Z",
-          reply_to: { id: "m-1", seq: 1, sender: miyuki, body: "", deleted: true },
           attachments: [
             { id: "a1", file_name: "mock.png", content_type: "image/png", size_bytes: 10, width: 260, height: 160 },
             { id: "a2", file_name: "scale.pdf", content_type: "application/pdf", size_bytes: 253_952, width: null, height: null },
@@ -214,7 +222,6 @@ describe("toTimelineItems", () => {
     expect(deleted).toMatchObject({ key: "m-1", deleted: true, status: "sent", timeLabel: "10:00" });
     expect(edited).toMatchObject({
       edited: true,
-      replyTo: { senderName: "高橋 みゆき", body: "このメッセージは削除されました" },
       attachments: [
         { kind: "image", id: "a1", fileName: "mock.png", width: 260, height: 160 },
         { kind: "file", id: "a2", fileName: "scale.pdf", sizeLabel: "248 KB" },
@@ -230,7 +237,6 @@ describe("toTimelineItems", () => {
         {
           clientMsgId: "c-x",
           body: "送信中",
-          replyTo: null,
           attachments: [pdf],
           status: "pending",
           createdAt: "2026-09-13T01:01:00Z",
@@ -238,7 +244,6 @@ describe("toTimelineItems", () => {
         {
           clientMsgId: "c-y",
           body: "失敗",
-          replyTo: { messageId: "m-2", clientMsgId: null, senderName: "高橋 みゆき", body: "b" },
           attachments: [],
           status: "failed",
           createdAt: "2026-09-13T01:02:00Z",
@@ -248,7 +253,7 @@ describe("toTimelineItems", () => {
     });
     const messages = items.flatMap((item) => (item.type === "message" ? [item.message] : []));
 
-    expect(outline(items)).toEqual(["[2026年9月13日]", "a", "[unread]", "b", "送信中", "失敗"]);
+    expect(outline(items)).toEqual(["[2026年9月13日]", "a", "[unread]", "b", "送信中", "+失敗"]);
     expect(messages[2]).toMatchObject({
       key: "c-x",
       status: "pending",
@@ -256,7 +261,7 @@ describe("toTimelineItems", () => {
       timeLabel: "10:01",
       attachments: [{ kind: "file", id: "a2", fileName: "scale.pdf" }],
     });
-    expect(messages[3]).toMatchObject({ key: "c-y", status: "failed", replyTo: { senderName: "高橋 みゆき", body: "b" } });
+    expect(messages[3]).toMatchObject({ key: "c-y", status: "failed" });
   });
 });
 

@@ -63,23 +63,11 @@ export type TimelineState = {
 export type OutgoingMessage = {
   clientMsgId: string;
   body: string;
-  replyTo: OutgoingReply | null;
   /** アップロードを終えた（uploaded の）添付。送信で attachment_ids として付ける（ADR 0013）。 */
   attachments: MessageAttachment[];
   status: "pending" | "failed";
   /** 手元の時刻（ISO 8601）。表示の時刻と日付の区切りにだけ使い、並びには使わない。 */
   createdAt: string;
-};
-
-/**
- * 返信先。確定したメッセージなら messageId、送信中の自分のメッセージなら clientMsgId を持つ。
- * 送信中のメッセージへの返信は、同じルームの送信が順に行われるので、送る時点で返信先は確定している（ADR 0027）。
- */
-export type OutgoingReply = {
-  messageId: string | null;
-  clientMsgId: string | null;
-  senderName: string;
-  body: string;
 };
 
 /** 入力中の人。expiresAt を過ぎたら消す（typing.stopped はない。docs/events.md）。 */
@@ -194,8 +182,6 @@ export function createChatStore(
   // ルームごとの送信の順番（client_msg_id）と、送っている途中のループ
   const sendQueues = new Map<string, string[]>();
   const sendLoops = new Map<string, Promise<void>>();
-  // 確定した自分のメッセージの client_msg_id → ID。送信中のメッセージへの返信を送るときに引く
-  const confirmedIds = new Map<string, string>();
 
   function update(recipe: (s: ChatState) => ChatState) {
     const next = recipe(state);
@@ -532,16 +518,9 @@ export function createChatStore(
   }
 
   async function sendOne(roomId: string, item: OutgoingMessage) {
-    let replyToId: string | undefined;
-    if (item.replyTo) {
-      replyToId = item.replyTo.messageId ?? confirmedIds.get(item.replyTo.clientMsgId ?? "");
-      // 返信先の送信が失敗して取り消された。返信先のないメッセージとしては送らない
-      if (replyToId === undefined) throw new Error("the message being replied to was not sent");
-    }
     const sending = api.sendMessage(roomId, {
       client_msg_id: item.clientMsgId,
       body: item.body,
-      ...(replyToId === undefined ? {} : { reply_to_id: replyToId }),
       ...(item.attachments.length === 0 ? {} : { attachment_ids: item.attachments.map((a) => a.id) }),
     });
     // 待ちきれずに失敗にした後で応答が届いても、確定として扱う（同じ client_msg_id の再送は同じメッセージを返す）
@@ -587,7 +566,6 @@ export function createChatStore(
     const roomId = message.room_id;
     // 自分の送信が確定した（送信の応答か、message.created のどちらか先に届いた方）。楽観的な表示を外す
     if (created && message.sender.id === userId) {
-      confirmedIds.set(message.client_msg_id, message.id);
       patchOutgoing(roomId, (list) =>
         list.some((m) => m.clientMsgId === message.client_msg_id)
           ? list.filter((m) => m.clientMsgId !== message.client_msg_id)
@@ -1211,12 +1189,11 @@ export function createChatStore(
      */
     sendMessage(
       roomId: string,
-      input: { body: string; replyTo?: OutgoingReply | null; attachments?: MessageAttachment[] },
+      input: { body: string; attachments?: MessageAttachment[] },
     ) {
       const item: OutgoingMessage = {
         clientMsgId: ulid(now()),
         body: input.body,
-        replyTo: input.replyTo ?? null,
         attachments: input.attachments ?? [],
         status: "pending",
         createdAt: new Date(now()).toISOString(),
