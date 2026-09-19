@@ -19,7 +19,9 @@ erDiagram
   rooms ||--o{ room_members : "含む"
   rooms ||--o{ messages : "含む"
   users ||--o{ messages : "投稿"
-  messages |o--o{ messages : "返信先"
+  messages |o--o{ messages : "スレッドの親"
+  messages ||--o{ thread_members : "参加者"
+  room_members ||--o{ thread_members : "スレッドに参加"
 
   rooms ||--o{ attachments : "保存先"
   users ||--o{ attachments : "アップロード"
@@ -121,7 +123,9 @@ erDiagram
     uuid created_by FK
     bigint last_message_seq "採番カウンタ兼最新 seq。初期値 0"
     bigint last_change_seq "作成・編集・削除の変更番号のカウンタ。初期値 0（ADR 0014）"
-    timestamptz last_message_at "一覧のソート用に非正規化"
+    bigint last_user_seq "チャンネルの人の発言の数。未読数に使う（ADR 0033 / 0036）"
+    bigint last_channel_seq "チャンネルに出る最後のメッセージの seq。一覧の最終メッセージ用（ADR 0036）"
+    timestamptz last_message_at "一覧のソート用に非正規化。スレッドの返信では進めない"
     timestamptz created_at
     timestamptz archived_at
   }
@@ -130,6 +134,7 @@ erDiagram
     uuid room_id PK, FK "複合主キー"
     uuid user_id PK, FK "複合主キー。INDEX(user_id)"
     bigint last_read_seq "参加時は rooms.last_message_seq で初期化"
+    bigint last_read_user_seq "last_read_seq に対応する user_seq（ADR 0033）"
     timestamptz muted_until "null 可"
     timestamptz joined_at "退出時は行を削除する"
   }
@@ -141,11 +146,27 @@ erDiagram
     bigint change_seq "UNIQUE(room_id, change_seq)。最後の作成・編集・削除の番号。同期のカーソル"
     uuid sender_id FK
     uuid client_msg_id "UNIQUE(room_id, sender_id, これ)。冪等性"
+    bigint user_seq "その行までのチャンネルの人の発言の数（ADR 0033）"
+    text kind "user / system（ADR 0033）"
+    text system_type "system のときだけ。room_created など"
+    jsonb system_data "system のときだけ。room_renamed の old_name / new_name"
     text body "削除時は空にする"
-    uuid reply_to_id FK "(room_id, reply_to_id) の複合 FK。null 可"
+    uuid thread_root_id FK "スレッドの親。(room_id, thread_root_id) の複合 FK。チャンネルの投稿なら null（ADR 0036）"
+    bigint thread_seq "スレッドの中で何番目の返信か。UNIQUE(thread_root_id, これ)。返信だけ"
+    bigint last_thread_seq "親だけ。thread_seq の採番カウンタ（減らない）"
+    int thread_reply_count "親だけ。削除されていない返信の数（表示用）"
+    timestamptz thread_last_reply_at "親だけ。最後の返信の時刻"
     timestamptz created_at "表示用。ソートには使わない"
     timestamptz edited_at
     timestamptz deleted_at "論理削除。tombstone を配信する"
+  }
+
+  thread_members {
+    uuid thread_root_id PK, FK "複合主キー。(room_id, これ) → messages の複合 FK"
+    uuid user_id PK, FK "複合主キー。INDEX(user_id)"
+    uuid room_id FK "(room_id, user_id) → room_members の複合 FK。ルームを抜けたら CASCADE で消える"
+    bigint last_read_thread_seq "未読数 = 親の last_thread_seq - これ（ADR 0036）"
+    timestamptz created_at
   }
 
   attachments {
