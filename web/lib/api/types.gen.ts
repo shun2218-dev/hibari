@@ -482,6 +482,8 @@ export interface ClientMessage {
   /** room_id と WorkspaceID は、subscribe / unsubscribe ではどちらか 1 つ、typing では room_id だけを使う。 */
   room_id?: string;
   workspace_id?: string;
+  /** thread_root_id は typing でだけ使う。スレッドで入力しているときの親（ADR 0036）。 */
+  thread_root_id?: string;
 }
 
 export interface Ack {
@@ -550,7 +552,24 @@ export interface PresenceChangedData {
 export interface TypingStartedData {
   workspace_id: string;
   room_id: string;
+  /** thread_root_id は、スレッドで入力しているときの親。チャンネルなら null（ADR 0036）。 */
+  thread_root_id: string | null;
   user: UserProfile;
+}
+
+export interface ThreadReadData {
+  workspace_id: string;
+  room_id: string;
+  thread_root_id: string;
+  last_read_thread_seq: number;
+  unread_count: number;
+}
+
+export interface ThreadFollowedData {
+  workspace_id: string;
+  room_id: string;
+  thread_root_id: string;
+  last_read_thread_seq: number;
 }
 
 /** サーバーからのイベント（docs/events.md）。type で data の型が決まる。 */
@@ -567,7 +586,9 @@ export type ServerEvent =
   | { type: "workspace.member_removed"; data: WorkspaceMemberRemovedData }
   | { type: "workspace.role_changed"; data: WorkspaceRoleChangedData }
   | { type: "presence.changed"; data: PresenceChangedData }
-  | { type: "typing.started"; data: TypingStartedData };
+  | { type: "typing.started"; data: TypingStartedData }
+  | { type: "thread.read"; data: ThreadReadData }
+  | { type: "thread.followed"; data: ThreadFollowedData };
 
 export type ServerEventType = ServerEvent["type"];
 

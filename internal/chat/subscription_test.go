@@ -103,16 +103,28 @@ func TestSubscriptionAuthorizer(t *testing.T) {
 		if _, err := env.Service.JoinRoom(t.Context(), r.admin, public.ID); err != nil {
 			t.Fatal(err)
 		}
-		got, err := auth.AuthorizeTyping(t.Context(), r.admin, public.ID)
+		got, err := auth.AuthorizeTyping(t.Context(), r.admin, public.ID, nil)
 		if err != nil || got.RoomID != public.ID || got.WorkspaceID != r.ws.ID || got.User.ID != r.admin || got.User.DisplayName == "" {
 			t.Fatalf("AuthorizeTyping() = %+v, %v", got, err)
 		}
 		// 読めるが投稿できない（参加していない public）。
-		if _, err := auth.AuthorizeTyping(t.Context(), r.admin2, public.ID); !errors.Is(err, chat.ErrForbidden) {
+		if _, err := auth.AuthorizeTyping(t.Context(), r.admin2, public.ID, nil); !errors.Is(err, chat.ErrForbidden) {
 			t.Errorf("read-only error = %v, want ErrForbidden", err)
 		}
-		if _, err := auth.AuthorizeTyping(t.Context(), r.owner, dm.ID); !errors.Is(err, chat.ErrNotFound) {
+		if _, err := auth.AuthorizeTyping(t.Context(), r.owner, dm.ID, nil); !errors.Is(err, chat.ErrNotFound) {
 			t.Errorf("unreadable error = %v, want ErrNotFound", err)
+		}
+		// スレッドで入力しているときは、親がこのルームのスレッドの親であることを確かめる（ADR 0036）。
+		root := send(t, env, r.admin, public.ID, "親")
+		child := reply(t, env, r.admin, public.ID, root.ID, "返信")
+		got, err = auth.AuthorizeTyping(t.Context(), r.admin, public.ID, &root.ID)
+		if err != nil || got.ThreadRootID == nil || *got.ThreadRootID != root.ID {
+			t.Errorf("thread typing = %+v, %v", got, err)
+		}
+		for _, id := range []ulid.ULID{child.ID, env.IDs.New()} {
+			if _, err := auth.AuthorizeTyping(t.Context(), r.admin, public.ID, &id); !errors.Is(err, chat.ErrNotFound) {
+				t.Errorf("typing in a non-root %s: error = %v, want ErrNotFound", id, err)
+			}
 		}
 	})
 }

@@ -69,7 +69,7 @@ type Authorizer interface {
 	AuthorizeRoom(ctx context.Context, userID, roomID ulid.ULID) (workspaceID ulid.ULID, err error)
 	AuthorizeWorkspace(ctx context.Context, userID, workspaceID ulid.ULID) error
 	Allowed(ctx context.Context, userID ulid.ULID, roomIDs, workspaceIDs []ulid.ULID) (rooms, workspaces map[ulid.ULID]bool, err error)
-	AuthorizeTyping(ctx context.Context, userID, roomID ulid.ULID) (chat.TypingStarted, error)
+	AuthorizeTyping(ctx context.Context, userID, roomID ulid.ULID, threadRootID *ulid.ULID) (chat.TypingStarted, error)
 	WorkspaceIDs(ctx context.Context, userID ulid.ULID) ([]ulid.ULID, error)
 }
 
@@ -79,7 +79,7 @@ type Presence interface {
 	Connect(ctx context.Context, userID ulid.ULID, online presence.Announcement) (bool, error)
 	Disconnect(ctx context.Context, userID ulid.ULID, offline presence.Announcement) (bool, error)
 	Refresh(ctx context.Context, userIDs ...ulid.ULID) error
-	StartTyping(ctx context.Context, roomID, userID ulid.ULID) (bool, error)
+	StartTyping(ctx context.Context, roomID, userID ulid.ULID, threadRootID *ulid.ULID) (bool, error)
 }
 
 // Publisher はイベントをすべてのインスタンスに向けて publish する（*RedisDelivery が実装する）。
@@ -378,10 +378,11 @@ func (c *Client) subscribed(t Topic) bool {
 }
 
 // Typing は、ユーザーがルームで入力中であることを、そのルームの購読者（本人の接続を除く）に知らせる。
+// threadRootID を渡したら、そのスレッドで入力している（ADR 0036）。スレッドの購読はないので、宛先はルームの購読者のまま。
 //
 // 購読しているルームだけを受け付ける。Redis の SET NX で 5 秒に 1 回に間引き、配信するときだけ投稿できるかを DB で確かめる（ADR 0015）。
 // そのため、投稿できない人の 2 回目以降は TTL の間エラーにならずに何も起きない。typing は表示の補助なので、それで困らない。
-func (h *Hub) Typing(ctx context.Context, c *Client, roomID ulid.ULID) error {
+func (h *Hub) Typing(ctx context.Context, c *Client, roomID ulid.ULID, threadRootID *ulid.ULID) error {
 	h.mu.Lock()
 	_, ok := c.rooms[roomID]
 	h.mu.Unlock()
@@ -389,11 +390,11 @@ func (h *Hub) Typing(ctx context.Context, c *Client, roomID ulid.ULID) error {
 		return ErrNotSubscribed
 	}
 	userID := c.identity.UserID
-	first, err := h.presence.StartTyping(ctx, roomID, userID)
+	first, err := h.presence.StartTyping(ctx, roomID, userID, threadRootID)
 	if err != nil || !first {
 		return err
 	}
-	data, err := h.auth.AuthorizeTyping(ctx, userID, roomID)
+	data, err := h.auth.AuthorizeTyping(ctx, userID, roomID, threadRootID)
 	if err != nil {
 		return err
 	}

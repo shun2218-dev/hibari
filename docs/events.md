@@ -31,13 +31,14 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 |---|---|---|
 | `subscribe` | `room_id` または `workspace_id`（どちらか 1 つ） | 購読を始める。すでに購読していれば何もせず成功 |
 | `unsubscribe` | `room_id` または `workspace_id` | 購読をやめる。購読していなくても成功 |
-| `typing` | `room_id` | 入力中であることを知らせる。購読中のルームだけ。入力している間、数秒ごとに送ってよい（サーバーが 5 秒に 1 回に間引く） |
+| `typing` | `room_id`、`thread_root_id`（任意） | 入力中であることを知らせる。購読中のルームだけ。入力している間、数秒ごとに送ってよい（サーバーが 5 秒に 1 回に間引く）。スレッドで入力しているときは親の ID を付ける（チャンネルとは別に間引く。ADR 0036） |
 | `ping` | — | アプリケーションの疎通確認（ブラウザは WebSocket の ping フレームを送れないため）。`ack` が返る |
 
 ```json
 { "type": "subscribe", "id": "c1", "room_id": "01J8..." }
 { "type": "subscribe", "id": "c2", "workspace_id": "01J8..." }
 { "type": "typing", "room_id": "01J8..." }
+{ "type": "typing", "room_id": "01J8...", "thread_root_id": "01J8..." }
 ```
 
 ## サーバー → クライアント
@@ -54,7 +55,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | error | 意味 |
 |---|---|
 | `invalid_message` | JSON として読めない、未知の `type`、項目の不足や形式の誤り |
-| `not_found` | 購読の対象が存在しない、または読めない（存在の有無を区別しない） |
+| `not_found` | 購読の対象が存在しない、または読めない（存在の有無を区別しない）。`typing` の `thread_root_id` がこのルームのスレッドの親でない |
 | `not_subscribed` | 購読していないルームに `typing` を送った |
 | `forbidden` | 読めるが投稿できないルームに `typing` を送った（参加していない public など） |
 | `too_many_subscriptions` | 1 つの接続の購読が上限（500 件）に達した |
@@ -72,7 +73,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | type | 宛先 | いつ |
 |---|---|---|
 | `message.created` | room | メッセージが送信された |
-| `message.updated` | room | 本文が編集された |
+| `message.updated` | room | 本文が編集された。スレッドの親の `thread`（返信数・最終返信）が変わった（ADR 0036） |
 | `message.deleted` | room | 削除された（`data` は tombstone） |
 | `member.joined` | room、参加した本人 | ルームの作成・参加・追加・DM の作成・招待の受け入れでルームのメンバーになった |
 | `member.left` | room | 退出した、または外された |
@@ -84,6 +85,8 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | `workspace.role_changed` | workspace、本人 | ロールが変わった（owner の譲渡では 2 件） |
 | `presence.changed` | そのユーザーが所属する workspace | オンライン / オフラインが変わった |
 | `typing.started` | room（入力した本人の接続を除く） | 入力中になった |
+| `thread.read` | 本人 | 自分のスレッドの既読位置が進んだ（別の端末を含む。ADR 0036） |
+| `thread.followed` | 本人 | 自分がスレッドに参加した（自分の返信、自分の投稿への最初の返信） |
 
 #### `message.created` / `message.updated` / `message.deleted`
 
@@ -105,6 +108,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 返信はチャンネルのタイムラインに出さない。`seq` と `change_seq` はルームのものを使うので、同期（下記）はチャンネルと同じ 1 本で済む。
 親のメッセージは、返信が 1 件以上ついたことがあれば `thread`（`reply_count`・`last_thread_seq`・`last_reply_at`）を持つ。
 返信の送信と削除では、親の `change_seq` も進む（返信数の変化は `after_change_seq` の差分取得で揃う）。
+そのときは、返信の `message.created`（または `message.deleted`）の後に、親の `message.updated` が続けて届く（親の `change_seq` は返信の次の番号）。
 
 #### システムメッセージ（`kind: "system"`）
 
@@ -159,6 +163,22 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 
 `last_read_user_seq` は既読位置に対応する `user_seq`。クライアントはこれで未読数を求め直す（ADR 0033）。
 
+#### `thread.read`
+
+```json
+{ "workspace_id": "01J8...", "room_id": "01J8...", "thread_root_id": "01J8...", "last_read_thread_seq": 3, "unread_count": 0 }
+```
+
+スレッドの未読数は、親の `thread.last_thread_seq - last_read_thread_seq`（ADR 0036）。
+
+#### `thread.followed`
+
+```json
+{ "workspace_id": "01J8...", "room_id": "01J8...", "thread_root_id": "01J8...", "last_read_thread_seq": 0 }
+```
+
+誰が参加するかはサーバーだけが決める（将来はメンションされた人も参加する）。受け取ったら、参加中のスレッドの一覧（`GET /api/v1/workspaces/{id}/threads`）と、ルーム一覧の `unread_thread_count` を取り直す。
+
 #### `workspace.updated`
 
 ```json
@@ -192,10 +212,10 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 #### `typing.started`
 
 ```json
-{ "workspace_id": "01J8...", "room_id": "01J8...", "user": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" } }
+{ "workspace_id": "01J8...", "room_id": "01J8...", "thread_root_id": null, "user": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" } }
 ```
 
-受け取ってから 6 秒で表示を消す。`typing.stopped` はない。
+受け取ってから 6 秒で表示を消す。`typing.stopped` はない。`thread_root_id` があればスレッドでの入力なので、チャンネルの入力中には出さない。
 
 ## close コード
 

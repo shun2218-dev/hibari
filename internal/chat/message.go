@@ -181,6 +181,8 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		return Message{}, false, err
 	}
 
+	// threadEvents は、スレッドの返信で message.created の後に届けるイベント（親の返信数、参加。ADR 0036）。
+	var threadEvents []Event
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
 		a, err := loadRoomAccess(ctx, q, memberRowLock, roomID, actor)
@@ -202,7 +204,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		}
 
 		if in.ThreadRootID != nil {
-			msg, err = s.sendThreadReply(ctx, q, actor, roomID, *in.ThreadRootID, in)
+			msg, threadEvents, err = s.sendThreadReply(ctx, q, actor, a.room.WorkspaceID, roomID, *in.ThreadRootID, in)
 			created = err == nil
 			return err
 		}
@@ -238,7 +240,8 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 	}
 	// 再送（created が false）では配信しない。最初の送信で配信済みで、取りこぼしていれば差分取得で届く。
 	if created {
-		s.deliver(ctx, messageEvent(EventMessageCreated, msg))
+		// 返信（change_seq が 1 つ目）を先に、親の更新（2 つ目）を後に届ける。クライアントは change_seq の順に反映できる。
+		s.deliver(ctx, append([]Event{messageEvent(EventMessageCreated, msg)}, threadEvents...)...)
 	}
 	return msg, created, nil
 }
@@ -438,7 +441,7 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 // DeleteMessage はメッセージを論理削除する。削除済みでも成功を返す（冪等）。
 // 送信者本人か、送信者を管理できる admin 以上ができる（authz.CanDeleteMessage）。
 func (s *Service) DeleteMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) error {
-	var deleted *Message
+	var deleted, root *Message
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
 		// 判定に送信者のロールが要るので、先に送信者を読む。見つからなくても、ルームを読めない場合と同じ 404 なので存在は漏れない。
@@ -465,7 +468,7 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, roomID, messageID ul
 			// 削除済みへの削除は冪等な成功。change_seq を採番せず、配信もしない。
 			return nil
 		}
-		if err := s.softDeleteMessage(ctx, q, roomID, m); err != nil {
+		if root, err = s.softDeleteMessage(ctx, q, roomID, m); err != nil {
 			return err
 		}
 		// 添付は掃除ジョブに消させる。ストレージの呼び出しをこのトランザクションに入れない（ADR 0013）。
@@ -485,6 +488,10 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, roomID, messageID ul
 	}
 	if deleted != nil {
 		s.deliver(ctx, messageEvent(EventMessageDeleted, *deleted))
+	}
+	// 返信の削除では、親の返信数の変化も届ける（削除した返信の後の change_seq。ADR 0036）。
+	if root != nil {
+		s.deliver(ctx, messageEvent(EventMessageUpdated, *root))
 	}
 	return nil
 }

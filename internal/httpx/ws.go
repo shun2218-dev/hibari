@@ -29,7 +29,7 @@ type RealtimeHub interface {
 	Unregister(ctx context.Context, c *realtime.Client)
 	Subscribe(ctx context.Context, c *realtime.Client, t realtime.Topic) error
 	Unsubscribe(c *realtime.Client, t realtime.Topic)
-	Typing(ctx context.Context, c *realtime.Client, roomID ulid.ULID) error
+	Typing(ctx context.Context, c *realtime.Client, roomID ulid.ULID, threadRootID *ulid.ULID) error
 }
 
 // WSTicketStore は ws-ticket の発行と消費（authn.WSTickets が実装する）。
@@ -200,6 +200,8 @@ type clientMessage struct {
 	// RoomID と WorkspaceID は、subscribe / unsubscribe ではどちらか 1 つ、typing では room_id だけを使う。
 	RoomID      string `json:"room_id,omitempty"`
 	WorkspaceID string `json:"workspace_id,omitempty"`
+	// ThreadRootID は typing でだけ使う。スレッドで入力しているときの親（ADR 0036）。
+	ThreadRootID string `json:"thread_root_id,omitempty"`
 }
 
 // clientMessageType はクライアントからのメッセージの type。
@@ -269,7 +271,15 @@ func (h *wsHandlers) handleMessage(ctx context.Context, client *realtime.Client,
 		if err != nil || m.WorkspaceID != "" {
 			return reply(errInvalidMessage)
 		}
-		return reply(h.hub.Typing(ctx, client, roomID))
+		var threadRootID *ulid.ULID
+		if m.ThreadRootID != "" {
+			id, err := ulid.ParseStrict(m.ThreadRootID)
+			if err != nil {
+				return reply(errInvalidMessage)
+			}
+			threadRootID = &id
+		}
+		return reply(h.hub.Typing(ctx, client, roomID, threadRootID))
 	case clientPing:
 		// ブラウザは WebSocket の ping フレームを送れないので、アプリケーションの ping には id がなくても ack を返す。
 		return &ackMessage{Type: ackType, ID: m.ID}
@@ -528,9 +538,26 @@ type presenceChangedData struct {
 }
 
 type typingStartedData struct {
-	WorkspaceID string              `json:"workspace_id"`
-	RoomID      string              `json:"room_id"`
-	User        userProfileResponse `json:"user"`
+	WorkspaceID string `json:"workspace_id"`
+	RoomID      string `json:"room_id"`
+	// ThreadRootID は、スレッドで入力しているときの親。チャンネルなら null（ADR 0036）。
+	ThreadRootID *string             `json:"thread_root_id"`
+	User         userProfileResponse `json:"user"`
+}
+
+type threadReadData struct {
+	WorkspaceID       string `json:"workspace_id"`
+	RoomID            string `json:"room_id"`
+	ThreadRootID      string `json:"thread_root_id"`
+	LastReadThreadSeq int64  `json:"last_read_thread_seq"`
+	UnreadCount       int64  `json:"unread_count"`
+}
+
+type threadFollowedData struct {
+	WorkspaceID       string `json:"workspace_id"`
+	RoomID            string `json:"room_id"`
+	ThreadRootID      string `json:"thread_root_id"`
+	LastReadThreadSeq int64  `json:"last_read_thread_seq"`
 }
 
 // encodeEvent はイベントを docs/events.md の JSON にする。
@@ -566,7 +593,16 @@ func eventData(d any) (any, error) {
 	case chat.PresenceChanged:
 		return presenceChangedData{d.UserID.String(), d.Online}, nil
 	case chat.TypingStarted:
-		return typingStartedData{d.WorkspaceID.String(), d.RoomID.String(), newUserProfileResponse(d.User)}, nil
+		var root *string
+		if d.ThreadRootID != nil {
+			s := d.ThreadRootID.String()
+			root = &s
+		}
+		return typingStartedData{d.WorkspaceID.String(), d.RoomID.String(), root, newUserProfileResponse(d.User)}, nil
+	case chat.ThreadRead:
+		return threadReadData{d.WorkspaceID.String(), d.RoomID.String(), d.ThreadRootID.String(), d.LastReadThreadSeq, d.UnreadCount}, nil
+	case chat.ThreadFollowed:
+		return threadFollowedData{d.WorkspaceID.String(), d.RoomID.String(), d.ThreadRootID.String(), d.LastReadThreadSeq}, nil
 	default:
 		return nil, fmt.Errorf("unknown event data %T", d)
 	}

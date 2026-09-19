@@ -51,8 +51,14 @@ func onlineKey(userID ulid.ULID) string {
 	return "presence:" + userID.String()
 }
 
-func typingKey(roomID, userID ulid.ULID) string {
-	return "typing:" + roomID.String() + ":" + userID.String()
+// typingKey はチャンネルなら typing:{roomID}:{userID}、スレッドなら末尾に :{threadRootID} を足す（ADR 0036）。
+// スレッドとチャンネルを別に間引かないと、片方で入力した直後にもう片方の入力中が 5 秒届かない。
+func typingKey(roomID, userID ulid.ULID, threadRootID *ulid.ULID) string {
+	key := "typing:" + roomID.String() + ":" + userID.String()
+	if threadRootID != nil {
+		key += ":" + threadRootID.String()
+	}
+	return key
 }
 
 // 状態の変更と publish を 1 つのスクリプトで行う理由（ADR 0016）:
@@ -176,10 +182,10 @@ func onlineKeys(userIDs []ulid.ULID) []string {
 	return keys
 }
 
-// StartTyping は userID がルームで入力中であることを TypingTTL の間だけ記録する。
+// StartTyping は userID がルーム（threadRootID を渡したらそのスレッド）で入力中であることを TypingTTL の間だけ記録する。
 // すでに記録されていれば何もせず false を返す。true のときだけ typing.started を配信する（配信を 5 秒に 1 回に間引く。ADR 0015）。
-func (s *Store) StartTyping(ctx context.Context, roomID, userID ulid.ULID) (bool, error) {
-	ok, err := s.rdb.SetNX(ctx, typingKey(roomID, userID), "1", TypingTTL).Result()
+func (s *Store) StartTyping(ctx context.Context, roomID, userID ulid.ULID, threadRootID *ulid.ULID) (bool, error) {
+	ok, err := s.rdb.SetNX(ctx, typingKey(roomID, userID, threadRootID), "1", TypingTTL).Result()
 	if err != nil {
 		return false, fmt.Errorf("set typing: %w", err)
 	}

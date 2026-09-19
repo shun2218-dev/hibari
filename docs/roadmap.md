@@ -439,7 +439,7 @@ Phase 6 の後に独立したフェーズとして行う（設計 → API → We
 1. 設計（ADR 0036、ERD） ← 完了
 2. デザイン: スレッドのパネル、「N 件の返信」、サイドバーの「スレッド」と一覧、モバイル、削除された親、返信 0 件。`/dev/preview` に描いて `docs/ui/` に足し、オーナーに見てもらう ← 完了（`docs/ui/README.md` の「Phase 6.5 で足した画面」）
 3. DB と REST: マイグレーション（`reply_to_id` の削除を含む）、返信の送信・編集・削除、スレッドの履歴・既読・一覧 ← 完了（ADR 0036 の追記。Web の引用付きの返信もここで取り除いた）
-4. WebSocket: `message.updated`（親の返信数）、`thread.read` / `thread.followed`、`typing` の `thread_root_id`。`docs/events.md` の更新
+4. WebSocket: `message.updated`（親の返信数）、`thread.read` / `thread.followed`、`typing` の `thread_root_id`。`docs/events.md` の更新 ← 完了（ADR 0036 の追記）
 5. Web: スレッドのパネル、スレッドの未読、引用付きの返信の撤去
 
 **DoD**

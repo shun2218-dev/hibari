@@ -155,7 +155,7 @@ func (a *fakeAuth) Allowed(_ context.Context, userID ulid.ULID, roomIDs, workspa
 	return rooms, workspaces, nil
 }
 
-func (a *fakeAuth) AuthorizeTyping(_ context.Context, userID, roomID ulid.ULID) (chat.TypingStarted, error) {
+func (a *fakeAuth) AuthorizeTyping(_ context.Context, userID, roomID ulid.ULID, _ *ulid.ULID) (chat.TypingStarted, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.readable[[2]ulid.ULID{userID, roomID}] {
@@ -223,7 +223,7 @@ func (p *fakePresence) Refresh(_ context.Context, userIDs ...ulid.ULID) error {
 	return nil
 }
 
-func (p *fakePresence) StartTyping(_ context.Context, roomID, userID ulid.ULID) (bool, error) {
+func (p *fakePresence) StartTyping(_ context.Context, roomID, userID ulid.ULID, _ *ulid.ULID) (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	key := [2]ulid.ULID{roomID, userID}
@@ -817,11 +817,11 @@ func TestTyping(t *testing.T) {
 	bobConn.take()
 
 	// 購読していないルームには送れない。
-	if err := e.hub.Typing(t.Context(), alice, w.other); !errors.Is(err, realtime.ErrNotSubscribed) {
+	if err := e.hub.Typing(t.Context(), alice, w.other, nil); !errors.Is(err, realtime.ErrNotSubscribed) {
 		t.Fatalf("Typing(unsubscribed room) error = %v, want ErrNotSubscribed", err)
 	}
 
-	if err := e.hub.Typing(t.Context(), alice, w.room); err != nil {
+	if err := e.hub.Typing(t.Context(), alice, w.room, nil); err != nil {
 		t.Fatal(err)
 	}
 	// 入力した本人の接続（別のタブを含む）には返さない。
@@ -834,7 +834,7 @@ func TestTyping(t *testing.T) {
 	}
 
 	// TTL の間は配信し直さない。
-	if err := e.hub.Typing(t.Context(), aliceTab2, w.room); err != nil {
+	if err := e.hub.Typing(t.Context(), aliceTab2, w.room, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := bobConn.take(); len(got) != 0 {
@@ -842,7 +842,7 @@ func TestTyping(t *testing.T) {
 	}
 
 	// 読めるが投稿できない人（参加していない public）は forbidden。
-	if err := e.hub.Typing(t.Context(), bob, w.room); !errors.Is(err, chat.ErrForbidden) {
+	if err := e.hub.Typing(t.Context(), bob, w.room, nil); !errors.Is(err, chat.ErrForbidden) {
 		t.Fatalf("Typing(read-only) error = %v, want ErrForbidden", err)
 	}
 	if got := aliceConn.take(); len(got) != 0 {
