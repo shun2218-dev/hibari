@@ -507,9 +507,9 @@ Phase 6.16  検索
 - チャンネル側の見え方 → 「スレッドに返信しました」のラベルだけ。親の抜粋は出さない
 
 **DoD**
-- [ ] 「チャンネルにも投稿する」を付けた返信が、スレッドとチャンネルの両方に出る。付けない返信はチャンネルに出ない
-- [ ] 切断中に流された返信も、再接続の同期でチャンネルとスレッドの両方に揃う
-- [ ] 未読とサイドバーの並びが、ADR で決めたとおりに動く
+- [x] 「チャンネルにも投稿する」を付けた返信が、スレッドとチャンネルの両方に出る。付けない返信はチャンネルに出ない（`TestSendThreadReplyAlsoInChannel`、`workspace-screen.test.tsx` の「sends the reply to the channel too when the box is checked」「leaves the reply in the thread when the box is not checked」）
+- [x] 切断中に流された返信も、再接続の同期でチャンネルとスレッドの両方に揃う（`store.test.ts` の「restores a broadcast reply sent while disconnected in both the channel and the thread」。**オーナーによる compose とブラウザでの確認は未**）
+- [x] 未読とサイドバーの並びが、ADR で決めたとおりに動く（`TestSendThreadReplyAlsoInChannel`、`messages.test.ts` の「counts a reply sent to the channel as a channel message」）
 
 ---
 
