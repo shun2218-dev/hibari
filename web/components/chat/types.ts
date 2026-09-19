@@ -48,6 +48,12 @@ export type MessageView = {
   edited: boolean;
   /** スレッドの親なら、返信の数と最後の返信の時刻（ADR 0036）。返信が 0 件なら持たない。 */
   thread?: ThreadSummaryLabel;
+  /**
+   * 「チャンネルにも投稿する」を付けた返信（ADR 0039）。どこに並べる行かで見え方が変わる。
+   * - channel: チャンネルのタイムラインの行。「スレッドに返信しました」を出し、押すとスレッドを開く
+   * - thread: スレッドのパネルの行。どこにも投稿したかを控えめに添える（label は「チャンネルにも投稿しました」など。データ層が作る）
+   */
+  broadcast?: { in: "channel" } | { in: "thread"; label: string };
   attachments: MessageAttachmentView[];
   /** 直前のメッセージと同じ送信者なので、アバターと名前を省いて続けて表示する。 */
   grouped: boolean;

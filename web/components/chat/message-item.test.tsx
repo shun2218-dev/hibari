@@ -246,4 +246,22 @@ describe("MessageItem actions", () => {
     expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "その他の操作", hidden: true })).toBeInTheDocument();
   });
+
+  it("labels a reply posted to the channel too and opens its thread from the channel (ADR 0039)", async () => {
+    const onOpenThread = vi.fn();
+    render(<MessageItem message={message({ broadcast: { in: "channel" } })} onOpenThread={onOpenThread} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "スレッドに返信しました" }));
+
+    expect(onOpenThread).toHaveBeenCalledOnce();
+  });
+
+  it("notes inside the thread that a reply was also posted to the channel", () => {
+    render(
+      <MessageItem message={message({ broadcast: { in: "thread", label: "チャンネルにも投稿しました" } })} canReply={false} />,
+    );
+
+    expect(screen.getByText("チャンネルにも投稿しました")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "スレッドに返信しました" })).not.toBeInTheDocument();
+  });
 });

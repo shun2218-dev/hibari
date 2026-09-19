@@ -58,6 +58,39 @@ describe("Composer", () => {
 
     expect(onChange).toHaveBeenCalledWith("a");
   });
+
+  it("offers posting a thread reply to the channel too", async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <Composer
+        value=""
+        canSend={false}
+        target="thread"
+        alsoInChannel={{ label: "チャンネルにも投稿する", checked: false, onChange }}
+      />,
+    );
+
+    const checkbox = screen.getByRole("checkbox", { name: "チャンネルにも投稿する" });
+    expect(checkbox).not.toBeChecked();
+    await userEvent.click(checkbox);
+    expect(onChange).toHaveBeenCalledWith(true);
+
+    rerender(
+      <Composer
+        value=""
+        canSend={false}
+        target="thread"
+        alsoInChannel={{ label: "チャンネルにも投稿する", checked: true, onChange }}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "チャンネルにも投稿する" })).toBeChecked();
+  });
+
+  it("has no channel checkbox unless asked for", () => {
+    render(<Composer value="" canSend={false} />);
+
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
 });
 
 describe("TypingIndicator", () => {
