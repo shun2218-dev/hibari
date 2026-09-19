@@ -155,6 +155,7 @@ var tsDecls = []tsDecl{
 	response[threadSummaryResponse]("ThreadSummary"),
 	response[mentionResponse]("Mention"),
 	response[messageAttachmentResponse]("MessageAttachment"),
+	response[messageAroundResponse]("MessageAround"),
 	response[messageListResponse]("MessageList"),
 	request[markRoomReadRequest]("MarkRoomReadRequest"),
 	response[readStateResponse]("ReadState"),

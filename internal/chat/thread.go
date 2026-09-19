@@ -176,10 +176,13 @@ func (s *Service) softDeleteMessage(ctx context.Context, q *store.Queries, roomI
 	return &root, nil
 }
 
-// ThreadQuery はスレッドの返信の取得の指定。BeforeSeq と AfterSeq は 1 つまでしか指定できない。
+// ThreadQuery はスレッドの返信の取得の指定。BeforeSeq・AfterSeq・AroundMessageID は 1 つまでしか指定できない。
 type ThreadQuery struct {
 	BeforeSeq *int64
 	AfterSeq  *int64
+	// AroundMessageID は、この返信を真ん中に置いて前後を返す（ADR 0042）。
+	// このスレッドの返信でなければ（ないもの・削除済み・別のスレッド）最新のページを返し、ThreadPage.Around を nil にする。
+	AroundMessageID *ulid.ULID
 	// Limit が 0 以下なら DefaultMessageLimit、MaxMessageLimit を超えたら MaxMessageLimit にする。
 	Limit int
 }
@@ -192,6 +195,10 @@ type ThreadPage struct {
 	Replies []Message
 	// HasMore は、同じ向き（after_seq なら新しい方、それ以外は古い方）にまだ返信があるか。
 	HasMore bool
+	// HasMoreAfter は新しい方にまだあるか。向きが 2 つあるのは AroundMessageID だけなので、それ以外では常に false（ADR 0042）。
+	HasMoreAfter bool
+	// Around は AroundMessageID の対象が見つかったときだけ入る。
+	Around *MessageAround
 	// LastChangeSeq は、返信を読む前に読んだルームの last_change_seq（MessagePage.LastChangeSeq と同じ）。
 	LastChangeSeq int64
 	// LastReadThreadSeq は actor の既読位置。スレッドに参加していなければ nil。
@@ -202,7 +209,16 @@ type ThreadPage struct {
 // rootID がこのルームのスレッドの親になれないメッセージ（返信・システムメッセージ）なら ErrNotFound。
 func (s *Service) ListThreadMessages(ctx context.Context, actor, roomID, rootID ulid.ULID, tq ThreadQuery) (ThreadPage, error) {
 	var fields fieldErrors
-	if tq.BeforeSeq != nil && tq.AfterSeq != nil {
+	cursors := 0
+	for _, c := range []*int64{tq.BeforeSeq, tq.AfterSeq} {
+		if c != nil {
+			cursors++
+		}
+	}
+	if tq.AroundMessageID != nil {
+		cursors++
+	}
+	if cursors > 1 {
 		fields.add("before_seq", ReasonInvalidValue)
 	}
 	if tq.BeforeSeq != nil && *tq.BeforeSeq < 0 {
@@ -232,6 +248,13 @@ func (s *Service) ListThreadMessages(ctx context.Context, actor, roomID, rootID 
 
 	maxRows := int32(limit + 1)
 	var rows []messageView
+	page := ThreadPage{Root: root, LastChangeSeq: a.room.LastChangeSeq}
+	if tq.AroundMessageID != nil {
+		if rows, page, err = s.threadRepliesAround(ctx, q, rootID, *tq.AroundMessageID, limit, page); err != nil {
+			return ThreadPage{}, err
+		}
+		return s.finishThreadPage(ctx, q, roomID, actor, rootID, rows, page)
+	}
 	if tq.AfterSeq != nil {
 		after, err := q.ListThreadMessagesAfter(ctx, store.ListThreadMessagesAfterParams{ThreadRootID: &rootID, AfterSeq: *tq.AfterSeq, MaxRows: maxRows})
 		if err != nil {
@@ -254,7 +277,7 @@ func (s *Service) ListThreadMessages(ctx context.Context, actor, roomID, rootID 
 		}
 	}
 
-	page := ThreadPage{Root: root, HasMore: len(rows) > limit, LastChangeSeq: a.room.LastChangeSeq}
+	page.HasMore = len(rows) > limit
 	if page.HasMore {
 		if tq.AfterSeq != nil {
 			rows = rows[:limit]
@@ -262,6 +285,13 @@ func (s *Service) ListThreadMessages(ctx context.Context, actor, roomID, rootID 
 			rows = rows[1:]
 		}
 	}
+	return s.finishThreadPage(ctx, q, roomID, actor, rootID, rows, page)
+}
+
+// finishThreadPage は、読んだ行を Message にして添付・メンション・既読位置を載せる。カーソルの種類によらず共通。
+func (s *Service) finishThreadPage(
+	ctx context.Context, q *store.Queries, roomID, actor, rootID ulid.ULID, rows []messageView, page ThreadPage,
+) (ThreadPage, error) {
 	page.Replies = make([]Message, len(rows))
 	for i, r := range rows {
 		page.Replies[i] = toMessage(r)
@@ -280,6 +310,96 @@ func (s *Service) ListThreadMessages(ctx context.Context, actor, roomID, rootID 
 		return ThreadPage{}, fmt.Errorf("get thread membership: %w", err)
 	}
 	return page, nil
+}
+
+// threadRepliesAround は、指定した返信を真ん中に置いて前後を読む（ADR 0042）。
+//
+// 対象がこのスレッドの返信でない（ないもの・削除済み・別のスレッド）ときは、最新のページを Around なしで返す。
+// チャンネルの方（messagesAround）と同じく、404 にせず区別もしない（ADR 0040 と同じ方針）。
+func (s *Service) threadRepliesAround(
+	ctx context.Context, q *store.Queries, rootID, messageID ulid.ULID, limit int, page ThreadPage,
+) ([]messageView, ThreadPage, error) {
+	target, err := q.GetMessageView(ctx, store.GetMessageViewParams{RoomID: page.Root.RoomID, ID: messageID})
+	notFound := errors.Is(err, pgx.ErrNoRows)
+	if err != nil && !notFound {
+		return nil, ThreadPage{}, fmt.Errorf("get message view: %w", err)
+	}
+	if notFound || target.DeletedAt != nil || target.ThreadRootID == nil || *target.ThreadRootID != rootID {
+		rows, hasMore, err := s.threadRepliesBefore(ctx, q, rootID, math.MaxInt64, limit)
+		if err != nil {
+			return nil, ThreadPage{}, err
+		}
+		page.HasMore = hasMore
+		return rows, page, nil
+	}
+
+	olderLimit := min(limit/2, limit-1)
+	older, hasMoreBefore, err := s.threadRepliesBefore(ctx, q, rootID, target.Seq, olderLimit)
+	if err != nil {
+		return nil, ThreadPage{}, err
+	}
+	newer, hasMoreAfter, err := s.threadRepliesAfter(ctx, q, rootID, target.Seq, limit-1-len(older))
+	if err != nil {
+		return nil, ThreadPage{}, err
+	}
+
+	rows := make([]messageView, 0, len(older)+1+len(newer))
+	rows = append(rows, older...)
+	rows = append(rows, messageView(target))
+	rows = append(rows, newer...)
+
+	page.HasMore = hasMoreBefore
+	page.HasMoreAfter = hasMoreAfter
+	page.Around = &MessageAround{Seq: target.Seq, ThreadRootID: target.ThreadRootID}
+	return rows, page, nil
+}
+
+// threadRepliesBefore は seq が beforeSeq より小さい返信を昇順で最大 limit 件と、さらに古いものがあるかを返す。
+func (s *Service) threadRepliesBefore(ctx context.Context, q *store.Queries, rootID ulid.ULID, beforeSeq int64, limit int) ([]messageView, bool, error) {
+	maxRows := int32(max(limit, 1)) // limit が 0 でも、続きがあるかだけは見る
+	if limit > 0 {
+		maxRows = int32(limit + 1)
+	}
+	desc, err := q.ListThreadMessagesBefore(ctx, store.ListThreadMessagesBeforeParams{ThreadRootID: &rootID, BeforeSeq: beforeSeq, MaxRows: maxRows})
+	if err != nil {
+		return nil, false, fmt.Errorf("list thread messages before: %w", err)
+	}
+	if limit <= 0 {
+		return nil, len(desc) > 0, nil
+	}
+	hasMore := len(desc) > limit
+	if hasMore {
+		desc = desc[:limit]
+	}
+	rows := make([]messageView, len(desc))
+	for i, r := range desc { // 新しい順に読んだので、昇順に並べ直す
+		rows[len(desc)-1-i] = messageView(r)
+	}
+	return rows, hasMore, nil
+}
+
+// threadRepliesAfter は seq が afterSeq より大きい返信を昇順で最大 limit 件と、さらに新しいものがあるかを返す。
+func (s *Service) threadRepliesAfter(ctx context.Context, q *store.Queries, rootID ulid.ULID, afterSeq int64, limit int) ([]messageView, bool, error) {
+	maxRows := int32(max(limit, 1))
+	if limit > 0 {
+		maxRows = int32(limit + 1)
+	}
+	asc, err := q.ListThreadMessagesAfter(ctx, store.ListThreadMessagesAfterParams{ThreadRootID: &rootID, AfterSeq: afterSeq, MaxRows: maxRows})
+	if err != nil {
+		return nil, false, fmt.Errorf("list thread messages after: %w", err)
+	}
+	if limit <= 0 {
+		return nil, len(asc) > 0, nil
+	}
+	hasMore := len(asc) > limit
+	if hasMore {
+		asc = asc[:limit]
+	}
+	rows := make([]messageView, len(asc))
+	for i, r := range asc {
+		rows[i] = messageView(r)
+	}
+	return rows, hasMore, nil
 }
 
 // ThreadReadState はスレッドの既読位置の更新の結果。

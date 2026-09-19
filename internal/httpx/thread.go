@@ -13,14 +13,19 @@ import (
 type threadMessageListResponse struct {
 	Root     messageResponse   `json:"root"`
 	Messages []messageResponse `json:"messages"`
-	HasMore  bool              `json:"has_more"`
+	// HasMore は同じ向き（around_message_id・before_seq・指定なしなら古い方、after_seq なら新しい方）にまだあるか。
+	HasMore bool `json:"has_more"`
+	// HasMoreAfter は新しい方にまだあるか。向きが 2 つあるのは around_message_id だけなので、それ以外では常に false（ADR 0042）。
+	HasMoreAfter bool `json:"has_more_after"`
+	// Around は around_message_id の対象が見つかったときだけ入る。見つからなければ null で、最新のページを返している。
+	Around *messageAroundResponse `json:"around"`
 	// LastChangeSeq は返信を読む前のルームの last_change_seq（messageListResponse と同じ）。
 	LastChangeSeq int64 `json:"last_change_seq"`
 	// LastReadThreadSeq は自分の既読位置。スレッドに参加していなければ null。
 	LastReadThreadSeq *int64 `json:"last_read_thread_seq"`
 }
 
-// listThreadMessages は ?before_seq= / ?after_seq= / ?limit= でスレッドの親と返信を返す。messages は seq の昇順。
+// listThreadMessages は ?before_seq= / ?after_seq= / ?around_message_id= / ?limit= でスレッドの親と返信を返す。messages は seq の昇順。
 func (h *chatHandlers) listThreadMessages(w http.ResponseWriter, r *http.Request) {
 	roomID, err := pathID(r, "roomID")
 	if err != nil {
@@ -41,6 +46,7 @@ func (h *chatHandlers) listThreadMessages(w http.ResponseWriter, r *http.Request
 		writeError(h.logger, w, r, err)
 		return
 	}
+	tq.AroundMessageID = queryAroundMessageID(r)
 	if tq.Limit, err = queryMessageLimit(r); err != nil {
 		writeError(h.logger, w, r, err)
 		return
@@ -54,6 +60,8 @@ func (h *chatHandlers) listThreadMessages(w http.ResponseWriter, r *http.Request
 		Root:              newMessageResponse(page.Root),
 		Messages:          make([]messageResponse, len(page.Replies)),
 		HasMore:           page.HasMore,
+		HasMoreAfter:      page.HasMoreAfter,
+		Around:            newMessageAroundResponse(page.Around),
 		LastChangeSeq:     page.LastChangeSeq,
 		LastReadThreadSeq: page.LastReadThreadSeq,
 	}
