@@ -22,7 +22,6 @@ import {
   useRealtime,
 } from "@/lib/chat/chat-provider";
 import { forgetLocation } from "@/lib/chat/last-location";
-import type { OutgoingReply } from "@/lib/chat/store";
 import { draftsReady } from "@/lib/chat/uploads";
 import { messageActions, previewImageIds, roomName, toAttachmentDraftView, toTimelineItems } from "@/lib/chat/views";
 import { useDocumentVisible } from "@/lib/use-document-visible";
@@ -79,9 +78,8 @@ export function RoomView({
   const workspaceRemoval = useChatState((s) => s.removedWorkspaces[workspaceId]);
   const [joining, setJoining] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
-  // 入力欄の本文と返信先。ルームごとに作り直すので、別のルームに移ると消える
+  // 入力欄の本文。ルームごとに作り直すので、別のルームに移ると消える
   const [draft, setDraft] = useState("");
-  const [replyTo, setReplyTo] = useState<OutgoingReply | null>(null);
   const { uploader, drafts } = useAttachmentUploader(roomId);
   const [sentCount, setSentCount] = useState(0);
   const [openMenuKey, setOpenMenuKey] = useState<string>();
@@ -149,7 +147,6 @@ export function RoomView({
   if (!room || otherWorkspace) return null;
 
   const findMessage = (key: string) => messages?.find((m) => m.id === key);
-  const findOutgoing = (key: string) => outgoing?.find((m) => m.clientMsgId === key);
   // 編集中に削除された（別のタブ、管理者）ら、編集をやめる
   const editingMessage = editing ? findMessage(editing.messageId) : undefined;
   const activeEditing = editing && editingMessage?.deleted_at === null ? editing : null;
@@ -164,23 +161,9 @@ export function RoomView({
 
   function send() {
     if (!canSend) return;
-    store.sendMessage(roomId, { body: draft, replyTo, attachments: uploader.take() });
+    store.sendMessage(roomId, { body: draft, attachments: uploader.take() });
     setDraft("");
-    setReplyTo(null);
     setSentCount((n) => n + 1);
-  }
-
-  function reply(key: string) {
-    const message = findMessage(key);
-    if (message) {
-      setReplyTo({ messageId: message.id, clientMsgId: null, senderName: message.sender.display_name, body: message.body });
-      return;
-    }
-    // 送信中の自分のメッセージにも返信できる。送る時点で確定した ID に置き換える（ADR 0027）
-    const pending = findOutgoing(key);
-    if (pending && me) {
-      setReplyTo({ messageId: null, clientMsgId: pending.clientMsgId, senderName: me.display_name, body: pending.body });
-    }
   }
 
   function actionsFor(key: string) {
@@ -286,7 +269,6 @@ export function RoomView({
             scrollToLatestKey={sentCount}
             onRetry={(key) => store.retryMessage(roomId, key)}
             onDiscard={(key) => store.discardMessage(roomId, key)}
-            onReply={reply}
             onDownload={download}
             onImageError={(id, url) => media.attachmentImageFailed(id, url)}
             actionsFor={actionsFor}
@@ -330,8 +312,6 @@ export function RoomView({
             onRetryAttachment={(key) => uploader.retry(key)}
             onRemoveAttachment={(key) => uploader.remove(key)}
             typingNames={typingNames}
-            replyTo={replyTo ?? undefined}
-            onCancelReply={() => setReplyTo(null)}
           />
         )
       )}

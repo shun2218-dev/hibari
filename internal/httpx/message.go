@@ -12,12 +12,13 @@ import (
 
 // メッセージの API（ロードマップ Phase 3b / ADR 0012）。ルートの登録は registerChatRoutes にまとめている。
 
-type replyPreviewResponse struct {
-	ID      string              `json:"id"`
-	Seq     int64               `json:"seq"`
-	Sender  userProfileResponse `json:"sender"`
-	Body    string              `json:"body"`
-	Deleted bool                `json:"deleted"`
+// threadSummaryResponse は親のメッセージに付く「N 件の返信」（ADR 0036）。
+type threadSummaryResponse struct {
+	// ReplyCount は削除されていない返信の数（表示用）。
+	ReplyCount int64 `json:"reply_count"`
+	// LastThreadSeq は thread_seq の採番カウンタ（減らない）。スレッドの未読数 = これ - 自分の last_read_thread_seq。
+	LastThreadSeq int64     `json:"last_thread_seq"`
+	LastReplyAt   time.Time `json:"last_reply_at"`
 }
 
 type messageResponse struct {
@@ -36,8 +37,12 @@ type messageResponse struct {
 	// System は kind が system のときだけ入る。文言はクライアントが作る。
 	System *systemEventResponse `json:"system,omitzero"`
 	Body   string               `json:"body"`
-
-	ReplyTo *replyPreviewResponse `json:"reply_to"`
+	// ThreadRootID はスレッドの親の ID。チャンネルの投稿なら null（ADR 0036）。
+	ThreadRootID *string `json:"thread_root_id"`
+	// ThreadSeq はスレッドの中で何番目の返信か。返信だけが持つ。順序には seq を使う。
+	ThreadSeq *int64 `json:"thread_seq"`
+	// Thread は、返信が 1 件以上ついたことのある親だけが持つ。
+	Thread *threadSummaryResponse `json:"thread"`
 	// Attachments は削除済みのメッセージでは空配列。GET URL は含めない（ADR 0013）。
 	Attachments []messageAttachmentResponse `json:"attachments"`
 	CreatedAt   time.Time                   `json:"created_at"`
@@ -77,8 +82,13 @@ func newMessageResponse(m chat.Message) messageResponse {
 		EditedAt:    m.EditedAt,
 		DeletedAt:   m.DeletedAt,
 	}
-	if p := m.ReplyTo; p != nil {
-		resp.ReplyTo = &replyPreviewResponse{ID: p.ID.String(), Seq: p.Seq, Sender: newUserProfileResponse(p.Sender), Body: p.Body, Deleted: p.Deleted}
+	if m.ThreadRootID != nil {
+		id := m.ThreadRootID.String()
+		resp.ThreadRootID = &id
+		resp.ThreadSeq = m.ThreadSeq
+	}
+	if t := m.Thread; t != nil {
+		resp.Thread = &threadSummaryResponse{ReplyCount: t.ReplyCount, LastThreadSeq: t.LastThreadSeq, LastReplyAt: t.LastReplyAt}
 	}
 	return resp
 }
@@ -98,7 +108,7 @@ func bodyID(field, s string) (id ulid.ULID, ok bool, err error) {
 type sendMessageRequest struct {
 	ClientMsgID   string   `json:"client_msg_id"`
 	Body          string   `json:"body"`
-	ReplyToID     string   `json:"reply_to_id,omitempty"`
+	ThreadRootID  string   `json:"thread_root_id,omitempty"`
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
@@ -120,13 +130,13 @@ func (h *chatHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	replyTo, ok, err := bodyID("reply_to_id", req.ReplyToID)
+	rootID, ok, err := bodyID("thread_root_id", req.ThreadRootID)
 	if err != nil {
 		writeError(h.logger, w, r, err)
 		return
 	}
 	if ok {
-		in.ReplyToID = &replyTo
+		in.ThreadRootID = &rootID
 	}
 	for _, s := range req.AttachmentIDs {
 		id, err := ulid.ParseStrict(s)
@@ -182,14 +192,9 @@ func (h *chatHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	if s := r.URL.Query().Get("limit"); s != "" {
-		limit, err := strconv.Atoi(s)
-		if err != nil || limit < 1 {
-			writeError(h.logger, w, r, &errBadRequest{status: http.StatusBadRequest, detail: "limit must be a positive integer"})
-			return
-		}
-		// 上限を超えた値は chat.ListMessages が切り詰める。
-		mq.Limit = limit
+	if mq.Limit, err = queryMessageLimit(r); err != nil {
+		writeError(h.logger, w, r, err)
+		return
 	}
 	page, err := h.svc.ListMessages(r.Context(), actorOf(r), roomID, mq)
 	if err != nil {
@@ -201,6 +206,19 @@ func (h *chatHandlers) listMessages(w http.ResponseWriter, r *http.Request) {
 		resp.Messages[i] = newMessageResponse(m)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// queryMessageLimit は ?limit= を読む。省略なら 0（chat が既定値にする）。上限を超えた値は chat が切り詰める。
+func queryMessageLimit(r *http.Request) (int, error) {
+	s := r.URL.Query().Get("limit")
+	if s == "" {
+		return 0, nil
+	}
+	limit, err := strconv.Atoi(s)
+	if err != nil || limit < 1 {
+		return 0, &errBadRequest{status: http.StatusBadRequest, detail: "limit must be a positive integer"}
+	}
+	return limit, nil
 }
 
 type messageListResponse struct {

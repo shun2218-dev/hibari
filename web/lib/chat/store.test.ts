@@ -762,7 +762,7 @@ describe("createChatStore realtime", () => {
 
       store.sendMessage("r1", { body: "こんにちは" });
 
-      expect(outgoing(store)).toMatchObject([{ body: "こんにちは", status: "pending", replyTo: null }]);
+      expect(outgoing(store)).toMatchObject([{ body: "こんにちは", status: "pending" }]);
       const clientMsgId = outgoing(store)[0]!.clientMsgId;
       expect(clientMsgId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
 
@@ -897,52 +897,6 @@ describe("createChatStore realtime", () => {
       response.resolve(new Response());
       await vi.waitFor(() => expect(outgoing(store)).toEqual([]));
       expect(seqs(store)).toEqual([1, 2, 3, 4]);
-    });
-
-    it("replies to a message that is still being sent, using its id once confirmed", async () => {
-      const route = sendRoute();
-      const { store } = await opened({ "POST /api/v1/rooms/r1/messages": route.handler });
-
-      store.sendMessage("r1", { body: "質問です" });
-      const target = outgoing(store)[0]!;
-      store.sendMessage("r1", {
-        body: "補足",
-        replyTo: { messageId: null, clientMsgId: target.clientMsgId, senderName: naoki.display_name, body: "質問です" },
-      });
-      store.sendMessage("r1", {
-        body: "既存への返信",
-        replyTo: { messageId: "m-2", clientMsgId: null, senderName: miyuki.display_name, body: "本文 2" },
-      });
-      await vi.waitFor(() => expect(outgoing(store)).toEqual([]));
-
-      expect(route.sent.map((r) => r.reply_to_id)).toEqual([undefined, "m-4", "m-2"]);
-    });
-
-    it("fails a reply whose target was never sent, and discards failed messages", async () => {
-      vi.spyOn(console, "error").mockImplementation(() => {});
-      const route = sendRoute();
-      let online = false;
-      const { store } = await opened({
-        "POST /api/v1/rooms/r1/messages": (url, init) => {
-          if (!online) throw new TypeError("Failed to fetch");
-          return route.handler(url, init);
-        },
-      });
-      store.sendMessage("r1", { body: "届かない" });
-      const target = outgoing(store)[0]!;
-      await vi.waitFor(() => expect(outgoing(store)[0]?.status).toBe("failed"));
-      store.discardMessage("r1", target.clientMsgId);
-
-      online = true;
-      store.sendMessage("r1", {
-        body: "返信",
-        replyTo: { messageId: null, clientMsgId: target.clientMsgId, senderName: naoki.display_name, body: "届かない" },
-      });
-      await vi.waitFor(() => expect(outgoing(store).map((m) => [m.body, m.status])).toEqual([["返信", "failed"]]));
-
-      store.discardMessage("r1", outgoing(store)[0]!.clientMsgId);
-      expect(store.getSnapshot().outgoing.r1).toBeUndefined();
-      expect(route.sent).toEqual([]);
     });
 
     it("forgets unsent messages when removed from a private room", async () => {

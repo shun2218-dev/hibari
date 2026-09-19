@@ -17,6 +17,7 @@ type TimelineProps = {
   items: TimelineItem[];
   onRetry?: (key: string) => void;
   onDiscard?: (key: string) => void;
+  /** 「返信」を押した（スレッドを開く。ADR 0036）。渡さなければ「返信」を出さない。 */
   onReply?: (key: string) => void;
   /** 「N 件の返信」を押した。 */
   onOpenThread?: (key: string) => void;
@@ -190,6 +191,7 @@ export function Timeline({
                     onRetry={() => onRetry?.(key)}
                     onDiscard={() => onDiscard?.(key)}
                     onReply={() => onReply?.(key)}
+                    canReply={onReply !== undefined}
                     onOpenThread={() => onOpenThread?.(key)}
                     threadOpen={openThreadKey === key}
                     onDownload={onDownload}

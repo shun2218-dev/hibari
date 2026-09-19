@@ -57,20 +57,18 @@ describe("MessageItem", () => {
     expect(onDiscard).toHaveBeenCalledOnce();
   });
 
-  it("hides the body, reply, attachments and actions of a deleted message", () => {
+  it("hides the body, attachments and actions of a deleted message", () => {
     render(
       <MessageItem
         message={message({
           deleted: true,
           body: "",
-          replyTo: { senderName: "あなた", body: "元の発言" },
           attachments: [{ kind: "file", id: "a1", fileName: "secret.pdf", sizeLabel: "1 KB" }],
         })}
       />,
     );
 
     expect(screen.getByText("このメッセージは削除されました")).toBeInTheDocument();
-    expect(screen.queryByText("元の発言")).not.toBeInTheDocument();
     expect(screen.queryByText("secret.pdf")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
   });
@@ -79,13 +77,6 @@ describe("MessageItem", () => {
     render(<MessageItem message={message({ edited: true })} />);
 
     expect(screen.getByText("（編集済み）")).toBeInTheDocument();
-  });
-
-  it("shows the message it replies to", () => {
-    render(<MessageItem message={message({ replyTo: { senderName: "あなた", body: "琥珀と緑の分け方です。" } })} />);
-
-    expect(screen.getByText("あなた")).toBeInTheDocument();
-    expect(screen.getByText("琥珀と緑の分け方です。")).toBeInTheDocument();
   });
 
   it("omits the avatar and header of a grouped message", () => {

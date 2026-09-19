@@ -26,21 +26,25 @@ type Attachment struct {
 }
 
 type Message struct {
-	ID          ulid.ULID
-	RoomID      ulid.ULID
-	Seq         int64
-	SenderID    ulid.ULID
-	ClientMsgID ulid.ULID
-	Body        string
-	ReplyToID   *ulid.ULID
-	CreatedAt   time.Time
-	EditedAt    *time.Time
-	DeletedAt   *time.Time
-	ChangeSeq   int64
-	Kind        string
-	SystemType  *string
-	SystemData  []byte
-	UserSeq     int64
+	ID                ulid.ULID
+	RoomID            ulid.ULID
+	Seq               int64
+	SenderID          ulid.ULID
+	ClientMsgID       ulid.ULID
+	Body              string
+	CreatedAt         time.Time
+	EditedAt          *time.Time
+	DeletedAt         *time.Time
+	ChangeSeq         int64
+	Kind              string
+	SystemType        *string
+	SystemData        []byte
+	UserSeq           int64
+	ThreadRootID      *ulid.ULID
+	ThreadSeq         *int64
+	LastThreadSeq     int64
+	ThreadReplyCount  int32
+	ThreadLastReplyAt *time.Time
 }
 
 type Room struct {
@@ -57,6 +61,7 @@ type Room struct {
 	ArchivedAt     *time.Time
 	LastChangeSeq  int64
 	LastUserSeq    int64
+	LastChannelSeq int64
 }
 
 type Workspace struct {

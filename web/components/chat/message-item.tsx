@@ -94,14 +94,6 @@ export function MessageItem({
           </header>
         )}
 
-        {message.replyTo && !deleted && (
-          <p className="flex min-w-0 items-center gap-1.5 text-2xs text-text-muted">
-            <ReplyIcon className="size-3 shrink-0" />
-            <span className="shrink-0 font-semibold text-text-secondary">{message.replyTo.senderName}</span>
-            <span className="truncate">{message.replyTo.body}</span>
-          </p>
-        )}
-
         {editing ? (
           <MessageEditor editing={editing} />
         ) : deleted ? (

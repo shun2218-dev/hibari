@@ -240,8 +240,8 @@ func TestChangeSeqSyncConcurrent(t *testing.T) {
 	}
 }
 
-// 返信の送信（rooms をロックしたまま返信先に FOR KEY SHARE）と、返信先の編集・削除（メッセージをロックしてから rooms）が並行しても、
-// デッドロックにならない（ADR 0014「ロックの順序」）。
+// スレッドの返信の送信（親をロックしてから rooms、rooms を持ったまま親に FOR KEY SHARE）と、親の編集（メッセージをロックしてから rooms）が
+// 並行しても、デッドロックにならない（ADR 0014「ロックの順序」/ ADR 0036）。
 func TestEditAndReplyConcurrentNoDeadlock(t *testing.T) {
 	env := chattest.New(t)
 	r := setupRoles(t, env)
@@ -249,7 +249,7 @@ func TestEditAndReplyConcurrentNoDeadlock(t *testing.T) {
 	if _, err := env.Service.JoinRoom(t.Context(), r.member2, room.ID); err != nil {
 		t.Fatal(err)
 	}
-	target := send(t, env, r.member, room.ID, "返信先")
+	target := send(t, env, r.member, room.ID, "親")
 	// ルームの作成と参加のログ（ADR 0033）も change_seq を消費しているので、ここからの増分で見る。
 	base := roomLastChangeSeq(t, env, room.ID)
 
@@ -261,7 +261,7 @@ func TestEditAndReplyConcurrentNoDeadlock(t *testing.T) {
 			if i%2 == 0 {
 				_, err = env.Service.EditMessage(t.Context(), r.member, room.ID, target.ID, env.IDs.New().String())
 			} else {
-				_, _, err = env.Service.SendMessage(t.Context(), r.member2, room.ID, chat.SendMessageInput{ClientMsgID: env.IDs.New(), Body: "返信", ReplyToID: &target.ID})
+				_, _, err = env.Service.SendMessage(t.Context(), r.member2, room.ID, chat.SendMessageInput{ClientMsgID: env.IDs.New(), Body: "返信", ThreadRootID: &target.ID})
 			}
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "40P01" {
@@ -272,7 +272,8 @@ func TestEditAndReplyConcurrentNoDeadlock(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if got, want := roomLastChangeSeq(t, env, room.ID), base+n; got != want {
+	// 編集は 1 つ、返信は返信と親の 2 つの change_seq を使う。
+	if got, want := roomLastChangeSeq(t, env, room.ID), base+n/2+n/2*2; got != want {
 		t.Errorf("last_change_seq = %d, want %d", got, want)
 	}
 }

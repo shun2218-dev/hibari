@@ -56,8 +56,10 @@ export function advanceCursor(cursor: number, messages: readonly Message[]): num
  * 未読数は last_user_seq - last_read_user_seq で求め直す（CLAUDE.md「未読数」、ADR 0033）。足し引きしないので、
  * 同じイベントが 2 回届いても（ADR 0016）数がずれない。自分の送信は、サーバーが自分の既読位置も進めている。
  * システムメッセージ（参加や名前の変更のログ）は user_seq を進めないので、未読数も増えない。
+ * スレッドの返信はチャンネルに出ないので、最後のメッセージにも未読数にも並びにも影響しない（ADR 0036）。
  */
 export function applyMessageToRoom(room: Room, message: Message, userId: string, created: boolean): Room {
+  if (message.thread_root_id !== null) return room;
   if (!created) {
     if (room.last_message?.id !== message.id) return room;
     return { ...room, last_message: toLastMessage(message) };

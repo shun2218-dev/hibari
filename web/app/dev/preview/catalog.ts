@@ -66,7 +66,6 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "chat/message-menu", title: "メッセージの操作メニュー" },
   { name: "chat/message-editing", title: "メッセージの編集中" },
   { name: "chat/message-delete-dialog", title: "メッセージの削除" },
-  { name: "chat/composer-reply", title: "返信先を選んだ入力欄" },
   { name: "chat/account-menu", title: "アカウントメニュー" },
   { name: "chat/search-empty", title: "チャンネル検索の 0 件" },
   { name: "chat/empty-workspaces", title: "ワークスペースが 0 件" },

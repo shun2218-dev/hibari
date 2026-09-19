@@ -22,9 +22,11 @@ func TestWireRoundTrip(t *testing.T) {
 	edited := at.Add(time.Minute)
 	width := 640
 	user := chat.UserProfile{ID: u(), Handle: "alice", DisplayName: "Alice"}
+	threadRootID, threadSeq := u(), int64(3)
 	message := chat.Message{
 		ID: u(), RoomID: u(), Seq: 42, ChangeSeq: 50, Sender: user, ClientMsgID: u(), Body: "こんにちは",
-		ReplyTo:     &chat.ReplyPreview{ID: u(), Seq: 41, Sender: user, Body: "前の", Deleted: false},
+		ThreadRootID: &threadRootID, ThreadSeq: &threadSeq,
+		Thread:      &chat.ThreadSummary{ReplyCount: 2, LastThreadSeq: 3, LastReplyAt: at},
 		Attachments: []chat.MessageAttachment{{ID: u(), FileName: "a.png", ContentType: "image/png", SizeBytes: 10, Width: &width}},
 		CreatedAt:   at, EditedAt: &edited,
 	}
