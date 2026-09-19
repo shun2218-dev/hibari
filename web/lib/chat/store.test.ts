@@ -569,6 +569,46 @@ describe("createChatStore realtime", () => {
       expect(state.rooms.r1).toMatchObject({ last_message_seq: 3, unread_count: 0 });
     });
 
+    it("puts a flagged reply that arrived while disconnected into both the channel and the thread (ADR 0039)", async () => {
+      // スレッドにはすでに m-4（thread_seq 1）があるので、その次の番号にする
+      const broadcast = msg(5, {
+        change_seq: 4,
+        user_seq: 4,
+        sender: miyuki,
+        body: "切断中に流された返信",
+        thread_root_id: "m-2",
+        thread_seq: 2,
+        also_in_channel: true,
+      });
+      const { store } = await opened({
+        ...threadRoutes,
+        "GET /api/v1/rooms/r1/messages?after_change_seq=3&limit=100": () => page([broadcast], 4),
+        "GET /api/v1/rooms/r1/messages?after_change_seq=4&limit=100": () => page([], 4),
+      });
+      await store.openThread("r1", "m-2");
+
+      await store.syncTimeline("r1");
+
+      const state = store.getSnapshot();
+      // 再接続の差分（after_change_seq）だけで、チャンネルにもスレッドにも揃う
+      expect(state.timelines.r1?.messages.map((m) => m.seq)).toEqual([1, 2, 3, 5]);
+      expect(state.threads["m-2"]?.replies.map((m) => m.body)).toEqual(["本文 4", "切断中に流された返信"]);
+      // サイドバーの未読と最後の 1 行は、差分ではなく再接続時の reloadRooms で揃える（realtime.ts の syncAfterSubscribe）
+    });
+
+    it("counts a reply flagged for the channel in the channel's unread too (ADR 0039)", async () => {
+      const { store } = await opened();
+
+      store.applyEvent(
+        created(msg(4, { change_seq: 4, user_seq: 4, sender: miyuki, thread_root_id: "m-9", thread_seq: 1, also_in_channel: true })),
+      );
+
+      const state = store.getSnapshot();
+      // スレッドの未読とは別に、チャンネルの発言としても数える
+      expect(state.rooms.r1).toMatchObject({ last_message_seq: 4, last_user_seq: 4, unread_count: 1 });
+      expect(state.timelines.r1?.messages.map((m) => m.seq)).toEqual([1, 2, 3, 4]);
+    });
+
     it("adds replies to an open thread and advances my own read position when I reply", async () => {
       const { store } = await opened(threadRoutes);
       await store.loadThreads("ws-1");
@@ -600,6 +640,36 @@ describe("createChatStore realtime", () => {
       await vi.waitFor(() => expect(store.getSnapshot().outgoing.r1).toBeUndefined());
       expect(sent).toEqual([expect.objectContaining({ body: "返信", thread_root_id: "m-2" })]);
       expect(store.getSnapshot().threads["m-2"]?.replies.map((m) => m.body)).toEqual(["本文 4", "返信"]);
+    });
+
+    it("sends also_in_channel only for a flagged reply (ADR 0039)", async () => {
+      const sent: Record<string, unknown>[] = [];
+      const { store } = await opened({
+        ...threadRoutes,
+        "POST /api/v1/rooms/r1/messages": (_url, init) => {
+          const req = body(init);
+          sent.push(req);
+          return json(201, msg(5, { change_seq: 5, sender: naoki, client_msg_id: req.client_msg_id, body: req.body }));
+        },
+      });
+      await store.openThread("r1", "m-2");
+
+      store.sendMessage("r1", { body: "流す", threadRootId: "m-2", alsoInChannel: true });
+      store.sendMessage("r1", { body: "流さない", threadRootId: "m-2", alsoInChannel: false });
+      // チャンネルへの投稿で true を送ると 422 になるので、親がなければ落とす
+      store.sendMessage("r1", { body: "チャンネルへ", alsoInChannel: true });
+
+      await vi.waitFor(() => expect(store.getSnapshot().outgoing.r1).toBeUndefined());
+      expect(sent.map((r) => r.also_in_channel)).toEqual([true, undefined, undefined]);
+    });
+
+    it("shows my unsent flagged reply in the channel timeline right away (ADR 0039)", async () => {
+      const { store } = await opened(threadRoutes, { sendTimeoutMs: 10_000 });
+      await store.openThread("r1", "m-2");
+
+      store.sendMessage("r1", { body: "流す", threadRootId: "m-2", alsoInChannel: true });
+
+      expect(store.getSnapshot().outgoing.r1).toMatchObject([{ threadRootId: "m-2", alsoInChannel: true }]);
     });
 
     it("reloads the followed threads when the server says I followed one", async () => {

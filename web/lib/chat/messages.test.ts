@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import { message, miyuki, naoki, room, systemMessage } from "@/test/chat-data";
 
-import { advanceCursor, applyMessageToRoom, applyReadToRoom, insertByActivity, mergeIntoWindow, mergeMessages } from "./messages";
+import {
+  advanceCursor,
+  applyMessageToRoom,
+  applyReadToRoom,
+  insertByActivity,
+  isInChannel,
+  mergeIntoWindow,
+  mergeMessages,
+  newestChannelSeq,
+} from "./messages";
 
 describe("mergeMessages", () => {
   it("orders by seq regardless of created_at or arrival order", () => {
@@ -114,6 +123,32 @@ describe("applyMessageToRoom", () => {
     expect(applyMessageToRoom(guest, message(6), me, true)).toMatchObject({ last_read_seq: null, unread_count: 0 });
   });
 
+  it("counts a reply flagged for the channel as a channel message (ADR 0039)", () => {
+    const broadcast = message(6, {
+      sender: miyuki,
+      body: "流した返信",
+      thread_root_id: "m-5",
+      thread_seq: 1,
+      also_in_channel: true,
+    });
+
+    // チャンネルの発言なので、未読もサイドバーの並び（last_message_at）も動く
+    expect(applyMessageToRoom(base, broadcast, me, true)).toMatchObject({
+      last_message_seq: 6,
+      last_user_seq: 6,
+      unread_count: 3,
+      last_message: { id: "m-6", body: "流した返信" },
+    });
+  });
+
+  it("clears the last message when a reply flagged for the channel is deleted (ADR 0039)", () => {
+    const broadcast = message(6, { thread_root_id: "m-5", thread_seq: 1, also_in_channel: true });
+    const withLast = applyMessageToRoom(base, broadcast, me, true);
+
+    expect(applyMessageToRoom(withLast, { ...broadcast, deleted_at: "2026-09-13T02:00:00Z", body: "" }, me, false))
+      .toMatchObject({ last_message: null });
+  });
+
   it("reflects an edit or deletion only when it is the last message", () => {
     const withLast = applyMessageToRoom(base, message(6), me, true);
 
@@ -150,5 +185,26 @@ describe("insertByActivity", () => {
 
     expect(insertByActivity(["a", "b", "c"], middle, rooms)).toEqual(["a", "n", "b", "c"]);
     expect(insertByActivity(["a", "b", "c"], room("n", "n"), rooms)).toEqual(["a", "b", "c", "n"]);
+  });
+});
+
+describe("isInChannel", () => {
+  it("is true for channel posts and for replies flagged for the channel (ADR 0039)", () => {
+    expect(isInChannel(message(1))).toBe(true);
+    expect(isInChannel(message(2, { thread_root_id: "m-1", also_in_channel: true }))).toBe(true);
+    expect(isInChannel(message(3, { thread_root_id: "m-1" }))).toBe(false);
+  });
+});
+
+describe("newestChannelSeq", () => {
+  it("skips thread replies but counts the ones flagged for the channel", () => {
+    const messages = [
+      message(1),
+      message(2, { thread_root_id: "m-1", thread_seq: 1, also_in_channel: true }),
+      message(3, { thread_root_id: "m-1", thread_seq: 2 }),
+    ];
+
+    expect(newestChannelSeq(messages)).toBe(2);
+    expect(newestChannelSeq([message(1, { thread_root_id: "m-0", thread_seq: 1 })])).toBeUndefined();
   });
 });

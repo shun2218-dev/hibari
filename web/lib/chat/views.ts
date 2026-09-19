@@ -1,7 +1,9 @@
 import type {
   AttachmentDraftView,
   MessageAttachmentView,
+  MessageView,
   RoleLabel,
+  RoomKind,
   RoomMemberView,
   RoomSummaryView,
   ThreadListItemView,
@@ -23,6 +25,7 @@ import type { OutgoingMessage, ThreadState } from "./store";
 import type { AttachmentDraft } from "./uploads";
 
 import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./format";
+import { isInChannel } from "./messages";
 
 /**
  * API のレスポンスを、presentational コンポーネントの表示用の型に変える（ADR 0018）。
@@ -50,6 +53,25 @@ export function systemMessageText(message: Pick<Message, "sender" | "system">): 
       // 知らない種類（サーバーが先に増えた）。行を落とすより、何かが起きたことだけ出す
       return `${name} がチャンネルを更新しました`;
   }
+}
+
+/**
+ * 「チャンネルにも投稿する」の文言（ADR 0039）。DM には「チャンネル」がないので言い換える。
+ * 入力欄のチェックボックスと、スレッドの行に添える注記で同じ言葉を使う。
+ */
+function broadcastTarget(kind: RoomKind): string {
+  // 「DM にも投稿する」。欧文と和文の間は空ける（docs/ui/README.md の Phase 6.6）
+  return kind === "dm" ? "DM " : "チャンネル";
+}
+
+/** スレッドの入力欄のチェックボックスの文言。 */
+export function alsoInChannelLabel(kind: RoomKind): string {
+  return `${broadcastTarget(kind)}にも投稿する`;
+}
+
+/** 流した返信に、スレッドのパネルで添える注記。 */
+export function alsoInChannelNote(kind: RoomKind): string {
+  return `${broadcastTarget(kind)}にも投稿しました`;
 }
 
 /** 削除済みのメッセージの本文の代わり。タイムラインの表示（MessageItem）と同じ文言にする。 */
@@ -119,9 +141,11 @@ type TimelineOptions = {
   now?: Date;
   /**
    * スレッドの返信を並べるときの親の ID（ADR 0036）。渡すと messages をそのまま並べ、outgoing はそのスレッドへの返信だけにする。
-   * 省くとチャンネルのタイムラインで、スレッドの返信を除く。
+   * 省くとチャンネルのタイムラインで、スレッドの返信を除く（「チャンネルにも投稿する」を付けたものは残す。ADR 0039）。
    */
   threadRootId?: string;
+  /** 「チャンネルにも投稿しました」の言い換えに使う（DM では「DM」）。省くとチャンネルとして書く。 */
+  roomKind?: RoomKind;
 };
 
 /** タイムラインに並べる 1 件。確定したメッセージと、確定していない自分のメッセージを同じ形にそろえる。 */
@@ -138,10 +162,12 @@ type Entry = {
   edited: boolean;
   /** 返信のついた親の「N 件の返信」。返信が全部消えていれば出さない。 */
   thread: { replyCount: number; lastReplyAt: Date } | undefined;
+  /** 「チャンネルにも投稿する」を付けた返信の見せ方（ADR 0039）。付いていない行では undefined。 */
+  broadcast: MessageView["broadcast"];
   attachments: readonly MessageAttachment[];
 };
 
-function fromMessage(message: Message): Entry {
+function fromMessage(message: Message, broadcast: MessageView["broadcast"]): Entry {
   return {
     key: message.id,
     seq: message.seq,
@@ -157,11 +183,12 @@ function fromMessage(message: Message): Entry {
       message.thread && message.thread.reply_count > 0
         ? { replyCount: message.thread.reply_count, lastReplyAt: new Date(message.thread.last_reply_at) }
         : undefined,
+    broadcast,
     attachments: message.attachments,
   };
 }
 
-function fromOutgoing(message: OutgoingMessage, me: UserProfile): Entry {
+function fromOutgoing(message: OutgoingMessage, me: UserProfile, broadcast: MessageView["broadcast"]): Entry {
   return {
     // 確定すると key がメッセージの ID に変わる。確定したメッセージと送信中のメッセージの key は重ならない
     key: message.clientMsgId,
@@ -173,6 +200,7 @@ function fromOutgoing(message: OutgoingMessage, me: UserProfile): Entry {
     deleted: false,
     edited: false,
     thread: undefined,
+    broadcast,
     attachments: message.attachments,
   };
 }
@@ -192,19 +220,29 @@ export function toTimelineItems(
     timeZone,
     now = new Date(),
     threadRootId,
+    roomKind = "public",
   }: TimelineOptions,
 ): TimelineItem[] {
-  // スレッドの返信はチャンネルのタイムラインに出さない（ADR 0036）。手元には持っておく（change_seq のカーソルを進めるため）
+  const inThread = threadRootId !== undefined;
+  // スレッドの返信はチャンネルのタイムラインに出さない（ADR 0036）。手元には持っておく（change_seq のカーソルを進めるため）。
+  // 「チャンネルにも投稿する」を付けた返信だけは、チャンネルにも並べる（ADR 0039）
   // 削除したメッセージも出さない（ADR 0038）。返信の残っているスレッドの親だけは、返信の置き場所として「削除されました」を残す
   const shown = messages.filter(
     (m) =>
-      (threadRootId !== undefined || m.thread_root_id === null) &&
+      (inThread || isInChannel(m)) &&
       (m.deleted_at === null || m.id === threadRootId || (m.thread?.reply_count ?? 0) > 0),
   );
-  const entries = shown.map(fromMessage);
+  // 流した返信には、チャンネルでは「スレッドに返信しました」、スレッドでは「チャンネルにも投稿しました」を添える（ADR 0039）
+  const broadcastOf = (flagged: boolean): MessageView["broadcast"] =>
+    !flagged ? undefined : inThread ? { in: "thread", label: alsoInChannelNote(roomKind) } : { in: "channel" };
+
+  const entries = shown.map((m) => fromMessage(m, broadcastOf(m.also_in_channel)));
   if (me) {
-    const mine = outgoing.filter((m) => m.threadRootId === (threadRootId ?? null));
-    entries.push(...mine.map((m) => fromOutgoing(m, me)));
+    // 送信中の返信も、流すものはチャンネルに出す（確定したときに行が動かないように）
+    const mine = outgoing.filter((m) =>
+      inThread ? m.threadRootId === threadRootId : m.threadRootId === null || m.alsoInChannel,
+    );
+    entries.push(...mine.map((m) => fromOutgoing(m, me, broadcastOf(m.alsoInChannel))));
   }
 
   const items: TimelineItem[] = [];
@@ -243,6 +281,8 @@ export function toTimelineItems(
 
     const grouped =
       !breakGroup &&
+      // チャンネルに流した返信は、スレッドから来た行だと分かるように、続けて表示にしない（docs/ui/README.md）
+      entry.broadcast?.in !== "channel" &&
       previous !== undefined &&
       previous.sender.id === entry.sender.id &&
       entry.createdAt.getTime() - previous.createdAt.getTime() < GROUPING_WINDOW_MS;
@@ -264,6 +304,7 @@ export function toTimelineItems(
         thread: entry.thread
           ? { replyCount: entry.thread.replyCount, lastReplyLabel: formatListTime(entry.thread.lastReplyAt, now, timeZone) }
           : undefined,
+        broadcast: entry.broadcast,
         attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
         grouped,
       },

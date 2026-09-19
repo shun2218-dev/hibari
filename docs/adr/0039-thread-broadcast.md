@@ -103,3 +103,15 @@ ADR 0036 の返信の送信に、次を足す。
   sqlc の引数は Go のゼロ値（false）で渡りうるので、チャンネルの投稿で渡し忘れても、`CHECK (thread_root_id IS NOT NULL OR in_channel)` で止まる。
 - `rooms` の採番は、返信の採番（`AllocateThreadReplySeq`）に `in_channel` を渡し、true のときだけ `last_user_seq` と `last_message_at` を進める。
 - メッセージのレスポンスの `also_in_channel` は、チャンネルの投稿でも省略せず `false` を返す（クライアントの型を必須のままにするため）。
+
+### 2026-09-19 Web（Phase 6.6 の最後）
+
+- **チャンネルに出るかの判定は 1 か所にまとめた**（`web/lib/chat/messages.ts` の `isInChannel`）。サーバーの `messages.in_channel` と同じ式にし、
+  チャンネルのタイムライン・「ここから未読」の位置（`newestChannelSeq`）・サイドバーの最後の 1 行と未読（`applyMessageToRoom`）が、同じ判定を使う。
+- **送信中の返信も、流すものはチャンネルに並べる。** 確定したときに行が動かないようにするため。`OutgoingMessage` にフラグを持たせる。
+- **チェックボックスは送信のたびに戻す。** フラグは送信時に決まって後から変えられないので、次の返信に黙って引き継がない。
+- **チャンネルに流した返信の行は、続けて表示（grouped）にしない。** 直前が同じ人の発言でも、スレッドから来た行だと分かるようにする（`docs/ui/README.md`）。
+- **チャンネルの行からスレッドを開くと、開くのは親。** 「スレッドに返信しました」も「返信」も同じ口（`onOpenThread`）を通すので、
+  返信の行からは `thread_root_id` を辿る。スレッドは入れ子にしないため（ADR 0036）。
+- **`also_in_channel` は返信のときだけ送る。** チャンネルへの投稿で true を送ると 422 になるので、親がなければ落とす。
+- DM の文言は「DM にも投稿する」「DM にも投稿しました」。欧文と和文の間は空ける。

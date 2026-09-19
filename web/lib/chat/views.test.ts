@@ -265,6 +265,7 @@ describe("toTimelineItems", () => {
           clientMsgId: "c-x",
           body: "送信中",
           threadRootId: null,
+          alsoInChannel: false,
           attachments: [pdf],
           status: "pending",
           createdAt: "2026-09-13T01:01:00Z",
@@ -273,6 +274,7 @@ describe("toTimelineItems", () => {
           clientMsgId: "c-y",
           body: "失敗",
           threadRootId: null,
+          alsoInChannel: false,
           attachments: [],
           status: "failed",
           createdAt: "2026-09-13T01:02:00Z",
@@ -518,11 +520,80 @@ describe("threads (ADR 0036)", () => {
     expect(plain!.thread).toBeUndefined();
   });
 
+  it("shows a reply flagged for the channel, with a label and never grouped (ADR 0039)", () => {
+    const items = toTimelineItems(
+      [
+        message(1, { body: "親" }),
+        message(2, { body: "ふつうの返信", thread_root_id: "m-1", thread_seq: 1 }),
+        message(3, {
+          body: "流した返信",
+          thread_root_id: "m-1",
+          thread_seq: 2,
+          also_in_channel: true,
+          created_at: "2026-09-13T01:01:00Z",
+        }),
+      ],
+      { unreadAfterSeq: null, timeZone: tz },
+    );
+    const broadcast = items.flatMap((item) => (item.type === "message" ? [item.message] : [])).at(-1);
+
+    // 流していない返信だけがチャンネルから外れる
+    expect(outline(items)).toEqual(["[2026年9月13日]", "親", "流した返信"]);
+    // 同じ送信者が 5 分以内に続けても、スレッドから来た行だと分かるように続けて表示にしない
+    expect(broadcast).toMatchObject({ body: "流した返信", grouped: false, broadcast: { in: "channel" } });
+  });
+
+  it("notes in the thread panel that a reply also went to the channel (ADR 0039)", () => {
+    const root = message(1, { thread, body: "親" });
+    const items = toThreadTimelineItems(
+      {
+        root,
+        replies: [
+          message(2, { body: "ふつうの返信", thread_root_id: "m-1", thread_seq: 1 }),
+          message(3, { body: "流した返信", thread_root_id: "m-1", thread_seq: 2, also_in_channel: true }),
+        ],
+      },
+      { timeZone: tz },
+    );
+    const [plain, broadcast] = items.flatMap((item) => (item.type === "message" ? [item.message] : [])).slice(1);
+
+    expect(plain.broadcast).toBeUndefined();
+    expect(broadcast.broadcast).toEqual({ in: "thread", label: "チャンネルにも投稿しました" });
+  });
+
+  it("says DM instead of channel in a DM (ADR 0039)", () => {
+    const items = toThreadTimelineItems(
+      { root: message(1, { thread }), replies: [message(2, { thread_root_id: "m-1", thread_seq: 1, also_in_channel: true })] },
+      { timeZone: tz, roomKind: "dm" },
+    );
+    const reply = items.flatMap((item) => (item.type === "message" ? [item.message] : [])).at(-1);
+
+    expect(reply!.broadcast).toEqual({ in: "thread", label: "DM にも投稿しました" });
+  });
+
+  it("shows my unsent flagged reply in both the channel and the thread (ADR 0039)", () => {
+    const outgoing = [
+      { clientMsgId: "c-b", body: "流す返信", threadRootId: "m-1", alsoInChannel: true, attachments: [], status: "pending" as const, createdAt: "2026-09-13T01:02:00Z" },
+      { clientMsgId: "c-t", body: "流さない返信", threadRootId: "m-1", alsoInChannel: false, attachments: [], status: "pending" as const, createdAt: "2026-09-13T01:03:00Z" },
+    ];
+    const channel = toTimelineItems([message(1, { thread, body: "親" })], {
+      unreadAfterSeq: null,
+      me: naoki,
+      outgoing,
+      timeZone: tz,
+    });
+    const panel = toThreadTimelineItems({ root: message(1, { thread, body: "親" }), replies: [] }, { me: naoki, outgoing, timeZone: tz });
+
+    // 確定したときに行が動かないよう、送信中のうちからチャンネルにも並べる
+    expect(outline(channel)).toEqual(["[2026年9月13日]", "親", "流す返信"]);
+    expect(outline(panel)).toEqual(["親", "[2 replies]", "流す返信", "+流さない返信"]);
+  });
+
   it("keeps my unsent thread replies out of the channel", () => {
     const items = toTimelineItems([message(1)], {
       unreadAfterSeq: null,
       me: naoki,
-      outgoing: [{ clientMsgId: "c-t", body: "スレッドへ", threadRootId: "m-1", attachments: [], status: "pending", createdAt: "2026-09-13T01:01:00Z" }],
+      outgoing: [{ clientMsgId: "c-t", body: "スレッドへ", threadRootId: "m-1", alsoInChannel: false, attachments: [], status: "pending", createdAt: "2026-09-13T01:01:00Z" }],
       timeZone: tz,
     });
 
@@ -540,8 +611,8 @@ describe("threads (ADR 0036)", () => {
       {
         me: naoki,
         outgoing: [
-          { clientMsgId: "c-t", body: "送信中の返信", threadRootId: "m-1", attachments: [], status: "pending", createdAt: "2026-09-14T01:02:00Z" },
-          { clientMsgId: "c-c", body: "チャンネルへ", threadRootId: null, attachments: [], status: "pending", createdAt: "2026-09-14T01:02:00Z" },
+          { clientMsgId: "c-t", body: "送信中の返信", threadRootId: "m-1", alsoInChannel: false, attachments: [], status: "pending", createdAt: "2026-09-14T01:02:00Z" },
+          { clientMsgId: "c-c", body: "チャンネルへ", threadRootId: null, alsoInChannel: false, attachments: [], status: "pending", createdAt: "2026-09-14T01:02:00Z" },
         ],
         timeZone: tz,
       },

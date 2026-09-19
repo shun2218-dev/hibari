@@ -27,6 +27,7 @@ import {
   applyMessageToRoom,
   applyReadToRoom,
   insertByActivity,
+  isInChannel,
   mergeIntoWindow,
   mergeMessages,
   newestChannelSeq,
@@ -68,6 +69,8 @@ export type OutgoingMessage = {
   body: string;
   /** スレッドへの返信なら親の ID（ADR 0036）。チャンネルへの投稿なら null。送信の順番はルームで 1 本のまま。 */
   threadRootId: string | null;
+  /** 「チャンネルにも投稿する」を付けた返信（ADR 0039）。チャンネルへの投稿では常に false。 */
+  alsoInChannel: boolean;
   /** アップロードを終えた（uploaded の）添付。送信で attachment_ids として付ける（ADR 0013）。 */
   attachments: MessageAttachment[];
   status: "pending" | "failed";
@@ -611,7 +614,7 @@ export function createChatStore(
 
     const seen =
       (state.focus?.roomId === roomId && state.focus.caughtUp) ||
-      added.filter((m) => m.seq > previousNewest && m.thread_root_id === null).every((m) => m.sender.id === userId);
+      added.filter((m) => m.seq > previousNewest && isInChannel(m)).every((m) => m.sender.id === userId);
     if (seen) {
       if (timeline.unreadAfterSeq !== null && timeline.unreadAfterSeq >= previousNewest) {
         patchTimeline(roomId, { unreadAfterSeq: newest });
@@ -734,6 +737,8 @@ export function createChatStore(
       client_msg_id: item.clientMsgId,
       body: item.body,
       ...(item.threadRootId === null ? {} : { thread_root_id: item.threadRootId }),
+      // チャンネルへの投稿で true を送ると 422 になるので、返信のときだけ付ける（ADR 0039）
+      ...(item.alsoInChannel ? { also_in_channel: true } : {}),
       ...(item.attachments.length === 0 ? {} : { attachment_ids: item.attachments.map((a) => a.id) }),
     });
     // 待ちきれずに失敗にした後で応答が届いても、確定として扱う（同じ client_msg_id の再送は同じメッセージを返す）
@@ -1443,12 +1448,20 @@ export function createChatStore(
      */
     sendMessage(
       roomId: string,
-      input: { body: string; attachments?: MessageAttachment[]; threadRootId?: string | null },
+      input: {
+        body: string;
+        attachments?: MessageAttachment[];
+        threadRootId?: string | null;
+        /** 返信をチャンネルにも出す（ADR 0039）。threadRootId のないときに渡しても無視する。 */
+        alsoInChannel?: boolean;
+      },
     ) {
+      const threadRootId = input.threadRootId ?? null;
       const item: OutgoingMessage = {
         clientMsgId: ulid(now()),
         body: input.body,
-        threadRootId: input.threadRootId ?? null,
+        threadRootId,
+        alsoInChannel: threadRootId !== null && (input.alsoInChannel ?? false),
         attachments: input.attachments ?? [],
         status: "pending",
         createdAt: new Date(now()).toISOString(),

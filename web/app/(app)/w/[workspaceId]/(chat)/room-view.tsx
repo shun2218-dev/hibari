@@ -150,6 +150,14 @@ export function RoomView({
   if (!room || otherWorkspace) return null;
 
   const findMessage = (key: string) => messages?.find((m) => m.id === key);
+  /**
+   * タイムラインの行からスレッドを開く。チャンネルに流した返信の行（ADR 0039）から開くのは、その返信ではなく親。
+   * スレッドは入れ子にしないので（ADR 0036）、返信を親にしたスレッドは作らない。
+   */
+  const openThreadOf = (key: string) => {
+    const message = findMessage(key);
+    if (message) onOpenThread(message.thread_root_id ?? message.id);
+  };
   // 添付があれば本文は空でもよい。アップロード中・失敗した添付が残っていたら送らない（ADR 0013 / 0028）
   const canSend =
     (draft.trim() !== "" || drafts.length > 0) && draftsReady(drafts) && [...draft].length <= MAX_BODY_LENGTH;
@@ -233,10 +241,9 @@ export function RoomView({
             onImageError={(id, url) => media.attachmentImageFailed(id, url)}
             {...timelineProps}
             // スレッドは確定したメッセージにだけ作れる（送信中のものにはまだ ID がない）。返信・システムメッセージの「返信」は出ない
-            onReply={(key) => {
-              if (findMessage(key)) onOpenThread(key);
-            }}
-            onOpenThread={onOpenThread}
+            onReply={openThreadOf}
+            // チャンネルに流した返信の「スレッドに返信しました」も同じ口を通る（ADR 0039）
+            onOpenThread={openThreadOf}
             openThreadKey={openThreadId}
           />
         ))}

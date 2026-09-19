@@ -57,9 +57,10 @@ export function advanceCursor(cursor: number, messages: readonly Message[]): num
  * 同じイベントが 2 回届いても（ADR 0016）数がずれない。自分の送信は、サーバーが自分の既読位置も進めている。
  * システムメッセージ（参加や名前の変更のログ）は user_seq を進めないので、未読数も増えない。
  * スレッドの返信はチャンネルに出ないので、最後のメッセージにも未読数にも並びにも影響しない（ADR 0036）。
+ * 「チャンネルにも投稿する」を付けた返信だけは、チャンネルの発言として数える（ADR 0039）。
  */
 export function applyMessageToRoom(room: Room, message: Message, userId: string, created: boolean): Room {
-  if (message.thread_root_id !== null) return room;
+  if (!isInChannel(message)) return room;
   if (!created) {
     if (room.last_message?.id !== message.id) return room;
     // 最後のメッセージが削除された。ひとつ前のメッセージは手元にあるとは限らないので、いったん空にして取り直す（ADR 0038）
@@ -120,12 +121,20 @@ export function insertByActivity(ids: readonly string[], room: Room, rooms: Reco
 }
 
 /**
+ * チャンネルのタイムラインに出る行か。サーバーの `messages.in_channel` と同じ判定にする（ADR 0039）。
+ * チャンネルの投稿とシステムメッセージは常に出る。スレッドの返信は「チャンネルにも投稿する」を付けたものだけ出る。
+ */
+export function isInChannel(message: Pick<Message, "thread_root_id" | "also_in_channel">): boolean {
+  return message.thread_root_id === null || message.also_in_channel;
+}
+
+/**
  * チャンネルのタイムラインに出る、いちばん新しいメッセージの seq。手元のメッセージにはスレッドの返信も入っている
  * （change_seq のカーソルを進めるため）が、既読や「ここから未読」はチャンネルに出ているものだけで決める（ADR 0036）。
  */
 export function newestChannelSeq(messages: readonly Message[]): number | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]!.thread_root_id === null) return messages[i]!.seq;
+    if (isInChannel(messages[i]!)) return messages[i]!.seq;
   }
   return undefined;
 }
