@@ -512,6 +512,8 @@ type roomReadData struct {
 	// LastReadUserSeq は既読位置に対応する user_seq（ADR 0033）。
 	LastReadUserSeq int64 `json:"last_read_user_seq"`
 	UnreadCount     int64 `json:"unread_count"`
+	// MentionCount は既読を進めた後の、自分宛ての未読のメンションの数（ADR 0041）。別の端末のバッジも揃える。
+	MentionCount int64 `json:"mention_count"`
 }
 
 type workspaceUpdatedData struct {
@@ -583,7 +585,7 @@ func eventData(d any) (any, error) {
 	case chat.RoomMemberRemoved:
 		return roomMemberRemovedData{d.WorkspaceID.String(), d.RoomID.String(), d.Reason}, nil
 	case chat.RoomRead:
-		return roomReadData{d.WorkspaceID.String(), d.RoomID.String(), d.LastReadSeq, d.LastReadUserSeq, d.UnreadCount}, nil
+		return roomReadData{d.WorkspaceID.String(), d.RoomID.String(), d.LastReadSeq, d.LastReadUserSeq, d.UnreadCount, d.MentionCount}, nil
 	case chat.WorkspaceUpdated:
 		return workspaceUpdatedData{d.WorkspaceID.String(), d.Name, d.InvitePolicy}, nil
 	case chat.WorkspaceMemberRemoved:

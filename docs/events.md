@@ -86,7 +86,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | `presence.changed` | そのユーザーが所属する workspace | オンライン / オフラインが変わった |
 | `typing.started` | room（入力した本人の接続を除く） | 入力中になった |
 | `thread.read` | 本人 | 自分のスレッドの既読位置が進んだ（別の端末を含む。ADR 0036） |
-| `thread.followed` | 本人 | 自分がスレッドに参加した（自分の返信、自分の投稿への最初の返信） |
+| `thread.followed` | 本人 | 自分がスレッドに参加した（自分の返信、自分の投稿への最初の返信、スレッドの中でのメンション。ADR 0041） |
 
 #### `message.created` / `message.updated` / `message.deleted`
 
@@ -100,9 +100,19 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
   "sender": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" },
   "client_msg_id": "01J8...", "body": "こんにちは",
   "thread_root_id": null, "thread_seq": null, "also_in_channel": false, "thread": null, "attachments": [],
+  "mentions": [{ "kind": "user", "user": { "id": "01J8...", "handle": "kohaku", "display_name": "kohaku" } }],
   "created_at": "2026-09-14T12:00:00Z", "edited_at": null, "deleted_at": null
 }
 ```
+
+`mentions` は本文にあるメンション（ADR 0041）。本文には `<@userID>` / `<!channel>` / `<!here>` が入っていて、
+クライアントはこれを見て `<@userID>` を名前に置き換える。出現順で、重複はない。`kind` は `user` / `channel` / `here` で、
+`user` のときだけ `user`（プロフィール）が入る。
+
+**「自分宛てか」はイベントに載らない。** 配信は 1 つのペイロードを購読者に配る形なので（ADR 0015 / 0016）、受け取る人ごとの値を入れられない。
+クライアントは `mentions` を見て自分で判断し、手元のバッジを増やす。`kind` が `channel` / `here` なら「自分も対象かもしれない」として増やすが、
+**スレッドだけの返信（`thread_root_id` があって `also_in_channel` が false）では増やさない**（サーバーが数えないため。Slack と同じ）。
+正しい値はルームの `mention_count`（REST）で、ルームを開くか一覧を取り直せば揃う。
 
 スレッドの返信（ADR 0036）も `message.created` として同じルームの購読者に届く。`thread_root_id` に親の ID、`thread_seq` にスレッドの中の番号が入る。
 返信はチャンネルのタイムラインに出さない。`seq` と `change_seq` はルームのものを使うので、同期（下記）はチャンネルと同じ 1 本で済む。
@@ -122,7 +132,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
   "id": "01J8...", "room_id": "01J8...", "seq": 43, "change_seq": 58, "user_seq": 30,
   "kind": "system", "system": { "type": "room_renamed", "old_name": "雑談", "new_name": "雑談 改" },
   "sender": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" },
-  "body": "", "thread_root_id": null, "thread_seq": null, "also_in_channel": false, "thread": null, "attachments": [], "created_at": "2026-09-19T01:00:00Z", "edited_at": null, "deleted_at": null
+  "body": "", "thread_root_id": null, "thread_seq": null, "also_in_channel": false, "thread": null, "attachments": [], "mentions": [], "created_at": "2026-09-19T01:00:00Z", "edited_at": null, "deleted_at": null
 }
 ```
 
@@ -161,10 +171,11 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 #### `room.read`
 
 ```json
-{ "workspace_id": "01J8...", "room_id": "01J8...", "last_read_seq": 42, "last_read_user_seq": 30, "unread_count": 0 }
+{ "workspace_id": "01J8...", "room_id": "01J8...", "last_read_seq": 42, "last_read_user_seq": 30, "unread_count": 0, "mention_count": 0 }
 ```
 
 `last_read_user_seq` は既読位置に対応する `user_seq`。クライアントはこれで未読数を求め直す（ADR 0033）。
+`mention_count` は既読を進めた後の、自分宛ての未読のメンションの数（ADR 0041）。別の端末のバッジもこれで揃う。
 
 #### `thread.read`
 
