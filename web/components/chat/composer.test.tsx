@@ -140,4 +140,12 @@ describe("Composer reply", () => {
 
     expect(screen.queryByRole("button", { name: "返信をやめる" })).not.toBeInTheDocument();
   });
+
+  it("names the thread composer differently, since it sits next to the room composer (ADR 0036)", () => {
+    render(<Composer value="" canSend={false} target="thread" />);
+
+    const textbox = screen.getByRole("textbox", { name: "スレッドに返信" });
+    expect(textbox).toHaveAttribute("placeholder", "スレッドに返信");
+    expect(screen.queryByRole("textbox", { name: "メッセージ" })).not.toBeInTheDocument();
+  });
 });

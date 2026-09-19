@@ -26,6 +26,8 @@ type ComposerProps = {
   onCancelReply?: () => void;
   /** 送信できる内容があるか（本文が空白だけ、アップロード中の添付がある、などは false）。 */
   canSend: boolean;
+  /** スレッドのパネルの入力欄か。同じ画面に 2 つ並ぶので、読み上げの名前と案内を分ける（ADR 0036）。 */
+  target?: "room" | "thread";
 };
 
 export function Composer({
@@ -40,6 +42,7 @@ export function Composer({
   replyTo,
   onCancelReply,
   canSend,
+  target = "room",
 }: ComposerProps) {
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -100,12 +103,12 @@ export function Composer({
           }}
         />
         <textarea
-          aria-label="メッセージ"
+          aria-label={target === "thread" ? "スレッドに返信" : "メッセージ"}
           rows={1}
           value={value}
           onChange={(e) => onChange?.(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="メッセージを入力"
+          placeholder={target === "thread" ? "スレッドに返信" : "メッセージを入力"}
           className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1.5 py-1 text-lg leading-normal text-text focus-visible:outline-none"
         />
         <Button size="sm" onClick={onSend} disabled={!canSend}>

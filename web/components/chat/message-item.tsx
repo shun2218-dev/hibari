@@ -1,6 +1,6 @@
 import { Avatar } from "@/components/ui/avatar";
 import { Button, IconButton, TextButton } from "@/components/ui/button";
-import { ClockIcon, FileIcon, MoreIcon, ReplyIcon } from "@/components/ui/icons";
+import { ChevronRightIcon, ClockIcon, FileIcon, MoreIcon, ReplyIcon } from "@/components/ui/icons";
 import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
 
@@ -20,6 +20,12 @@ type MessageItemProps = {
   onRetry?: () => void;
   onDiscard?: () => void;
   onReply?: () => void;
+  /** 「返信」を出すか。スレッドの中（親と返信）では出さない（スレッドは入れ子にしない。ADR 0036）。 */
+  canReply?: boolean;
+  /** 「N 件の返信」を押した（スレッドのパネルを開く。ADR 0036）。 */
+  onOpenThread?: () => void;
+  /** スレッドのパネルで開いている親。選択中のチャンネルと同じ色で示す。 */
+  threadOpen?: boolean;
   onDownload?: (attachmentId: string) => void;
   /** 画像が読み込めなかった（署名付き URL の期限切れなど）。url は読み込みに使った URL。 */
   onImageError?: (attachmentId: string, url: string) => void;
@@ -40,6 +46,9 @@ export function MessageItem({
   onRetry,
   onDiscard,
   onReply,
+  canReply = true,
+  onOpenThread,
+  threadOpen = false,
   onDownload,
   onImageError,
   canEdit = false,
@@ -53,8 +62,8 @@ export function MessageItem({
 }: MessageItemProps) {
   const { sender, status, deleted } = message;
   // 削除済みには操作の対象がなく、送信失敗には専用の操作（再送・削除）があるので、ホバーの操作を出さない
-  const actionable = status !== "failed" && !deleted && editing === null;
   const hasMenu = canEdit || canDelete;
+  const actionable = status !== "failed" && !deleted && editing === null && (canReply || hasMenu);
 
   return (
     <article
@@ -62,7 +71,11 @@ export function MessageItem({
       className={cx(
         "group relative flex gap-2.5 px-3 md:gap-3 md:px-4",
         message.grouped ? "py-1" : "pt-3 pb-1",
-        forceHover ? "bg-surface-muted" : "hover:bg-surface-muted focus-within:bg-surface-muted",
+        threadOpen
+          ? "bg-primary-subtle"
+          : forceHover
+            ? "bg-surface-muted"
+            : "hover:bg-surface-muted focus-within:bg-surface-muted",
       )}
     >
       {status === "failed" && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-danger" />}
@@ -122,6 +135,10 @@ export function MessageItem({
           </ul>
         )}
 
+        {message.thread && !editing && (
+          <ThreadSummary thread={message.thread} onOpen={onOpenThread} />
+        )}
+
         {status === "failed" && (
           <p className="flex items-center gap-3 pt-0.5 text-xs leading-normal">
             <span role="alert" className="text-danger">
@@ -140,9 +157,11 @@ export function MessageItem({
             forceHover ? "flex" : "hidden group-hover:flex group-focus-within:flex",
           )}
         >
-          <IconButton label="返信" onClick={onReply} className="size-7">
-            <ReplyIcon className="size-4" />
-          </IconButton>
+          {canReply && (
+            <IconButton label="返信" onClick={onReply} className="size-7">
+              <ReplyIcon className="size-4" />
+            </IconButton>
+          )}
           {hasMenu && (
             <IconButton
               label="その他の操作"
@@ -179,6 +198,24 @@ export function MessageItem({
         </Popover>
       )}
     </article>
+  );
+}
+
+/**
+ * 親のメッセージの下の「N 件の返信」。押すとスレッドを開く（押せるので緑。docs/ui/tokens.md）。
+ * 親が削除されていても、返信は残るので出す（ADR 0036）。
+ */
+function ThreadSummary({ thread, onOpen }: { thread: NonNullable<MessageView["thread"]>; onOpen?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group/thread mt-1.5 -ml-1.5 flex h-7 items-center gap-2 rounded-sm px-1.5 text-xs hover:bg-surface"
+    >
+      <span className="font-semibold text-primary group-hover/thread:underline">{thread.replyCount} 件の返信</span>
+      <span className="font-mono text-2xs text-text-muted">最終返信 {thread.lastReplyLabel}</span>
+      <ChevronRightIcon className="size-3.5 text-text-muted" />
+    </button>
   );
 }
 

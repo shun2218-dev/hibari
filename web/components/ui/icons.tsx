@@ -21,6 +21,7 @@ import {
   type LucideIcon,
   type LucideProps,
   Mail,
+  MessagesSquare,
   Monitor,
   Paperclip,
   Plus,
@@ -55,6 +56,7 @@ export const FileIcon = withDefaults(File);
 export const HashIcon = withDefaults(Hash);
 export const LockIcon = withDefaults(Lock);
 export const MailIcon = withDefaults(Mail);
+export const ThreadIcon = withDefaults(MessagesSquare);
 export const MonitorIcon = withDefaults(Monitor);
 export const PaperclipIcon = withDefaults(Paperclip);
 export const PlusIcon = withDefaults(Plus);

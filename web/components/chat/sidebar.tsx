@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { UnreadBadge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
-import { ChevronDownIcon, HashIcon, LockIcon, PlusIcon, SearchIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, HashIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
 
 import type { RoomSummaryView, UserRef, WorkspaceRef } from "./types";
@@ -28,6 +28,11 @@ type SidebarProps = {
   onCreateRoom?: () => void;
   /** ダイレクトメッセージを始める（相手を選ぶダイアログを開く）。 */
   onStartDm?: () => void;
+  /**
+   * 参加しているスレッドの一覧への入口（ADR 0036）。unreadCount は未読のあるスレッドの数。
+   * 渡さなければ出さない。
+   */
+  threads?: { href: string; unreadCount: number; selected: boolean };
 };
 
 export function Sidebar({
@@ -46,6 +51,7 @@ export function Sidebar({
   accountMenu,
   onCreateRoom,
   onStartDm,
+  threads,
 }: SidebarProps) {
   const channels = rooms.filter((room) => room.kind !== "dm");
   const dms = rooms.filter((room) => room.kind === "dm");
@@ -113,6 +119,7 @@ export function Sidebar({
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
+          {threads && <ThreadsRow {...threads} />}
           {/* 片方が 0 件でも見出しは出す。「+」がそのまま作成・DM の入口になっている */}
           <RoomSection title="チャンネル" first action={{ label: "チャンネルを作成", onClick: onCreateRoom }}>
             {channels.map((room) => (
@@ -131,6 +138,30 @@ export function Sidebar({
         </div>
       )}
     </nav>
+  );
+}
+
+/**
+ * ルームの一覧の上に置く「スレッド」の行。未読は、チャンネルと同じ琥珀のバッジで「未読のあるスレッドの数」を出す。
+ * スレッドの返信はチャンネルの未読に数えないので（ADR 0036）、ここが返信に気づく唯一の場所になる。
+ */
+function ThreadsRow({ href, unreadCount, selected }: { href: string; unreadCount: number; selected: boolean }) {
+  return (
+    <div className="pt-3">
+      <Link
+        href={href}
+        aria-current={selected ? "page" : undefined}
+        className={cx(
+          "relative flex h-9 items-center gap-3 px-4",
+          selected ? "bg-primary-subtle" : "hover:bg-surface-muted",
+        )}
+      >
+        {selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-primary" />}
+        <ThreadIcon className="size-4 shrink-0 text-text-secondary" />
+        <span className={cx("flex-1 text-base text-text", unreadCount > 0 ? "font-bold" : "font-semibold")}>スレッド</span>
+        <UnreadBadge count={unreadCount} />
+      </Link>
+    </div>
   );
 }
 

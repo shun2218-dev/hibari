@@ -155,4 +155,27 @@ describe("Sidebar empty states", () => {
     expect(screen.getByText("menu")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "アカウントメニュー" })).toHaveAttribute("aria-expanded", "true");
   });
+
+  it("shows the threads entry with the number of threads that have unread replies (ADR 0036)", () => {
+    renderSidebar({ threads: { href: "/threads", unreadCount: 2, selected: false } });
+
+    const link = screen.getByRole("link", { name: /スレッド/ });
+    expect(link).toHaveAttribute("href", "/threads");
+    expect(within(link).getByLabelText("未読 2 件")).toBeInTheDocument();
+    expect(link).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks the threads entry as current while the thread list is open", () => {
+    renderSidebar({ selectedRoomId: undefined, threads: { href: "/threads", unreadCount: 0, selected: true } });
+
+    const link = screen.getByRole("link", { name: /スレッド/ });
+    expect(link).toHaveAttribute("aria-current", "page");
+    expect(within(link).queryByLabelText(/未読/)).not.toBeInTheDocument();
+  });
+
+  it("does not show the threads entry unless given", () => {
+    renderSidebar();
+
+    expect(screen.queryByRole("link", { name: /スレッド/ })).not.toBeInTheDocument();
+  });
 });

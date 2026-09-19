@@ -47,9 +47,27 @@ export type MessageView = {
   deleted: boolean;
   edited: boolean;
   replyTo?: { senderName: string; body: string };
+  /** スレッドの親なら、返信の数と最後の返信の時刻（ADR 0036）。返信が 0 件なら持たない。 */
+  thread?: ThreadSummaryLabel;
   attachments: MessageAttachmentView[];
   /** 直前のメッセージと同じ送信者なので、アバターと名前を省いて続けて表示する。 */
   grouped: boolean;
+};
+
+/** 親のメッセージの下に出す「N 件の返信」。件数は削除された返信を除いた数、時刻は整形済み。 */
+export type ThreadSummaryLabel = { replyCount: number; lastReplyLabel: string };
+
+/**
+ * 参加しているスレッドの一覧の 1 行（ADR 0036）。未読数は親の last_thread_seq と自分の既読位置の差。
+ * 親が削除されていれば root.deleted が true で、本文は出さない。
+ */
+export type ThreadListItemView = {
+  key: string;
+  room: { kind: RoomKind; name: string };
+  root: Pick<MessageView, "sender" | "timeLabel" | "body" | "deleted">;
+  replyCount: number;
+  lastReplyLabel: string;
+  unreadCount: number;
 };
 
 export type TimelineItem =

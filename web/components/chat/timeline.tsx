@@ -18,6 +18,10 @@ type TimelineProps = {
   onRetry?: (key: string) => void;
   onDiscard?: (key: string) => void;
   onReply?: (key: string) => void;
+  /** 「N 件の返信」を押した。 */
+  onOpenThread?: (key: string) => void;
+  /** スレッドのパネルで開いている親の key。 */
+  openThreadKey?: string;
   onDownload?: (attachmentId: string) => void;
   onImageError?: (attachmentId: string, url: string) => void;
   onMarkAllRead?: () => void;
@@ -66,6 +70,8 @@ export function Timeline({
   onRetry,
   onDiscard,
   onReply,
+  onOpenThread,
+  openThreadKey,
   onDownload,
   onImageError,
   onMarkAllRead,
@@ -184,6 +190,8 @@ export function Timeline({
                     onRetry={() => onRetry?.(key)}
                     onDiscard={() => onDiscard?.(key)}
                     onReply={() => onReply?.(key)}
+                    onOpenThread={() => onOpenThread?.(key)}
+                    threadOpen={openThreadKey === key}
                     onDownload={onDownload}
                     onImageError={onImageError}
                     canEdit={actions?.canEdit}

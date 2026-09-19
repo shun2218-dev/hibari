@@ -214,4 +214,45 @@ describe("MessageItem actions", () => {
     await userEvent.type(screen.getByRole("textbox", { name: "メッセージを編集" }), "{Enter}");
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it("shows the thread summary under a thread root and opens the thread (ADR 0036)", async () => {
+    const onOpenThread = vi.fn();
+    render(
+      <MessageItem message={message({ thread: { replyCount: 3, lastReplyLabel: "10:18" } })} onOpenThread={onOpenThread} />,
+    );
+
+    const summary = screen.getByRole("button", { name: /3 件の返信/ });
+    expect(summary).toHaveTextContent("最終返信 10:18");
+    await userEvent.click(summary);
+    expect(onOpenThread).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the thread summary on a deleted root, because the replies remain", () => {
+    render(<MessageItem message={message({ deleted: true, thread: { replyCount: 2, lastReplyLabel: "09:48" } })} />);
+
+    expect(screen.getByText("このメッセージは削除されました")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /2 件の返信/ })).toBeInTheDocument();
+  });
+
+  it("does not show the thread summary without replies", () => {
+    render(<MessageItem message={message()} />);
+
+    expect(screen.queryByRole("button", { name: /件の返信/ })).not.toBeInTheDocument();
+  });
+
+  it("highlights the root whose thread is open", () => {
+    render(<MessageItem message={message()} threadOpen />);
+
+    expect(screen.getByRole("article")).toHaveClass("bg-primary-subtle");
+  });
+
+  it("hides the reply action inside a thread (threads are not nested)", () => {
+    const { rerender } = render(<MessageItem message={message()} canReply={false} />);
+    expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
+
+    // 編集・削除の「…」は、返信を出さなくても残る
+    rerender(<MessageItem message={message()} canReply={false} canEdit />);
+    expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "その他の操作", hidden: true })).toBeInTheDocument();
+  });
 });
