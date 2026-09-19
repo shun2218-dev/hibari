@@ -478,6 +478,99 @@ func TestWSProtocol(t *testing.T) {
 	})
 }
 
+// スレッドの返信も、切断中に起きたものを再接続の同期（after_change_seq）で取り戻せる（Phase 6.5 の DoD。ADR 0036 / 0037）。
+// 返信と、返信数の変わった親は、ルームの差分に入る。参加しているスレッドの未読も、一覧を取り直せば揃う。
+// 再接続した後の返信は、message.created（返信）と message.updated（親）の順に届く。
+func TestWSReconnectSyncThread(t *testing.T) {
+	c := newAPI(t)
+	f := newChatFixture(c)
+	messages := "/api/v1/rooms/" + f.public.ID + "/messages"
+	reply := func(u apiUser, rootID, body string) messageBody {
+		t.Helper()
+		r := c.as(u, http.MethodPost, messages, map[string]string{"client_msg_id": ulid.Make().String(), "body": body, "thread_root_id": rootID})
+		expectStatus(t, r, http.StatusCreated)
+		return decode[messageBody](t, r)
+	}
+	threads := func() threadListBody {
+		t.Helper()
+		r := c.as(f.bob, http.MethodGet, "/api/v1/workspaces/"+f.ws.ID+"/threads", nil)
+		expectStatus(t, r, http.StatusOK)
+		return decode[threadListBody](t, r)
+	}
+
+	root := decode[messageBody](t, c.sendMessage(f.alice, f.public.ID, "親"))
+	// bob が返信してスレッドに参加する（自分の返信までは既読）
+	reply(f.bob, root.ID, "bob の返信")
+	bob := c.dialWS(f.bob)
+	bob.subscribe("room_id", f.public.ID)
+	bob.sync()
+	// 手元のカーソル: 履歴の last_change_seq（ここまでは反映済み）
+	cursor := decode[messagesBody](t, c.as(f.bob, http.MethodGet, messages, nil)).LastChangeSeq
+
+	// 切断中に、スレッドへの返信が 2 件と、そのうち 1 件の削除が起きる。
+	if err := bob.conn.Close(websocket.StatusNormalClosure, ""); err != nil {
+		t.Fatal(err)
+	}
+	first := reply(f.alice, root.ID, "切断中の返信 1")
+	second := reply(f.alice, root.ID, "切断中の返信 2")
+	expectStatus(t, c.as(f.alice, http.MethodDelete, messages+"/"+first.ID, nil), http.StatusNoContent)
+
+	// 再接続: 購読してから差分を取る（docs/events.md の同期の手順）。
+	bob = c.dialWS(f.bob)
+	bob.subscribe("room_id", f.public.ID)
+	local := map[string]messageBody{}
+	for {
+		r := c.as(f.bob, http.MethodGet, messages+"?limit=2&after_change_seq="+strconv.FormatInt(cursor, 10), nil)
+		expectStatus(t, r, http.StatusOK)
+		page := decode[messagesBody](t, r)
+		for _, m := range page.Messages {
+			if m.ChangeSeq <= cursor {
+				t.Fatalf("change_seq %d after cursor %d", m.ChangeSeq, cursor)
+			}
+			cursor = m.ChangeSeq
+			local[m.ID] = m
+		}
+		if !page.HasMore {
+			// 同期の後に返信が届けば、カーソルの続き（last_change_seq + 1）から番号が振られている
+			if next := max(cursor, page.LastChangeSeq); next != cursor {
+				t.Errorf("cursor %d behind last_change_seq %d after a full sync", cursor, next)
+			}
+			break
+		}
+	}
+	if m, ok := local[second.ID]; !ok || m.ThreadRootID == nil || *m.ThreadRootID != root.ID || m.Body != "切断中の返信 2" {
+		t.Errorf("second reply after sync = %+v (found %v)", m, ok)
+	}
+	if m, ok := local[first.ID]; !ok || m.DeletedAt == nil {
+		t.Errorf("deleted reply after sync = %+v (found %v), want a tombstone", m, ok)
+	}
+	// 親は最後の状態（返信 2 件のうち 1 件が削除されて、残りは bob の返信と 2 件目）で届く
+	if m, ok := local[root.ID]; !ok || m.Thread == nil || m.Thread.ReplyCount != 2 || m.Thread.LastThreadSeq != 3 {
+		t.Errorf("root after sync = %+v (found %v)", m, ok)
+	}
+	// 参加しているスレッドの未読: bob は自分の返信（1 件目）まで読んでいて、その後に 2 件届いた
+	if got := threads(); len(got.Threads) != 1 || got.Threads[0].Root.ID != root.ID || got.Threads[0].UnreadCount != 2 {
+		t.Errorf("bob's threads = %+v", got)
+	}
+
+	// 再接続した後の返信は、WebSocket で返信・親の順に届く。
+	third := reply(f.alice, root.ID, "再接続の後の返信")
+	var types []string
+	for _, ev := range bob.sync() {
+		if ev.Type != "message.created" && ev.Type != "message.updated" {
+			continue
+		}
+		var m messageBody
+		if err := json.Unmarshal(ev.Data, &m); err != nil {
+			t.Fatal(err)
+		}
+		types = append(types, ev.Type+" "+m.ID)
+	}
+	if want := []string{"message.created " + third.ID, "message.updated " + root.ID}; strings.Join(types, ",") != strings.Join(want, ",") {
+		t.Errorf("events after reconnect = %v, want %v", types, want)
+	}
+}
+
 // DoD: 切断 → 送信 → 再接続 → 差分を取得し、取りこぼしがない。切断中の編集・削除も取れる（ADR 0014）。
 func TestWSReconnectSync(t *testing.T) {
 	c := newAPI(t)

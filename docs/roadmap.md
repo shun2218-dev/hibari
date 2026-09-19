@@ -449,7 +449,7 @@ Phase 6 の後に独立したフェーズとして行う（設計 → API → We
 - [x] メッセージからスレッドを開いて返信でき、チャンネルのタイムラインには出ない（`workspace-screen.test.tsx` の threads。オーナーが compose の実物で確認済み、2026-09-19）
 - [x] 親メッセージに返信数と最終返信が出て、リアルタイムに更新される（返信の削除で返信数が減る）（`TestThreadEvents`、`workspace-screen.test.tsx`）
 - [x] スレッドの返信でチャンネルの未読数が増えず、サイドバーの並びも動かない。参加しているスレッドの未読が分かる（`TestSendThreadReply`、`store.test.ts` / `workspace-screen.test.tsx` の threads）
-- [x] 切断中に届いたスレッドの返信も、再接続の同期（`after_change_seq`）で揃う（`TestSendThreadReply` の差分取得、再接続でパネルと一覧を取り直す `realtime.test.ts`。compose の実物での確認は未）
+- [x] 切断中に届いたスレッドの返信も、再接続の同期（`after_change_seq`）で揃う（WebSocket の切断 → 返信・削除 → 再接続の差分取得を実物の Postgres / Redis で通す `internal/httpx/ws_test.go` の `TestWSReconnectSyncThread`、再接続でパネルと一覧を取り直す `realtime.test.ts`。ブラウザと compose での確認は未）
 - [x] 同じ client_msg_id の再送でスレッドに二重投稿されない（`internal/chat/thread_test.go` の `TestSendThreadReplyIdempotent`）
 - [x] 50 goroutine で同じスレッドに同時に返信しても、`thread_seq` に欠番も重複もなく、親の編集と並行してもデッドロックしない（`TestSendThreadReplyConcurrent`、`TestEditAndReplyConcurrentNoDeadlock`、`TestDeleteThreadReplyConcurrent`）
 - [x] ルームから外れると、そのルームのスレッドは参加中の一覧と未読から消える（`TestThreadFollowGoneWhenLeavingRoom`、`db/schema_test.go` の `TestThreadMembersConstraints`）
