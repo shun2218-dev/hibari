@@ -371,6 +371,17 @@ func (q *Queries) GetRoomMemberships(ctx context.Context, arg GetRoomMemberships
 
 const getRoomSummary = `-- name: GetRoomSummary :one
 SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq, r.last_user_seq, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq, rm.last_read_user_seq,
+       -- 自分宛ての未読のメンションの数（ADR 0041）。条件は CountRoomMentions（mentions.sql）と同じ。片方だけ直さないこと。
+       -- 参加していない public ルームでは rm.user_id が NULL になるので 0 になる。
+       (SELECT count(*) FROM message_mentions mm
+          JOIN messages m ON m.room_id = mm.room_id AND m.id = mm.message_id
+          LEFT JOIN thread_members tm ON tm.thread_root_id = m.thread_root_id AND tm.user_id = rm.user_id
+         WHERE mm.room_id = r.id
+           AND rm.user_id IS NOT NULL
+           AND (mm.user_id IS NULL OR mm.user_id = rm.user_id)
+           AND CASE WHEN m.in_channel THEN m.user_seq > rm.last_read_user_seq
+                    ELSE tm.user_id IS NOT NULL AND m.thread_seq > tm.last_read_thread_seq
+               END)::bigint AS mention_count,
        lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
        lm.kind AS last_message_kind, lm.system_type AS last_message_system_type,
        lm.system_data AS last_message_system_data,
@@ -394,6 +405,7 @@ type GetRoomSummaryRow struct {
 	IsMember                     bool
 	LastReadSeq                  *int64
 	LastReadUserSeq              *int64
+	MentionCount                 int64
 	LastMessageID                *ulid.ULID
 	LastMessageSenderID          *ulid.ULID
 	LastMessageBody              *string
@@ -427,6 +439,7 @@ func (q *Queries) GetRoomSummary(ctx context.Context, arg GetRoomSummaryParams) 
 		&i.IsMember,
 		&i.LastReadSeq,
 		&i.LastReadUserSeq,
+		&i.MentionCount,
 		&i.LastMessageID,
 		&i.LastMessageSenderID,
 		&i.LastMessageBody,
@@ -439,6 +452,35 @@ func (q *Queries) GetRoomSummary(ctx context.Context, arg GetRoomSummaryParams) 
 		&i.LastMessageSenderDisplayName,
 	)
 	return i, err
+}
+
+const listRoomMemberIDs = `-- name: ListRoomMemberIDs :many
+SELECT user_id
+  FROM room_members
+ WHERE room_id = $1
+ ORDER BY user_id
+`
+
+// ルームのメンバーの user_id をすべて返す。@here の対象を presence に問い合わせるために使う（ADR 0041）。
+// 表示用ではないので、ページングもプロフィールの JOIN もしない。
+func (q *Queries) ListRoomMemberIDs(ctx context.Context, roomID ulid.ULID) ([]ulid.ULID, error) {
+	rows, err := q.db.Query(ctx, listRoomMemberIDs, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ulid.ULID{}
+	for rows.Next() {
+		var user_id ulid.ULID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listRoomMembers = `-- name: ListRoomMembers :many
@@ -497,6 +539,17 @@ func (q *Queries) ListRoomMembers(ctx context.Context, arg ListRoomMembersParams
 
 const listRoomsForUser = `-- name: ListRoomsForUser :many
 SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq, r.last_user_seq, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq, rm.last_read_user_seq,
+       -- 自分宛ての未読のメンションの数（ADR 0041）。条件は CountRoomMentions（mentions.sql）と同じ。片方だけ直さないこと。
+       -- 参加していない public ルームでは rm.user_id が NULL になるので 0 になる。
+       (SELECT count(*) FROM message_mentions mm
+          JOIN messages m ON m.room_id = mm.room_id AND m.id = mm.message_id
+          LEFT JOIN thread_members tm ON tm.thread_root_id = m.thread_root_id AND tm.user_id = rm.user_id
+         WHERE mm.room_id = r.id
+           AND rm.user_id IS NOT NULL
+           AND (mm.user_id IS NULL OR mm.user_id = rm.user_id)
+           AND CASE WHEN m.in_channel THEN m.user_seq > rm.last_read_user_seq
+                    ELSE tm.user_id IS NOT NULL AND m.thread_seq > tm.last_read_thread_seq
+               END)::bigint AS mention_count,
        lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
        lm.kind AS last_message_kind, lm.system_type AS last_message_system_type,
        lm.system_data AS last_message_system_data,
@@ -522,6 +575,7 @@ type ListRoomsForUserRow struct {
 	IsMember                     bool
 	LastReadSeq                  *int64
 	LastReadUserSeq              *int64
+	MentionCount                 int64
 	LastMessageID                *ulid.ULID
 	LastMessageSenderID          *ulid.ULID
 	LastMessageBody              *string
@@ -568,6 +622,7 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, arg ListRoomsForUserPara
 			&i.IsMember,
 			&i.LastReadSeq,
 			&i.LastReadUserSeq,
+			&i.MentionCount,
 			&i.LastMessageID,
 			&i.LastMessageSenderID,
 			&i.LastMessageBody,

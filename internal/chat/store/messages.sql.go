@@ -275,6 +275,53 @@ func (q *Queries) FollowThread(ctx context.Context, arg FollowThreadParams) (int
 	return result.RowsAffected(), nil
 }
 
+const followThreadForMentioned = `-- name: FollowThreadForMentioned :many
+INSERT INTO thread_members (room_id, thread_root_id, user_id, last_read_thread_seq, created_at)
+SELECT rm.room_id, $1, rm.user_id, $2, $3::timestamptz
+  FROM room_members rm
+ WHERE rm.room_id = $4
+   AND rm.user_id = ANY($5::uuid[])
+ON CONFLICT (thread_root_id, user_id) DO NOTHING
+RETURNING user_id
+`
+
+type FollowThreadForMentionedParams struct {
+	ThreadRootID      ulid.ULID
+	LastReadThreadSeq int64
+	Now               time.Time
+	RoomID            ulid.ULID
+	UserIds           []ulid.ULID
+}
+
+// スレッドの中でメンションされた人を参加させる（ADR 0036 / 0041）。FollowThread の複数人版。
+// 既読位置はその返信の 1 つ前にするので、メンションされた返信だけが未読になる（0 にすると、それ以前の返信まで未読になる）。
+// 新しく参加した人の user_id だけを返す。すでに参加していた人には、既読位置を戻さないよう何もしない。
+func (q *Queries) FollowThreadForMentioned(ctx context.Context, arg FollowThreadForMentionedParams) ([]ulid.ULID, error) {
+	rows, err := q.db.Query(ctx, followThreadForMentioned,
+		arg.ThreadRootID,
+		arg.LastReadThreadSeq,
+		arg.Now,
+		arg.RoomID,
+		arg.UserIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ulid.ULID{}
+	for rows.Next() {
+		var user_id ulid.ULID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getMessageForUpdate = `-- name: GetMessageForUpdate :one
 SELECT id, room_id, seq, sender_id, client_msg_id, body, created_at, edited_at, deleted_at, change_seq, kind, system_type, system_data, user_seq, thread_root_id, thread_seq, last_thread_seq, thread_reply_count, thread_last_reply_at, in_channel
   FROM messages

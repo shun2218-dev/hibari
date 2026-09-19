@@ -212,6 +212,18 @@ SELECT rm.room_id, sqlc.arg(thread_root_id), rm.user_id, sqlc.arg(last_read_thre
    AND rm.user_id = sqlc.arg(user_id)
 ON CONFLICT (thread_root_id, user_id) DO NOTHING;
 
+-- name: FollowThreadForMentioned :many
+-- スレッドの中でメンションされた人を参加させる（ADR 0036 / 0041）。FollowThread の複数人版。
+-- 既読位置はその返信の 1 つ前にするので、メンションされた返信だけが未読になる（0 にすると、それ以前の返信まで未読になる）。
+-- 新しく参加した人の user_id だけを返す。すでに参加していた人には、既読位置を戻さないよう何もしない。
+INSERT INTO thread_members (room_id, thread_root_id, user_id, last_read_thread_seq, created_at)
+SELECT rm.room_id, sqlc.arg(thread_root_id), rm.user_id, sqlc.arg(last_read_thread_seq), sqlc.arg(now)::timestamptz
+  FROM room_members rm
+ WHERE rm.room_id = sqlc.arg(room_id)
+   AND rm.user_id = ANY(sqlc.arg(user_ids)::uuid[])
+ON CONFLICT (thread_root_id, user_id) DO NOTHING
+RETURNING user_id;
+
 -- name: AdvanceThreadReadToThreadSeq :exec
 -- 自分の返信の送信で、自分の既読位置をその返信まで進める（後退させない）。
 UPDATE thread_members
