@@ -693,10 +693,17 @@ Phase 6.16  検索
 - 編集でメンションを足した・消したときの件数 → 行は本文に合わせて作り直す。足した分は、まだ未読のメッセージでだけ数える
 
 **DoD**
-- [ ] メンションされた人のサイドバーに件数が出て、ルームを読むと消える
-- [ ] `@channel` はルームの全員、`@here` はオンラインの人に数えられる
-- [ ] スレッドの中でメンションされた人が、そのスレッドの参加中の一覧に入る
-- [ ] 同じルームで多数の goroutine が同時に `@channel` を送っても、件数がずれずデッドロックしない
+- [x] メンションされた人のサイドバーに件数が出て、ルームを読むと消える（`internal/chat/mention_test.go` の `TestMentionCountsAndClearsOnRead`（自分の発言は数えない・既読で消える・読んだ後のメンションはまた数える）、`TestMentionRowsFollowTheBody`（編集で足した分・消した分）、`TestMentionLeavingRoomClearsTheCount`。Web は `messages.test.ts` の `applyMessageToRoom` / `applyReadToRoom` の件数、`workspace-screen.test.tsx` の `counts a mention in another room in the sidebar`）
+- [x] `@channel` はルームの全員、`@here` はオンラインの人に数えられる（`TestMentionChannelAndHere`（全員に 1 件・送信者と非メンバーには 0 件）、`TestMentionHere`（オンラインの人だけ・誰もいなければ 0 件））
+- [x] スレッドの中でメンションされた人が、そのスレッドの参加中の一覧に入る（`TestMentionInThread` の `a personal mention in a thread reply counts and joins the thread`。同じテストで、スレッドだけの返信の `@channel` / `@here` は誰にも数えず、「チャンネルにも投稿する」を付けた返信では全員に数えることも確かめている）
+- [x] 同じルームで多数の goroutine が同時に `@channel` を送っても、件数がずれずデッドロックしない（`TestSendChannelMentionConcurrent`。50 本の goroutine から同時に送って件数が 50 になる。行を積む形なので、増やすために取り合う行がない）
+
+実装は ADR 0041（サーバー側）と ADR 0043（Web 側）のとおり（設計 → デザイン → DB と API → Web）。オーナーによる実物での確認は未実施。
+
+**意図的に残したもの**
+- 編集で後から `@channel` / `@here` を足したときは、送信の確認ダイアログを出さない（ADR 0043 決定 6 は「送信の前」。Slack も編集では出さない）
+- 本文の `@名前` を押したときのプロフィールのカードは Phase 6.9 の担当。いまは押せる見た目だけで何も起きない
+- サイドバーが写っている `docs/ui/` のスクリーンショットは、未読の出し方が変わったので撮り直しが要る（オーナーの環境で `make web-shots`）
 
 ---
 
