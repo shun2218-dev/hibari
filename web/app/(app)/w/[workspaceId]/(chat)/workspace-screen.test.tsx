@@ -155,19 +155,25 @@ describe("WorkspaceScreen", () => {
       await waitFor(() => expect(screen.queryByRole("button", { name: "参加する" })).not.toBeInTheDocument());
     });
 
-    it("goes back to the workspace when the room cannot be read", async () => {
+    it("shows the same no-access notice as a removal when the room in the url cannot be read", async () => {
       rememberLocation("ws-1", "r-design");
 
       renderWithChat(
         <WorkspaceScreen />,
         routes({
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [chat, dm] }),
           "GET /api/v1/rooms/r-design": () => problem(404, "not-found"),
           "GET /api/v1/rooms/r-design/messages?limit=50": () => problem(404, "not-found"),
         }),
       );
 
-      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1"));
+      // 存在しないのか読めないのかは区別しない（ADR 0035）。入口から開き直したときに、また開かないように忘れる
+      expect(await screen.findByRole("heading", { name: "このチャンネルにはアクセスできません" })).toBeInTheDocument();
       expect(lastRoomId("ws-1")).toBeUndefined();
+      expect(nav.router.replace).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole("button", { name: "チャンネル一覧に戻る" }));
+      expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1");
     });
 
     it("opens the members panel", async () => {

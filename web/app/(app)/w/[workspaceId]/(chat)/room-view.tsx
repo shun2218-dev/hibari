@@ -101,19 +101,24 @@ export function RoomView({
   }, [store, roomId, ready, visible, atBottom]);
   useEffect(() => () => store.setFocus(null), [store]);
 
-  // 読めないルーム（存在しない、private のメンバーではない）は覚えている場所から外し、ワークスペースの入口に戻す。
-  // 別のワークスペースのルームの URL なら、そのワークスペースで開き直す。
-  // 別のタブで自分から抜けたときも、「外されました」は出さずに入口に戻す
-  const notFound = timeline?.status === "not_found" || removal === "left";
+  // 読めないルーム（存在しない、private のメンバーではない）と、開いている間に外された非公開ルームは、
+  // どちらも「アクセスできません」だけを出す。API と同じく、存在しないのか読めないのかを区別しない（ADR 0035）。
+  // 覚えている場所からは外す（入口から開き直したときに、また開かないように）
+  const unavailable = timeline?.status === "not_found" || removal === "removed";
+  // 別のタブで自分から抜けたときは、お知らせを出さずに入口に戻す（ADR 0034）
+  const left = removal === "left";
+  // 別のワークスペースのルームの URL なら、そのワークスペースで開き直す
   const otherWorkspace = ready && room !== undefined && room.workspace_id !== workspaceId;
   useEffect(() => {
-    if (notFound) {
+    if (unavailable) {
+      forgetLocation(workspaceId, roomId);
+    } else if (left) {
       forgetLocation(workspaceId, roomId);
       router.replace(`/w/${workspaceId}`);
     } else if (otherWorkspace) {
       router.replace(`/w/${room.workspace_id}/r/${roomId}`);
     }
-  }, [notFound, otherWorkspace, room, workspaceId, roomId, router]);
+  }, [unavailable, left, otherWorkspace, room, workspaceId, roomId, router]);
 
   // 古いページの取得中（loadingOlder）の切り替えでは timeline が変わるが、並びは変わらない。
   // 並びが変わったときだけ作り直し、タイムラインのスクロール位置の合わせ直しを起こさない
@@ -136,6 +141,11 @@ export function RoomView({
   const draftViews = useMemo(() => drafts.map(toAttachmentDraftView), [drafts]);
   const typingNames = useMemo(() => (typing ?? []).map((t) => t.user.display_name), [typing]);
 
+  // ワークスペースから外されたとき（下）は、ワークスペースのお知らせのほうを出す
+  if (unavailable && workspaceRemoval?.reason !== "removed") {
+    // 名前も人数も見せないので、ヘッダーごと出さない（ADR 0035）
+    return <RoomUnavailable onBack={() => router.replace(`/w/${workspaceId}`)} />;
+  }
   if (!room || otherWorkspace) return null;
 
   const findMessage = (key: string) => messages?.find((m) => m.id === key);
@@ -254,17 +264,6 @@ export function RoomView({
         {header}
         <RemovedFromWorkspace workspaceName={workspaceRemoval.workspace.name} onMove={onLeaveRemovedWorkspace} />
       </>
-    );
-  }
-  // 非公開チャンネルから外されたら、ヘッダーごと差し替える。名前も人数も、もう見せてよいものではない（ADR 0035）
-  if (removal === "removed") {
-    return (
-      <RoomUnavailable
-        onBack={() => {
-          forgetLocation(workspaceId, roomId);
-          router.replace(`/w/${workspaceId}`);
-        }}
-      />
     );
   }
 
