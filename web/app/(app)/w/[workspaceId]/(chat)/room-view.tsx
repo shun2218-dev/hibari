@@ -37,7 +37,7 @@ type RoomViewProps = {
   onLeaveRemovedWorkspace: () => void;
   /** スレッドのパネルで開いている親（ADR 0036）。タイムラインで強調する。 */
   openThreadId?: string;
-  /** 「返信」か「N 件の返信」を押した。親の ID を渡す。 */
+  /** 「返信」か「N 件の返信」、チャンネルに流した返信の「スレッドに返信しました」を押した。親の ID を渡す。 */
   onOpenThread: (rootId: string) => void;
 };
 
@@ -150,6 +150,11 @@ export function RoomView({
   if (!room || otherWorkspace) return null;
 
   const findMessage = (key: string) => messages?.find((m) => m.id === key);
+  // チャンネルに流した返信（ADR 0039）の行から開くのは、その返信の親のスレッド。それ以外はその行がスレッドの親になる
+  const threadRootOf = (key: string) => {
+    const message = findMessage(key);
+    return message ? (message.thread_root_id ?? message.id) : undefined;
+  };
   // 添付があれば本文は空でもよい。アップロード中・失敗した添付が残っていたら送らない（ADR 0013 / 0028）
   const canSend =
     (draft.trim() !== "" || drafts.length > 0) && draftsReady(drafts) && [...draft].length <= MAX_BODY_LENGTH;
@@ -232,11 +237,15 @@ export function RoomView({
             onDownload={download}
             onImageError={(id, url) => media.attachmentImageFailed(id, url)}
             {...timelineProps}
-            // スレッドは確定したメッセージにだけ作れる（送信中のものにはまだ ID がない）。返信・システムメッセージの「返信」は出ない
+            // スレッドは確定したメッセージにだけ作れる（送信中のものにはまだ ID がない）。システムメッセージの「返信」は出ない
             onReply={(key) => {
-              if (findMessage(key)) onOpenThread(key);
+              const rootId = threadRootOf(key);
+              if (rootId) onOpenThread(rootId);
             }}
-            onOpenThread={onOpenThread}
+            onOpenThread={(key) => {
+              const rootId = threadRootOf(key);
+              if (rootId) onOpenThread(rootId);
+            }}
             openThreadKey={openThreadId}
           />
         ))}

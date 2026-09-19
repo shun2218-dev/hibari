@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import { message, miyuki, naoki, room, systemMessage } from "@/test/chat-data";
 
-import { advanceCursor, applyMessageToRoom, applyReadToRoom, insertByActivity, mergeIntoWindow, mergeMessages } from "./messages";
+import {
+  advanceCursor,
+  applyMessageToRoom,
+  applyReadToRoom,
+  inChannel,
+  insertByActivity,
+  mergeIntoWindow,
+  mergeMessages,
+  newestChannelSeq,
+} from "./messages";
 
 describe("mergeMessages", () => {
   it("orders by seq regardless of created_at or arrival order", () => {
@@ -78,6 +87,20 @@ describe("applyMessageToRoom", () => {
     expect(applyMessageToRoom(base, { ...threadReply, sender: naoki }, me, true)).toBe(base);
   });
 
+  it("counts a reply sent to the channel as a channel message (ADR 0039)", () => {
+    const broadcast = message(6, {
+      sender: miyuki, body: "流した返信", thread_root_id: "m-5", thread_seq: 1, also_in_channel: true,
+    });
+
+    // 未読もサイドバーの最後の 1 行も、チャンネルの投稿と同じように進む
+    expect(applyMessageToRoom(base, broadcast, me, true)).toMatchObject({
+      last_message_seq: 6,
+      last_user_seq: 6,
+      unread_count: 3,
+      last_message: { id: "m-6", body: "流した返信" },
+    });
+  });
+
   it("updates the last message and recomputes unread from seq, so a duplicate does not count twice", () => {
     const created = message(6, { sender: miyuki, body: "新着" });
 
@@ -150,5 +173,27 @@ describe("insertByActivity", () => {
 
     expect(insertByActivity(["a", "b", "c"], middle, rooms)).toEqual(["a", "n", "b", "c"]);
     expect(insertByActivity(["a", "b", "c"], room("n", "n"), rooms)).toEqual(["a", "b", "c", "n"]);
+  });
+});
+
+describe("inChannel", () => {
+  it("covers channel messages and replies sent to the channel (ADR 0039)", () => {
+    expect(inChannel(message(1))).toBe(true);
+    expect(inChannel(message(2, { thread_root_id: "m-1", thread_seq: 1 }))).toBe(false);
+    expect(inChannel(message(3, { thread_root_id: "m-1", thread_seq: 2, also_in_channel: true }))).toBe(true);
+  });
+});
+
+describe("newestChannelSeq", () => {
+  it("takes the newest row shown in the channel, skipping replies kept only for the sync cursor", () => {
+    const messages = [
+      message(1),
+      message(2, { thread_root_id: "m-1", thread_seq: 1, also_in_channel: true }),
+      message(3, { thread_root_id: "m-1", thread_seq: 2 }),
+    ];
+
+    expect(newestChannelSeq(messages)).toBe(2);
+    expect(newestChannelSeq([message(4, { thread_root_id: "m-1", thread_seq: 1 })])).toBeUndefined();
+    expect(newestChannelSeq([])).toBeUndefined();
   });
 });

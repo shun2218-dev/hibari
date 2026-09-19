@@ -17,7 +17,14 @@ import {
   useRealtime,
 } from "@/lib/chat/chat-provider";
 import { draftsReady } from "@/lib/chat/uploads";
-import { previewImageIds, roomName, toAttachmentDraftView, toThreadTimelineItems } from "@/lib/chat/views";
+import {
+  alsoInChannelDoneLabel,
+  alsoInChannelLabel,
+  previewImageIds,
+  roomName,
+  toAttachmentDraftView,
+  toThreadTimelineItems,
+} from "@/lib/chat/views";
 import { useDocumentVisible } from "@/lib/use-document-visible";
 
 import { useMessageActions } from "./message-actions";
@@ -36,6 +43,7 @@ function startDownload(url: string) {
  * スレッドのパネル（ADR 0036、ADR 0037）。親・返信・入力欄をつなぐ。
  *
  * - 返信の送信はチャンネルと同じ送信の列に並べる（ルームで 1 本。ADR 0027）。楽観的に表示し、失敗したら再送できる
+ * - 「チャンネルにも投稿する」を付けた返信は、チャンネルのタイムラインにも並ぶ（ADR 0039）
  * - 開いている間は、表示している最新の返信まで既読にする（タブが見えているときだけ）
  * - 親が見つからない（返信や存在しない ID の URL、読めなくなった）ときは閉じる。その画面はデザインにない
  */
@@ -63,6 +71,9 @@ export function RoomThread({
   const members = useChatState((s) => s.roomMembers[roomId]?.members);
   const visible = useDocumentVisible();
   const [draft, setDraft] = useState("");
+  // 「チャンネルにも投稿する」（ADR 0039）。送信後は決まった値を変えられないので、送るたびに外す（続けて返信するときに、
+  // 付けたつもりのないものが流れないように）
+  const [alsoInChannel, setAlsoInChannel] = useState(false);
   const [sentCount, setSentCount] = useState(0);
   const [joining, setJoining] = useState(false);
   const { uploader, drafts } = useAttachmentUploader(roomId);
@@ -97,9 +108,14 @@ export function RoomThread({
     if (imageIds !== "") media.requestAttachmentUrls(imageIds.split(" "));
   }, [media, imageIds]);
 
+  const broadcastDoneLabel = room ? alsoInChannelDoneLabel(room.kind) : undefined;
   const items = useMemo(
-    () => toThreadTimelineItems({ root, replies: replies ?? [] }, { outgoing, me, avatarUrls, attachmentUrls }),
-    [root, replies, outgoing, me, avatarUrls, attachmentUrls],
+    () =>
+      toThreadTimelineItems(
+        { root, replies: replies ?? [] },
+        { outgoing, me, avatarUrls, attachmentUrls, broadcastDoneLabel },
+      ),
+    [root, replies, outgoing, me, avatarUrls, attachmentUrls, broadcastDoneLabel],
   );
   const { timelineProps, deleteDialog } = useMessageActions({ roomId, room, messages, me, myRole, members });
   const draftViews = useMemo(() => drafts.map(toAttachmentDraftView), [drafts]);
@@ -112,8 +128,9 @@ export function RoomThread({
 
   function send() {
     if (!canSend) return;
-    store.sendMessage(roomId, { body: draft, attachments: uploader.take(), threadRootId: rootId });
+    store.sendMessage(roomId, { body: draft, attachments: uploader.take(), threadRootId: rootId, alsoInChannel });
     setDraft("");
+    setAlsoInChannel(false);
     setSentCount((n) => n + 1);
   }
 
@@ -160,6 +177,11 @@ export function RoomThread({
               onRetryAttachment={(key) => uploader.retry(key)}
               onRemoveAttachment={(key) => uploader.remove(key)}
               typingNames={typingNames}
+              alsoInChannel={{
+                label: alsoInChannelLabel(room.kind),
+                checked: alsoInChannel,
+                onChange: setAlsoInChannel,
+              }}
             />
           )
         }
