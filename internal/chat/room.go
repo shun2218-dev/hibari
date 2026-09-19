@@ -57,6 +57,8 @@ type Room struct {
 	LastReadUserSeq *int64
 	// UnreadCount は last_user_seq - last_read_user_seq。削除済みのメッセージも数える近似（ADR 0002 / 0033）。メンバーでなければ 0。
 	UnreadCount int64
+	// MentionCount は未読の範囲にある自分宛てのメンションの数（ADR 0041）。未読数とは別に出す。メンバーでなければ 0。
+	MentionCount int64
 	// LastMessage はサイドバーに出す最終メッセージ。メッセージがなければ nil。
 	LastMessage *MessagePreview
 	CreatedAt   time.Time
@@ -90,6 +92,7 @@ func toRoom(r store.ListRoomsForUserRow) Room {
 		LastReadSeq:     r.LastReadSeq,
 		LastUserSeq:     r.Room.LastUserSeq,
 		LastReadUserSeq: r.LastReadUserSeq,
+		MentionCount:    r.MentionCount,
 		CreatedAt:       r.Room.CreatedAt,
 	}
 	if r.Room.Name != nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/mention"
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
 )
@@ -28,7 +29,9 @@ func TestWireRoundTrip(t *testing.T) {
 		ThreadRootID: &threadRootID, ThreadSeq: &threadSeq,
 		Thread:      &chat.ThreadSummary{ReplyCount: 2, LastThreadSeq: 3, LastReplyAt: at},
 		Attachments: []chat.MessageAttachment{{ID: u(), FileName: "a.png", ContentType: "image/png", SizeBytes: 10, Width: &width}},
-		CreatedAt:   at, EditedAt: &edited,
+		// メンションは本文から作る表示用の値で、配信にもそのまま載る（ADR 0041）。
+		Mentions:  []chat.Mention{{Kind: mention.KindUser, User: &user}, {Kind: mention.KindChannel}},
+		CreatedAt: at, EditedAt: &edited,
 	}
 
 	// すべてのイベントの種類を 1 つずつ。種類を足したら、ここと dataDecoders の両方に足す。
@@ -37,7 +40,7 @@ func TestWireRoundTrip(t *testing.T) {
 		{Type: chat.EventMessageUpdated, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}}, Data: message},
 		// 添付のないメッセージは、store と同じく空のスライスで持つ。encoding/json/v2 は nil のスライスを [] にするので、
 		// nil を送ると空のスライスとして戻る（どちらも len が 0 で、配信の処理は区別しない）。
-		{Type: chat.EventMessageDeleted, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}}, Data: chat.Message{ID: u(), Attachments: []chat.MessageAttachment{}, DeletedAt: &edited}},
+		{Type: chat.EventMessageDeleted, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}}, Data: chat.Message{ID: u(), Attachments: []chat.MessageAttachment{}, Mentions: []chat.Mention{}, DeletedAt: &edited}},
 		{Type: chat.EventMemberJoined, To: chat.Audience{Rooms: []ulid.ULID{u()}, Users: []ulid.ULID{user.ID}}, Data: chat.MemberJoined{WorkspaceID: u(), RoomID: u(), User: user}},
 		{Type: chat.EventMemberLeft, To: chat.Audience{Rooms: []ulid.ULID{u()}}, Data: chat.MemberLeft{WorkspaceID: u(), RoomID: u(), UserID: u()}},
 		{Type: chat.EventRoomUpdated, To: chat.Audience{Rooms: []ulid.ULID{u()}, Workspaces: []ulid.ULID{u()}}, Data: chat.RoomUpdated{WorkspaceID: u(), RoomID: u(), Name: "general", IsDefault: true}},

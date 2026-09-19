@@ -508,11 +508,11 @@ describe("createChatStore realtime", () => {
 
       store.applyEvent({
         type: "room.read",
-        data: { workspace_id: "ws-1", room_id: "r1", last_read_seq: 5, last_read_user_seq: 5, unread_count: 0 },
+        data: { workspace_id: "ws-1", room_id: "r1", last_read_seq: 5, last_read_user_seq: 5, unread_count: 0, mention_count: 0 },
       });
       store.applyEvent({
         type: "room.read",
-        data: { workspace_id: "ws-1", room_id: "r1", last_read_seq: 4, last_read_user_seq: 4, unread_count: 1 },
+        data: { workspace_id: "ws-1", room_id: "r1", last_read_seq: 4, last_read_user_seq: 4, unread_count: 1, mention_count: 0 },
       });
 
       expect(store.getSnapshot().rooms.r1).toMatchObject({ last_read_seq: 5, last_read_user_seq: 5, unread_count: 0 });

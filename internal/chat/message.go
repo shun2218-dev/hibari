@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"strings"
 	"time"
@@ -84,9 +85,11 @@ type Message struct {
 	Thread *ThreadSummary
 	// Attachments は添付。削除済みのメッセージでは空（ADR 0013）。
 	Attachments []MessageAttachment
-	CreatedAt   time.Time
-	EditedAt    *time.Time
-	DeletedAt   *time.Time
+	// Mentions は本文にあるメンション（ADR 0041）。本文から作るので、ルームを抜けた人も入る。件数の対象とは別（internal/chat/mention.go）。
+	Mentions  []Mention
+	CreatedAt time.Time
+	EditedAt  *time.Time
+	DeletedAt *time.Time
 }
 
 // ThreadSummary は親のメッセージに付く「N 件の返信」（ADR 0036）。
@@ -190,6 +193,10 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		return Message{}, false, err
 	}
 
+	// @here の対象は、トランザクションに入る前に presence から決める（ADR 0041）。
+	// スレッドだけの返信では @channel / @here を数えないので、解決も要らない（Slack と同じ）。
+	all := s.resolveHere(ctx, s.logger, roomID, in.Body, in.ThreadRootID == nil || in.AlsoInChannel)
+
 	// threadEvents は、スレッドの返信で message.created の後に届けるイベント（親の返信数、参加。ADR 0036）。
 	var threadEvents []Event
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
@@ -213,7 +220,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		}
 
 		if in.ThreadRootID != nil {
-			msg, threadEvents, err = s.sendThreadReply(ctx, q, actor, a.room.WorkspaceID, roomID, *in.ThreadRootID, in)
+			msg, threadEvents, err = s.sendThreadReply(ctx, q, actor, a.room.WorkspaceID, roomID, *in.ThreadRootID, in, all)
 			created = err == nil
 			return err
 		}
@@ -235,6 +242,9 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 			return fmt.Errorf("create message: %w", err)
 		}
 		if err := attachToMessage(ctx, q, actor, roomID, id, in.AttachmentIDs); err != nil {
+			return err
+		}
+		if err := createMessageMentions(ctx, q, now, roomID, id, in.Body, true, all); err != nil {
 			return err
 		}
 		if _, err := q.AdvanceLastReadSeq(ctx, store.AdvanceLastReadSeqParams{RoomID: roomID, UserID: actor, Seq: seq}); err != nil {
@@ -273,6 +283,9 @@ func getMessage(ctx context.Context, q *store.Queries, roomID, id ulid.ULID) (Me
 	}
 	msgs := []Message{toMessage(row)}
 	if err := loadMessageAttachments(ctx, q, roomID, msgs); err != nil {
+		return Message{}, err
+	}
+	if err := loadMessageMentions(ctx, q, msgs); err != nil {
 		return Message{}, err
 	}
 	return msgs[0], nil
@@ -384,6 +397,9 @@ func (s *Service) ListMessages(ctx context.Context, actor, roomID ulid.ULID, mq 
 	if err := loadMessageAttachments(ctx, q, roomID, page.Messages); err != nil {
 		return MessagePage{}, err
 	}
+	if err := loadMessageMentions(ctx, q, page.Messages); err != nil {
+		return MessagePage{}, err
+	}
 	return page, nil
 }
 
@@ -395,6 +411,10 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 	if err := fields.err(); err != nil {
 		return Message{}, err
 	}
+
+	// 編集でも、本文に @here があれば対象を決め直す（presence はトランザクションの外で読む。ADR 0041）。
+	// この時点ではチャンネルに出る本文かどうか分からないので、決めるだけ決めて、使うかはトランザクションの中で判断する。
+	all := s.resolveHere(ctx, s.logger, roomID, body, true)
 
 	var (
 		msg     Message
@@ -431,8 +451,17 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 		if err != nil {
 			return fmt.Errorf("allocate change_seq: %w", err)
 		}
-		if err := q.UpdateMessageBody(ctx, store.UpdateMessageBodyParams{ID: messageID, Body: body, Now: s.clock.Now(), ChangeSeq: changeSeq}); err != nil {
+		now := s.clock.Now()
+		if err := q.UpdateMessageBody(ctx, store.UpdateMessageBodyParams{ID: messageID, Body: body, Now: now, ChangeSeq: changeSeq}); err != nil {
 			return fmt.Errorf("update message: %w", err)
+		}
+		// 行は常に本文と一致させる（ADR 0041）。消えたメンションは件数から消え、足したメンションは、
+		// そのメッセージがまだ未読の人にだけ数えられる（既読位置より前には未読を作れない）。
+		if err := q.DeleteMessageMentions(ctx, store.DeleteMessageMentionsParams{RoomID: roomID, MessageID: messageID}); err != nil {
+			return fmt.Errorf("delete message mentions: %w", err)
+		}
+		if err := createMessageMentions(ctx, q, now, roomID, messageID, body, m.InChannel, all); err != nil {
+			return err
 		}
 		changed = true
 		msg, err = getMessage(ctx, q, roomID, messageID)
@@ -511,6 +540,8 @@ type ReadState struct {
 	// LastReadUserSeq は既読位置に対応する user_seq。未読数の計算に使う（ADR 0033）。
 	LastReadUserSeq int64
 	UnreadCount     int64
+	// MentionCount は未読の範囲にある自分宛てのメンションの数（ADR 0041）。既読が進めば減る。
+	MentionCount int64
 }
 
 // MarkRoomRead は actor の既読位置を seq まで進める。後退はさせず、ルームの最新の seq を超える値は最新の seq に切り詰める。
@@ -537,6 +568,14 @@ func (s *Service) MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq
 	}
 	// 未読はシステムメッセージを数えない（ADR 0033）。
 	st := ReadState{LastReadSeq: row.LastReadSeq, LastReadUserSeq: row.LastReadUserSeq, UnreadCount: row.LastUserSeq - row.LastReadUserSeq}
+	// メンションの件数は、既読位置を動かした後で数え直す（カウンタを別に持たない。ADR 0041）。
+	// 数えられなくてもバッジが古くなるだけなので、既読の更新そのものは失敗させない。
+	if n, err := q.CountRoomMentions(ctx, store.CountRoomMentionsParams{UserID: actor, RoomID: roomID}); err != nil {
+		s.logger.WarnContext(ctx, "count room mentions failed",
+			slog.String("room_id", roomID.String()), slog.Any("error", err))
+	} else {
+		st.MentionCount = n
+	}
 	// 既読位置が進まなかったときも送る。別の端末が古い未読数を表示していれば、それを揃えられる。
 	s.deliver(ctx, Event{
 		Type: EventRoomRead,
@@ -544,6 +583,7 @@ func (s *Service) MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq
 		Data: RoomRead{
 			WorkspaceID: a.room.WorkspaceID, RoomID: roomID,
 			LastReadSeq: st.LastReadSeq, LastReadUserSeq: st.LastReadUserSeq, UnreadCount: st.UnreadCount,
+			MentionCount: st.MentionCount,
 		},
 	})
 	return st, nil

@@ -19,6 +19,7 @@ import (
 
 	"github.com/shun2218-dev/hibari/internal/chat"
 	"github.com/shun2218-dev/hibari/internal/chat/authz"
+	"github.com/shun2218-dev/hibari/internal/chat/mention"
 )
 
 // Web クライアントの TypeScript の型を、このパッケージの JSON の型から生成する（ロードマップ Phase 6-2）。
@@ -65,6 +66,7 @@ var tsEnums = []tsEnum{
 	enumOf("AttachmentStatus", chat.AttachmentPending, chat.AttachmentUploaded, chat.AttachmentAttached, chat.AttachmentDeleted),
 	enumOf("RemovalReason", chat.RemovalLeft, chat.RemovalRemoved),
 	enumOf("MessageKind", chat.MessageKindUser, chat.MessageKindSystem),
+	enumOf("MentionKind", mention.KindUser, mention.KindChannel, mention.KindHere),
 	enumOf("SystemEventType",
 		chat.SystemRoomCreated, chat.SystemMemberJoined, chat.SystemMemberLeft, chat.SystemMemberRemoved, chat.SystemRoomRenamed),
 	enumOf("ProblemType",
@@ -150,6 +152,7 @@ var tsDecls = []tsDecl{
 	response[messageResponse]("Message"),
 	response[systemEventResponse]("SystemEvent"),
 	response[threadSummaryResponse]("ThreadSummary"),
+	response[mentionResponse]("Mention"),
 	response[messageAttachmentResponse]("MessageAttachment"),
 	response[messageListResponse]("MessageList"),
 	request[markRoomReadRequest]("MarkRoomReadRequest"),

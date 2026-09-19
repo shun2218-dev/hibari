@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -79,7 +80,8 @@ func NewPresence(t testing.TB) *presence.Store {
 }
 
 type options struct {
-	start time.Time
+	start    time.Time
+	presence chat.PresenceReader
 }
 
 // Option は New の組み立てを変える。
@@ -91,6 +93,25 @@ type Option func(*options)
 // 掃除を実行するテストは、ほかのテストの時計（Start 前後）より十分に過去から始めて、ほかのテストの添付を消さないようにする。
 func WithClockStart(t time.Time) Option {
 	return func(o *options) { o.start = t }
+}
+
+// OnlineUsers は「誰がオンラインか」を固定する chat.PresenceReader。
+// @here の対象（ADR 0041）のように presence の中身が結果を決めるテストで、Redis の TTL に依存させないために使う
+// （時刻に依存するテストで Clock を固定するのと同じ考え方。CLAUDE.md「テスト」）。
+type OnlineUsers []ulid.ULID
+
+// Online は chat.PresenceReader を満たす。
+func (o OnlineUsers) Online(_ context.Context, userIDs []ulid.ULID) (map[ulid.ULID]bool, error) {
+	out := make(map[ulid.ULID]bool, len(userIDs))
+	for _, id := range userIDs {
+		out[id] = slices.Contains(o, id)
+	}
+	return out, nil
+}
+
+// WithPresenceReader は Service が使う presence を差し替える（Env.Presence は実物のままにする）。
+func WithPresenceReader(p chat.PresenceReader) Option {
+	return func(o *options) { o.presence = p }
 }
 
 // New は Env を返す。TEST_DATABASE_URL などがなければテストをスキップする（CI では失敗する）。
@@ -110,6 +131,10 @@ func New(t testing.TB, opts ...Option) *Env {
 	st := NewStorage(t)
 	pr := NewPresence(t)
 	rec := &Recorder{}
+	var svcPresence chat.PresenceReader = pr
+	if o.presence != nil {
+		svcPresence = o.presence
+	}
 	return &Env{
 		Pool:       pool,
 		Clock:      clk,
@@ -126,7 +151,7 @@ func New(t testing.TB, opts ...Option) *Env {
 			Storage:          st,
 			AttachmentLimits: AttachmentLimits,
 			Delivery:         rec,
-			Presence:         pr,
+			Presence:         svcPresence,
 		}),
 	}
 }

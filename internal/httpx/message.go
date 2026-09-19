@@ -8,6 +8,7 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/mention"
 )
 
 // メッセージの API（ロードマップ Phase 3b / ADR 0012）。ルートの登録は registerChatRoutes にまとめている。
@@ -48,9 +49,33 @@ type messageResponse struct {
 	Thread *threadSummaryResponse `json:"thread"`
 	// Attachments は削除済みのメッセージでは空配列。GET URL は含めない（ADR 0013）。
 	Attachments []messageAttachmentResponse `json:"attachments"`
-	CreatedAt   time.Time                   `json:"created_at"`
-	EditedAt    *time.Time                  `json:"edited_at"`
-	DeletedAt   *time.Time                  `json:"deleted_at"`
+	// Mentions は本文にあるメンション（ADR 0041）。本文の出現順で、重複はない。
+	// クライアントはこれを見て、本文の `<@ID>` を名前に置き換える。「自分宛てか」はクライアントが判断する
+	// （配信は 1 つのペイロードを購読者に配るので、受け取る人ごとの値は載せられない。ADR 0015 / 0016）。
+	Mentions  []mentionResponse `json:"mentions"`
+	CreatedAt time.Time         `json:"created_at"`
+	EditedAt  *time.Time        `json:"edited_at"`
+	DeletedAt *time.Time        `json:"deleted_at"`
+}
+
+// mentionResponse は本文にあるメンション 1 件（ADR 0041）。
+// user が入るのは kind が user のときだけで、channel / here は kind だけを持つ。
+type mentionResponse struct {
+	Kind mention.Kind `json:"kind"`
+	// User はルームを抜けた人でも入る（名前を出せないと本文が読めないため）。存在しないユーザーの ID は、そもそも含まれない。
+	User *userProfileResponse `json:"user,omitzero"`
+}
+
+func newMentionsResponse(ms []chat.Mention) []mentionResponse {
+	out := make([]mentionResponse, len(ms))
+	for i, m := range ms {
+		out[i] = mentionResponse{Kind: m.Kind}
+		if m.User != nil {
+			u := newUserProfileResponse(*m.User)
+			out[i].User = &u
+		}
+	}
+	return out
 }
 
 // systemEventResponse はシステムメッセージの中身（ADR 0033）。主語は sender。
@@ -81,6 +106,7 @@ func newMessageResponse(m chat.Message) messageResponse {
 		System:      newSystemEventResponse(m.System),
 		Body:        m.Body,
 		Attachments: newMessageAttachmentsResponse(m.Attachments),
+		Mentions:    newMentionsResponse(m.Mentions),
 		CreatedAt:   m.CreatedAt,
 		EditedAt:    m.EditedAt,
 		DeletedAt:   m.DeletedAt,
@@ -290,6 +316,8 @@ type readStateResponse struct {
 	// LastReadUserSeq は既読位置に対応する user_seq。クライアントが未読数を求め直すのに使う（ADR 0033）。
 	LastReadUserSeq int64 `json:"last_read_user_seq"`
 	UnreadCount     int64 `json:"unread_count"`
+	// MentionCount は既読を進めた後の、自分宛ての未読のメンションの数（ADR 0041）。
+	MentionCount int64 `json:"mention_count"`
 }
 
 // markRoomRead は既読位置を進め、切り詰めた後の既読位置と未読数を返す。
@@ -316,5 +344,6 @@ func (h *chatHandlers) markRoomRead(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, readStateResponse{
 		LastReadSeq: st.LastReadSeq, LastReadUserSeq: st.LastReadUserSeq, UnreadCount: st.UnreadCount,
+		MentionCount: st.MentionCount,
 	})
 }

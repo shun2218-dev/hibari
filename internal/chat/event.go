@@ -129,6 +129,8 @@ type RoomRead struct {
 	// LastReadUserSeq は既読位置に対応する user_seq（ADR 0033）。
 	LastReadUserSeq int64
 	UnreadCount     int64
+	// MentionCount は既読を進めた後の、自分宛ての未読のメンションの数（ADR 0041）。別の端末のバッジも揃える。
+	MentionCount int64
 }
 
 type WorkspaceUpdated struct {
