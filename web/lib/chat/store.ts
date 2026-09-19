@@ -2,7 +2,9 @@ import type { ConnectionBannerStatus } from "@/components/chat/types";
 import { ApiError } from "@/lib/api/error";
 import type {
   Invite,
+  InviteAcceptance,
   InvitePolicy,
+  InvitePreview,
   Member,
   Message,
   MessageAttachment,
@@ -989,6 +991,27 @@ export function createChatStore(
             : invite,
         ),
       );
+    },
+
+    // ---- 招待の受け入れ（ADR 0030） ----
+
+    /** 招待リンクの内容を見る。使えない招待は ApiError（404 / 410）を投げる。 */
+    previewInvite(code: string): Promise<InvitePreview> {
+      return api.previewInvite(code);
+    },
+
+    /**
+     * 招待を受け入れて、ワークスペースを一覧に足す。すでにメンバーなら足すだけで何も変わらない。
+     * 失敗したら ApiError を投げる。
+     */
+    async acceptInvite(code: string): Promise<InviteAcceptance> {
+      const result = await api.acceptInvite(code);
+      update((s) =>
+        s.workspaces.list.some((w) => w.id === result.workspace.id)
+          ? s
+          : { ...s, workspaces: { ...s.workspaces, list: [...s.workspaces.list, result.workspace] } },
+      );
+      return result;
     },
 
     loadRooms,

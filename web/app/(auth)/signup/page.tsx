@@ -1,7 +1,10 @@
+import { safeNextPath } from "@/lib/auth/next-path";
+
 import { SignupPage } from "./signup-page";
 
 export const metadata = { title: "アカウントを作成 | hibari" };
 
-export default function Page() {
-  return <SignupPage />;
+export default async function Page({ searchParams }: { searchParams: Promise<{ next?: string | string[] }> }) {
+  const { next } = await searchParams;
+  return <SignupPage next={safeNextPath(next)} />;
 }
