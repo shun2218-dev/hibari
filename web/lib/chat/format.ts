@@ -55,6 +55,12 @@ export function formatDate(date: Date, timeZone?: string): string {
   return `${year}年${month}月${day}日`;
 }
 
+/** 招待リンクの有効期限（`9月20日 18:00`）。年は出さない（有効期限は最長 30 日。ADR 0011）。 */
+export function formatDayTime(date: Date, timeZone?: string): string {
+  const { month, day } = localParts(date, timeZone);
+  return `${month}月${day}日 ${formatTime(date, timeZone)}`;
+}
+
 /**
  * サイドバーの最後のメッセージの時刻。今日なら時刻、昨日なら「昨日」、今年なら月日、それより前なら年も付ける。
  * 「昨日」は 24 時間前ではなく、見る人の暦の前日。

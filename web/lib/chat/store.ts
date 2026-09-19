@@ -1,9 +1,13 @@
 import type { ConnectionBannerStatus } from "@/components/chat/types";
 import { ApiError } from "@/lib/api/error";
 import type {
+  Invite,
+  InvitePolicy,
+  Member,
   Message,
   MessageAttachment,
   RemovalReason,
+  Role,
   Room,
   RoomKind,
   RoomMember,
@@ -97,6 +101,10 @@ export type ChatState = {
   rooms: Record<string, Room | undefined>;
   timelines: Record<string, TimelineState | undefined>;
   roomMembers: Record<string, { status: LoadStatus; members: RoomMember[] } | undefined>;
+  /** ワークスペースのメンバー（管理画面）。user_id の順（API と同じ）。 */
+  members: Record<string, { status: LoadStatus; list: Member[] } | undefined>;
+  /** 招待リンク（管理画面）。新しい順に並べ替えてから持つ。 */
+  invites: Record<string, { status: LoadStatus; list: Invite[] } | undefined>;
   /** 表示中のワークスペース。購読の対象を決める（realtime.ts）。 */
   activeWorkspaceId: string | null;
   /**
@@ -162,6 +170,8 @@ export function createChatStore(
     rooms: {},
     timelines: {},
     roomMembers: {},
+    members: {},
+    invites: {},
     activeWorkspaceId: null,
     focus: null,
     typing: {},
@@ -243,6 +253,92 @@ export function createChatStore(
       return members === current.members
         ? s
         : { ...s, roomMembers: { ...s.roomMembers, [roomId]: { ...current, members } } };
+    });
+  }
+
+  /** ワークスペースのメンバー一覧（管理画面）を書き換える。まだ取っていなければ何もしない。 */
+  function patchWorkspaceMembers(workspaceId: string, recipe: (list: Member[]) => Member[]) {
+    update((s) => {
+      const current = s.members[workspaceId];
+      if (!current) return s;
+      const list = recipe(current.list);
+      return list === current.list ? s : { ...s, members: { ...s.members, [workspaceId]: { ...current, list } } };
+    });
+  }
+
+  function patchInvites(workspaceId: string, recipe: (list: Invite[]) => Invite[]) {
+    update((s) => {
+      const current = s.invites[workspaceId];
+      if (!current) return s;
+      const list = recipe(current.list);
+      return list === current.list ? s : { ...s, invites: { ...s.invites, [workspaceId]: { ...current, list } } };
+    });
+  }
+
+  function patchWorkspace(workspaceId: string, recipe: (workspace: Workspace) => Workspace) {
+    update((s) => {
+      const workspace = s.workspaces.list.find((w) => w.id === workspaceId);
+      if (!workspace) return s;
+      const next = recipe(workspace);
+      return next === workspace
+        ? s
+        : { ...s, workspaces: { ...s.workspaces, list: s.workspaces.list.map((w) => (w.id === workspaceId ? next : w)) } };
+    });
+  }
+
+  /** 管理画面のメンバー一覧を取り直す。 */
+  function loadMembers(workspaceId: string): Promise<void> {
+    return once(`wsmembers:${workspaceId}`, async () => {
+      update((s) => ({
+        ...s,
+        members: { ...s.members, [workspaceId]: s.members[workspaceId] ?? { status: "loading", list: [] } },
+      }));
+      try {
+        const list = await api.listAllMembers(workspaceId);
+        update((s) => ({ ...s, members: { ...s.members, [workspaceId]: { status: "ready", list } } }));
+      } catch (err) {
+        update((s) => ({
+          ...s,
+          members: {
+            ...s.members,
+            [workspaceId]: { status: statusOf(err), list: s.members[workspaceId]?.list ?? [] },
+          },
+        }));
+        console.error("failed to load workspace members", err);
+      }
+    });
+  }
+
+  /** 取得中のものがあれば、それが終わってからもう 1 回取る（reloadRooms と同じ理由）。 */
+  async function reloadMembers(workspaceId: string): Promise<void> {
+    await inflight.get(`wsmembers:${workspaceId}`);
+    return loadMembers(workspaceId);
+  }
+
+  /** 招待は作られた順に返る（ID は ULID）ので、新しい順にして持つ。 */
+  function sortInvites(list: Invite[]): Invite[] {
+    return [...list].sort((a, b) => b.id.localeCompare(a.id));
+  }
+
+  function loadInvites(workspaceId: string): Promise<void> {
+    return once(`invites:${workspaceId}`, async () => {
+      update((s) => ({
+        ...s,
+        invites: { ...s.invites, [workspaceId]: s.invites[workspaceId] ?? { status: "loading", list: [] } },
+      }));
+      try {
+        const list = await api.listAllInvites(workspaceId);
+        update((s) => ({ ...s, invites: { ...s.invites, [workspaceId]: { status: "ready", list: sortInvites(list) } } }));
+      } catch (err) {
+        update((s) => ({
+          ...s,
+          invites: {
+            ...s.invites,
+            [workspaceId]: { status: statusOf(err), list: s.invites[workspaceId]?.list ?? [] },
+          },
+        }));
+        console.error("failed to load invites", err);
+      }
     });
   }
 
@@ -615,6 +711,11 @@ export function createChatStore(
 
       case "member.joined": {
         const { workspace_id, room_id, user } = event.data;
+        // ワークスペースに入った人のイベントはない（docs/events.md）。招待の受け入れは既定のルームへの参加として届くので、
+        // 管理画面を開いていて、まだ一覧にいない人なら取り直す
+        if (state.members[workspace_id] && !state.members[workspace_id].list.some((m) => m.user.id === user.id)) {
+          void reloadMembers(workspace_id);
+        }
         if (user.id === userId) {
           void joinedRoom(workspace_id, room_id);
           return;
@@ -660,11 +761,21 @@ export function createChatStore(
         return;
       }
       case "workspace.member_removed":
+        patchWorkspaceMembers(event.data.workspace_id, (list) =>
+          list.some((m) => m.user.id === event.data.user_id)
+            ? list.filter((m) => m.user.id !== event.data.user_id)
+            : list,
+        );
         // ほかの人のことは、ルームごとの member.left で扱う
         if (event.data.user_id === userId) removedFromWorkspace(event.data.workspace_id, event.data.reason);
         return;
       case "workspace.role_changed": {
         const { workspace_id, user_id, role } = event.data;
+        patchWorkspaceMembers(workspace_id, (list) =>
+          list.some((m) => m.user.id === user_id && m.role !== role)
+            ? list.map((m) => (m.user.id === user_id ? { ...m, role } : m))
+            : list,
+        );
         update((s) => {
           const roomMembers = { ...s.roomMembers };
           for (const [roomId, entry] of Object.entries(s.roomMembers)) {
@@ -701,7 +812,18 @@ export function createChatStore(
               members: entry.members.map((m) => (m.user.id === user_id ? { ...m, online } : m)),
             };
           }
-          return rooms === s.rooms && roomMembers === s.roomMembers ? s : { ...s, rooms, roomMembers };
+          let members = s.members;
+          for (const [workspaceId, entry] of Object.entries(s.members)) {
+            if (!entry?.list.some((m) => m.user.id === user_id && m.online !== online)) continue;
+            if (members === s.members) members = { ...s.members };
+            members[workspaceId] = {
+              ...entry,
+              list: entry.list.map((m) => (m.user.id === user_id ? { ...m, online } : m)),
+            };
+          }
+          return rooms === s.rooms && roomMembers === s.roomMembers && members === s.members
+            ? s
+            : { ...s, rooms, roomMembers, members };
         });
         return;
       }
@@ -795,6 +917,78 @@ export function createChatStore(
       const workspace = await api.createWorkspace({ name });
       update((s) => ({ ...s, workspaces: { status: "ready", list: [...s.workspaces.list, workspace] } }));
       return workspace;
+    },
+
+    // ---- ワークスペースの管理（ADR 0029） ----
+
+    loadMembers,
+    reloadMembers,
+    loadInvites,
+
+    /** 名前・招待ポリシーを変える。失敗したら ApiError を投げる（画面は変更前に戻す）。 */
+    async updateWorkspace(workspaceId: string, patch: { name?: string; invitePolicy?: InvitePolicy }): Promise<void> {
+      const updated = await api.updateWorkspace(workspaceId, {
+        ...(patch.name === undefined ? {} : { name: patch.name }),
+        ...(patch.invitePolicy === undefined ? {} : { invite_policy: patch.invitePolicy }),
+      });
+      patchWorkspace(workspaceId, (workspace) => ({ ...workspace, ...updated }));
+    },
+
+    /** ロールを変える。失敗したら ApiError を投げる。 */
+    async changeMemberRole(workspaceId: string, targetUserId: string, role: Role): Promise<void> {
+      const member = await api.changeMemberRole(workspaceId, targetUserId, role);
+      patchWorkspaceMembers(workspaceId, (list) => list.map((m) => (m.user.id === targetUserId ? member : m)));
+      if (targetUserId === userId) patchWorkspace(workspaceId, (workspace) => ({ ...workspace, my_role: role }));
+    },
+
+    /**
+     * キック（targetUserId が自分なら退出）。失敗したら ApiError を投げる。
+     * 自分が抜けたときの画面の後始末は workspace.member_removed のイベントで行う（別の端末でも同じになる）。
+     */
+    async removeMember(workspaceId: string, targetUserId: string): Promise<void> {
+      await api.removeMember(workspaceId, targetUserId);
+      patchWorkspaceMembers(workspaceId, (list) => list.filter((m) => m.user.id !== targetUserId));
+      if (targetUserId === userId) removedFromWorkspace(workspaceId, "left");
+    },
+
+    /**
+     * owner を譲渡する。自分は admin になる（ADR 0011）。失敗したら ApiError を投げる。
+     * 応答に本文がないので、手元のロールは自分で入れ替える（イベントでも同じ値が届く）。
+     */
+    async transferOwnership(workspaceId: string, targetUserId: string): Promise<void> {
+      await api.transferOwnership(workspaceId, targetUserId);
+      patchWorkspaceMembers(workspaceId, (list) =>
+        list.map((m) => {
+          if (m.user.id === targetUserId) return { ...m, role: "owner" };
+          return m.role === "owner" ? { ...m, role: "admin" } : m;
+        }),
+      );
+      patchWorkspace(workspaceId, (workspace) => ({ ...workspace, my_role: "admin" }));
+    },
+
+    /** 招待リンクを作る。code はこの戻り値にしか入らない（ADR 0006）。失敗したら ApiError を投げる。 */
+    async createInvite(workspaceId: string, input: { maxUses: number | null; expiresInSeconds: number }): Promise<Invite> {
+      const invite = await api.createInvite(workspaceId, {
+        max_uses: input.maxUses,
+        expires_in_seconds: input.expiresInSeconds,
+      });
+      // 一覧には code を残さない。閉じた後に再表示できてしまわないようにする
+      const listed = { ...invite };
+      delete listed.code;
+      patchInvites(workspaceId, (list) => [listed, ...list]);
+      return invite;
+    },
+
+    /** 招待リンクを取り消す。失敗したら ApiError を投げる。 */
+    async revokeInvite(workspaceId: string, inviteId: string): Promise<void> {
+      await api.revokeInvite(workspaceId, inviteId);
+      patchInvites(workspaceId, (list) =>
+        list.map((invite) =>
+          invite.id === inviteId
+            ? { ...invite, status: "revoked", revoked_at: new Date(now()).toISOString() }
+            : invite,
+        ),
+      );
     },
 
     loadRooms,

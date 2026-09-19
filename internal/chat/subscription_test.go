@@ -117,7 +117,7 @@ func TestSubscriptionAuthorizer(t *testing.T) {
 	})
 }
 
-// presence の初期値を REST（ルームのメンバー一覧と dm_peer）で返す（ADR 0015）。
+// presence の初期値を REST（ワークスペースとルームのメンバー一覧、dm_peer）で返す（ADR 0015）。
 func TestPresenceInRoomResponses(t *testing.T) {
 	env := chattest.New(t)
 	r := setupRoles(t, env)
@@ -141,6 +141,27 @@ func TestPresenceInRoomResponses(t *testing.T) {
 	}
 	if len(online) != 2 || !online[r.member2] || online[r.member] {
 		t.Errorf("room members online = %v, want only member2", online)
+	}
+
+	// ワークスペースのメンバー一覧も同じ初期値を返す（管理画面のメンバー一覧が presence を出すため）。
+	members, err := env.Service.ListMembers(t.Context(), r.member, r.ws.ID, chat.PageRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsOnline := map[ulid.ULID]bool{}
+	for _, m := range members.Items {
+		wsOnline[m.User.ID] = m.Online
+	}
+	if len(wsOnline) != 5 || !wsOnline[r.member2] || wsOnline[r.member] {
+		t.Errorf("workspace members online = %v, want only member2", wsOnline)
+	}
+	// ページに残らなかった分まで presence を読まない（1 件目だけのページ）。
+	first, err := env.Service.ListMembers(t.Context(), r.member, r.ws.ID, chat.PageRequest{Limit: 1})
+	if err != nil || len(first.Items) != 1 {
+		t.Fatalf("ListMembers(limit 1) = %d items, %v", len(first.Items), err)
+	}
+	if first.Items[0].Online != wsOnline[first.Items[0].User.ID] {
+		t.Errorf("paged member online = %v, want %v", first.Items[0].Online, wsOnline[first.Items[0].User.ID])
 	}
 
 	dm, _ := createDM(t, env, r.member, r.ws.ID, r.member2)

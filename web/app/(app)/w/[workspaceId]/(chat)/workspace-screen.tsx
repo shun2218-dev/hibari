@@ -14,7 +14,7 @@ import { formatTime } from "@/lib/chat/format";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
 import { toRoomSummaryView } from "@/lib/chat/views";
 
-import { CreateWorkspace } from "../../create-workspace";
+import { CreateWorkspace } from "../../../create-workspace";
 import { CreateRoom } from "./create-room";
 import { RoomMembers } from "./room-members";
 import { RoomView } from "./room-view";
@@ -163,8 +163,17 @@ export function WorkspaceScreen() {
               setSwitcherOpen(false);
               setAccountMenuOpen((open) => !open);
             }}
-            // ワークスペース設定と設定の画面は構築順 6。それまでは項目を押しても何もしない
-            accountMenu={<AccountMenu user={{ ...currentUser, handle: user.handle }} onLogout={() => session.logout()} />}
+            // 「設定」（ユーザー設定）はまだない。構築順 6 の残り
+            accountMenu={
+              <AccountMenu
+                user={{ ...currentUser, handle: user.handle }}
+                onOpenWorkspaceSettings={() => {
+                  setAccountMenuOpen(false);
+                  router.push(`/w/${workspaceId}/admin/settings`);
+                }}
+                onLogout={() => session.logout()}
+              />
+            }
             onCreateRoom={() => setCreatingRoom(true)}
           />
         }

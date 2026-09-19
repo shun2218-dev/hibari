@@ -186,6 +186,7 @@ export interface Member {
   user: UserProfile;
   role: Role;
   joined_at: string;
+  online: boolean;
 }
 
 export interface MemberList {

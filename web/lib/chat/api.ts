@@ -1,21 +1,30 @@
 import type {
   Attachment,
   AvatarURLs,
+  ChangeMemberRoleRequest,
   CreateAttachmentRequest,
   CreateAttachmentResponse,
+  CreateInviteRequest,
   CreateRoomRequest,
   CreateWorkspaceRequest,
   EditMessageRequest,
+  Invite,
+  InviteList,
   MarkRoomReadRequest,
+  Member,
+  MemberList,
   Message,
   MessageList,
   ReadState,
+  Role,
   Room,
   RoomList,
   RoomMember,
   RoomMemberList,
   SendMessageRequest,
   SignedURL,
+  TransferOwnershipRequest,
+  UpdateWorkspaceRequest,
   WSTicket,
   Workspace,
   WorkspaceList,
@@ -31,8 +40,8 @@ export const CHANGE_PAGE_SIZE = 100;
 /** アバターの URL を 1 回で取れる人数。API の上限（ADR 0020）。 */
 export const AVATAR_BATCH_SIZE = 200;
 
-/** メンバー一覧の 1 ページの数。API の上限（ADR 0011）にして、往復を減らす。 */
-const MEMBER_PAGE_SIZE = 200;
+/** メンバー・招待の一覧の 1 ページの数。API の上限（ADR 0011）にして、往復を減らす。 */
+const PAGE_SIZE = 200;
 
 /**
  * チャットの REST API。パスとリクエスト・レスポンスの型の対応だけを持ち、状態は持たない。
@@ -43,6 +52,40 @@ export function createChatApi(request: Session["request"]) {
     listWorkspaces: () => request<WorkspaceList>("GET", "/api/v1/workspaces"),
 
     createWorkspace: (body: CreateWorkspaceRequest) => request<Workspace>("POST", "/api/v1/workspaces", body),
+
+    /** 名前と招待ポリシーを変える（admin 以上。ADR 0006）。 */
+    updateWorkspace: (workspaceId: string, body: UpdateWorkspaceRequest) =>
+      request<Workspace>("PATCH", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`, body),
+
+    changeMemberRole: (workspaceId: string, userId: string, role: Role) =>
+      request<Member>(
+        "PATCH",
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
+        { role } satisfies ChangeMemberRoleRequest,
+      ),
+
+    /** キック。userId が自分なら退出（owner は owner-must-transfer で 409）。 */
+    removeMember: (workspaceId: string, userId: string) =>
+      request<void>(
+        "DELETE",
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
+      ),
+
+    /** owner を譲渡する。自分は admin になる（ADR 0011）。 */
+    transferOwnership: (workspaceId: string, userId: string) =>
+      request<void>("POST", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/ownership-transfer`, {
+        user_id: userId,
+      } satisfies TransferOwnershipRequest),
+
+    /** code はこの応答にだけ入る。一覧では再表示できない（ADR 0006）。 */
+    createInvite: (workspaceId: string, body: CreateInviteRequest) =>
+      request<Invite>("POST", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/invites`, body),
+
+    revokeInvite: (workspaceId: string, inviteId: string) =>
+      request<void>(
+        "DELETE",
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/invites/${encodeURIComponent(inviteId)}`,
+      ),
 
     listRooms: (workspaceId: string) =>
       request<RoomList>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/rooms`),
@@ -107,22 +150,45 @@ export function createChatApi(request: Session["request"]) {
     issueTicket: async () => (await request<WSTicket>("POST", "/api/v1/ws/ticket")).ticket,
 
     /** カーソルをたどって全員を取る。パネルに全員を並べるので、途中のページで止めない。 */
-    async listAllRoomMembers(roomId: string): Promise<RoomMember[]> {
-      const members: RoomMember[] = [];
-      let after: string | null = null;
-      do {
-        const params = new URLSearchParams({ limit: String(MEMBER_PAGE_SIZE) });
-        if (after) params.set("after", after);
-        const page: RoomMemberList = await request<RoomMemberList>(
-          "GET",
-          `/api/v1/rooms/${encodeURIComponent(roomId)}/members?${params}`,
-        );
-        members.push(...page.members);
-        after = page.next_cursor;
-      } while (after);
-      return members;
-    },
+    listAllRoomMembers: (roomId: string): Promise<RoomMember[]> =>
+      listAll(
+        (params) => request<RoomMemberList>("GET", `/api/v1/rooms/${encodeURIComponent(roomId)}/members?${params}`),
+        (page) => page.members,
+      ),
+
+    /** ワークスペースのメンバーを全員取る。管理画面は全員を並べ、人数も出す。 */
+    listAllMembers: (workspaceId: string): Promise<Member[]> =>
+      listAll(
+        (params) =>
+          request<MemberList>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members?${params}`),
+        (page) => page.members,
+      ),
+
+    /** 招待リンクを全部取る。取り消し済み・期限切れも含む（ADR 0011）。 */
+    listAllInvites: (workspaceId: string): Promise<Invite[]> =>
+      listAll(
+        (params) =>
+          request<InviteList>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/invites?${params}`),
+        (page) => page.invites,
+      ),
   };
 }
 
 export type ChatApi = ReturnType<typeof createChatApi>;
+
+/** カーソル（ADR 0011）をたどって全件を集める。 */
+async function listAll<T, P extends { next_cursor: string | null }>(
+  fetchPage: (params: URLSearchParams) => Promise<P>,
+  itemsOf: (page: P) => T[],
+): Promise<T[]> {
+  const items: T[] = [];
+  let after: string | null = null;
+  do {
+    const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+    if (after) params.set("after", after);
+    const page = await fetchPage(params);
+    items.push(...itemsOf(page));
+    after = page.next_cursor;
+  } while (after);
+  return items;
+}

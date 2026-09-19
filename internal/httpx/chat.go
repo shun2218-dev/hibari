@@ -184,14 +184,16 @@ func newWorkspaceResponse(w chat.Workspace, withCount bool) workspaceResponse {
 	return resp
 }
 
+// memberResponse はワークスペースのメンバー。online は presence の初期値で、変化は WebSocket で届く（ADR 0015）。
 type memberResponse struct {
 	User     userProfileResponse `json:"user"`
 	Role     authz.Role          `json:"role"`
 	JoinedAt time.Time           `json:"joined_at"`
+	Online   bool                `json:"online"`
 }
 
 func newMemberResponse(m chat.Member) memberResponse {
-	return memberResponse{User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt}
+	return memberResponse{User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt, Online: m.Online}
 }
 
 type createWorkspaceRequest struct {
@@ -734,17 +736,16 @@ func (h *chatHandlers) listRoomMembers(w http.ResponseWriter, r *http.Request) {
 	resp := roomMemberListResponse{Members: make([]roomMemberResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
 	for i, m := range p.Items {
 		resp.Members[i] = roomMemberResponse{
-			memberResponse: memberResponse{User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt},
-			Online:         m.Online,
+			memberResponse{User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt, Online: m.Online},
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// roomMemberResponse は、ワークスペースのメンバー一覧と同じ形に presence の初期値（online）を加える（ADR 0015）。
+// roomMemberResponse はルームのメンバー。role はワークスペースでのロール（ルーム単位のロールは持たない。ADR 0006）。
+// 形はワークスペースのメンバー一覧と同じだが、別の型にして API ごとに独立して変えられるようにしておく。
 type roomMemberResponse struct {
 	memberResponse
-	Online bool `json:"online"`
 }
 
 type roomMemberListResponse struct {

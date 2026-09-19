@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSession } from "@/lib/auth/session";
-import { message, miyuki, naoki, room, roomMember, workspace } from "@/test/chat-data";
+import { invite, member, message, miyuki, naoki, room, roomMember, workspace } from "@/test/chat-data";
 import { type Handler, TEST_API_BASE, fakeApi, json, problem, tokens } from "@/test/fake-api";
 
 import { createChatApi } from "./api";
@@ -968,5 +968,153 @@ describe("createChatStore realtime", () => {
 
       await expect(store.editMessage("r1", "m-3", "x")).rejects.toMatchObject({ status: 409 });
     });
+  });
+});
+
+describe("createChatStore workspace admin", () => {
+  const ws = workspace("ws-1", "山と印刷", { my_role: "owner" });
+  const roster = [member(naoki, { role: "owner" }), member(miyuki, { role: "member" })];
+
+  function setupAdmin(routes: Record<string, Handler> = {}) {
+    return setup({
+      "GET /api/v1/workspaces": () => json(200, { workspaces: [ws] }),
+      "GET /api/v1/workspaces/ws-1/members?limit=200": () => json(200, { members: roster, next_cursor: null }),
+      "GET /api/v1/workspaces/ws-1/invites?limit=200": () =>
+        json(200, { invites: [invite("i-1"), invite("i-2", { status: "revoked" })], next_cursor: null }),
+      ...routes,
+    });
+  }
+
+  it("follows the cursor to load every member, and keeps the invites newest first", async () => {
+    const { store, requests } = setupAdmin({
+      "GET /api/v1/workspaces/ws-1/members?limit=200": () => json(200, { members: [roster[0]], next_cursor: naoki.id }),
+      [`GET /api/v1/workspaces/ws-1/members?limit=200&after=${naoki.id}`]: () =>
+        json(200, { members: [roster[1]], next_cursor: null }),
+    });
+
+    await Promise.all([store.loadMembers("ws-1"), store.loadMembers("ws-1"), store.loadInvites("ws-1")]);
+
+    expect(store.getSnapshot().members["ws-1"]).toEqual({ status: "ready", list: roster });
+    // 同じ取得は 2 本送らない（ページの 2 本目は別の URL）
+    expect(requests().filter((p) => p.includes("/members")).length).toBe(2);
+    expect(store.getSnapshot().invites["ws-1"]?.list.map((i) => i.id)).toEqual(["i-2", "i-1"]);
+  });
+
+  it("marks the member list as not_found when the workspace cannot be read", async () => {
+    const { store } = setupAdmin({ "GET /api/v1/workspaces/ws-1/members?limit=200": () => problem(404, "not-found") });
+
+    await store.loadMembers("ws-1");
+
+    expect(store.getSnapshot().members["ws-1"]?.status).toBe("not_found");
+  });
+
+  it("changes a role and keeps my own role in the workspace list", async () => {
+    const { store, api } = setupAdmin({
+      [`PATCH /api/v1/workspaces/ws-1/members/${miyuki.id}`]: () => json(200, member(miyuki, { role: "admin" })),
+      [`PATCH /api/v1/workspaces/ws-1/members/${naoki.id}`]: () => json(200, member(naoki, { role: "admin" })),
+    });
+    await Promise.all([store.loadWorkspaces(), store.loadMembers("ws-1")]);
+
+    await store.changeMemberRole("ws-1", miyuki.id, "admin");
+    expect(body(api.calls.at(-1)!.init)).toEqual({ role: "admin" });
+    expect(store.getSnapshot().members["ws-1"]?.list.map((m) => m.role)).toEqual(["owner", "admin"]);
+    expect(store.getSnapshot().workspaces.list[0].my_role).toBe("owner");
+
+    await store.changeMemberRole("ws-1", naoki.id, "admin");
+    expect(store.getSnapshot().workspaces.list[0].my_role).toBe("admin");
+  });
+
+  it("removes a kicked member from the list", async () => {
+    const { store } = setupAdmin({ [`DELETE /api/v1/workspaces/ws-1/members/${miyuki.id}`]: () => new Response(null, { status: 204 }) });
+    await store.loadMembers("ws-1");
+
+    await store.removeMember("ws-1", miyuki.id);
+
+    expect(store.getSnapshot().members["ws-1"]?.list.map((m) => m.user.id)).toEqual([naoki.id]);
+  });
+
+  it("drops the workspace when I leave it myself", async () => {
+    const { store } = setupAdmin({ [`DELETE /api/v1/workspaces/ws-1/members/${naoki.id}`]: () => new Response(null, { status: 204 }) });
+    await Promise.all([store.loadWorkspaces(), store.loadMembers("ws-1")]);
+
+    await store.removeMember("ws-1", naoki.id);
+
+    expect(store.getSnapshot().workspaces.list).toEqual([]);
+    expect(store.getSnapshot().removedWorkspaces["ws-1"]?.reason).toBe("left");
+  });
+
+  it("swaps the roles locally when ownership is transferred (the response has no body)", async () => {
+    const { store, api } = setupAdmin({
+      "POST /api/v1/workspaces/ws-1/ownership-transfer": () => new Response(null, { status: 204 }),
+    });
+    await Promise.all([store.loadWorkspaces(), store.loadMembers("ws-1")]);
+
+    await store.transferOwnership("ws-1", miyuki.id);
+
+    expect(body(api.calls.at(-1)!.init)).toEqual({ user_id: miyuki.id });
+    expect(store.getSnapshot().members["ws-1"]?.list.map((m) => [m.user.id, m.role])).toEqual([
+      [naoki.id, "admin"],
+      [miyuki.id, "owner"],
+    ]);
+    expect(store.getSnapshot().workspaces.list[0].my_role).toBe("admin");
+  });
+
+  it("returns the invite code once and never keeps it in the list", async () => {
+    const created = { ...invite("i-3"), code: "7Qv2xkR8mA" };
+    const { store, api } = setupAdmin({ "POST /api/v1/workspaces/ws-1/invites": () => json(201, created) });
+    await store.loadInvites("ws-1");
+
+    const result = await store.createInvite("ws-1", { maxUses: 10, expiresInSeconds: 604800 });
+
+    expect(result.code).toBe("7Qv2xkR8mA");
+    expect(body(api.calls.at(-1)!.init)).toEqual({ max_uses: 10, expires_in_seconds: 604800 });
+    const list = store.getSnapshot().invites["ws-1"]!.list;
+    expect(list.map((i) => i.id)).toEqual(["i-3", "i-2", "i-1"]);
+    expect(list[0]).not.toHaveProperty("code");
+  });
+
+  it("marks a revoked invite without reloading the list", async () => {
+    const { store, requests } = setupAdmin({
+      "DELETE /api/v1/workspaces/ws-1/invites/i-1": () => new Response(null, { status: 204 }),
+    });
+    await store.loadInvites("ws-1");
+
+    await store.revokeInvite("ws-1", "i-1");
+
+    expect(store.getSnapshot().invites["ws-1"]?.list.find((i) => i.id === "i-1")?.status).toBe("revoked");
+    expect(requests().filter((p) => p.includes("/invites")).length).toBe(2);
+  });
+
+  it("applies role changes, removals and presence from events", async () => {
+    const { store } = setupAdmin();
+    await Promise.all([store.loadWorkspaces(), store.loadMembers("ws-1")]);
+
+    store.applyEvent({ type: "workspace.role_changed", data: { workspace_id: "ws-1", user_id: miyuki.id, role: "admin" } });
+    store.applyEvent({ type: "presence.changed", data: { user_id: miyuki.id, online: true } });
+    expect(store.getSnapshot().members["ws-1"]?.list[1]).toMatchObject({ role: "admin", online: true });
+
+    store.applyEvent({
+      type: "workspace.member_removed",
+      data: { workspace_id: "ws-1", user_id: miyuki.id, reason: "removed" },
+    });
+    expect(store.getSnapshot().members["ws-1"]?.list.map((m) => m.user.id)).toEqual([naoki.id]);
+  });
+
+  it("reloads the members when someone the list does not know joins a room", async () => {
+    let listed = [roster[0]];
+    const { store, requests } = setupAdmin({
+      "GET /api/v1/workspaces/ws-1/members?limit=200": () => json(200, { members: listed, next_cursor: null }),
+    });
+    const loads = () => requests().filter((p) => p.includes("/members")).length;
+    await store.loadMembers("ws-1");
+    listed = roster;
+
+    store.applyEvent({ type: "member.joined", data: { workspace_id: "ws-1", room_id: "r-1", user: miyuki } });
+    await vi.waitFor(() => expect(store.getSnapshot().members["ws-1"]?.list).toHaveLength(2));
+    expect(loads()).toBe(2);
+
+    // すでに一覧にいる人が別のルームに参加しただけなら、取り直さない
+    store.applyEvent({ type: "member.joined", data: { workspace_id: "ws-1", room_id: "r-2", user: miyuki } });
+    await vi.waitFor(() => expect(loads()).toBe(2));
   });
 });

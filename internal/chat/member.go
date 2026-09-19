@@ -31,14 +31,22 @@ func (s *Service) ListMembers(ctx context.Context, actor, workspaceID ulid.ULID,
 		return Page[Member]{}, fmt.Errorf("list members: %w", err)
 	}
 	members := make([]Member, len(rows))
+	ids := make([]ulid.ULID, len(rows))
 	for i, r := range rows {
 		members[i] = Member{
 			User:     UserProfile{ID: r.UserID, Handle: r.Handle, DisplayName: r.DisplayName},
 			Role:     Role(r.Role),
 			JoinedAt: r.JoinedAt,
 		}
+		ids[i] = r.UserID
 	}
-	return newPage(members, limit, func(m Member) ulid.ULID { return m.User.ID }), nil
+	result := newPage(members, limit, func(m Member) ulid.ULID { return m.User.ID })
+	// presence はページに残した分だけを 1 回の MGET で読む（ルームのメンバー一覧と同じ。ADR 0015）。
+	online := s.online(ctx, ids[:len(result.Items)])
+	for i := range result.Items {
+		result.Items[i].Online = online[result.Items[i].User.ID]
+	}
+	return result, nil
 }
 
 // lockedRoles は LockWorkspaceMembers でロックした行のロール。メンバーでない userID はキーに含まれない。

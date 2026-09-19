@@ -1,4 +1,4 @@
-import type { Message, Room, RoomMember, UserProfile, Workspace } from "@/lib/api/types.gen";
+import type { Invite, Member, Message, Room, RoomMember, UserProfile, Workspace } from "@/lib/api/types.gen";
 
 /** lib/chat とチャットのページのテストで使う API のレスポンスの組み立て。 */
 
@@ -56,4 +56,24 @@ export function message(seq: number, overrides: Partial<Message> = {}): Message 
 
 export function roomMember(user: UserProfile, overrides: Partial<RoomMember> = {}): RoomMember {
   return { user, role: "member", joined_at: "2026-09-01T00:00:00Z", online: false, ...overrides };
+}
+
+/** ワークスペースのメンバー（管理画面）。形はルームのメンバーと同じ。 */
+export function member(user: UserProfile, overrides: Partial<Member> = {}): Member {
+  return { user, role: "member", joined_at: "2026-09-01T00:00:00Z", online: false, ...overrides };
+}
+
+export function invite(id: string, overrides: Partial<Invite> = {}): Invite {
+  return {
+    id,
+    workspace_id: "ws-1",
+    created_by: miyuki,
+    max_uses: 10,
+    use_count: 3,
+    expires_at: "2026-09-20T09:00:00Z",
+    revoked_at: null,
+    created_at: "2026-09-13T00:00:00Z",
+    status: "active",
+    ...overrides,
+  };
 }
