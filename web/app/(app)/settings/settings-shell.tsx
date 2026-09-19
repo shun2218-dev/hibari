@@ -21,7 +21,8 @@ export function SettingsShell({ children }: { children: ReactNode }) {
   if (!section) return children;
 
   return (
-    <SettingsLayout section={section} hrefs={settingsHrefs} backHref="/settings">
+    // 設定はワークスペースに属さないので、チャットへは入口（`/`）に戻す。最後に開いた場所が開く（ADR 0025）
+    <SettingsLayout section={section} hrefs={settingsHrefs} backHref="/settings" chatHref="/">
       {children}
     </SettingsLayout>
   );

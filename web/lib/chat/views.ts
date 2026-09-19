@@ -6,7 +6,8 @@ import type {
   RoomSummaryView,
   TimelineItem,
 } from "@/components/chat/types";
-import type { Message, MessageAttachment, Role, Room, RoomMember, UserProfile } from "@/lib/api/types.gen";
+import type { DmCandidateView, RoomMemberRowView } from "@/components/chat/room-dialogs";
+import type { Member, Message, MessageAttachment, Role, Room, RoomMember, UserProfile } from "@/lib/api/types.gen";
 
 import type { OutgoingMessage } from "./store";
 import type { AttachmentDraft } from "./uploads";
@@ -261,6 +262,43 @@ export function toRoomMemberView(member: RoomMember, avatarUrls: UrlTable = {}):
     online: member.online,
     roleLabel: roleLabels[member.role],
   };
+}
+
+/**
+ * DM の相手や、非公開チャンネルに追加する人の候補。自分と、除きたい人（すでにチャンネルにいる人）を外し、
+ * 表示名かハンドルで絞り込む。presence はワークスペースのメンバー一覧が返す（ADR 0015）。
+ */
+export function toDmCandidates(
+  members: readonly Member[],
+  { userId, search = "", exclude = [] }: { userId: string; search?: string; exclude?: readonly string[] },
+): DmCandidateView[] {
+  const query = search.trim().toLowerCase();
+  const excluded = new Set([userId, ...exclude]);
+  return members
+    .filter((m) => !excluded.has(m.user.id))
+    .filter(
+      (m) =>
+        query === "" ||
+        m.user.display_name.toLowerCase().includes(query) ||
+        m.user.handle.toLowerCase().includes(query),
+    )
+    .map((m) => ({ id: m.user.id, name: m.user.display_name, handle: m.user.handle, online: m.online }));
+}
+
+/** チャンネルの設定に並べる、いま参加している人。外せるかはサーバーと同じ規則で決める（ADR 0011）。 */
+export function toRoomMemberRows(
+  members: readonly RoomMember[],
+  { userId, myRole, avatarUrls = {} }: { userId: string; myRole: Role | undefined; avatarUrls?: UrlTable },
+): RoomMemberRowView[] {
+  return members.map((member) => ({
+    id: member.user.id,
+    name: member.user.display_name,
+    avatarUrl: avatarUrls[member.user.id] ?? undefined,
+    isSelf: member.user.id === userId,
+    // 外せるのは、自分より下のロールの人だけ（authz.CanRemoveRoomMember）
+    canRemove:
+      member.user.id !== userId && myRole !== undefined && roleRanks[myRole] > roleRanks[member.role],
+  }));
 }
 
 /** 入力欄に並べる添付。 */

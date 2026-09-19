@@ -36,6 +36,7 @@ import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { MembersPanel } from "@/components/chat/members-panel";
 import { RoomHeader } from "@/components/chat/room-header";
 import {
+  AddRoomMemberDialog,
   CreateRoomDialog,
   DeleteMessageDialog,
   RoomSettingsDialog,
@@ -156,6 +157,8 @@ function chat({
             selectedRoomId={selectedRoom.id}
             roomHref={roomHref}
             search={search}
+            onCreateRoom={noop}
+            onStartDm={noop}
             accountMenuOpen={accountMenu}
             accountMenu={<AccountMenu user={{ ...users.you, handle: users.you.handle }} />}
             switcherOpen={switcher}
@@ -171,6 +174,7 @@ function chat({
           name={selectedRoom.name}
           memberCount={selectedRoom.memberCount}
           membersOpen={members}
+          onOpenSettings={noop}
         />
         <ConnectionBanner status={banner ?? null} />
         {body === "timeline" && (
@@ -194,6 +198,38 @@ function chat({
       {dialog}
       <CreateWorkspaceDialog open={Boolean(createWorkspace)} />
     </>
+  );
+}
+
+/** サイドバーだけを切り出したフレーム（足した「+」を見るため）。 */
+function sidebarFrame() {
+  return (
+    <div className="h-140 w-80 border-r border-border">
+      <Sidebar
+        workspace={workspaces.dev}
+        currentUser={currentUser}
+        rooms={rooms}
+        selectedRoomId={selectedRoom.id}
+        roomHref={roomHref}
+        onCreateRoom={noop}
+        onStartDm={noop}
+      />
+    </div>
+  );
+}
+
+/** ルームのヘッダーだけを切り出したフレーム（足した設定のボタンを見るため）。 */
+function roomHeaderFrame() {
+  return (
+    <div className="w-180 bg-surface">
+      <RoomHeader
+        kind={selectedRoom.kind}
+        name={selectedRoom.name}
+        memberCount={selectedRoom.memberCount}
+        onOpenSettings={noop}
+        onToggleMembers={noop}
+      />
+    </div>
   );
 }
 
@@ -248,7 +284,7 @@ const settingsHrefs: Record<SettingsSection, string> = { profile: noHref, device
 
 function userSettings(section: SettingsSection, children: ReactNode) {
   return (
-    <SettingsLayout section={section} hrefs={settingsHrefs} backHref={noHref}>
+    <SettingsLayout section={section} hrefs={settingsHrefs} backHref={noHref} chatHref={noHref}>
       {children}
     </SettingsLayout>
   );
@@ -355,6 +391,10 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/search-empty": () => chat({ noRooms: true, search: "見積" }),
   "chat/empty-workspaces": () => <NoWorkspaces />,
   "chat/avatar-images": () => chat({ avatars: true }),
+  "chat/sidebar-add-entries": sidebarFrame,
+  "chat/room-header-settings": roomHeaderFrame,
+  "chat/member-add-dialog": () =>
+    chat({ dialog: <AddRoomMemberDialog open candidates={dmCandidates} selectedId={users.ryo.id} /> }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),
   "chat/mobile-room": () => chat(),
   "chat/mobile-members-sheet": () => chat({ members: true }),
@@ -388,6 +428,7 @@ export const previewScreens: Record<string, () => ReactNode> = {
     ),
   "workspace/dialog-leave": () => settingsPage("member", <LeaveWorkspaceDialog open workspaceName={workspaces.yama.name} />),
   "workspace/dialog-leave-blocked-owner": () => settingsPage("owner", <LeaveBlockedDialog open />),
+  "workspace/back-to-chat": () => settingsPage("owner"),
   "workspace/invites-as-owner": () => invitesPage("owner"),
   "workspace/invites-as-admin": () => invitesPage("admin"),
   "workspace/invites-as-member": () => invitesPage("member"),
@@ -429,7 +470,10 @@ export const previewScreens: Record<string, () => ReactNode> = {
       />,
     ),
   "settings/appearance": () => userSettings("appearance", <AppearanceSettings theme="light" density="comfortable" />),
-  "settings/mobile-list": () => <SettingsMobileMenu hrefs={settingsHrefs} />,
+  "settings/back-to-chat": () =>
+    userSettings("profile", <ProfileSettings user={{ id: users.you.id, displayName: users.you.name, handle: users.you.handle }} />),
+  "settings/mobile-list": () => <SettingsMobileMenu hrefs={settingsHrefs} chatHref={noHref} />,
+  "settings/mobile-back-to-chat": () => <SettingsMobileMenu hrefs={settingsHrefs} chatHref={noHref} />,
 };
 
 export function PreviewScreen({ name, dark }: { name: string; dark: boolean }) {

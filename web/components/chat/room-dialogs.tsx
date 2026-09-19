@@ -123,6 +123,95 @@ export function StartDmDialog({
         </>
       }
     >
+      <MemberPicker
+        name="dm-peer"
+        candidates={candidates}
+        selectedId={selectedId}
+        search={search}
+        onSearchChange={onSearchChange}
+        onSelect={onSelect}
+        emptyText="ほかにメンバーがいません。招待リンクで誰かを招待してください。"
+      />
+    </Dialog>
+  );
+}
+
+/**
+ * 非公開チャンネルに追加する相手を選ぶ（`RoomSettingsDialog` の「メンバーを追加」から開く）。
+ * 候補はワークスペースのメンバーのうち、まだこのチャンネルにいない人だけ。ひとりずつ追加する。
+ */
+export function AddRoomMemberDialog({
+  open,
+  candidates,
+  selectedId,
+  search = "",
+  onSearchChange,
+  onSelect,
+  onCancel,
+  onAdd,
+  adding,
+}: {
+  open: boolean;
+  candidates: DmCandidateView[];
+  selectedId?: string;
+  search?: string;
+  onSearchChange?: (value: string) => void;
+  onSelect?: (userId: string) => void;
+  onCancel?: () => void;
+  onAdd?: () => void;
+  adding?: boolean;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onClose={onCancel}
+      width="wide"
+      title="メンバーを追加"
+      description="このチャンネルに追加する人を選んでください。参加前の履歴も読めるようになります。"
+      actions={
+        <>
+          <Button variant="secondary" onClick={onCancel}>
+            キャンセル
+          </Button>
+          <Button onClick={onAdd} disabled={adding || !selectedId}>
+            追加する
+          </Button>
+        </>
+      }
+    >
+      <MemberPicker
+        name="add-member"
+        candidates={candidates}
+        selectedId={selectedId}
+        search={search}
+        onSearchChange={onSearchChange}
+        onSelect={onSelect}
+        emptyText="追加できる人がいません。ワークスペースの全員がこのチャンネルにいます。"
+      />
+    </Dialog>
+  );
+}
+
+/** 相手をひとり選ぶ（DM とメンバーの追加で同じ形にする）。 */
+function MemberPicker({
+  name,
+  candidates,
+  selectedId,
+  search,
+  onSearchChange,
+  onSelect,
+  emptyText,
+}: {
+  name: string;
+  candidates: DmCandidateView[];
+  selectedId?: string;
+  search: string;
+  onSearchChange?: (value: string) => void;
+  onSelect?: (userId: string) => void;
+  emptyText: string;
+}) {
+  return (
+    <>
       <label className="flex h-8.5 items-center gap-2 rounded-sm border border-border px-2.5 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-primary">
         <SearchIcon className="size-4 shrink-0 text-text-secondary" />
         <input
@@ -134,22 +223,34 @@ export function StartDmDialog({
           className="min-w-0 flex-1 bg-transparent text-sm text-text focus-visible:outline-none"
         />
       </label>
-      <fieldset className="-mx-1 flex max-h-66 flex-col gap-2 overflow-y-auto px-1">
-        <legend className="sr-only">相手</legend>
-        {candidates.map((candidate) => (
-          <RadioCard
-            key={candidate.id}
-            name="dm-peer"
-            value={candidate.id}
-            checked={candidate.id === selectedId}
-            onChange={onSelect}
-            leading={<Avatar id={candidate.id} name={candidate.name} imageUrl={candidate.avatarUrl} size="sm" online={candidate.online} />}
-            title={candidate.name}
-            description={<span className="font-mono">@{candidate.handle}</span>}
-          />
-        ))}
-      </fieldset>
-    </Dialog>
+      {candidates.length === 0 ? (
+        <p className="py-6 text-center text-sm text-text-muted">{emptyText}</p>
+      ) : (
+        <fieldset className="-mx-1 flex max-h-66 flex-col gap-2 overflow-y-auto px-1">
+          <legend className="sr-only">相手</legend>
+          {candidates.map((candidate) => (
+            <RadioCard
+              key={candidate.id}
+              name={name}
+              value={candidate.id}
+              checked={candidate.id === selectedId}
+              onChange={onSelect}
+              leading={
+                <Avatar
+                  id={candidate.id}
+                  name={candidate.name}
+                  imageUrl={candidate.avatarUrl}
+                  size="sm"
+                  online={candidate.online}
+                />
+              }
+              title={candidate.name}
+              description={<span className="font-mono">@{candidate.handle}</span>}
+            />
+          ))}
+        </fieldset>
+      )}
+    </>
   );
 }
 

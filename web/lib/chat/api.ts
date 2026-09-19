@@ -20,6 +20,7 @@ import type {
   ReadState,
   Role,
   Room,
+  UpdateRoomRequest,
   RoomList,
   RoomMember,
   RoomMemberList,
@@ -104,6 +105,18 @@ export function createChatApi(request: Session["request"]) {
     getRoom: (roomId: string) => request<Room>("GET", `/api/v1/rooms/${encodeURIComponent(roomId)}`),
 
     joinRoom: (roomId: string) => request<Room>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/join`),
+
+    /** 名前と is_default を変える。変えられるのは、そのルームを読める admin 以上（ADR 0011）。 */
+    updateRoom: (roomId: string, body: UpdateRoomRequest) =>
+      request<Room>("PATCH", `/api/v1/rooms/${encodeURIComponent(roomId)}`, body),
+
+    /** 非公開ルームに人を追加する。すでにメンバーでも成功する（冪等。ADR 0011）。 */
+    addRoomMember: (roomId: string, userId: string) =>
+      request<void>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/members`, { user_id: userId }),
+
+    /** ルームから外す（userId が自分なら退出）。 */
+    removeRoomMember: (roomId: string, userId: string) =>
+      request<void>("DELETE", `/api/v1/rooms/${encodeURIComponent(roomId)}/members/${encodeURIComponent(userId)}`),
 
     /** before_seq を省くと最新のページ。messages は常に seq の昇順（ADR 0012）。 */
     listMessages: (roomId: string, { beforeSeq }: { beforeSeq?: number } = {}) => {

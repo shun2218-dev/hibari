@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { TimelineItem } from "@/components/chat/types";
 import type { MessageAttachment } from "@/lib/api/types.gen";
-import { message, miyuki, naoki, room, roomMember } from "@/test/chat-data";
+import { kei, member, message, miyuki, naoki, room, roomMember } from "@/test/chat-data";
 
 import {
   messageActions,
   previewImageIds,
   toAttachmentDraftView,
+  toDmCandidates,
+  toRoomMemberRows,
   toRoomMemberView,
   toRoomSummaryView,
   toTimelineItems,
@@ -335,5 +337,47 @@ describe("messageActions", () => {
       canEdit: false,
       canDelete: false,
     });
+  });
+});
+
+describe("toDmCandidates", () => {
+  const members = [
+    member(naoki, { role: "owner", online: true }),
+    member(miyuki),
+    member(kei, { online: true }),
+  ];
+
+  it("leaves out the viewer and anyone already in the room", () => {
+    expect(toDmCandidates(members, { userId: naoki.id, exclude: [kei.id] })).toEqual([
+      { id: miyuki.id, name: miyuki.display_name, handle: miyuki.handle, online: false },
+    ]);
+  });
+
+  it("filters by display name or handle", () => {
+    expect(toDmCandidates(members, { userId: naoki.id, search: "みゆき" }).map((c) => c.id)).toEqual([miyuki.id]);
+    expect(toDmCandidates(members, { userId: naoki.id, search: "KEI" }).map((c) => c.id)).toEqual([kei.id]);
+    expect(toDmCandidates(members, { userId: naoki.id, search: "いない人" })).toEqual([]);
+  });
+});
+
+describe("toRoomMemberRows", () => {
+  it("lets admins remove members below them, but never themselves", () => {
+    const rows = toRoomMemberRows([roomMember(naoki, { role: "admin" }), roomMember(miyuki), roomMember(kei, { role: "admin" })], {
+      userId: naoki.id,
+      myRole: "admin",
+    });
+
+    expect(rows.map((r) => [r.id, r.isSelf, r.canRemove])).toEqual([
+      [naoki.id, true, false],
+      [miyuki.id, false, true],
+      // 同じロールの人は外せない（authz.CanManage）
+      [kei.id, false, false],
+    ]);
+  });
+
+  it("offers nothing to a member", () => {
+    const rows = toRoomMemberRows([roomMember(miyuki)], { userId: naoki.id, myRole: "member" });
+
+    expect(rows[0].canRemove).toBe(false);
   });
 });

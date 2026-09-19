@@ -1,5 +1,5 @@
 import { IconButton } from "@/components/ui/button";
-import { ChevronLeftIcon, LockIcon, UsersIcon } from "@/components/ui/icons";
+import { ChevronLeftIcon, LockIcon, SettingsIcon, UsersIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
 
 import type { RoomKind } from "./types";
@@ -10,11 +10,21 @@ type RoomHeaderProps = {
   memberCount: number;
   membersOpen?: boolean;
   onToggleMembers?: () => void;
+  /** チャンネルの設定を開く。DM と、設定を開けない人には渡さない（ADR 0011）。 */
+  onOpenSettings?: () => void;
   /** モバイルで一覧に戻る。md 以上では出さない。 */
   onBack?: () => void;
 };
 
-export function RoomHeader({ kind, name, memberCount, membersOpen = false, onToggleMembers, onBack }: RoomHeaderProps) {
+export function RoomHeader({
+  kind,
+  name,
+  memberCount,
+  membersOpen = false,
+  onToggleMembers,
+  onOpenSettings,
+  onBack,
+}: RoomHeaderProps) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border px-2 md:pr-3 md:pl-4">
       <IconButton label="チャンネル一覧に戻る" onClick={onBack} className="md:hidden">
@@ -28,6 +38,11 @@ export function RoomHeader({ kind, name, memberCount, membersOpen = false, onTog
         </h1>
         <p className="text-2xs text-text-muted">メンバー{memberCount}人</p>
       </div>
+      {onOpenSettings && (
+        <IconButton label="チャンネルの設定" onClick={onOpenSettings} className="mr-0.5">
+          <SettingsIcon className="size-4" />
+        </IconButton>
+      )}
       <button
         type="button"
         onClick={onToggleMembers}

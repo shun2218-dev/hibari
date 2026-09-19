@@ -7,6 +7,7 @@ import { EmptyMessages, JoinRoomBar, RemovedFromRoom, RemovedFromWorkspace } fro
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { DeleteMessageDialog } from "@/components/chat/room-dialogs";
+import { RoomSettings } from "./room-settings";
 import { RoomHeader } from "@/components/chat/room-header";
 import { Timeline } from "@/components/chat/timeline";
 import { ApiError } from "@/lib/api/error";
@@ -86,6 +87,7 @@ export function RoomView({
   const [openMenuKey, setOpenMenuKey] = useState<string>();
   const [editing, setEditing] = useState<{ messageId: string; value: string; saving: boolean } | null>(null);
   const [deleting, setDeleting] = useState<{ messageId: string; body: string; pending: boolean } | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const visible = useDocumentVisible();
 
   useEffect(() => {
@@ -239,6 +241,8 @@ export function RoomView({
       memberCount={room.member_count ?? 0}
       membersOpen={membersOpen}
       onToggleMembers={onToggleMembers}
+      // DM は設定を変えられない（ADR 0011）。member にも読み取り専用で開ける
+      onOpenSettings={room.kind === "dm" ? undefined : () => setSettingsOpen(true)}
       onBack={onBack}
     />
   );
@@ -340,6 +344,12 @@ export function RoomView({
         pending={deleting?.pending}
         onCancel={() => setDeleting(null)}
         onConfirm={confirmDelete}
+      />
+      <RoomSettings
+        workspaceId={workspaceId}
+        roomId={roomId}
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
       />
     </>
   );
