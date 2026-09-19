@@ -163,9 +163,10 @@ func (q *Queries) CountUnreadThreads(ctx context.Context, arg CountUnreadThreads
 }
 
 const createMessage = `-- name: CreateMessage :exec
-INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, created_at)
+INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, in_channel, created_at)
 VALUES ($1, $2, $3, $4, $5, $6,
-        $7, $8, $9, $10, $11::timestamptz)
+        $7, $8, $9, $10, $11,
+        $12::timestamptz)
 `
 
 type CreateMessageParams struct {
@@ -179,10 +180,12 @@ type CreateMessageParams struct {
 	Body         string
 	ThreadRootID *ulid.ULID
 	ThreadSeq    *int64
+	InChannel    bool
 	Now          time.Time
 }
 
 // スレッドの返信なら thread_root_id と thread_seq を入れる（ADR 0036）。親は呼び出し側でロックして確かめてある。
+// in_channel はチャンネルの投稿なら true、返信なら「チャンネルにも投稿する」のときだけ true（ADR 0039）。
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) error {
 	_, err := q.db.Exec(ctx, createMessage,
 		arg.ID,
@@ -195,6 +198,7 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.Body,
 		arg.ThreadRootID,
 		arg.ThreadSeq,
+		arg.InChannel,
 		arg.Now,
 	)
 	return err
@@ -202,9 +206,9 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 
 const createSystemMessage = `-- name: CreateSystemMessage :exec
 INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body,
-                      kind, system_type, system_data, created_at)
+                      kind, system_type, system_data, in_channel, created_at)
 VALUES ($1, $2, $3, $4, $5, $6,
-        $7, '', 'system', $8, $9, $10::timestamptz)
+        $7, '', 'system', $8, $9, true, $10::timestamptz)
 `
 
 type CreateSystemMessageParams struct {
@@ -272,7 +276,7 @@ func (q *Queries) FollowThread(ctx context.Context, arg FollowThreadParams) (int
 }
 
 const getMessageForUpdate = `-- name: GetMessageForUpdate :one
-SELECT id, room_id, seq, sender_id, client_msg_id, body, created_at, edited_at, deleted_at, change_seq, kind, system_type, system_data, user_seq, thread_root_id, thread_seq, last_thread_seq, thread_reply_count, thread_last_reply_at
+SELECT id, room_id, seq, sender_id, client_msg_id, body, created_at, edited_at, deleted_at, change_seq, kind, system_type, system_data, user_seq, thread_root_id, thread_seq, last_thread_seq, thread_reply_count, thread_last_reply_at, in_channel
   FROM messages
  WHERE room_id = $1
    AND id = $2
@@ -311,6 +315,7 @@ func (q *Queries) GetMessageForUpdate(ctx context.Context, arg GetMessageForUpda
 		&i.LastThreadSeq,
 		&i.ThreadReplyCount,
 		&i.ThreadLastReplyAt,
+		&i.InChannel,
 	)
 	return i, err
 }
@@ -360,7 +365,7 @@ func (q *Queries) GetMessageSenderID(ctx context.Context, arg GetMessageSenderID
 const getMessageView = `-- name: GetMessageView :one
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
@@ -388,6 +393,7 @@ type GetMessageViewRow struct {
 	SystemData        []byte
 	ThreadRootID      *ulid.ULID
 	ThreadSeq         *int64
+	InChannel         bool
 	LastThreadSeq     int64
 	ThreadReplyCount  int32
 	ThreadLastReplyAt *time.Time
@@ -415,6 +421,7 @@ func (q *Queries) GetMessageView(ctx context.Context, arg GetMessageViewParams) 
 		&i.SystemData,
 		&i.ThreadRootID,
 		&i.ThreadSeq,
+		&i.InChannel,
 		&i.LastThreadSeq,
 		&i.ThreadReplyCount,
 		&i.ThreadLastReplyAt,
@@ -538,13 +545,13 @@ func (q *Queries) ListFollowedThreads(ctx context.Context, arg ListFollowedThrea
 const listMessagesAfter = `-- name: ListMessagesAfter :many
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
  WHERE m.room_id = $1
-   AND m.thread_root_id IS NULL
+   AND m.in_channel
    AND m.seq > $2
  ORDER BY m.seq
  LIMIT $3
@@ -570,6 +577,7 @@ type ListMessagesAfterRow struct {
 	SystemData        []byte
 	ThreadRootID      *ulid.ULID
 	ThreadSeq         *int64
+	InChannel         bool
 	LastThreadSeq     int64
 	ThreadReplyCount  int32
 	ThreadLastReplyAt *time.Time
@@ -605,6 +613,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.SystemData,
 			&i.ThreadRootID,
 			&i.ThreadSeq,
+			&i.InChannel,
 			&i.LastThreadSeq,
 			&i.ThreadReplyCount,
 			&i.ThreadLastReplyAt,
@@ -627,13 +636,13 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 const listMessagesBefore = `-- name: ListMessagesBefore :many
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
  WHERE m.room_id = $1
-   AND m.thread_root_id IS NULL
+   AND m.in_channel
    AND m.seq < $2
  ORDER BY m.seq DESC
  LIMIT $3
@@ -659,6 +668,7 @@ type ListMessagesBeforeRow struct {
 	SystemData        []byte
 	ThreadRootID      *ulid.ULID
 	ThreadSeq         *int64
+	InChannel         bool
 	LastThreadSeq     int64
 	ThreadReplyCount  int32
 	ThreadLastReplyAt *time.Time
@@ -669,10 +679,11 @@ type ListMessagesBeforeRow struct {
 	SenderDisplayName string
 }
 
-// チャンネルのタイムライン（スレッドの返信を除く。ADR 0036）で、seq が before_seq より小さいメッセージを、新しい順に max_rows 件。
+// チャンネルのタイムライン（スレッドだけの返信を除き、チャンネルにも投稿した返信は含む。ADR 0036 / 0039）で、seq が before_seq より小さいメッセージを、新しい順に max_rows 件。
 // 最新のページは before_seq に最大値を渡す。
 // 「before_seq が NULL なら条件なし」とは書かない。汎用の実行計画でインデックスの範囲条件にならず、ルームの全件を走査しうるため。
-// 部分インデックス messages_room_id_channel_seq_idx (room_id, seq DESC) WHERE thread_root_id IS NULL を順方向に走査する。
+// 部分インデックス messages_room_id_channel_seq_idx (room_id, seq DESC) WHERE in_channel を順方向に走査する。
+// 条件は索引と同じ m.in_channel と書く（別の式にすると、Postgres が索引の条件を含むと証明できず、索引を使わない）。
 func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBeforeParams) ([]ListMessagesBeforeRow, error) {
 	rows, err := q.db.Query(ctx, listMessagesBefore, arg.RoomID, arg.BeforeSeq, arg.MaxRows)
 	if err != nil {
@@ -696,6 +707,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.SystemData,
 			&i.ThreadRootID,
 			&i.ThreadSeq,
+			&i.InChannel,
 			&i.LastThreadSeq,
 			&i.ThreadReplyCount,
 			&i.ThreadLastReplyAt,
@@ -718,7 +730,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 const listMessagesChangedAfter = `-- name: ListMessagesChangedAfter :many
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
@@ -749,6 +761,7 @@ type ListMessagesChangedAfterRow struct {
 	SystemData        []byte
 	ThreadRootID      *ulid.ULID
 	ThreadSeq         *int64
+	InChannel         bool
 	LastThreadSeq     int64
 	ThreadReplyCount  int32
 	ThreadLastReplyAt *time.Time
@@ -785,6 +798,7 @@ func (q *Queries) ListMessagesChangedAfter(ctx context.Context, arg ListMessages
 			&i.SystemData,
 			&i.ThreadRootID,
 			&i.ThreadSeq,
+			&i.InChannel,
 			&i.LastThreadSeq,
 			&i.ThreadReplyCount,
 			&i.ThreadLastReplyAt,
@@ -807,7 +821,7 @@ func (q *Queries) ListMessagesChangedAfter(ctx context.Context, arg ListMessages
 const listThreadMessagesAfter = `-- name: ListThreadMessagesAfter :many
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
@@ -838,6 +852,7 @@ type ListThreadMessagesAfterRow struct {
 	SystemData        []byte
 	ThreadRootID      *ulid.ULID
 	ThreadSeq         *int64
+	InChannel         bool
 	LastThreadSeq     int64
 	ThreadReplyCount  int32
 	ThreadLastReplyAt *time.Time
@@ -872,6 +887,7 @@ func (q *Queries) ListThreadMessagesAfter(ctx context.Context, arg ListThreadMes
 			&i.SystemData,
 			&i.ThreadRootID,
 			&i.ThreadSeq,
+			&i.InChannel,
 			&i.LastThreadSeq,
 			&i.ThreadReplyCount,
 			&i.ThreadLastReplyAt,
@@ -894,7 +910,7 @@ func (q *Queries) ListThreadMessagesAfter(ctx context.Context, arg ListThreadMes
 const listThreadMessagesBefore = `-- name: ListThreadMessagesBefore :many
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
@@ -925,6 +941,7 @@ type ListThreadMessagesBeforeRow struct {
 	SystemData        []byte
 	ThreadRootID      *ulid.ULID
 	ThreadSeq         *int64
+	InChannel         bool
 	LastThreadSeq     int64
 	ThreadReplyCount  int32
 	ThreadLastReplyAt *time.Time
@@ -960,6 +977,7 @@ func (q *Queries) ListThreadMessagesBefore(ctx context.Context, arg ListThreadMe
 			&i.SystemData,
 			&i.ThreadRootID,
 			&i.ThreadSeq,
+			&i.InChannel,
 			&i.LastThreadSeq,
 			&i.ThreadReplyCount,
 			&i.ThreadLastReplyAt,

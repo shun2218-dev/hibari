@@ -16,6 +16,7 @@ import (
 
 // スレッド（ADR 0036）。返信はルームの seq / change_seq をそのまま使い、チャンネルのタイムラインには出さない。
 // チャンネルの未読（user_seq）には数えず、スレッドの未読は thread_seq で数える。
+// 例外は「チャンネルにも投稿する」を付けた返信（ADR 0039）で、チャンネルにも出し、チャンネルの発言として数える。
 
 // errInvalidThreadRoot は、返信先に指定できないメッセージ（存在しない・別のルーム・システムメッセージ・返信）を指定したことを表す。
 func errInvalidThreadRoot() error {
@@ -47,7 +48,8 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 	// 削除済みの親にも返信できる。削除と返信は並行して起きうるので、拒んでも結局生まれる（ADR 0012 の返信と同じ）。
 
 	now := s.clock.Now()
-	allocated, err := q.AllocateThreadReplySeq(ctx, roomID)
+	// 「チャンネルにも投稿する」なら、チャンネルの発言として user_seq と last_message_at も進める（ADR 0039）。
+	allocated, err := q.AllocateThreadReplySeq(ctx, store.AllocateThreadReplySeqParams{RoomID: roomID, InChannel: in.AlsoInChannel, Now: now})
 	if err != nil {
 		return Message{}, nil, fmt.Errorf("allocate thread reply seq: %w", err)
 	}
@@ -60,9 +62,9 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 	id := s.ids.New()
 	err = q.CreateMessage(ctx, store.CreateMessageParams{
 		ID: id, RoomID: roomID, Seq: allocated.LastMessageSeq, ChangeSeq: replyChangeSeq,
-		// チャンネルの未読には数えないので、user_seq は進めずに直前の値を入れる。
+		// スレッドだけの返信は user_seq を進めていないので、直前の値が入る（チャンネルの未読に数えない）。
 		UserSeq: allocated.LastUserSeq, SenderID: actor, ClientMsgID: in.ClientMsgID,
-		Body: in.Body, ThreadRootID: &rootID, ThreadSeq: &threadSeq, Now: now,
+		Body: in.Body, ThreadRootID: &rootID, ThreadSeq: &threadSeq, InChannel: in.AlsoInChannel, Now: now,
 	})
 	if err != nil {
 		return Message{}, nil, fmt.Errorf("create thread reply: %w", err)
@@ -71,7 +73,15 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 		return Message{}, nil, err
 	}
 
-	// 返信した人はスレッドに参加し、自分の返信まで既読にする。チャンネルの既読位置は動かさない（返信はチャンネルに出ていない）。
+	// チャンネルにも出した返信は、チャンネルの送信と同じく送信者のチャンネルの既読位置も進める（自分の発言で自分に未読を作らない）。
+	// スレッドだけの返信では動かさない（チャンネルに出ていない）。
+	if in.AlsoInChannel {
+		if _, err := q.AdvanceLastReadSeq(ctx, store.AdvanceLastReadSeqParams{RoomID: roomID, UserID: actor, Seq: allocated.LastMessageSeq}); err != nil {
+			return Message{}, nil, fmt.Errorf("advance sender's last_read_seq: %w", err)
+		}
+	}
+
+	// 返信した人はスレッドに参加し、自分の返信まで既読にする。
 	var events []Event
 	followed, err := q.FollowThread(ctx, store.FollowThreadParams{ThreadRootID: rootID, LastReadThreadSeq: threadSeq, Now: now, RoomID: roomID, UserID: actor})
 	if err != nil {

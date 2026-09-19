@@ -45,6 +45,7 @@ type Message struct {
 	LastThreadSeq     int64
 	ThreadReplyCount  int32
 	ThreadLastReplyAt *time.Time
+	InChannel         bool
 }
 
 type Room struct {

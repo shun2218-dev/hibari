@@ -126,8 +126,8 @@ func insertRoom(t *testing.T, tx pgx.Tx, workspaceID, creator ulid.ULID, name st
 func insertMessage(t *testing.T, tx pgx.Tx, roomID, sender ulid.ULID, seq int64, threadRoot *ulid.ULID) ulid.ULID {
 	t.Helper()
 	mid := ids.New()
-	mustExec(t, tx, `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, created_at)
-		VALUES ($1, $2, $3::bigint, $3::bigint, $3::bigint, $4, $5, 'hi', $6, CASE WHEN $6::uuid IS NULL THEN NULL ELSE $3::bigint END, $7)`,
+	mustExec(t, tx, `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, in_channel, created_at)
+		VALUES ($1, $2, $3::bigint, $3::bigint, $3::bigint, $4, $5, 'hi', $6, CASE WHEN $6::uuid IS NULL THEN NULL ELSE $3::bigint END, $6::uuid IS NULL, $7)`,
 		mid, roomID, seq, sender, ids.New(), threadRoot, now)
 	return mid
 }
@@ -276,8 +276,8 @@ func TestMessagesConstraints(t *testing.T) {
 		w := insertWorkspace(t, tx, alice)
 		r1 := insertRoom(t, tx, w, alice, "general")
 		r2 := insertRoom(t, tx, w, alice, "random")
-		const insert = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, created_at)
-			VALUES ($1, $2, $3::bigint, $3::bigint + 1000, $3::bigint, $4, $5, 'hi', $6, CASE WHEN $6::uuid IS NULL THEN NULL ELSE $3::bigint END, $7)`
+		const insert = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, in_channel, created_at)
+			VALUES ($1, $2, $3::bigint, $3::bigint + 1000, $3::bigint, $4, $5, 'hi', $6, CASE WHEN $6::uuid IS NULL THEN NULL ELSE $3::bigint END, $6::uuid IS NULL, $7)`
 
 		clientMsgID := ids.New()
 		m1 := ids.New()
@@ -292,15 +292,15 @@ func TestMessagesConstraints(t *testing.T) {
 		})
 
 		t.Run("change_seq is unique per room and required", func(t *testing.T) {
-			const withChangeSeq = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, created_at)
-				VALUES ($1, $2, $3, $4, $3, $5, $6, 'hi', $7)`
+			const withChangeSeq = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, in_channel, created_at)
+				VALUES ($1, $2, $3, $4, $3, $5, $6, 'hi', true, $7)`
 			// m1 の change_seq（1001）を別の seq で使い回せない（ADR 0014）。
 			expectViolation(t, tx, sqlstateUnique, "messages_room_id_change_seq_idx",
 				withChangeSeq, ids.New(), r1, 500, 1001, bob, ids.New(), now)
 			expectViolation(t, tx, sqlstateCheck, "messages_change_seq_check",
 				withChangeSeq, ids.New(), r1, 501, 0, bob, ids.New(), now)
 			expectViolation(t, tx, sqlstateNotNull, "",
-				`INSERT INTO messages (id, room_id, seq, user_seq, sender_id, client_msg_id, body, created_at) VALUES ($1, $2, 502, 502, $3, $4, 'hi', $5)`,
+				`INSERT INTO messages (id, room_id, seq, user_seq, sender_id, client_msg_id, body, in_channel, created_at) VALUES ($1, $2, 502, 502, $3, $4, 'hi', true, $5)`,
 				ids.New(), r1, bob, ids.New(), now)
 		})
 
@@ -318,8 +318,8 @@ func TestMessagesConstraints(t *testing.T) {
 		})
 
 		t.Run("thread fields go together and a message is not its own root", func(t *testing.T) {
-			const raw = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, created_at)
-				VALUES ($1, $2, $3, $3, $3, $4, $5, 'hi', $6, $7, $8)`
+			const raw = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, in_channel, created_at)
+				VALUES ($1, $2, $3, $3, $3, $4, $5, 'hi', $6, $7, true, $8)`
 			expectViolation(t, tx, sqlstateCheck, "messages_thread_fields_check",
 				raw, ids.New(), r1, 20, bob, ids.New(), nil, 1, now)
 			expectViolation(t, tx, sqlstateCheck, "messages_thread_fields_check",
@@ -329,14 +329,26 @@ func TestMessagesConstraints(t *testing.T) {
 				raw, self, r1, 22, bob, ids.New(), self, 1, now)
 			// システムメッセージはスレッドの返信にならない（ADR 0033 / 0036）。
 			expectViolation(t, tx, sqlstateCheck, "messages_thread_fields_check",
-				`INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, kind, system_type, thread_root_id, thread_seq, created_at)
-				 VALUES ($1, $2, 23, 23, 23, $3, $4, '', 'system', 'member_joined', $5, 1, $6)`,
+				`INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, kind, system_type, thread_root_id, thread_seq, in_channel, created_at)
+				 VALUES ($1, $2, 23, 23, 23, $3, $4, '', 'system', 'member_joined', $5, 1, true, $6)`,
 				ids.New(), r1, bob, ids.New(), m1, now)
 		})
 
+		t.Run("channel posts are always in the channel, replies may be (ADR 0039)", func(t *testing.T) {
+			const raw = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, in_channel, created_at)
+				VALUES ($1, $2, $3, $3, $3, $4, $5, 'hi', $6, CASE WHEN $6::uuid IS NULL THEN NULL ELSE 1 END, $7, $8)`
+			// Go のゼロ値（false）のままチャンネルの投稿を入れると、チャンネルから消える。CHECK で拒む。
+			expectViolation(t, tx, sqlstateCheck, "messages_in_channel_check",
+				raw, ids.New(), r1, 40, bob, ids.New(), nil, false, now)
+			expectViolation(t, tx, sqlstateNotNull, "",
+				raw, ids.New(), r1, 41, bob, ids.New(), nil, nil, now)
+			root := insertMessage(t, tx, r1, alice, 42, nil)
+			mustExec(t, tx, raw, ids.New(), r1, 43, bob, ids.New(), root, true, now)
+		})
+
 		t.Run("thread_seq is unique per thread", func(t *testing.T) {
-			const raw = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, created_at)
-				VALUES ($1, $2, $3, $3, $3, $4, $5, 'hi', $6, 1, $7)`
+			const raw = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, in_channel, created_at)
+				VALUES ($1, $2, $3, $3, $3, $4, $5, 'hi', $6, 1, false, $7)`
 			root := insertMessage(t, tx, r1, alice, 30, nil)
 			mustExec(t, tx, raw, ids.New(), r1, 31, bob, ids.New(), root, now)
 			expectViolation(t, tx, sqlstateUnique, "messages_thread_root_id_thread_seq_idx",
@@ -451,8 +463,8 @@ func allocateAndInsert(ctx context.Context, pool *pgxpool.Pool, roomID, sender u
 		return 0, fmt.Errorf("allocate: %w", err)
 	}
 	seq := allocated.LastMessageSeq
-	if _, err := tx.Exec(ctx, `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'hi', $8)`, ids.New(), roomID, seq, allocated.LastChangeSeq, allocated.LastUserSeq, sender, ids.New(), now); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, in_channel, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'hi', true, $8)`, ids.New(), roomID, seq, allocated.LastChangeSeq, allocated.LastUserSeq, sender, ids.New(), now); err != nil {
 		return 0, fmt.Errorf("insert: %w", err)
 	}
 	if !commit {

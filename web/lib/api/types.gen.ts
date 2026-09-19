@@ -329,6 +329,8 @@ export interface SendMessageRequest {
   client_msg_id: string;
   body: string;
   thread_root_id?: string;
+  /** also_in_channel は返信をチャンネルにも出す（ADR 0039）。thread_root_id がないときに true なら 422。 */
+  also_in_channel?: boolean;
   attachment_ids?: string[];
 }
 
@@ -356,6 +358,8 @@ export interface Message {
   thread_root_id: string | null;
   /** thread_seq はスレッドの中で何番目の返信か。返信だけが持つ。順序には seq を使う。 */
   thread_seq: number | null;
+  /** also_in_channel は「チャンネルにも投稿する」を付けた返信だけ true（ADR 0039）。 クライアントは thread_root_id がないか、これが true の行をチャンネルのタイムラインに並べる。 */
+  also_in_channel: boolean;
   /** thread は、返信が 1 件以上ついたことのある親だけが持つ。 */
   thread: ThreadSummary | null;
   /** attachments は削除済みのメッセージでは空配列。GET URL は含めない（ADR 0013）。 */

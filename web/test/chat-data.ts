@@ -52,6 +52,7 @@ export function message(seq: number, overrides: Partial<Message> = {}): Message 
     body: `本文 ${seq}`,
     thread_root_id: null,
     thread_seq: null,
+    also_in_channel: false,
     thread: null,
     attachments: [],
     created_at: "2026-09-13T01:00:00Z",

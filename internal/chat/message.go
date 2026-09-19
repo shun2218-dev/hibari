@@ -78,6 +78,8 @@ type Message struct {
 	ThreadRootID *ulid.ULID
 	// ThreadSeq はスレッドの中で何番目の返信か。返信だけが持つ。スレッドの未読に使い、順序には使わない。
 	ThreadSeq *int64
+	// AlsoInChannel は「チャンネルにも投稿する」を付けた返信だけ true（ADR 0039）。チャンネルの投稿では false（常にチャンネルに出るので情報がない）。
+	AlsoInChannel bool
 	// Thread は、返信が 1 件以上ついた親だけが持つ。
 	Thread *ThreadSummary
 	// Attachments は添付。削除済みのメッセージでは空（ADR 0013）。
@@ -126,6 +128,7 @@ func toMessage(r messageView) Message {
 	}
 	m.ThreadRootID = r.ThreadRootID
 	m.ThreadSeq = r.ThreadSeq
+	m.AlsoInChannel = r.ThreadRootID != nil && r.InChannel
 	// 一度でも返信がついた親だけが持つ。全部削除されて ReplyCount が 0 でも、スレッドは開けるので残す。
 	if r.LastThreadSeq > 0 && r.ThreadLastReplyAt != nil {
 		m.Thread = &ThreadSummary{ReplyCount: int64(r.ThreadReplyCount), LastThreadSeq: r.LastThreadSeq, LastReplyAt: *r.ThreadLastReplyAt}
@@ -154,6 +157,8 @@ type SendMessageInput struct {
 	Body        string
 	// ThreadRootID は返信するスレッドの親（同じルームの、システムメッセージでも返信でもないメッセージ）。チャンネルへの投稿なら nil。
 	ThreadRootID *ulid.ULID
+	// AlsoInChannel は、返信をチャンネルのタイムラインにも出す（ADR 0039）。ThreadRootID があるときだけ指定できる。送信後は変えられない。
+	AlsoInChannel bool
 	// AttachmentIDs は、送信者が同じルームにアップロードして complete 済みの添付（ADR 0013）。
 	AttachmentIDs []ulid.ULID
 }
@@ -177,6 +182,10 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 	}
 	validateBody(&fields, in.Body, len(in.AttachmentIDs) > 0)
 	validateAttachmentIDs(&fields, in.AttachmentIDs)
+	if in.AlsoInChannel && in.ThreadRootID == nil {
+		// チャンネルの投稿はもともとチャンネルに出る。黙って受け付けると、クライアントの取り違え（返信先の付け忘れ）に気づけない。
+		fields.add("also_in_channel", ReasonInvalidValue)
+	}
 	if err := fields.err(); err != nil {
 		return Message{}, false, err
 	}
@@ -196,7 +205,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		existing, err := q.GetMessageIDByClientMsgID(ctx, store.GetMessageIDByClientMsgIDParams{RoomID: roomID, SenderID: actor, ClientMsgID: in.ClientMsgID})
 		switch {
 		case err == nil:
-			// 再送。本文や返信先が違っても比べずに既存を返す（冪等キーの一般的な扱い。ADR 0012）。
+			// 再送。本文や返信先、also_in_channel が違っても比べずに既存を返す（冪等キーの一般的な扱い。ADR 0012 / 0039）。
 			msg, err = getMessage(ctx, q, roomID, existing)
 			return err
 		case !errors.Is(err, pgx.ErrNoRows):
@@ -220,7 +229,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 			ID: id, RoomID: roomID, Seq: seq, ChangeSeq: allocated.LastChangeSeq,
 			// user_seq は人の発言だけを数えた番号。未読数に使う（ADR 0033）。
 			UserSeq: allocated.LastUserSeq, SenderID: actor, ClientMsgID: in.ClientMsgID,
-			Body: in.Body, Now: now,
+			Body: in.Body, InChannel: true, Now: now,
 		})
 		if err != nil {
 			return fmt.Errorf("create message: %w", err)
