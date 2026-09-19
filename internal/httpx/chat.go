@@ -557,6 +557,8 @@ type roomResponse struct {
 	LastUserSeq     int64  `json:"last_user_seq"`
 	LastReadUserSeq *int64 `json:"last_read_user_seq"`
 	UnreadCount     int64  `json:"unread_count"`
+	// MentionCount は未読の範囲にある自分宛てのメンションの数（ADR 0041）。未読とは別のバッジに出す。
+	MentionCount int64 `json:"mention_count"`
 	// LastMessage はメッセージが 1 件もなければ null。
 	LastMessage *lastMessageResponse `json:"last_message"`
 	CreatedAt   time.Time            `json:"created_at"`
@@ -600,6 +602,7 @@ func newRoomResponse(r chat.Room, withCount bool) roomResponse {
 		LastUserSeq:     r.LastUserSeq,
 		LastReadUserSeq: r.LastReadUserSeq,
 		UnreadCount:     r.UnreadCount,
+		MentionCount:    r.MentionCount,
 		CreatedAt:       r.CreatedAt,
 	}
 	if m := r.LastMessage; m != nil {

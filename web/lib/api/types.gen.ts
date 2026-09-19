@@ -20,6 +20,8 @@ export type MessageKind = "user" | "system";
 
 export type MessageLinkStatus = "ok" | "unavailable";
 
+export type MentionKind = "user" | "channel" | "here";
+
 export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed";
 
 export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid";
@@ -282,6 +284,8 @@ export interface Room {
   last_user_seq: number;
   last_read_user_seq: number | null;
   unread_count: number;
+  /** mention_count は未読の範囲にある自分宛てのメンションの数（ADR 0041）。未読とは別のバッジに出す。 */
+  mention_count: number;
   /** last_message はメッセージが 1 件もなければ null。 */
   last_message: LastMessage | null;
   created_at: string;
@@ -366,6 +370,8 @@ export interface Message {
   thread: ThreadSummary | null;
   /** attachments は削除済みのメッセージでは空配列。GET URL は含めない（ADR 0013）。 */
   attachments: MessageAttachment[];
+  /** mentions は本文にあるメンション（ADR 0041）。本文の出現順で、重複はない。 クライアントはこれを見て、本文の `<@ID>` を名前に置き換える。「自分宛てか」はクライアントが判断する （配信は 1 つのペイロードを購読者に配るので、受け取る人ごとの値は載せられない。ADR 0015 / 0016）。 */
+  mentions: Mention[];
   created_at: string;
   edited_at: string | null;
   deleted_at: string | null;
@@ -384,6 +390,12 @@ export interface ThreadSummary {
   /** last_thread_seq は thread_seq の採番カウンタ（減らない）。スレッドの未読数 = これ - 自分の last_read_thread_seq。 */
   last_thread_seq: number;
   last_reply_at: string;
+}
+
+export interface Mention {
+  kind: MentionKind;
+  /** user はルームを抜けた人でも入る（名前を出せないと本文が読めないため）。存在しないユーザーの ID は、そもそも含まれない。 */
+  user?: UserProfile;
 }
 
 export interface MessageAttachment {
@@ -411,6 +423,8 @@ export interface ReadState {
   /** last_read_user_seq は既読位置に対応する user_seq。クライアントが未読数を求め直すのに使う（ADR 0033）。 */
   last_read_user_seq: number;
   unread_count: number;
+  /** mention_count は既読を進めた後の、自分宛ての未読のメンションの数（ADR 0041）。 */
+  mention_count: number;
 }
 
 export interface ThreadMessageList {
@@ -585,6 +599,8 @@ export interface RoomReadData {
   /** last_read_user_seq は既読位置に対応する user_seq（ADR 0033）。 */
   last_read_user_seq: number;
   unread_count: number;
+  /** mention_count は既読を進めた後の、自分宛ての未読のメンションの数（ADR 0041）。別の端末のバッジも揃える。 */
+  mention_count: number;
 }
 
 export interface WorkspaceUpdatedData {

@@ -11,6 +11,7 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/chat/authz"
+	"github.com/shun2218-dev/hibari/internal/chat/mention"
 	"github.com/shun2218-dev/hibari/internal/chat/store"
 )
 
@@ -33,7 +34,7 @@ func isThreadRoot(kind string, threadRootID *ulid.ULID) bool {
 //
 // ロックの順序は room_members（済み）→ 親のメッセージ → rooms → thread_members。
 // 編集・削除の「room_members → メッセージ → rooms」と同じ向きにそろえる。rooms を持ったまま親を待つと、親の編集とデッドロックする。
-func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, workspaceID, roomID, rootID ulid.ULID, in SendMessageInput) (Message, []Event, error) {
+func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, workspaceID, roomID, rootID ulid.ULID, in SendMessageInput, all mentionAll) (Message, []Event, error) {
 	root, err := q.GetMessageForUpdate(ctx, store.GetMessageForUpdateParams{RoomID: roomID, ID: rootID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 別のルームのメッセージも、存在しない ID と同じく見つからない。
@@ -72,6 +73,11 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 	if err := attachToMessage(ctx, q, actor, roomID, id, in.AttachmentIDs); err != nil {
 		return Message{}, nil, err
 	}
+	// スレッドだけの返信では、@channel / @here は誰の件数も増やさない（Slack と同じ。ADR 0041）。
+	// 「チャンネルにも投稿する」を付けた返信はチャンネルの発言なので、チャンネルの投稿と同じに扱う。
+	if err := createMessageMentions(ctx, q, now, roomID, id, in.Body, in.AlsoInChannel, all); err != nil {
+		return Message{}, nil, err
+	}
 
 	// チャンネルにも出した返信は、チャンネルの送信と同じく送信者のチャンネルの既読位置も進める（自分の発言で自分に未読を作らない）。
 	// スレッドだけの返信では動かさない（チャンネルに出ていない）。
@@ -103,6 +109,20 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 		}
 		if n == 1 {
 			events = append(events, threadFollowedEvent(workspaceID, roomID, rootID, root.SenderID, 0))
+		}
+	}
+	// 個人へのメンションを受けた人も、そのスレッドに参加する（ADR 0036 の想定どおり。ADR 0041）。
+	// 既読位置をこの返信の 1 つ前にするので、メンションされた返信だけが未読になる。
+	// @channel / @here では参加させない（ルームの全員をスレッドの参加者にしてしまう）。
+	if mentioned := mention.UserIDs(mention.Parse(in.Body)); len(mentioned) > 0 {
+		followed, err := q.FollowThreadForMentioned(ctx, store.FollowThreadForMentionedParams{
+			RoomID: roomID, ThreadRootID: rootID, UserIds: mentioned, LastReadThreadSeq: threadSeq - 1, Now: now,
+		})
+		if err != nil {
+			return Message{}, nil, fmt.Errorf("follow thread by mention: %w", err)
+		}
+		for _, userID := range followed {
+			events = append(events, threadFollowedEvent(workspaceID, roomID, rootID, userID, threadSeq-1))
 		}
 	}
 	reply, err := getMessage(ctx, q, roomID, id)
@@ -138,6 +158,10 @@ func (s *Service) softDeleteMessage(ctx context.Context, q *store.Queries, roomI
 	// 返信の削除では、削除した返信が 1 つ目、親が 2 つ目の番号を使う（送信と同じ並び）。
 	if err := q.SoftDeleteMessage(ctx, store.SoftDeleteMessageParams{ID: m.ID, Now: s.clock.Now(), ChangeSeq: last - n + 1}); err != nil {
 		return nil, fmt.Errorf("delete message: %w", err)
+	}
+	// 本文が空になるので、メンションの行も消す（行は常に本文と一致させる。ADR 0041）。件数からも消える。
+	if err := q.DeleteMessageMentions(ctx, store.DeleteMessageMentionsParams{RoomID: roomID, MessageID: m.ID}); err != nil {
+		return nil, fmt.Errorf("delete message mentions: %w", err)
 	}
 	if m.ThreadRootID == nil {
 		return nil, nil
@@ -243,6 +267,9 @@ func (s *Service) ListThreadMessages(ctx context.Context, actor, roomID, rootID 
 		page.Replies[i] = toMessage(r)
 	}
 	if err := loadMessageAttachments(ctx, q, roomID, page.Replies); err != nil {
+		return ThreadPage{}, err
+	}
+	if err := loadMessageMentions(ctx, q, page.Replies); err != nil {
 		return ThreadPage{}, err
 	}
 	lastRead, err := q.GetThreadMembership(ctx, store.GetThreadMembershipParams{ThreadRootID: rootID, UserID: actor})

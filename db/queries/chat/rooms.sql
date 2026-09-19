@@ -94,6 +94,17 @@ SELECT user_id
 -- 未読数はクライアントにも出せるよう last_read_seq をそのまま返し、サービスで last_user_seq との差を取る
 -- （システムメッセージは数えない。ADR 0033）。
 SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq, rm.last_read_user_seq,
+       -- 自分宛ての未読のメンションの数（ADR 0041）。条件は CountRoomMentions（mentions.sql）と同じ。片方だけ直さないこと。
+       -- 参加していない public ルームでは rm.user_id が NULL になるので 0 になる。
+       (SELECT count(*) FROM message_mentions mm
+          JOIN messages m ON m.room_id = mm.room_id AND m.id = mm.message_id
+          LEFT JOIN thread_members tm ON tm.thread_root_id = m.thread_root_id AND tm.user_id = rm.user_id
+         WHERE mm.room_id = r.id
+           AND rm.user_id IS NOT NULL
+           AND (mm.user_id IS NULL OR mm.user_id = rm.user_id)
+           AND CASE WHEN m.in_channel THEN m.user_seq > rm.last_read_user_seq
+                    ELSE tm.user_id IS NOT NULL AND m.thread_seq > tm.last_read_thread_seq
+               END)::bigint AS mention_count,
        lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
        lm.kind AS last_message_kind, lm.system_type AS last_message_system_type,
        lm.system_data AS last_message_system_data,
@@ -111,6 +122,17 @@ SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_re
 -- name: GetRoomSummary :one
 -- 1 件のルームについて、ListRoomsForUser と同じ列（既読位置と最終メッセージ）を返す。読めるかどうかの判定は呼び出し側で済ませる。
 SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq, rm.last_read_user_seq,
+       -- 自分宛ての未読のメンションの数（ADR 0041）。条件は CountRoomMentions（mentions.sql）と同じ。片方だけ直さないこと。
+       -- 参加していない public ルームでは rm.user_id が NULL になるので 0 になる。
+       (SELECT count(*) FROM message_mentions mm
+          JOIN messages m ON m.room_id = mm.room_id AND m.id = mm.message_id
+          LEFT JOIN thread_members tm ON tm.thread_root_id = m.thread_root_id AND tm.user_id = rm.user_id
+         WHERE mm.room_id = r.id
+           AND rm.user_id IS NOT NULL
+           AND (mm.user_id IS NULL OR mm.user_id = rm.user_id)
+           AND CASE WHEN m.in_channel THEN m.user_seq > rm.last_read_user_seq
+                    ELSE tm.user_id IS NOT NULL AND m.thread_seq > tm.last_read_thread_seq
+               END)::bigint AS mention_count,
        lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
        lm.kind AS last_message_kind, lm.system_type AS last_message_system_type,
        lm.system_data AS last_message_system_data,
@@ -150,6 +172,14 @@ ON CONFLICT DO NOTHING;
 DELETE FROM room_members
  WHERE room_id = sqlc.arg(room_id)
    AND user_id = sqlc.arg(user_id);
+
+-- name: ListRoomMemberIDs :many
+-- ルームのメンバーの user_id をすべて返す。@here の対象を presence に問い合わせるために使う（ADR 0041）。
+-- 表示用ではないので、ページングもプロフィールの JOIN もしない。
+SELECT user_id
+  FROM room_members
+ WHERE room_id = sqlc.arg(room_id)
+ ORDER BY user_id;
 
 -- name: ListRoomMembers :many
 -- ルームのメンバーと、ワークスペースでのロール。主キー (room_id, user_id) の順に走査するので user_id をカーソルにする。
