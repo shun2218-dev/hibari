@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { message, miyuki, naoki, room, systemMessage } from "@/test/chat-data";
+import { kei, message, miyuki, naoki, room, systemMessage } from "@/test/chat-data";
 
 import {
   advanceCursor,
@@ -101,6 +101,28 @@ describe("applyMessageToRoom", () => {
     });
   });
 
+  it("メンションの数は足す。同じイベントが 2 回来ても二重に足さない（ADR 0043）", () => {
+    const toMe = message(6, { sender: miyuki, body: "確認おねがいします", mentions: [{ kind: "user", user: naoki }] });
+
+    const once = applyMessageToRoom(base, toMe, me, true);
+    expect(once.mention_count).toBe(base.mention_count + 1);
+    expect(applyMessageToRoom(once, toMe, me, true)).toBe(once);
+  });
+
+  it("@channel と @here も自分宛てに数える", () => {
+    const toAll = message(6, { sender: miyuki, body: "<!here> いますか", mentions: [{ kind: "here", user: naoki }] });
+
+    expect(applyMessageToRoom(base, toAll, me, true).mention_count).toBe(base.mention_count + 1);
+  });
+
+  it("他の人へのメンションと自分の発言では増えない", () => {
+    const toOther = message(6, { sender: miyuki, mentions: [{ kind: "user", user: kei }] });
+    const mine = message(6, { sender: naoki, mentions: [{ kind: "user", user: naoki }, { kind: "channel" }] });
+
+    expect(applyMessageToRoom(base, toOther, me, true).mention_count).toBe(base.mention_count);
+    expect(applyMessageToRoom(base, mine, me, true).mention_count).toBe(base.mention_count);
+  });
+
   it("updates the last message and recomputes unread from seq, so a duplicate does not count twice", () => {
     const created = message(6, { sender: miyuki, body: "新着" });
 
@@ -154,11 +176,25 @@ describe("applyReadToRoom", () => {
       last_message_seq: 9, last_read_seq: 7, last_user_seq: 9, last_read_user_seq: 7, unread_count: 2,
     });
 
-    expect(applyReadToRoom(r, { lastReadSeq: 5, lastReadUserSeq: 5 })).toBe(r);
-    expect(applyReadToRoom(r, { lastReadSeq: 9, lastReadUserSeq: 9 })).toMatchObject({
+    expect(applyReadToRoom(r, { lastReadSeq: 5, lastReadUserSeq: 5, mentionCount: 0 })).toBe(r);
+    expect(applyReadToRoom(r, { lastReadSeq: 9, lastReadUserSeq: 9, mentionCount: 0 })).toMatchObject({
       last_read_seq: 9,
       unread_count: 0,
     });
+  });
+
+  it("メンションの数はサーバーの値をそのまま使う（ADR 0043）", () => {
+    const r = room("r1", "雑談", {
+      last_message_seq: 9, last_read_seq: 7, last_user_seq: 9, last_read_user_seq: 7, unread_count: 2, mention_count: 2,
+    });
+
+    // 既読が進めば、サーバーの数で上書きする
+    expect(applyReadToRoom(r, { lastReadSeq: 9, lastReadUserSeq: 9, mentionCount: 0 })).toMatchObject({
+      unread_count: 0,
+      mention_count: 0,
+    });
+    // 既読が進まない応答では触らない（古い値で上書きしない）
+    expect(applyReadToRoom(r, { lastReadSeq: 5, lastReadUserSeq: 5, mentionCount: 0 })).toBe(r);
   });
 });
 

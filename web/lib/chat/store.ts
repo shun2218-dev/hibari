@@ -568,7 +568,11 @@ export function createChatStore(
   async function markRead(roomId: string, seq: number): Promise<void> {
     const read = await api.markRead(roomId, { seq });
     patchRoom(roomId, (room) =>
-      applyReadToRoom(room, { lastReadSeq: read.last_read_seq, lastReadUserSeq: read.last_read_user_seq }),
+      applyReadToRoom(room, {
+        lastReadSeq: read.last_read_seq,
+        lastReadUserSeq: read.last_read_user_seq,
+        mentionCount: read.mention_count,
+      }),
     );
   }
 
@@ -982,6 +986,7 @@ export function createChatStore(
           applyReadToRoom(room, {
             lastReadSeq: event.data.last_read_seq,
             lastReadUserSeq: event.data.last_read_user_seq,
+            mentionCount: event.data.mention_count,
           }),
         );
         return;

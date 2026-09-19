@@ -158,6 +158,26 @@ export function candidateKey(candidate: MentionCandidate): string {
   return candidate.kind === "user" ? candidate.id : candidate.kind;
 }
 
+/**
+ * 送る本文に全員宛てが入っているか。確認のモーダルを出すかどうかの判定に使う（ADR 0043）。
+ * 両方入っていたら、飛ぶ範囲が広い `channel` を返す。
+ */
+export function mentionAll(body: string): "channel" | "here" | null {
+  let here = false;
+  for (const m of body.matchAll(TOKEN)) {
+    if (m[2] === "channel") return "channel";
+    if (m[2] === "here") here = true;
+  }
+  return here ? "here" : null;
+}
+
+/** 候補から「ID → ハンドル」の表を作る。編集のときに `<@ULID>` を `@ハンドル` へ戻すのに使う。 */
+export function mentionHandles(candidates: readonly MentionCandidate[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const c of candidates) if (c.kind === "user") map.set(c.id, c.handle);
+  return map;
+}
+
 function handleIndex(candidates: readonly MentionCandidate[]) {
   const map = new Map<string, { id: string }>();
   for (const c of candidates)

@@ -9,6 +9,7 @@ import { ApiError } from "@/lib/api/error";
 import type { Message, Role, Room, UserProfile } from "@/lib/api/types.gen";
 import { useChatStore } from "@/lib/chat/chat-provider";
 import { buildPermalink } from "@/lib/chat/links";
+import { mentionHandles, toInputBody, toWireBody, type MentionCandidate } from "@/lib/chat/mentions";
 import { useOrigin } from "@/lib/chat/use-origin";
 import { messageActions } from "@/lib/chat/views";
 
@@ -27,6 +28,7 @@ export function useMessageActions({
   me,
   myRole,
   members,
+  mentionCandidates = [],
 }: {
   workspaceId: string;
   roomId: string;
@@ -37,6 +39,8 @@ export function useMessageActions({
   myRole: Role | undefined;
   /** 送信者のロールを引くためのルームのメンバー。取れていなければ undefined。 */
   members: readonly { user: { id: string }; role: Role }[] | undefined;
+  /** 編集で `<@ULID>` を `@ハンドル` に戻し、保存で戻すのに使う候補（ADR 0043）。 */
+  mentionCandidates?: readonly MentionCandidate[];
 }): {
   timelineProps: {
     actionsFor: (key: string) => MessageActions;
@@ -57,6 +61,8 @@ export function useMessageActions({
   // コピーの結果は、メニューの項目の文言を短い間だけ変えて伝える（トーストの仕組みを新しく作らない。ADR 0040）
   const [copied, setCopied] = useState<{ messageId: string; ok: boolean } | null>(null);
   const origin = useOrigin();
+  // 編集のときは入力欄と同じ `@ハンドル` の形で見せ、保存するときに保存の形へ戻す（ADR 0043）
+  const handles = mentionHandles(mentionCandidates);
 
   useEffect(() => {
     if (!copied) return;
@@ -110,13 +116,14 @@ export function useMessageActions({
 
   async function saveEdit() {
     if (!activeEditing || !editingMessage) return;
-    if (activeEditing.value === editingMessage.body) {
+    const body = toWireBody(activeEditing.value, mentionCandidates);
+    if (body === editingMessage.body) {
       setEditing(null);
       return;
     }
     setEditing({ ...activeEditing, saving: true });
     try {
-      await store.editMessage(roomId, activeEditing.messageId, activeEditing.value);
+      await store.editMessage(roomId, activeEditing.messageId, body);
       setEditing(null);
     } catch (err) {
       // 失敗の表示はデザインにない。消されていた（409）・読めなくなった（404）なら閉じ、それ以外は保存し直せるように戻す
@@ -149,12 +156,13 @@ export function useMessageActions({
       onEdit: (key) => {
         setOpenMenuKey(undefined);
         const message = findMessage(key);
-        if (message) setEditing({ messageId: message.id, value: message.body, saving: false });
+        if (message) setEditing({ messageId: message.id, value: toInputBody(message.body, handles), saving: false });
       },
       onDelete: (key) => {
         setOpenMenuKey(undefined);
         const message = findMessage(key);
-        if (message) setDeleting({ messageId: message.id, body: message.body, pending: false });
+        // 引用にトークンをそのまま出すと読めないので、こちらも `@ハンドル` に直す
+        if (message) setDeleting({ messageId: message.id, body: toInputBody(message.body, handles), pending: false });
       },
       editingKey: activeEditing?.messageId,
       editing: activeEditing
