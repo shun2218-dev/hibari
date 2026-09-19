@@ -244,6 +244,7 @@ export function RoomView({
     }
   }
 
+  const removedFromWorkspace = workspaceRemoval?.reason === "removed";
   const header = (
     <RoomHeader
       kind={room.kind}
@@ -251,14 +252,15 @@ export function RoomView({
       memberCount={room.member_count ?? 0}
       membersOpen={membersOpen}
       onToggleMembers={onToggleMembers}
-      // DM は設定を変えられない（ADR 0011）。member にも読み取り専用で開ける
-      onOpenSettings={room.kind === "dm" ? undefined : () => setSettingsOpen(true)}
+      // DM は設定を変えられない（ADR 0011）。member にも読み取り専用で開ける。
+      // ワークスペースから外されたら、もう読めないので出さない
+      onOpenSettings={room.kind === "dm" || removedFromWorkspace ? undefined : () => setSettingsOpen(true)}
       onBack={onBack}
     />
   );
 
   // ワークスペースから外されたら、ヘッダーは残して本文を差し替える（chat/removed-from-workspace.png）
-  if (workspaceRemoval?.reason === "removed") {
+  if (removedFromWorkspace) {
     return (
       <>
         {header}
