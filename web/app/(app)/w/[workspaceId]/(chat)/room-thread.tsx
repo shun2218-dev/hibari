@@ -12,14 +12,17 @@ import {
   useAvatarUrls,
   useChatState,
   useChatStore,
+  useLinkCards,
   useMedia,
   useMediaState,
   useRealtime,
 } from "@/lib/chat/chat-provider";
 import { draftsReady } from "@/lib/chat/uploads";
+import { useOrigin } from "@/lib/chat/use-origin";
 import {
   alsoInChannelDoneLabel,
   alsoInChannelLabel,
+  permalinksIn,
   previewImageIds,
   roomName,
   toAttachmentDraftView,
@@ -108,16 +111,41 @@ export function RoomThread({
     if (imageIds !== "") media.requestAttachmentUrls(imageIds.split(" "));
   }, [media, imageIds]);
 
+  // 本文に貼られたパーマリンクのカード（ADR 0040）。チャンネルと同じストアなので、両方に出ていても 1 回しか取らない
+  const origin = useOrigin();
+  const permalinks = useMemo(() => (origin ? permalinksIn(messages, origin) : []), [messages, origin]);
+  const linkCards = useLinkCards(permalinks);
+
   const broadcastDoneLabel = room ? alsoInChannelDoneLabel(room.kind) : undefined;
   const items = useMemo(
     () =>
       toThreadTimelineItems(
         { root, replies: replies ?? [] },
-        { outgoing, me, avatarUrls, attachmentUrls, broadcastDoneLabel },
+        {
+          outgoing,
+          me,
+          avatarUrls,
+          attachmentUrls,
+          broadcastDoneLabel,
+          linkCards,
+          origin,
+          currentWorkspaceId: workspaceId,
+        },
       ),
-    [root, replies, outgoing, me, avatarUrls, attachmentUrls, broadcastDoneLabel],
+    [
+      root,
+      replies,
+      outgoing,
+      me,
+      avatarUrls,
+      attachmentUrls,
+      broadcastDoneLabel,
+      linkCards,
+      origin,
+      workspaceId,
+    ],
   );
-  const { timelineProps, deleteDialog } = useMessageActions({ roomId, room, messages, me, myRole, members });
+  const { timelineProps, deleteDialog } = useMessageActions({ workspaceId, roomId, room, messages, me, myRole, members });
   const draftViews = useMemo(() => drafts.map(toAttachmentDraftView), [drafts]);
   const typingNames = useMemo(() => (typing ?? []).map((t) => t.user.display_name), [typing]);
 

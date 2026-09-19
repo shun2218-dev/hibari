@@ -18,6 +18,8 @@ export type RemovalReason = "left" | "removed";
 
 export type MessageKind = "user" | "system";
 
+export type MessageLinkStatus = "ok" | "unavailable";
+
 export type MentionKind = "user" | "channel" | "here";
 
 export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed";
@@ -465,6 +467,58 @@ export interface FollowedThread {
 export interface ThreadList {
   threads: FollowedThread[];
   next_cursor: string | null;
+}
+
+export interface MessageLinkRef {
+  room_id: string;
+  message_id: string;
+}
+
+export interface MessageLinksRequest {
+  links: MessageLinkRef[];
+}
+
+export interface LinkedWorkspace {
+  id: string;
+  name: string;
+}
+
+export interface LinkedRoom {
+  id: string;
+  kind: RoomKind;
+  /** name は dm では空。 */
+  name: string;
+  /** dm_peer は dm の相手。dm 以外では null。dm にはルーム名がないので、カードは相手の名前を出す。 */
+  dm_peer: UserProfile | null;
+}
+
+export interface LinkedMessage {
+  id: string;
+  seq: number;
+  sender: UserProfile;
+  /** body は削除済みなら空。 */
+  body: string;
+  /** thread_root_id はスレッドの返信なら親の ID。カードから開くパネルを決めるのに使う。 */
+  thread_root_id: string | null;
+  /** attachment_count は添付の件数。カードに画像は出さない（ADR 0040）。 */
+  attachment_count: number;
+  created_at: string;
+  edited_at: string | null;
+  /** deleted_at が入っていたら削除済み。カードとしての見せ方はクライアントが決める（ADR 0038）。 */
+  deleted_at: string | null;
+}
+
+export interface MessageLink {
+  room_id: string;
+  message_id: string;
+  status: MessageLinkStatus;
+  workspace: LinkedWorkspace | null;
+  room: LinkedRoom | null;
+  message: LinkedMessage | null;
+}
+
+export interface MessageLinks {
+  links: MessageLink[];
 }
 
 export interface CreateAttachmentRequest {

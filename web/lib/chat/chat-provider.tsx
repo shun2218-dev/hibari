@@ -7,6 +7,8 @@ import { useSession } from "@/lib/auth/session-provider";
 
 import { createChatApi } from "./api";
 import { type SocketLike, webSocketUrl } from "./connection";
+import { type LinkCardState, type LinkCardStore, createLinkCardStore } from "./link-cards";
+import { type LinkTarget, linkKey, parseLinkKey } from "./links";
 import { type MediaState, type MediaStore, createMediaStore } from "./media";
 import { type Realtime, createRealtime } from "./realtime";
 import { type ChatState, type ChatStore, createChatStore } from "./store";
@@ -16,6 +18,7 @@ type ChatContextValue = {
   store: ChatStore;
   realtime: Realtime;
   media: MediaStore;
+  linkCards: LinkCardStore;
   createUploader: (roomId: string) => AttachmentUploader;
 };
 
@@ -60,7 +63,8 @@ export function ChatProvider({
       revalidateSession: () => session.revalidate(),
     });
     const media = createMediaStore(api);
-    return { store, realtime, media, createUploader: (roomId) => createAttachmentUploader(api, roomId, upload) };
+    const linkCards = createLinkCardStore(api);
+    return { store, realtime, media, linkCards, createUploader: (roomId) => createAttachmentUploader(api, roomId, upload) };
   });
 
   useEffect(() => {
@@ -98,6 +102,20 @@ export function useChatState<T>(select: (state: ChatState) => T): T {
   const store = useChatStore();
   const get = () => select(store.getSnapshot());
   return useSyncExternalStore(store.subscribe, get, get);
+}
+
+/**
+ * 本文に貼られたパーマリンクのカードの中身（ADR 0040）。画面に出ているリンクを頼み、取れたものを返す。
+ * 取り直さないので、同じリンクは 1 回しか取りにいかない。
+ */
+export function useLinkCards(links: readonly LinkTarget[]): LinkCardState {
+  const { linkCards } = useChatContext();
+  const key = links.map(linkKey).join(" ");
+  useEffect(() => {
+    if (key !== "") linkCards.request(key.split(" ").map(parseLinkKey));
+  }, [linkCards, key]);
+  const get = () => linkCards.getSnapshot();
+  return useSyncExternalStore(linkCards.subscribe, get, get);
 }
 
 export function useMedia(): MediaStore {
