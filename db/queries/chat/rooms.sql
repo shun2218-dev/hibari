@@ -25,10 +25,13 @@ RETURNING last_message_seq, last_change_seq, last_user_seq;
 -- name: AllocateThreadReplySeq :one
 -- スレッドの返信の採番（ADR 0036）。seq はルームのものを 1 つ、change_seq は返信と親の 2 つ分を進める
 -- （返信は last_change_seq - 1、親は last_change_seq を使う）。
--- チャンネルには出ないので、user_seq（チャンネルの未読）・last_message_at（サイドバーの並び）は進めない。
+-- スレッドだけの返信はチャンネルに出ないので、user_seq（チャンネルの未読）・last_message_at（サイドバーの並び）は進めない。
+-- 「チャンネルにも投稿する」（in_channel）の返信はチャンネルの発言として数え、どちらも進める（ADR 0039）。
 UPDATE rooms
    SET last_message_seq = last_message_seq + 1,
-       last_change_seq  = last_change_seq + 2
+       last_change_seq  = last_change_seq + 2,
+       last_user_seq    = last_user_seq + CASE WHEN sqlc.arg(in_channel)::boolean THEN 1 ELSE 0 END,
+       last_message_at  = CASE WHEN sqlc.arg(in_channel)::boolean THEN sqlc.arg(now)::timestamptz ELSE last_message_at END
  WHERE id = sqlc.arg(room_id)
 RETURNING last_message_seq, last_change_seq, last_user_seq;
 
@@ -99,7 +102,7 @@ SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_re
   FROM rooms r
   LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = sqlc.arg(user_id)
   LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = (
-        SELECT max(m.seq) FROM messages m WHERE m.room_id = r.id AND m.thread_root_id IS NULL AND m.deleted_at IS NULL)
+        SELECT max(m.seq) FROM messages m WHERE m.room_id = r.id AND m.in_channel AND m.deleted_at IS NULL)
   LEFT JOIN users lu ON lu.id = lm.sender_id
  WHERE r.workspace_id = sqlc.arg(workspace_id)
    AND (r.kind = 'public' OR rm.user_id IS NOT NULL)
@@ -116,7 +119,7 @@ SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_re
   FROM rooms r
   LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = sqlc.arg(user_id)
   LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = (
-        SELECT max(m.seq) FROM messages m WHERE m.room_id = r.id AND m.thread_root_id IS NULL AND m.deleted_at IS NULL)
+        SELECT max(m.seq) FROM messages m WHERE m.room_id = r.id AND m.in_channel AND m.deleted_at IS NULL)
   LEFT JOIN users lu ON lu.id = lm.sender_id
  WHERE r.id = sqlc.arg(room_id);
 

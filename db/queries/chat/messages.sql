@@ -25,17 +25,19 @@ SELECT id
 
 -- name: CreateMessage :exec
 -- スレッドの返信なら thread_root_id と thread_seq を入れる（ADR 0036）。親は呼び出し側でロックして確かめてある。
-INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, created_at)
+-- in_channel はチャンネルの投稿なら true、返信なら「チャンネルにも投稿する」のときだけ true（ADR 0039）。
+INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, thread_root_id, thread_seq, in_channel, created_at)
 VALUES (sqlc.arg(id), sqlc.arg(room_id), sqlc.arg(seq), sqlc.arg(change_seq), sqlc.arg(user_seq), sqlc.arg(sender_id),
-        sqlc.arg(client_msg_id), sqlc.arg(body), sqlc.narg(thread_root_id), sqlc.narg(thread_seq), sqlc.arg(now)::timestamptz);
+        sqlc.arg(client_msg_id), sqlc.arg(body), sqlc.narg(thread_root_id), sqlc.narg(thread_seq), sqlc.arg(in_channel),
+        sqlc.arg(now)::timestamptz);
 
 -- name: CreateSystemMessage :exec
 -- ログの 1 行（ADR 0033）。sender はその行の主語（参加した人、名前を変えた人）。
 -- user_seq は増やさず、直前の値をそのまま入れる（未読数に数えない）。
 INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body,
-                      kind, system_type, system_data, created_at)
+                      kind, system_type, system_data, in_channel, created_at)
 VALUES (sqlc.arg(id), sqlc.arg(room_id), sqlc.arg(seq), sqlc.arg(change_seq), sqlc.arg(user_seq), sqlc.arg(sender_id),
-        sqlc.arg(client_msg_id), '', 'system', sqlc.arg(system_type), sqlc.narg(system_data), sqlc.arg(now)::timestamptz);
+        sqlc.arg(client_msg_id), '', 'system', sqlc.arg(system_type), sqlc.narg(system_data), true, sqlc.arg(now)::timestamptz);
 
 -- name: AdvanceLastReadSeq :one
 -- 既読位置を進める。後退させず、ルームの最新の seq を超えさせない。
@@ -94,7 +96,7 @@ UPDATE messages
 -- name: GetMessageView :one
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
@@ -103,19 +105,20 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
    AND m.id = sqlc.arg(id);
 
 -- name: ListMessagesBefore :many
--- チャンネルのタイムライン（スレッドの返信を除く。ADR 0036）で、seq が before_seq より小さいメッセージを、新しい順に max_rows 件。
+-- チャンネルのタイムライン（スレッドだけの返信を除き、チャンネルにも投稿した返信は含む。ADR 0036 / 0039）で、seq が before_seq より小さいメッセージを、新しい順に max_rows 件。
 -- 最新のページは before_seq に最大値を渡す。
 -- 「before_seq が NULL なら条件なし」とは書かない。汎用の実行計画でインデックスの範囲条件にならず、ルームの全件を走査しうるため。
--- 部分インデックス messages_room_id_channel_seq_idx (room_id, seq DESC) WHERE thread_root_id IS NULL を順方向に走査する。
+-- 部分インデックス messages_room_id_channel_seq_idx (room_id, seq DESC) WHERE in_channel を順方向に走査する。
+-- 条件は索引と同じ m.in_channel と書く（別の式にすると、Postgres が索引の条件を含むと証明できず、索引を使わない）。
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
  WHERE m.room_id = sqlc.arg(room_id)
-   AND m.thread_root_id IS NULL
+   AND m.in_channel
    AND m.seq < sqlc.arg(before_seq)
  ORDER BY m.seq DESC
  LIMIT sqlc.arg(max_rows);
@@ -125,13 +128,13 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
 -- 同じ部分インデックスを逆方向に走査する。
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
  WHERE m.room_id = sqlc.arg(room_id)
-   AND m.thread_root_id IS NULL
+   AND m.in_channel
    AND m.seq > sqlc.arg(after_seq)
  ORDER BY m.seq
  LIMIT sqlc.arg(max_rows);
@@ -142,7 +145,7 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
 -- スレッドの返信と、返信数が変わった親も含める。同期の経路はルームごとに 1 本（ADR 0036）。
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
@@ -157,7 +160,7 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
 -- 部分インデックス messages_thread_root_id_seq_idx を逆方向に走査する。親がこのルームにあることは呼び出し側で確かめてある。
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m
@@ -171,7 +174,7 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
 -- スレッドの返信で、seq が after_seq より大きいものを古い順に max_rows 件。
 SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_msg_id, m.body,
        m.kind, m.system_type, m.system_data,
-       m.thread_root_id, m.thread_seq, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
+       m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name
   FROM messages m

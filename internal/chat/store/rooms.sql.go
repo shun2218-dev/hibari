@@ -122,10 +122,18 @@ func (q *Queries) AllocateSystemMessageSeq(ctx context.Context, arg AllocateSyst
 const allocateThreadReplySeq = `-- name: AllocateThreadReplySeq :one
 UPDATE rooms
    SET last_message_seq = last_message_seq + 1,
-       last_change_seq  = last_change_seq + 2
- WHERE id = $1
+       last_change_seq  = last_change_seq + 2,
+       last_user_seq    = last_user_seq + CASE WHEN $1::boolean THEN 1 ELSE 0 END,
+       last_message_at  = CASE WHEN $1::boolean THEN $2::timestamptz ELSE last_message_at END
+ WHERE id = $3
 RETURNING last_message_seq, last_change_seq, last_user_seq
 `
+
+type AllocateThreadReplySeqParams struct {
+	InChannel bool
+	Now       time.Time
+	RoomID    ulid.ULID
+}
 
 type AllocateThreadReplySeqRow struct {
 	LastMessageSeq int64
@@ -135,9 +143,10 @@ type AllocateThreadReplySeqRow struct {
 
 // スレッドの返信の採番（ADR 0036）。seq はルームのものを 1 つ、change_seq は返信と親の 2 つ分を進める
 // （返信は last_change_seq - 1、親は last_change_seq を使う）。
-// チャンネルには出ないので、user_seq（チャンネルの未読）・last_message_at（サイドバーの並び）は進めない。
-func (q *Queries) AllocateThreadReplySeq(ctx context.Context, roomID ulid.ULID) (AllocateThreadReplySeqRow, error) {
-	row := q.db.QueryRow(ctx, allocateThreadReplySeq, roomID)
+// スレッドだけの返信はチャンネルに出ないので、user_seq（チャンネルの未読）・last_message_at（サイドバーの並び）は進めない。
+// 「チャンネルにも投稿する」（in_channel）の返信はチャンネルの発言として数え、どちらも進める（ADR 0039）。
+func (q *Queries) AllocateThreadReplySeq(ctx context.Context, arg AllocateThreadReplySeqParams) (AllocateThreadReplySeqRow, error) {
+	row := q.db.QueryRow(ctx, allocateThreadReplySeq, arg.InChannel, arg.Now, arg.RoomID)
 	var i AllocateThreadReplySeqRow
 	err := row.Scan(&i.LastMessageSeq, &i.LastChangeSeq, &i.LastUserSeq)
 	return i, err
@@ -370,7 +379,7 @@ SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_b
   FROM rooms r
   LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = $1
   LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = (
-        SELECT max(m.seq) FROM messages m WHERE m.room_id = r.id AND m.thread_root_id IS NULL AND m.deleted_at IS NULL)
+        SELECT max(m.seq) FROM messages m WHERE m.room_id = r.id AND m.in_channel AND m.deleted_at IS NULL)
   LEFT JOIN users lu ON lu.id = lm.sender_id
  WHERE r.id = $2
 `
@@ -496,7 +505,7 @@ SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_b
   FROM rooms r
   LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = $1
   LEFT JOIN messages lm ON lm.room_id = r.id AND lm.seq = (
-        SELECT max(m.seq) FROM messages m WHERE m.room_id = r.id AND m.thread_root_id IS NULL AND m.deleted_at IS NULL)
+        SELECT max(m.seq) FROM messages m WHERE m.room_id = r.id AND m.in_channel AND m.deleted_at IS NULL)
   LEFT JOIN users lu ON lu.id = lm.sender_id
  WHERE r.workspace_id = $2
    AND (r.kind = 'public' OR rm.user_id IS NOT NULL)

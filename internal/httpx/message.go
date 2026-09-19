@@ -41,6 +41,9 @@ type messageResponse struct {
 	ThreadRootID *string `json:"thread_root_id"`
 	// ThreadSeq はスレッドの中で何番目の返信か。返信だけが持つ。順序には seq を使う。
 	ThreadSeq *int64 `json:"thread_seq"`
+	// AlsoInChannel は「チャンネルにも投稿する」を付けた返信だけ true（ADR 0039）。
+	// クライアントは thread_root_id がないか、これが true の行をチャンネルのタイムラインに並べる。
+	AlsoInChannel bool `json:"also_in_channel"`
 	// Thread は、返信が 1 件以上ついたことのある親だけが持つ。
 	Thread *threadSummaryResponse `json:"thread"`
 	// Attachments は削除済みのメッセージでは空配列。GET URL は含めない（ADR 0013）。
@@ -86,6 +89,7 @@ func newMessageResponse(m chat.Message) messageResponse {
 		id := m.ThreadRootID.String()
 		resp.ThreadRootID = &id
 		resp.ThreadSeq = m.ThreadSeq
+		resp.AlsoInChannel = m.AlsoInChannel
 	}
 	if t := m.Thread; t != nil {
 		resp.Thread = &threadSummaryResponse{ReplyCount: t.ReplyCount, LastThreadSeq: t.LastThreadSeq, LastReplyAt: t.LastReplyAt}
@@ -106,9 +110,11 @@ func bodyID(field, s string) (id ulid.ULID, ok bool, err error) {
 }
 
 type sendMessageRequest struct {
-	ClientMsgID   string   `json:"client_msg_id"`
-	Body          string   `json:"body"`
-	ThreadRootID  string   `json:"thread_root_id,omitempty"`
+	ClientMsgID  string `json:"client_msg_id"`
+	Body         string `json:"body"`
+	ThreadRootID string `json:"thread_root_id,omitempty"`
+	// AlsoInChannel は返信をチャンネルにも出す（ADR 0039）。thread_root_id がないときに true なら 422。
+	AlsoInChannel bool     `json:"also_in_channel,omitzero"`
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
@@ -124,7 +130,7 @@ func (h *chatHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	in := chat.SendMessageInput{Body: req.Body}
+	in := chat.SendMessageInput{Body: req.Body, AlsoInChannel: req.AlsoInChannel}
 	// client_msg_id が空なら、ゼロ値のまま渡して chat の検証（required）に任せる。
 	if in.ClientMsgID, _, err = bodyID("client_msg_id", req.ClientMsgID); err != nil {
 		writeError(h.logger, w, r, err)

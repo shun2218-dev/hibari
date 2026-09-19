@@ -20,9 +20,10 @@ type messageBody struct {
 		ID          string `json:"id"`
 		DisplayName string `json:"display_name"`
 	} `json:"sender"`
-	ThreadRootID *string `json:"thread_root_id"`
-	ThreadSeq    *int64  `json:"thread_seq"`
-	Thread       *struct {
+	ThreadRootID  *string `json:"thread_root_id"`
+	ThreadSeq     *int64  `json:"thread_seq"`
+	AlsoInChannel bool    `json:"also_in_channel"`
+	Thread        *struct {
 		ReplyCount    int64 `json:"reply_count"`
 		LastThreadSeq int64 `json:"last_thread_seq"`
 	} `json:"thread"`

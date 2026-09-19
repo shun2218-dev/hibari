@@ -94,3 +94,12 @@ ADR 0036 の返信の送信に、次を足す。
 - 流した返信は `change_seq` を 2 つ（返信と親）消費し、さらに `user_seq` も進める。`rooms` の行ロックの時間は普通の返信と変わらない。
 - チャンネルのタイムラインで、流した返信の親が画面の外（まだ読み込んでいない過去）にあることがある。ラベルから開くスレッドのパネルが親を取りにいくので、表示は困らない。
 - マイグレーションで部分インデックスを作り直す。本番のデータはまだないので、`CONCURRENTLY` は使わない。
+
+## 追記
+
+### 2026-09-19 DB と API（Phase 6.6 の構築順 3）
+
+- `in_channel` には DEFAULT を付けない（マイグレーション 00010）。既存の行は `thread_root_id IS NULL` で埋めた。
+  sqlc の引数は Go のゼロ値（false）で渡りうるので、チャンネルの投稿で渡し忘れても、`CHECK (thread_root_id IS NOT NULL OR in_channel)` で止まる。
+- `rooms` の採番は、返信の採番（`AllocateThreadReplySeq`）に `in_channel` を渡し、true のときだけ `last_user_seq` と `last_message_at` を進める。
+- メッセージのレスポンスの `also_in_channel` は、チャンネルの投稿でも省略せず `false` を返す（クライアントの型を必須のままにするため）。

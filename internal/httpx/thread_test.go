@@ -130,3 +130,45 @@ func TestThreadFlow(t *testing.T) {
 		t.Errorf("root after deleting the reply = %s", r.body)
 	}
 }
+
+// チャンネルにも投稿する（ADR 0039）: also_in_channel を付けた返信はチャンネルにも出て、フラグが返る。返信でなければ 422。
+func TestThreadReplyAlsoInChannel(t *testing.T) {
+	c := newAPI(t)
+	owner := c.registerUser()
+	r := c.as(owner, http.MethodPost, "/api/v1/workspaces", map[string]string{"name": "山と印刷"})
+	expectStatus(t, r, http.StatusCreated)
+	ws := decode[workspaceBody](t, r)
+	r = c.as(owner, http.MethodPost, "/api/v1/workspaces/"+ws.ID+"/rooms", map[string]string{"kind": "public", "name": "雑談"})
+	expectStatus(t, r, http.StatusCreated)
+	room := decode[roomBody](t, r)
+	messages := "/api/v1/rooms/" + room.ID + "/messages"
+
+	r = c.as(owner, http.MethodPost, messages, map[string]string{"client_msg_id": ulid.Make().String(), "body": "親"})
+	expectStatus(t, r, http.StatusCreated)
+	root := decode[messageBody](t, r)
+	if root.AlsoInChannel {
+		t.Errorf("channel post has also_in_channel: %s", r.body)
+	}
+
+	r = c.as(owner, http.MethodPost, messages, map[string]any{
+		"client_msg_id": ulid.Make().String(), "body": "チャンネルにも", "thread_root_id": root.ID, "also_in_channel": true,
+	})
+	expectStatus(t, r, http.StatusCreated)
+	reply := decode[messageBody](t, r)
+	if !reply.AlsoInChannel || reply.ThreadRootID == nil || *reply.ThreadRootID != root.ID {
+		t.Fatalf("reply = %s", r.body)
+	}
+
+	r = c.as(owner, http.MethodGet, messages+"?after_seq="+strconv.FormatInt(root.Seq, 10), nil)
+	expectStatus(t, r, http.StatusOK)
+	if got := decode[messagesBody](t, r).Messages; len(got) != 1 || got[0].ID != reply.ID || !got[0].AlsoInChannel {
+		t.Errorf("channel after the root = %s", r.body)
+	}
+
+	p := expectProblem(t, c.as(owner, http.MethodPost, messages, map[string]any{
+		"client_msg_id": ulid.Make().String(), "body": "x", "also_in_channel": true,
+	}), http.StatusUnprocessableEntity, "validation-error")
+	if len(p.Errors) != 1 || p.Errors[0].Field != "also_in_channel" || p.Errors[0].Reason != "invalid_value" {
+		t.Errorf("errors = %+v", p.Errors)
+	}
+}
