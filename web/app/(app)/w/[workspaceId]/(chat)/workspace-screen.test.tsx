@@ -51,7 +51,10 @@ function openRoom(r: Room, messages = [message(1), message(2), message(3)]): Rec
     [`GET /api/v1/rooms/${r.id}`]: () => json(200, { ...r, member_count: 4 }),
     [`GET /api/v1/rooms/${r.id}/messages?limit=50`]: () =>
       json(200, { messages: messages.map((m) => ({ ...m, room_id: r.id })), has_more: false, last_change_seq: 3 }),
-    [`POST /api/v1/rooms/${r.id}/read`]: () => json(200, { last_read_seq: r.last_message_seq, last_read_user_seq: r.last_message_seq, unread_count: 0 }),
+    [`POST /api/v1/rooms/${r.id}/read`]: () => json(200, { last_read_seq: r.last_message_seq, last_read_user_seq: r.last_message_seq, unread_count: 0, mention_count: 0 }),
+    // `@` の補完のために、ルームを開いた時点でメンバーを引く（ADR 0043）
+    [`GET /api/v1/rooms/${r.id}/members?limit=200`]: () =>
+      json(200, { members: [roomMember(naoki, { role: "owner", online: true }), roomMember(miyuki), roomMember(kei)], next_cursor: null }),
   };
 }
 
@@ -522,6 +525,122 @@ describe("WorkspaceScreen", () => {
         expect(history().queryByText("スレッドの返信")).not.toBeInTheDocument();
       });
 
+      describe("mentions (ADR 0041 / 0043)", () => {
+        it("completes a handle and sends the id, not the handle", async () => {
+          const route = sendRoute();
+          await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+
+          await userEvent.type(composer(), "@miy");
+          const list = within(await screen.findByRole("list", { name: "メンションの候補" }));
+          await userEvent.click(list.getByRole("button", { name: /高橋 みゆき/ }));
+          expect(composer()).toHaveValue("@miyuki ");
+
+          await userEvent.type(composer(), "おはよう{Enter}");
+          await waitFor(() => expect(route.sent).toHaveLength(1));
+          expect(route.sent[0]!.body).toBe(`<@${miyuki.id}> おはよう`);
+        });
+
+        it("leaves an unknown handle as plain text", async () => {
+          const route = sendRoute();
+          await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+
+          await userEvent.type(composer(), "@dareka よろしく{Enter}");
+          await waitFor(() => expect(route.sent).toHaveLength(1));
+          expect(route.sent[0]!.body).toBe("@dareka よろしく");
+        });
+
+        it("asks before sending @channel and counts the recipients without me", async () => {
+          const route = sendRoute();
+          await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+
+          await userEvent.type(composer(), "@channel 明日は休みます{Enter}");
+          const dialog = within(await screen.findByRole("dialog", { name: "@channel を送りますか？" }));
+          expect(screen.getByText("このチャンネルのメンバー 2 人に知らせが飛びます。")).toBeInTheDocument();
+
+          await userEvent.click(dialog.getByRole("button", { name: "キャンセル" }));
+          expect(route.sent).toHaveLength(0);
+          expect(composer()).toHaveValue("@channel 明日は休みます");
+
+          await userEvent.keyboard("{Enter}");
+          await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "送信する" }));
+          await waitFor(() => expect(route.sent).toHaveLength(1));
+          expect(route.sent[0]!.body).toBe("<!channel> 明日は休みます");
+          expect(composer()).toHaveValue("");
+        });
+
+        it("does not ask for a mention to one person", async () => {
+          const route = sendRoute();
+          await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+
+          await userEvent.type(composer(), "@miyuki ありがとう{Enter}");
+          await waitFor(() => expect(route.sent).toHaveLength(1));
+          expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        });
+
+        it("shows the name instead of the id, and marks the row addressed to me", async () => {
+          const { sockets } = await connected();
+
+          sockets.last().receive({
+            type: "message.created",
+            data: message(4, {
+              room_id: "r-design",
+              change_seq: 4,
+              sender: miyuki,
+              body: `<@${naoki.id}> 確認おねがいします`,
+              mentions: [{ kind: "user", user: naoki }],
+            }),
+          });
+
+          const row = await history().findByRole("article", { name: /あなた宛て/ });
+          expect(within(row).getByRole("button", { name: "@佐藤 直樹" })).toBeInTheDocument();
+          expect(within(row).queryByText(new RegExp(naoki.id))).not.toBeInTheDocument();
+        });
+
+        it("counts a mention in another room in the sidebar", async () => {
+          const { sockets } = await connected();
+
+          sockets.last().receive({
+            type: "message.created",
+            data: message(4, {
+              room_id: "r-chat",
+              change_seq: 4,
+              sender: miyuki,
+              body: "<!here> 手が空いている人いますか",
+              mentions: [{ kind: "here", user: naoki }],
+            }),
+          });
+
+          const row = await sidebar().findByRole("link", { name: /雑談/ });
+          expect(within(row).getByLabelText("メンション 1 件")).toHaveTextContent("@1");
+        });
+
+        it("edits with handles and saves ids", async () => {
+          const body = `<@${miyuki.id}> よろしく`;
+          const mine = message(3, { sender: naoki, body, mentions: [{ kind: "user", user: miyuki }] });
+          const sent: string[] = [];
+          await connected({
+            ...openRoom(design, [message(1), message(2), mine]),
+            "PATCH /api/v1/rooms/r-design/messages/m-3": (_url, init) => {
+              const edited = JSON.parse(init.body as string).body;
+              sent.push(edited);
+              return json(200, { ...mine, room_id: "r-design", change_seq: 4, body: edited, edited_at: "2026-09-13T02:00:00Z" });
+            },
+          });
+
+          const article = history().getAllByRole("article")[2]!;
+          await userEvent.click(within(article).getByRole("button", { name: "その他の操作" }));
+          await userEvent.click(screen.getByRole("button", { name: "メッセージを編集" }));
+
+          // 編集のときは ID ではなくハンドルで見せる（ADR 0043）
+          const editor = screen.getByRole("textbox", { name: "メッセージを編集" });
+          expect(editor).toHaveValue("@miyuki よろしく");
+          await userEvent.clear(editor);
+          await userEvent.type(editor, "@miyuki ありがとう{Enter}");
+
+          await waitFor(() => expect(sent).toEqual([`<@${miyuki.id}> ありがとう`]));
+        });
+      });
+
       describe("threads (ADR 0036 / 0037)", () => {
         const root = message(2, {
           room_id: "r-design",
@@ -649,6 +768,26 @@ describe("WorkspaceScreen", () => {
             await waitFor(() => expect(sent).toEqual([expect.objectContaining({ also_in_channel: false })]));
             expect(await panel().findByText("スレッドだけ")).toBeInTheDocument();
             expect(history().queryByText("スレッドだけ")).not.toBeInTheDocument();
+          });
+
+          it("asks before @channel only when the reply also goes to the channel (ADR 0041 / 0043)", async () => {
+            nav.search = "thread=m-2";
+            const sent: unknown[] = [];
+            await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute(), ...sendRouteWithFlag(sent) });
+            await panel().findByText("返信 2");
+
+            // スレッドだけの返信では @channel は誰にも飛ばないので、確認を出さずにそのまま送る
+            await userEvent.type(screen.getByRole("textbox", { name: "スレッドに返信" }), "@channel スレッドだけ{Enter}");
+            await waitFor(() => expect(sent).toHaveLength(1));
+            expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+            expect(sent[0]).toMatchObject({ body: "<!channel> スレッドだけ", also_in_channel: false });
+
+            await userEvent.click(screen.getByRole("checkbox", { name: "チャンネルにも投稿する" }));
+            await userEvent.type(screen.getByRole("textbox", { name: "スレッドに返信" }), "@channel みんなにも{Enter}");
+            await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "送信する" }));
+
+            await waitFor(() => expect(sent).toHaveLength(2));
+            expect(sent[1]).toMatchObject({ body: "<!channel> みんなにも", also_in_channel: true });
           });
 
           it("opens the thread from the label on the channel row", async () => {

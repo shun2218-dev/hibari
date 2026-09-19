@@ -4,6 +4,8 @@ import {
   applyCompletion,
   filterCandidates,
   findMentionQuery,
+  mentionAll,
+  mentionHandles,
   splitBody,
   toInputBody,
   toWireBody,
@@ -189,5 +191,30 @@ describe("applyCompletion", () => {
 
   it("全員宛てはハンドルではなく種類を入れる", () => {
     expect(applyCompletion("@ch", 0, 3, candidates[2])).toEqual({ value: "@channel ", caret: 9 });
+  });
+});
+
+describe("mentionAll", () => {
+  it("全員宛てがなければ null", () => {
+    expect(mentionAll(`やあ <@${ALICE}>`)).toBeNull();
+    expect(mentionAll("channel の話")).toBeNull();
+  });
+
+  it("here だけなら here", () => {
+    expect(mentionAll("<!here> 手が空いてる人いる？")).toBe("here");
+  });
+
+  it("両方あれば、飛ぶ範囲が広い channel", () => {
+    expect(mentionAll("<!here> と <!channel>")).toBe("channel");
+    expect(mentionAll("<!channel> と <!here>")).toBe("channel");
+  });
+});
+
+describe("mentionHandles", () => {
+  it("ID からハンドルを引ける表にする。全員宛ては入れない", () => {
+    expect([...mentionHandles(candidates)]).toEqual([
+      [ALICE, "alice"],
+      [BOB, "bob_2"],
+    ]);
   });
 });

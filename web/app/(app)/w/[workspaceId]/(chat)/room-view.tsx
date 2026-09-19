@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyMessages, JoinRoomBar, RemovedFromWorkspace, RoomUnavailable } from "@/components/chat/chat-states";
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
+import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
 import { useMessageActions } from "./message-actions";
 import { RoomSettings } from "./room-settings";
 import { RoomHeader } from "@/components/chat/room-header";
@@ -23,8 +24,18 @@ import {
 } from "@/lib/chat/chat-provider";
 import { forgetLocation } from "@/lib/chat/last-location";
 import { draftsReady } from "@/lib/chat/uploads";
+import { mentionAll, toWireBody } from "@/lib/chat/mentions";
 import { useOrigin } from "@/lib/chat/use-origin";
-import { permalinksIn, previewImageIds, roomName, toAttachmentDraftView, toTimelineItems } from "@/lib/chat/views";
+import {
+  mentionAllRecipients,
+  permalinksIn,
+  previewImageIds,
+  roomName,
+  toAttachmentDraftView,
+  toMemberNames,
+  toMentionCandidates,
+  toTimelineItems,
+} from "@/lib/chat/views";
 import { useDocumentVisible } from "@/lib/use-document-visible";
 
 /** 本文の上限（rune。ADR 0012）。超えたら送信できないようにする（送っても 422 で失敗にしかならない）。 */
@@ -90,11 +101,19 @@ export function RoomView({
   const { uploader, drafts } = useAttachmentUploader(roomId);
   const [sentCount, setSentCount] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 送る前に確認している `@channel` / `@here`（ADR 0043）。null なら確認していない
+  const [confirmAll, setConfirmAll] = useState<"channel" | "here" | null>(null);
   const visible = useDocumentVisible();
 
   useEffect(() => {
     store.openRoom(roomId);
   }, [store, roomId]);
+
+  // `@` の補完にはルームのメンバーが要る（ADR 0043）。メンバーパネルを開かなくても引いておく
+  const membersLoaded = members !== undefined;
+  useEffect(() => {
+    if (!membersLoaded) void store.loadRoomMembers(roomId);
+  }, [store, roomId, membersLoaded]);
 
   // 最新を見ているか（タブが見えていて、いちばん下が見えている）をデータ層に知らせる。見ている間に届いたメッセージは既読になる
   const ready = timeline?.status === "ready";
@@ -126,8 +145,6 @@ export function RoomView({
   // 並びが変わったときだけ作り直し、タイムラインのスクロール位置の合わせ直しを起こさない
   const messages = timeline?.messages;
   const unreadAfterSeq = timeline?.unreadAfterSeq ?? null;
-  const { timelineProps, deleteDialog } = useMessageActions({ workspaceId, roomId, room, messages, me, myRole, members });
-
   // アバターと画像の URL は、chat のレスポンスに載らないので、画面に出すものの ID を集めて引く（ADR 0013 / 0020 / 0028）
   const senderIds = useMemo(() => [...(messages ?? []).map((m) => m.sender.id), ...(me ? [me.id] : [])], [messages, me]);
   const avatarUrls = useAvatarUrls(senderIds);
@@ -142,6 +159,22 @@ export function RoomView({
   const permalinks = useMemo(() => (origin ? permalinksIn(messages ?? [], origin) : []), [messages, origin]);
   const linkCards = useLinkCards(permalinks);
 
+  const memberNames = useMemo(() => toMemberNames(members), [members]);
+  const mentionCandidates = useMemo(
+    () => toMentionCandidates(members, { kind: room?.kind ?? "public", avatarUrls }),
+    [members, room?.kind, avatarUrls],
+  );
+  const { timelineProps, deleteDialog } = useMessageActions({
+    workspaceId,
+    roomId,
+    room,
+    messages,
+    me,
+    myRole,
+    members,
+    mentionCandidates,
+  });
+
   const items = useMemo(
     () =>
       toTimelineItems(messages ?? [], {
@@ -153,8 +186,9 @@ export function RoomView({
         linkCards,
         origin,
         currentWorkspaceId: workspaceId,
+        memberNames,
       }),
-    [messages, unreadAfterSeq, outgoing, me, avatarUrls, attachmentUrls, linkCards, origin, workspaceId],
+    [messages, unreadAfterSeq, outgoing, me, avatarUrls, attachmentUrls, linkCards, origin, workspaceId, memberNames],
   );
   const draftViews = useMemo(() => drafts.map(toAttachmentDraftView), [drafts]);
   const typingNames = useMemo(() => (typing ?? []).map((t) => t.user.display_name), [typing]);
@@ -181,10 +215,26 @@ export function RoomView({
     if (value.trim() !== "") realtime.sendTyping(roomId);
   }
 
+  /** 入力欄の `@ハンドル` を保存する形に直す（ADR 0043）。解決できないハンドルはそのまま残る */
+  function wireBody() {
+    return toWireBody(draft, mentionCandidates);
+  }
+
   function send() {
     if (!canSend) return;
-    store.sendMessage(roomId, { body: draft, attachments: uploader.take() });
+    // 全員に飛ぶメンションは、送る前に確認する（ADR 0043）
+    const all = mentionAll(wireBody());
+    if (all !== null) {
+      setConfirmAll(all);
+      return;
+    }
+    sendNow();
+  }
+
+  function sendNow() {
+    store.sendMessage(roomId, { body: wireBody(), attachments: uploader.take() });
     setDraft("");
+    setConfirmAll(null);
     setSentCount((n) => n + 1);
   }
 
@@ -280,10 +330,18 @@ export function RoomView({
             onRetryAttachment={(key) => uploader.retry(key)}
             onRemoveAttachment={(key) => uploader.remove(key)}
             typingNames={typingNames}
+            mentionCandidates={mentionCandidates}
           />
         )
       )}
       {deleteDialog}
+      <ConfirmMentionAllDialog
+        open={confirmAll !== null}
+        kind={confirmAll ?? "channel"}
+        memberCount={mentionAllRecipients(members, confirmAll ?? "channel", me?.id)}
+        onCancel={() => setConfirmAll(null)}
+        onConfirm={sendNow}
+      />
       <RoomSettings
         workspaceId={workspaceId}
         roomId={roomId}
