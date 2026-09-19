@@ -71,6 +71,7 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "chat/search-empty", title: "チャンネル検索の 0 件" },
   { name: "chat/empty-workspaces", title: "ワークスペースが 0 件" },
   { name: "chat/avatar-images", title: "画像のアバター" },
+  { name: "chat/system-messages", title: "参加・名前の変更のログ" },
   { name: "chat/server-error", title: "サーバーに接続できない" },
   { name: "chat/sidebar-add-entries", title: "サイドバーの作成・DM の入口" },
   { name: "chat/room-header-settings", title: "ルームのヘッダーの設定" },

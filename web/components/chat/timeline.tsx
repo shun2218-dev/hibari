@@ -161,6 +161,18 @@ export function Timeline({
                   <span aria-hidden className="h-px w-4 bg-attention" />
                 </li>
               );
+            case "system":
+              // 人の発言ではないので、アバターも名前も出さず、日付の区切りと同じ控えめな中央寄せにする（ADR 0033）
+              return (
+                <li
+                  key={item.key}
+                  data-key={item.key}
+                  className="flex items-center justify-center gap-2 px-4 py-1.5 text-xs text-text-muted"
+                >
+                  <span>{item.text}</span>
+                  <span className="font-mono text-2xs">{item.timeLabel}</span>
+                </li>
+              );
             case "message": {
               const { key } = item.message;
               const actions = actionsFor?.(key);

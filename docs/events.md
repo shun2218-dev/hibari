@@ -87,17 +87,34 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 
 #### `message.created` / `message.updated` / `message.deleted`
 
-`data` はメッセージ（REST と同じ形）。
+`data` はメッセージ（REST と同じ形）。`kind` が `system` のものは、参加や名前の変更のログ（ADR 0033）。
+ログは `seq` と `change_seq` を消費するが `user_seq` は進めないので、未読数（`last_user_seq - last_read_user_seq`）には数えない。
+編集・削除はできない。
 
 ```json
 {
-  "id": "01J8...", "room_id": "01J8...", "seq": 42, "change_seq": 57,
+  "id": "01J8...", "room_id": "01J8...", "seq": 42, "change_seq": 57, "user_seq": 30, "kind": "user",
   "sender": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" },
   "client_msg_id": "01J8...", "body": "こんにちは",
   "reply_to": null, "attachments": [],
   "created_at": "2026-09-14T12:00:00Z", "edited_at": null, "deleted_at": null
 }
 ```
+
+#### システムメッセージ（`kind: "system"`）
+
+参加・退出・作成・名前の変更は、`message.created` として届くログの行でもある（ADR 0033）。`body` は空で、文言はクライアントが作る。
+
+```json
+{
+  "id": "01J8...", "room_id": "01J8...", "seq": 43, "change_seq": 58, "user_seq": 30,
+  "kind": "system", "system": { "type": "room_renamed", "old_name": "雑談", "new_name": "雑談 改" },
+  "sender": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" },
+  "body": "", "reply_to": null, "attachments": [], "created_at": "2026-09-19T01:00:00Z", "edited_at": null, "deleted_at": null
+}
+```
+
+`type` は `room_created` / `member_joined` / `member_left` / `member_removed` / `room_renamed`。**sender はその行の主語**（参加した人、名前を変えた人）。DM には出ない。
 
 #### `member.joined`
 
@@ -132,8 +149,10 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 #### `room.read`
 
 ```json
-{ "workspace_id": "01J8...", "room_id": "01J8...", "last_read_seq": 42, "unread_count": 0 }
+{ "workspace_id": "01J8...", "room_id": "01J8...", "last_read_seq": 42, "last_read_user_seq": 30, "unread_count": 0 }
 ```
+
+`last_read_user_seq` は既読位置に対応する `user_seq`。クライアントはこれで未読数を求め直す（ADR 0033）。
 
 #### `workspace.updated`
 

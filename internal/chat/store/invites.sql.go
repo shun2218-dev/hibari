@@ -247,8 +247,8 @@ func (q *Queries) GetInviteWithCreator(ctx context.Context, arg GetInviteWithCre
 }
 
 const joinDefaultRooms = `-- name: JoinDefaultRooms :many
-INSERT INTO room_members (room_id, user_id, last_read_seq, joined_at)
-SELECT r.id, $1, r.last_message_seq, $2::timestamptz
+INSERT INTO room_members (room_id, user_id, last_read_seq, last_read_user_seq, joined_at)
+SELECT r.id, $1, r.last_message_seq, r.last_user_seq, $2::timestamptz
   FROM rooms r
  WHERE r.workspace_id = $3
    AND r.is_default

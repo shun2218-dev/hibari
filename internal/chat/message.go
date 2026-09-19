@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"math"
@@ -29,6 +30,33 @@ const (
 	MaxMessageLimit     = 100
 )
 
+// MessageKind はメッセージの種類。system は参加や名前の変更のログ（ADR 0033）。
+type MessageKind string
+
+const (
+	MessageKindUser   MessageKind = "user"
+	MessageKindSystem MessageKind = "system"
+)
+
+// SystemEventType はシステムメッセージの種類（ADR 0033）。文言はクライアントが作る。
+type SystemEventType string
+
+const (
+	SystemRoomCreated   SystemEventType = "room_created"
+	SystemMemberJoined  SystemEventType = "member_joined"
+	SystemMemberLeft    SystemEventType = "member_left"
+	SystemMemberRemoved SystemEventType = "member_removed"
+	SystemRoomRenamed   SystemEventType = "room_renamed"
+)
+
+// SystemEvent はシステムメッセージの中身。主語は Message.Sender（ADR 0033）。
+type SystemEvent struct {
+	Type SystemEventType
+	// OldName と NewName は room_renamed だけで入る。
+	OldName string `json:"old_name,omitzero"`
+	NewName string `json:"new_name,omitzero"`
+}
+
 // Message はルームのメッセージ。
 type Message struct {
 	ID     ulid.ULID
@@ -36,10 +64,16 @@ type Message struct {
 	// Seq は表示の順序の根拠。作成のときだけ採番する（ADR 0002）。
 	Seq int64
 	// ChangeSeq は最後に作成・編集・削除されたときのルームの変更番号。同期のカーソルに使う（ADR 0014）。
-	ChangeSeq   int64
+	ChangeSeq int64
+	// UserSeq は人の発言だけを数えた番号。未読数の計算に使う（システムメッセージでは直前の値のまま。ADR 0033）。
+	UserSeq     int64
 	Sender      UserProfile
 	ClientMsgID ulid.ULID
-	// Body は削除済みなら空。
+	// Kind は user（人の発言）か system（ログ）。
+	Kind MessageKind
+	// System は Kind が system のときだけ入る（ADR 0033）。
+	System *SystemEvent
+	// Body は削除済みなら空。システムメッセージでは常に空（文言はクライアントが作る）。
 	Body string
 	// ReplyTo は返信先。返信でなければ nil。
 	ReplyTo *ReplyPreview
@@ -69,12 +103,23 @@ func toMessage(r messageView) Message {
 		RoomID:      r.RoomID,
 		Seq:         r.Seq,
 		ChangeSeq:   r.ChangeSeq,
+		UserSeq:     r.UserSeq,
 		Sender:      UserProfile{ID: r.SenderID, Handle: r.SenderHandle, DisplayName: r.SenderDisplayName},
 		ClientMsgID: r.ClientMsgID,
+		Kind:        MessageKind(r.Kind),
 		Body:        r.Body,
 		CreatedAt:   r.CreatedAt,
 		EditedAt:    r.EditedAt,
 		DeletedAt:   r.DeletedAt,
+	}
+	if m.Kind == MessageKindSystem && r.SystemType != nil {
+		m.System = &SystemEvent{Type: SystemEventType(*r.SystemType)}
+		// system_data は種類ごとに入る値が違う。読めない値は無視して、行ごと落とさない。
+		if len(r.SystemData) > 0 {
+			if err := json.Unmarshal(r.SystemData, m.System); err != nil {
+				m.System = &SystemEvent{Type: SystemEventType(*r.SystemType)}
+			}
+		}
 	}
 	// 返信先の行は複合 FK で必ずあるが、LEFT JOIN の列なので nil を確かめてから読む。
 	if r.ReplyToID != nil && r.ReplySeq != nil {
@@ -163,7 +208,9 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		seq := allocated.LastMessageSeq
 		id := s.ids.New()
 		err = q.CreateMessage(ctx, store.CreateMessageParams{
-			ID: id, RoomID: roomID, Seq: seq, ChangeSeq: allocated.LastChangeSeq, SenderID: actor, ClientMsgID: in.ClientMsgID,
+			ID: id, RoomID: roomID, Seq: seq, ChangeSeq: allocated.LastChangeSeq,
+			// user_seq は人の発言だけを数えた番号。未読数に使う（ADR 0033）。
+			UserSeq: allocated.LastUserSeq, SenderID: actor, ClientMsgID: in.ClientMsgID,
 			Body: in.Body, ReplyToID: in.ReplyToID, Now: now,
 		})
 		if err != nil {
@@ -345,6 +392,10 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 		if err != nil {
 			return notFoundIfNoRows(err, "lock message")
 		}
+		if MessageKind(m.Kind) == MessageKindSystem {
+			// システムメッセージは参加や名前の変更の記録で、編集・削除の対象にしない（ADR 0033）。
+			return ErrForbidden
+		}
 		if !authz.CanEditMessage(a.kind(), a.actor(actor), m.SenderID == actor) {
 			return ErrForbidden
 		}
@@ -397,6 +448,9 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, roomID, messageID ul
 		if err != nil {
 			return notFoundIfNoRows(err, "lock message")
 		}
+		if MessageKind(m.Kind) == MessageKindSystem {
+			return ErrForbidden
+		}
 		if !authz.CanDeleteMessage(a.kind(), a.actor(actor), m.SenderID == actor, a.roles[m.SenderID]) {
 			return ErrForbidden
 		}
@@ -435,7 +489,9 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, roomID, messageID ul
 // ReadState は既読位置の更新の結果。
 type ReadState struct {
 	LastReadSeq int64
-	UnreadCount int64
+	// LastReadUserSeq は既読位置に対応する user_seq。未読数の計算に使う（ADR 0033）。
+	LastReadUserSeq int64
+	UnreadCount     int64
 }
 
 // MarkRoomRead は actor の既読位置を seq まで進める。後退はさせず、ルームの最新の seq を超える値は最新の seq に切り詰める。
@@ -460,12 +516,16 @@ func (s *Service) MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq
 	if err != nil {
 		return ReadState{}, fmt.Errorf("advance last_read_seq: %w", err)
 	}
-	st := ReadState{LastReadSeq: row.LastReadSeq, UnreadCount: row.LastMessageSeq - row.LastReadSeq}
+	// 未読はシステムメッセージを数えない（ADR 0033）。
+	st := ReadState{LastReadSeq: row.LastReadSeq, LastReadUserSeq: row.LastReadUserSeq, UnreadCount: row.LastUserSeq - row.LastReadUserSeq}
 	// 既読位置が進まなかったときも送る。別の端末が古い未読数を表示していれば、それを揃えられる。
 	s.deliver(ctx, Event{
 		Type: EventRoomRead,
 		To:   Audience{Users: []ulid.ULID{actor}},
-		Data: RoomRead{WorkspaceID: a.room.WorkspaceID, RoomID: roomID, LastReadSeq: st.LastReadSeq, UnreadCount: st.UnreadCount},
+		Data: RoomRead{
+			WorkspaceID: a.room.WorkspaceID, RoomID: roomID,
+			LastReadSeq: st.LastReadSeq, LastReadUserSeq: st.LastReadUserSeq, UnreadCount: st.UnreadCount,
+		},
 	})
 	return st, nil
 }

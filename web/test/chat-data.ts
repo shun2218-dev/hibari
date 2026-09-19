@@ -30,6 +30,8 @@ export function room(id: string, name: string, overrides: Partial<Room> = {}): R
     last_message_seq: 0,
     last_message_at: null,
     last_read_seq: 0,
+    last_user_seq: 0,
+    last_read_user_seq: 0,
     unread_count: 0,
     last_message: null,
     created_at: "2026-09-01T00:00:00Z",
@@ -43,6 +45,8 @@ export function message(seq: number, overrides: Partial<Message> = {}): Message 
     room_id: "room-1",
     seq,
     change_seq: seq,
+    user_seq: seq,
+    kind: "user",
     sender: miyuki,
     client_msg_id: `c-${seq}`,
     body: `本文 ${seq}`,
@@ -53,6 +57,11 @@ export function message(seq: number, overrides: Partial<Message> = {}): Message 
     deleted_at: null,
     ...overrides,
   };
+}
+
+/** システムメッセージ（参加や名前の変更のログ。ADR 0033）。user_seq は直前の人の発言の番号のまま。 */
+export function systemMessage(seq: number, system: Message["system"], overrides: Partial<Message> = {}): Message {
+  return message(seq, { kind: "system", system, body: "", user_seq: seq - 1, ...overrides });
 }
 
 export function roomMember(user: UserProfile, overrides: Partial<RoomMember> = {}): RoomMember {

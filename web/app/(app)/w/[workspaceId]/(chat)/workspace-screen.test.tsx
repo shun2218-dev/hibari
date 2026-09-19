@@ -21,7 +21,9 @@ const design = room("r-design", "デザインレビュー", {
   last_read_seq: 1,
   unread_count: 2,
   last_message_at: "2026-09-13T02:05:00Z",
-  last_message: { id: "m-3", sender: miyuki, body: "presence を確認します", created_at: "2026-09-13T02:05:00Z", deleted: false },
+  last_user_seq: 3,
+  last_read_user_seq: 1,
+  last_message: { id: "m-3", sender: miyuki, kind: "user", body: "presence を確認します", created_at: "2026-09-13T02:05:00Z", deleted: false },
 });
 const chat = room("r-chat", "雑談", { is_default: true });
 const dm = room("r-dm", "", { kind: "dm", name: null, dm_peer: { ...naoki, online: true } });
@@ -40,7 +42,7 @@ function openRoom(r: Room, messages = [message(1), message(2), message(3)]): Rec
     [`GET /api/v1/rooms/${r.id}`]: () => json(200, { ...r, member_count: 4 }),
     [`GET /api/v1/rooms/${r.id}/messages?limit=50`]: () =>
       json(200, { messages: messages.map((m) => ({ ...m, room_id: r.id })), has_more: false, last_change_seq: 3 }),
-    [`POST /api/v1/rooms/${r.id}/read`]: () => json(200, { last_read_seq: r.last_message_seq, unread_count: 0 }),
+    [`POST /api/v1/rooms/${r.id}/read`]: () => json(200, { last_read_seq: r.last_message_seq, last_read_user_seq: r.last_message_seq, unread_count: 0 }),
   };
 }
 
@@ -346,7 +348,7 @@ describe("WorkspaceScreen", () => {
     it("shows a message from someone else as it arrives and reads it while the latest is in view", async () => {
       const { sockets, api } = await connected({
         "POST /api/v1/rooms/r-design/read": (_url, init) =>
-          json(200, { last_read_seq: JSON.parse(init.body as string).seq, unread_count: 0 }),
+          json(200, { last_read_seq: JSON.parse(init.body as string).seq, last_read_user_seq: JSON.parse(init.body as string).seq, unread_count: 0 }),
       });
 
       sockets.last().receive({

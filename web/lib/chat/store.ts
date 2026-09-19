@@ -364,7 +364,9 @@ export function createChatStore(
 
   async function markRead(roomId: string, seq: number): Promise<void> {
     const read = await api.markRead(roomId, { seq });
-    patchRoom(roomId, (room) => applyReadToRoom(room, read.last_read_seq));
+    patchRoom(roomId, (room) =>
+      applyReadToRoom(room, { lastReadSeq: read.last_read_seq, lastReadUserSeq: read.last_read_user_seq }),
+    );
   }
 
   /**
@@ -755,7 +757,12 @@ export function createChatStore(
         removedFromRoom(event.data.workspace_id, event.data.room_id, event.data.reason);
         return;
       case "room.read":
-        patchRoom(event.data.room_id, (room) => applyReadToRoom(room, event.data.last_read_seq));
+        patchRoom(event.data.room_id, (room) =>
+          applyReadToRoom(room, {
+            lastReadSeq: event.data.last_read_seq,
+            lastReadUserSeq: event.data.last_read_user_seq,
+          }),
+        );
         return;
 
       case "workspace.updated": {

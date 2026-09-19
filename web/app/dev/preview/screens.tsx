@@ -78,6 +78,7 @@ import {
   selectedRoom,
   timeline,
   timelineWithAvatars,
+  timelineWithSystemMessages,
   transferCandidates,
   typingNames,
   users,
@@ -107,6 +108,8 @@ function login(error?: "credentials" | "rate_limited") {
 type ChatOptions = {
   /** アバター画像を設定している人が混ざったタイムラインにする。 */
   avatars?: boolean;
+  /** 参加や名前の変更のログを挟んだタイムライン（ADR 0033）。 */
+  systemMessages?: boolean;
   banner?: ConnectionBannerStatus;
   attachments?: AttachmentDraftView[];
   hoveredKey?: string;
@@ -128,6 +131,7 @@ type ChatOptions = {
 
 function chat({
   avatars,
+  systemMessages,
   banner,
   attachments,
   hoveredKey,
@@ -179,7 +183,7 @@ function chat({
         <ConnectionBanner status={banner ?? null} />
         {body === "timeline" && (
           <Timeline
-            items={avatars ? timelineWithAvatars : timeline}
+            items={systemMessages ? timelineWithSystemMessages : avatars ? timelineWithAvatars : timeline}
             hoveredKey={hoveredKey}
             actionsFor={(key) => ({ canEdit: key === pendingMessageKey, canDelete: key === pendingMessageKey })}
             openMenuKey={menuKey}
@@ -395,6 +399,7 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/room-header-settings": roomHeaderFrame,
   "chat/member-add-dialog": () =>
     chat({ dialog: <AddRoomMemberDialog open candidates={dmCandidates} selectedId={users.ryo.id} /> }),
+  "chat/system-messages": () => chat({ systemMessages: true }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),
   "chat/mobile-room": () => chat(),
   "chat/mobile-members-sheet": () => chat({ members: true }),

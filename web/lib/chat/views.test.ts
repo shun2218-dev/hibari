@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { TimelineItem } from "@/components/chat/types";
 import type { MessageAttachment } from "@/lib/api/types.gen";
-import { kei, member, message, miyuki, naoki, room, roomMember } from "@/test/chat-data";
+import { kei, member, message, miyuki, naoki, room, roomMember, systemMessage } from "@/test/chat-data";
 
 import {
   messageActions,
   previewImageIds,
   toAttachmentDraftView,
+  systemMessageText,
   toDmCandidates,
   toRoomMemberRows,
   toRoomMemberView,
@@ -25,6 +26,8 @@ function outline(items: TimelineItem[]): string[] {
         return `[${item.label}]`;
       case "unread":
         return "[unread]";
+      case "system":
+        return `[system: ${item.text}]`;
       case "message":
         return item.message.grouped ? `+${item.message.body}` : item.message.body;
     }
@@ -39,7 +42,7 @@ describe("toRoomSummaryView", () => {
       room("r1", "雑談", {
         last_message_at: "2026-09-13T01:22:00Z",
         unread_count: 3,
-        last_message: { id: "m1", sender: miyuki, body: "喫茶店ができたらしい", created_at: "2026-09-13T01:22:00Z", deleted: false },
+        last_message: { id: "m1", sender: miyuki, kind: "user", body: "喫茶店ができたらしい", created_at: "2026-09-13T01:22:00Z", deleted: false },
       }),
       now,
       { timeZone: tz },
@@ -55,7 +58,7 @@ describe("toRoomSummaryView", () => {
         name: null,
         dm_peer: { ...naoki, online: true },
         last_message_at: "2026-09-12T01:00:00Z",
-        last_message: { id: "m2", sender: naoki, body: "あとで見ます", created_at: "2026-09-12T01:00:00Z", deleted: false },
+        last_message: { id: "m2", sender: naoki, kind: "user", body: "あとで見ます", created_at: "2026-09-12T01:00:00Z", deleted: false },
       }),
       now,
       { timeZone: tz, avatarUrls: { [naoki.id]: "https://storage.test/naoki.png" } },
@@ -73,7 +76,7 @@ describe("toRoomSummaryView", () => {
     const view = toRoomSummaryView(
       room("r3", "雑談", {
         last_message_at: "2026-09-13T01:00:00Z",
-        last_message: { id: "m3", sender: miyuki, body: "", created_at: "2026-09-13T01:00:00Z", deleted: true },
+        last_message: { id: "m3", sender: miyuki, kind: "user", body: "", created_at: "2026-09-13T01:00:00Z", deleted: true },
       }),
       now,
       { timeZone: tz },
@@ -86,7 +89,7 @@ describe("toRoomSummaryView", () => {
     const view = toRoomSummaryView(
       room("r5", "雑談", {
         last_message_at: "2026-09-13T01:00:00Z",
-        last_message: { id: "m5", sender: miyuki, body: "", created_at: "2026-09-13T01:00:00Z", deleted: false },
+        last_message: { id: "m5", sender: miyuki, kind: "user", body: "", created_at: "2026-09-13T01:00:00Z", deleted: false },
       }),
       now,
       { timeZone: tz },
@@ -379,5 +382,89 @@ describe("toRoomMemberRows", () => {
     const rows = toRoomMemberRows([roomMember(miyuki)], { userId: naoki.id, myRole: "member" });
 
     expect(rows[0].canRemove).toBe(false);
+  });
+});
+
+describe("システムメッセージ（ADR 0033）", () => {
+  it("writes each kind of log with the subject first", () => {
+    const by = (system: Parameters<typeof systemMessage>[1]) =>
+      systemMessageText(systemMessage(2, system, { sender: miyuki }));
+
+    expect(by({ type: "room_created" })).toBe("高橋 みゆき がこのチャンネルを作成しました");
+    expect(by({ type: "member_joined" })).toBe("高橋 みゆき がチャンネルに参加しました");
+    expect(by({ type: "member_left" })).toBe("高橋 みゆき がチャンネルを退出しました");
+    expect(by({ type: "member_removed" })).toBe("高橋 みゆき がチャンネルから外されました");
+    expect(by({ type: "room_renamed", old_name: "雑談", new_name: "雑談 改" })).toBe(
+      "高橋 みゆき がチャンネル名を 雑談 から 雑談 改 に変更しました",
+    );
+  });
+
+  it("puts the log between messages without grouping them", () => {
+    const items = toTimelineItems(
+      [
+        message(1, { sender: miyuki, body: "おはよう" }),
+        systemMessage(2, { type: "member_joined" }, { sender: naoki }),
+        message(3, { sender: miyuki, body: "今日もよろしく" }),
+      ],
+      { unreadAfterSeq: null, timeZone: tz },
+    );
+
+    expect(outline(items)).toEqual([
+      "[2026年9月13日]",
+      "おはよう",
+      "[system: 佐藤 直樹 がチャンネルに参加しました]",
+      // ログを挟んだので、同じ人の発言でも続けて表示（+）にしない
+      "今日もよろしく",
+    ]);
+  });
+
+  it("does not put the unread divider before a log", () => {
+    const items = toTimelineItems(
+      [
+        message(1, { sender: miyuki, body: "既読の発言" }),
+        systemMessage(2, { type: "member_joined" }, { sender: naoki }),
+        message(3, { sender: miyuki, body: "未読の発言" }),
+      ],
+      { unreadAfterSeq: 1, timeZone: tz },
+    );
+
+    // 区切りはログを飛ばして、未読の「人の発言」の前に出す
+    expect(outline(items)).toEqual([
+      "[2026年9月13日]",
+      "既読の発言",
+      "[system: 佐藤 直樹 がチャンネルに参加しました]",
+      "[unread]",
+      "未読の発言",
+    ]);
+  });
+
+  it("does not show the divider when only logs are new", () => {
+    const items = toTimelineItems(
+      [message(1, { sender: miyuki, body: "既読の発言" }), systemMessage(2, { type: "member_joined" })],
+      { unreadAfterSeq: 1, timeZone: tz },
+    );
+
+    expect(outline(items)).not.toContain("[unread]");
+  });
+
+  it("shows the log itself in the sidebar, without the sender prefix", () => {
+    const view = toRoomSummaryView(
+      room("r1", "雑談", {
+        last_message_at: "2026-09-13T01:22:00Z",
+        last_message: {
+          id: "m2",
+          sender: naoki,
+          kind: "system",
+          system: { type: "member_joined" },
+          body: "",
+          created_at: "2026-09-13T01:22:00Z",
+          deleted: false,
+        },
+      }),
+      new Date("2026-09-13T02:00:00Z"),
+      { timeZone: tz },
+    );
+
+    expect(view.lastMessage).toBe("佐藤 直樹 がチャンネルに参加しました");
   });
 });

@@ -146,6 +146,27 @@ export const timeline: TimelineItem[] = [
 ];
 
 /**
+ * 参加や名前の変更のログを挟んだタイムライン（chat/system-messages.png。ADR 0033）。
+ * ログは人の発言ではないので、アバターも名前も出さず、中央に控えめに置く。
+ */
+export const timelineWithSystemMessages: TimelineItem[] = [
+  { type: "date", key: "d-0913", label: "2026年9月13日" },
+  { type: "system", key: "s-created", text: "あなた がこのチャンネルを作成しました", timeLabel: "09:30" },
+  { type: "system", key: "s-joined-naoki", text: "佐藤 直樹 がチャンネルに参加しました", timeLabel: "09:31" },
+  { type: "system", key: "s-joined-miyuki", text: "高橋 みゆき がチャンネルに参加しました", timeLabel: "09:33" },
+  message("m-0941", you, "09:41", "おはようございます。昨日の続きで、未読まわりを琥珀に寄せてみました。"),
+  message("m-0955", miyuki, "09:55", "それ、かなり分かりやすいです。"),
+  {
+    type: "system",
+    key: "s-renamed",
+    text: "あなた がチャンネル名を 雑談 から デザインレビュー に変更しました",
+    timeLabel: "10:02",
+  },
+  message("m-1012", naoki, "10:12", "名前、こちらのほうが分かりやすいです。"),
+  { type: "system", key: "s-left", text: "中村 涼 がチャンネルを退出しました", timeLabel: "10:20" },
+];
+
+/**
  * 画像を設定している人と、していない人が混ざった状態（chat/avatar-images.png）。
  * 一覧では、画像のある人だけが差し替わる。
  */

@@ -58,8 +58,9 @@ func TestCreateRoom(t *testing.T) {
 	for _, kind := range []string{"public", "private"} {
 		t.Run(kind, func(t *testing.T) {
 			room := createRoom(t, env, r.member, r.ws.ID, kind, "  デザインレビュー "+kind+" ")
+			// 作成のログ（ADR 0033）が 1 行目に入るので、seq は 1 から始まる。未読には数えない。
 			if room.Kind != chat.RoomKind(kind) || room.Name != "デザインレビュー "+kind || !room.IsMember || room.MemberCount != 1 ||
-				room.IsDefault || room.DMPeer != nil || room.LastMessageSeq != 0 || room.WorkspaceID != r.ws.ID {
+				room.IsDefault || room.DMPeer != nil || room.LastMessageSeq != 1 || room.UnreadCount != 0 || room.WorkspaceID != r.ws.ID {
 				t.Errorf("room = %+v", room)
 			}
 			if lastReadSeq(t, env, room.ID, r.member) != 0 {
@@ -192,8 +193,15 @@ func TestListRooms(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 最近メッセージがあった順。メッセージのないルームは後ろ。
+	// ルームの作成・参加のログ（ADR 0033）でも last_message_at が入るので、
+	// 「メッセージのないルーム」の状態は NULL に戻して作り直す。
 	now := env.Clock.Now()
-	for id, at := range map[ulid.ULID]time.Time{otherPublic.ID: now.Add(-time.Hour), dm.ID: now} {
+	for id, at := range map[ulid.ULID]*time.Time{
+		otherPublic.ID:   ptr(now.Add(-time.Hour)),
+		dm.ID:            ptr(now),
+		joinedPublic.ID:  nil,
+		joinedPrivate.ID: nil,
+	} {
 		if _, err := env.Pool.Exec(t.Context(), `UPDATE rooms SET last_message_at = $2 WHERE id = $1`, id, at); err != nil {
 			t.Fatal(err)
 		}

@@ -13,8 +13,8 @@ import (
 )
 
 const addRoomMember = `-- name: AddRoomMember :execrows
-INSERT INTO room_members (room_id, user_id, last_read_seq, joined_at)
-SELECT r.id, $1, r.last_message_seq, $2::timestamptz
+INSERT INTO room_members (room_id, user_id, last_read_seq, last_read_user_seq, joined_at)
+SELECT r.id, $1, r.last_message_seq, r.last_user_seq, $2::timestamptz
   FROM rooms r
  WHERE r.id = $3
 ON CONFLICT DO NOTHING
@@ -27,7 +27,7 @@ type AddRoomMemberParams struct {
 }
 
 // ルームに参加する。すでにメンバーなら何もせず 0 を返す（冪等）。
-// last_read_seq は同じ文の中で rooms から読み、参加前のメッセージを未読にしない。
+// last_read_seq / last_read_user_seq は同じ文の中で rooms から読み、参加前のメッセージを未読にしない。
 func (q *Queries) AddRoomMember(ctx context.Context, arg AddRoomMemberParams) (int64, error) {
 	result, err := q.db.Exec(ctx, addRoomMember, arg.UserID, arg.Now, arg.RoomID)
 	if err != nil {
@@ -56,9 +56,10 @@ const allocateMessageSeq = `-- name: AllocateMessageSeq :one
 UPDATE rooms
    SET last_message_seq = last_message_seq + 1,
        last_change_seq  = last_change_seq + 1,
+       last_user_seq    = last_user_seq + 1,
        last_message_at  = $1::timestamptz
  WHERE id = $2
-RETURNING last_message_seq, last_change_seq
+RETURNING last_message_seq, last_change_seq, last_user_seq
 `
 
 type AllocateMessageSeqParams struct {
@@ -69,16 +70,46 @@ type AllocateMessageSeqParams struct {
 type AllocateMessageSeqRow struct {
 	LastMessageSeq int64
 	LastChangeSeq  int64
+	LastUserSeq    int64
 }
 
 // ルーム（ADR 0006 / 0011）。
 // ルームの次の seq と change_seq を採番して返す（ADR 0002「採番方式の確定」/ ADR 0014）。
 // 送信と同じトランザクションの中で呼ぶ。rooms の行ロックで同じルームへの送信・編集・削除が直列化され、
 // ロールバックすれば採番も取り消されるので欠番にならない。
+// 人の発言なので user_seq も 1 進める（ADR 0033）。
 func (q *Queries) AllocateMessageSeq(ctx context.Context, arg AllocateMessageSeqParams) (AllocateMessageSeqRow, error) {
 	row := q.db.QueryRow(ctx, allocateMessageSeq, arg.Now, arg.RoomID)
 	var i AllocateMessageSeqRow
-	err := row.Scan(&i.LastMessageSeq, &i.LastChangeSeq)
+	err := row.Scan(&i.LastMessageSeq, &i.LastChangeSeq, &i.LastUserSeq)
+	return i, err
+}
+
+const allocateSystemMessageSeq = `-- name: AllocateSystemMessageSeq :one
+UPDATE rooms
+   SET last_message_seq = last_message_seq + 1,
+       last_change_seq  = last_change_seq + 1,
+       last_message_at  = $1::timestamptz
+ WHERE id = $2
+RETURNING last_message_seq, last_change_seq, last_user_seq
+`
+
+type AllocateSystemMessageSeqParams struct {
+	Now    time.Time
+	RoomID ulid.ULID
+}
+
+type AllocateSystemMessageSeqRow struct {
+	LastMessageSeq int64
+	LastChangeSeq  int64
+	LastUserSeq    int64
+}
+
+// システムメッセージ（ADR 0033）の採番。seq と change_seq は進め、user_seq は進めない（未読数に数えない）。
+func (q *Queries) AllocateSystemMessageSeq(ctx context.Context, arg AllocateSystemMessageSeqParams) (AllocateSystemMessageSeqRow, error) {
+	row := q.db.QueryRow(ctx, allocateSystemMessageSeq, arg.Now, arg.RoomID)
+	var i AllocateSystemMessageSeqRow
+	err := row.Scan(&i.LastMessageSeq, &i.LastChangeSeq, &i.LastUserSeq)
 	return i, err
 }
 
@@ -86,7 +117,7 @@ const createDMRoom = `-- name: CreateDMRoom :one
 INSERT INTO rooms (id, workspace_id, kind, dm_key, created_by, created_at)
 VALUES ($1, $2, 'dm', $3, $4, $5::timestamptz)
 ON CONFLICT (workspace_id, dm_key) WHERE kind = 'dm' DO NOTHING
-RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq
+RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq, last_user_seq
 `
 
 type CreateDMRoomParams struct {
@@ -121,6 +152,7 @@ func (q *Queries) CreateDMRoom(ctx context.Context, arg CreateDMRoomParams) (Roo
 		&i.CreatedAt,
 		&i.ArchivedAt,
 		&i.LastChangeSeq,
+		&i.LastUserSeq,
 	)
 	return i, err
 }
@@ -128,7 +160,7 @@ func (q *Queries) CreateDMRoom(ctx context.Context, arg CreateDMRoomParams) (Roo
 const createRoom = `-- name: CreateRoom :one
 INSERT INTO rooms (id, workspace_id, kind, name, created_by, created_at)
 VALUES ($1, $2, $3, $4, $5, $6::timestamptz)
-RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq
+RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq, last_user_seq
 `
 
 type CreateRoomParams struct {
@@ -164,6 +196,7 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, e
 		&i.CreatedAt,
 		&i.ArchivedAt,
 		&i.LastChangeSeq,
+		&i.LastUserSeq,
 	)
 	return i, err
 }
@@ -188,7 +221,7 @@ func (q *Queries) DeleteRoomMember(ctx context.Context, arg DeleteRoomMemberPara
 }
 
 const getDMRoom = `-- name: GetDMRoom :one
-SELECT id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq
+SELECT id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq, last_user_seq
   FROM rooms
  WHERE workspace_id = $1
    AND kind = 'dm'
@@ -216,12 +249,13 @@ func (q *Queries) GetDMRoom(ctx context.Context, arg GetDMRoomParams) (Room, err
 		&i.CreatedAt,
 		&i.ArchivedAt,
 		&i.LastChangeSeq,
+		&i.LastUserSeq,
 	)
 	return i, err
 }
 
 const getRoom = `-- name: GetRoom :one
-SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq
+SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq, r.last_user_seq
   FROM rooms r
   JOIN workspaces w ON w.id = r.workspace_id
  WHERE r.id = $1
@@ -245,6 +279,7 @@ func (q *Queries) GetRoom(ctx context.Context, id ulid.ULID) (Room, error) {
 		&i.CreatedAt,
 		&i.ArchivedAt,
 		&i.LastChangeSeq,
+		&i.LastUserSeq,
 	)
 	return i, err
 }
@@ -296,8 +331,10 @@ func (q *Queries) GetRoomMemberships(ctx context.Context, arg GetRoomMemberships
 }
 
 const getRoomSummary = `-- name: GetRoomSummary :one
-SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq,
+SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq, r.last_user_seq, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq, rm.last_read_user_seq,
        lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
+       lm.kind AS last_message_kind, lm.system_type AS last_message_system_type,
+       lm.system_data AS last_message_system_data,
        lm.created_at AS last_message_created_at, lm.deleted_at AS last_message_deleted_at,
        lu.handle AS last_message_sender_handle, lu.display_name AS last_message_sender_display_name
   FROM rooms r
@@ -316,9 +353,13 @@ type GetRoomSummaryRow struct {
 	Room                         Room
 	IsMember                     bool
 	LastReadSeq                  *int64
+	LastReadUserSeq              *int64
 	LastMessageID                *ulid.ULID
 	LastMessageSenderID          *ulid.ULID
 	LastMessageBody              *string
+	LastMessageKind              *string
+	LastMessageSystemType        *string
+	LastMessageSystemData        []byte
 	LastMessageCreatedAt         *time.Time
 	LastMessageDeletedAt         *time.Time
 	LastMessageSenderHandle      *string
@@ -342,11 +383,16 @@ func (q *Queries) GetRoomSummary(ctx context.Context, arg GetRoomSummaryParams) 
 		&i.Room.CreatedAt,
 		&i.Room.ArchivedAt,
 		&i.Room.LastChangeSeq,
+		&i.Room.LastUserSeq,
 		&i.IsMember,
 		&i.LastReadSeq,
+		&i.LastReadUserSeq,
 		&i.LastMessageID,
 		&i.LastMessageSenderID,
 		&i.LastMessageBody,
+		&i.LastMessageKind,
+		&i.LastMessageSystemType,
+		&i.LastMessageSystemData,
 		&i.LastMessageCreatedAt,
 		&i.LastMessageDeletedAt,
 		&i.LastMessageSenderHandle,
@@ -410,8 +456,10 @@ func (q *Queries) ListRoomMembers(ctx context.Context, arg ListRoomMembersParams
 }
 
 const listRoomsForUser = `-- name: ListRoomsForUser :many
-SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq,
+SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq, r.last_user_seq, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq, rm.last_read_user_seq,
        lm.id AS last_message_id, lm.sender_id AS last_message_sender_id, lm.body AS last_message_body,
+       lm.kind AS last_message_kind, lm.system_type AS last_message_system_type,
+       lm.system_data AS last_message_system_data,
        lm.created_at AS last_message_created_at, lm.deleted_at AS last_message_deleted_at,
        lu.handle AS last_message_sender_handle, lu.display_name AS last_message_sender_display_name
   FROM rooms r
@@ -432,9 +480,13 @@ type ListRoomsForUserRow struct {
 	Room                         Room
 	IsMember                     bool
 	LastReadSeq                  *int64
+	LastReadUserSeq              *int64
 	LastMessageID                *ulid.ULID
 	LastMessageSenderID          *ulid.ULID
 	LastMessageBody              *string
+	LastMessageKind              *string
+	LastMessageSystemType        *string
+	LastMessageSystemData        []byte
 	LastMessageCreatedAt         *time.Time
 	LastMessageDeletedAt         *time.Time
 	LastMessageSenderHandle      *string
@@ -444,7 +496,8 @@ type ListRoomsForUserRow struct {
 // サイドバーのルーム一覧: 参加しているルーム（全種類）と、参加していない public ルーム。
 // 読めない private / dm は含めない。並びは最近メッセージがあった順（インデックス rooms_workspace_id_last_message_at_idx）。
 // 最終メッセージは seq = last_message_seq の行を、ルームごとに UNIQUE インデックスで 1 回引く（N+1 のクエリにしない。ADR 0012）。
-// 未読数はクライアントにも出せるよう last_read_seq をそのまま返し、サービスで last_message_seq との差を取る。
+// 未読数はクライアントにも出せるよう last_read_seq をそのまま返し、サービスで last_user_seq との差を取る
+// （システムメッセージは数えない。ADR 0033）。
 func (q *Queries) ListRoomsForUser(ctx context.Context, arg ListRoomsForUserParams) ([]ListRoomsForUserRow, error) {
 	rows, err := q.db.Query(ctx, listRoomsForUser, arg.UserID, arg.WorkspaceID)
 	if err != nil {
@@ -467,11 +520,16 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, arg ListRoomsForUserPara
 			&i.Room.CreatedAt,
 			&i.Room.ArchivedAt,
 			&i.Room.LastChangeSeq,
+			&i.Room.LastUserSeq,
 			&i.IsMember,
 			&i.LastReadSeq,
+			&i.LastReadUserSeq,
 			&i.LastMessageID,
 			&i.LastMessageSenderID,
 			&i.LastMessageBody,
+			&i.LastMessageKind,
+			&i.LastMessageSystemType,
+			&i.LastMessageSystemData,
 			&i.LastMessageCreatedAt,
 			&i.LastMessageDeletedAt,
 			&i.LastMessageSenderHandle,
@@ -525,7 +583,7 @@ UPDATE rooms
    SET name       = coalesce($1, name),
        is_default = coalesce($2, is_default)
  WHERE id = $3
-RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq
+RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq, last_user_seq
 `
 
 type UpdateRoomParams struct {
@@ -551,6 +609,7 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) (Room, e
 		&i.CreatedAt,
 		&i.ArchivedAt,
 		&i.LastChangeSeq,
+		&i.LastUserSeq,
 	)
 	return i, err
 }

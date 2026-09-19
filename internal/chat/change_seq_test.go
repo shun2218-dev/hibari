@@ -37,10 +37,12 @@ func TestChangeSeq(t *testing.T) {
 	env := chattest.New(t)
 	r := setupRoles(t, env)
 	room := createRoom(t, env, r.member, r.ws.ID, "public", "public")
+	// ルームの作成のログ（ADR 0033）が seq と change_seq を 1 つずつ消費する。以降は base からの相対で見る。
+	base := roomLastMessageSeq(t, env, room.ID)
 
 	first := send(t, env, r.member, room.ID, "1 件目")
 	second := send(t, env, r.member, room.ID, "2 件目")
-	if first.Seq != 1 || first.ChangeSeq != 1 || second.Seq != 2 || second.ChangeSeq != 2 {
+	if first.Seq != base+1 || first.ChangeSeq != base+1 || second.Seq != base+2 || second.ChangeSeq != base+2 {
 		t.Fatalf("created: first seq/change = %d/%d, second = %d/%d", first.Seq, first.ChangeSeq, second.Seq, second.ChangeSeq)
 	}
 
@@ -48,17 +50,17 @@ func TestChangeSeq(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if edited.Seq != 1 || edited.ChangeSeq != 3 {
-		t.Errorf("edited seq/change = %d/%d, want 1/3", edited.Seq, edited.ChangeSeq)
+	if edited.Seq != base+1 || edited.ChangeSeq != base+3 {
+		t.Errorf("edited seq/change = %d/%d, want %d/%d", edited.Seq, edited.ChangeSeq, base+1, base+3)
 	}
 	// 本文が変わらない編集は採番しない。
 	same, err := env.Service.EditMessage(t.Context(), r.member, room.ID, first.ID, "1 件目（編集）")
-	if err != nil || same.ChangeSeq != 3 {
-		t.Errorf("no-op edit change_seq = %d, %v; want 3", same.ChangeSeq, err)
+	if err != nil || same.ChangeSeq != base+3 {
+		t.Errorf("no-op edit change_seq = %d, %v; want %d", same.ChangeSeq, err, base+3)
 	}
 	// 冪等な再送は採番しない。
 	resent, created, err := env.Service.SendMessage(t.Context(), r.member, room.ID, chat.SendMessageInput{ClientMsgID: second.ClientMsgID, Body: "2 件目"})
-	if err != nil || created || resent.ChangeSeq != 2 {
+	if err != nil || created || resent.ChangeSeq != base+2 {
 		t.Errorf("resend = change %d, created %v, %v", resent.ChangeSeq, created, err)
 	}
 
@@ -73,30 +75,30 @@ func TestChangeSeq(t *testing.T) {
 	if _, err := env.Service.EditMessage(t.Context(), r.owner, room.ID, first.ID, "乗っ取り"); !errors.Is(err, chat.ErrForbidden) {
 		t.Fatalf("EditMessage(other's message) error = %v", err)
 	}
-	if got := roomLastChangeSeq(t, env, room.ID); got != 4 {
-		t.Fatalf("last_change_seq = %d, want 4", got)
+	if got := roomLastChangeSeq(t, env, room.ID); got != base+4 {
+		t.Fatalf("last_change_seq = %d, want %d", got, base+4)
 	}
-	if got := roomLastMessageSeq(t, env, room.ID); got != 2 {
-		t.Fatalf("last_message_seq = %d, want 2 (edits and deletes must not advance seq)", got)
+	if got := roomLastMessageSeq(t, env, room.ID); got != base+2 {
+		t.Fatalf("last_message_seq = %d, want %d (edits and deletes must not advance seq)", got, base+2)
 	}
 
-	// 切断前に change_seq 2 まで受け取っていたクライアントは、編集（3）と削除（4）を change_seq の順に受け取る。
-	page := changesAfter(t, env, r.owner, room.ID, 2)
-	if len(page.Messages) != 2 || page.HasMore || page.LastChangeSeq != 4 {
-		t.Fatalf("changes after 2 = %d messages, has_more %v, last_change_seq %d", len(page.Messages), page.HasMore, page.LastChangeSeq)
+	// 切断前に change_seq base+2 まで受け取っていたクライアントは、編集（base+3）と削除（base+4）を change_seq の順に受け取る。
+	page := changesAfter(t, env, r.owner, room.ID, base+2)
+	if len(page.Messages) != 2 || page.HasMore || page.LastChangeSeq != base+4 {
+		t.Fatalf("changes after %d = %d messages, has_more %v, last_change_seq %d", base+2, len(page.Messages), page.HasMore, page.LastChangeSeq)
 	}
-	if m := page.Messages[0]; m.ID != first.ID || m.ChangeSeq != 3 || m.Body != "1 件目（編集）" || m.EditedAt == nil {
+	if m := page.Messages[0]; m.ID != first.ID || m.ChangeSeq != base+3 || m.Body != "1 件目（編集）" || m.EditedAt == nil {
 		t.Errorf("first change = %+v", m)
 	}
-	if m := page.Messages[1]; m.ID != second.ID || m.ChangeSeq != 4 || m.Body != "" || m.DeletedAt == nil {
+	if m := page.Messages[1]; m.ID != second.ID || m.ChangeSeq != base+4 || m.Body != "" || m.DeletedAt == nil {
 		t.Errorf("second change = %+v, want the tombstone", m)
 	}
-	if page := changesAfter(t, env, r.owner, room.ID, 4); len(page.Messages) != 0 || page.HasMore || page.LastChangeSeq != 4 {
-		t.Errorf("changes after 4 = %+v", page)
+	if page := changesAfter(t, env, r.owner, room.ID, base+4); len(page.Messages) != 0 || page.HasMore || page.LastChangeSeq != base+4 {
+		t.Errorf("changes after %d = %+v", base+4, page)
 	}
-	// 通常の履歴にも last_change_seq が付き、並びは seq のまま。
+	// 通常の履歴にも last_change_seq が付き、並びは seq のまま（先頭は作成のログ）。
 	latest, err := env.Service.ListMessages(t.Context(), r.owner, room.ID, chat.MessageQuery{})
-	if err != nil || latest.LastChangeSeq != 4 || !equalSeqs(seqsOf(latest.Messages), 1, 2) {
+	if err != nil || latest.LastChangeSeq != base+4 || !equalSeqs(seqsOf(latest.Messages), base, base+1, base+2) {
 		t.Errorf("latest = seqs %v, last_change_seq %d, %v", seqsOf(latest.Messages), latest.LastChangeSeq, err)
 	}
 
@@ -106,13 +108,14 @@ func TestChangeSeq(t *testing.T) {
 	}
 	after := int64(0)
 	page, err = env.Service.ListMessages(t.Context(), r.owner, room.ID, chat.MessageQuery{AfterChangeSeq: &after, Limit: 2})
-	// change_seq 1 と 2 は、同じメッセージの後の変更（3 と 4）で上書きされているので、残っているのは 3, 4, 5, 6, 7。
+	// change_seq base+1 と base+2 は、同じメッセージの後の変更（base+3 と base+4）で上書きされているので、
+	// 残っているのは base（作成のログ）と base+3 以降。
 	var got []int64
 	for _, m := range page.Messages {
 		got = append(got, m.ChangeSeq)
 	}
-	if err != nil || !equalSeqs(got, 3, 4) || !page.HasMore {
-		t.Errorf("changes after 0 with limit 2 = %v (has_more %v), %v; want [3 4] and more", got, page.HasMore, err)
+	if err != nil || !equalSeqs(got, base, base+3) || !page.HasMore {
+		t.Errorf("changes after 0 with limit 2 = %v (has_more %v), %v; want [%d %d] and more", got, page.HasMore, err, base, base+3)
 	}
 
 	// カーソルは 1 つしか指定できない。負の値は範囲外。
@@ -247,6 +250,8 @@ func TestEditAndReplyConcurrentNoDeadlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := send(t, env, r.member, room.ID, "返信先")
+	// ルームの作成と参加のログ（ADR 0033）も change_seq を消費しているので、ここからの増分で見る。
+	base := roomLastChangeSeq(t, env, room.ID)
 
 	const n = 40
 	var wg sync.WaitGroup
@@ -267,7 +272,7 @@ func TestEditAndReplyConcurrentNoDeadlock(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if got, want := roomLastChangeSeq(t, env, room.ID), int64(1+n); got != want {
+	if got, want := roomLastChangeSeq(t, env, room.ID), base+n; got != want {
 		t.Errorf("last_change_seq = %d, want %d", got, want)
 	}
 }

@@ -75,7 +75,7 @@ Go 製のリアルタイムチャットアプリ。Slack / Discord 型の「ワ�
 
 詳細は `docs/erd.mermaid` と `docs/adr/` を参照。
 
-- **階層**: `workspaces` → `rooms`（kind: `public` / `private` / `dm`）→ `messages`。
+- **階層**: `workspaces` → `rooms`（kind: `public` / `private` / `dm`）→ `messages`（`kind`: 人の発言 `user` と、参加や名前の変更のログ `system`。ADR 0033）。
   コード上は `room` と呼び、UI の表示だけ「チャンネル」にする（Redis Pub/Sub のチャンネルや Go の channel と紛らわしくなるのを避けるため）。
 - **ロール**: ワークスペース単位で `owner > admin > member`。ルーム単位のロールは持たない。
   - `canManage(actor, target)`: actor のロールが target より上
@@ -86,7 +86,8 @@ Go 製のリアルタイムチャットアプリ。Slack / Discord 型の「ワ�
 - **閲覧権限**: public ルームは、ワークスペースのメンバーなら参加していなくても読める。投稿するには参加が必要。
   private / dm ルームはメンバーだけが読める。参加前の履歴も読める。
 - **DM**: ワークスペース内に閉じる。同じ 2 人の DM は `dm_key` の UNIQUE 制約で 1 つに限る。メンバーは追加できない。
-- **未読数**: `rooms.last_message_seq - room_members.last_read_seq`。自分が送信したら自分の `last_read_seq` も進める。
+- **未読数**: `rooms.last_user_seq - room_members.last_read_user_seq`（人の発言だけを数えた番号。ADR 0033）。
+  自分が送信したら自分の既読位置も進める。参加や名前の変更のシステムメッセージは seq を消費するが、この番号は進めないので未読にならない。
   削除済みメッセージも数に含まれるが、O(1) で求めるための許容した近似とする。
 - **冪等性**: `UNIQUE(room_id, sender_id, client_msg_id)`。重複した送信には既存のメッセージを 200 で返す。
 - **スコープ外**: ブロック機能、グループ DM、ルーム単位のロール、カスタムロール。

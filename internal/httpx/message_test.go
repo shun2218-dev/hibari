@@ -70,7 +70,8 @@ func TestMessageFlow(t *testing.T) {
 	r = c.as(alice, http.MethodPost, messages, map[string]string{"client_msg_id": clientMsgID, "body": "こんにちは"})
 	expectStatus(t, r, http.StatusCreated)
 	first := decode[messageBody](t, r)
-	if first.Seq != 1 || first.Body != "こんにちは" || first.ClientMsgID != clientMsgID || first.Sender.ID != alice.id || first.RoomID != room.ID ||
+	// seq 1 はルームの作成のログ、2 は alice の参加のログ（ADR 0033）。人の発言はその次から。
+	if first.Seq != 3 || first.Body != "こんにちは" || first.ClientMsgID != clientMsgID || first.Sender.ID != alice.id || first.RoomID != room.ID ||
 		!strings.Contains(string(r.body), `"reply_to":null`) || !strings.Contains(string(r.body), `"deleted_at":null`) {
 		t.Fatalf("sent message = %s", r.body)
 	}
@@ -89,7 +90,8 @@ func TestMessageFlow(t *testing.T) {
 	r = c.as(bob, http.MethodPost, messages, map[string]string{"client_msg_id": ulid.Make().String(), "body": "返信です", "reply_to_id": first.ID})
 	expectStatus(t, r, http.StatusCreated)
 	reply := decode[messageBody](t, r)
-	if reply.Seq != 2 || reply.ReplyTo == nil || reply.ReplyTo.ID != first.ID || reply.ReplyTo.Body != "こんにちは" {
+	// 間に bob の参加のログ（seq 4）が入る。
+	if reply.Seq != 5 || reply.ReplyTo == nil || reply.ReplyTo.ID != first.ID || reply.ReplyTo.Body != "こんにちは" {
 		t.Errorf("reply = %s", r.body)
 	}
 	r = c.as(owner, http.MethodPost, "/api/v1/rooms/"+other.ID+"/messages", map[string]string{"client_msg_id": ulid.Make().String(), "body": "別室"})
@@ -108,11 +110,16 @@ func TestMessageFlow(t *testing.T) {
 		t.Errorf("errors = %+v, want client_msg_id and body", p.Errors)
 	}
 
+	var latestSeq int64
 	for i := range 3 {
-		expectStatus(t, c.as(alice, http.MethodPost, messages, map[string]string{"client_msg_id": ulid.Make().String(), "body": "続き " + strconv.Itoa(i)}), http.StatusCreated)
+		r = c.as(alice, http.MethodPost, messages, map[string]string{"client_msg_id": ulid.Make().String(), "body": "続き " + strconv.Itoa(i)})
+		expectStatus(t, r, http.StatusCreated)
+		latestSeq = decode[messageBody](t, r).Seq
 	}
 
 	// 履歴: 最新から、before_seq で古い方へ、after_seq で差分を取る。messages は常に昇順。
+	// このルームの seq の並びは、1=作成のログ、2=alice の参加のログ、3=first、4=bob の参加のログ、
+	// 5=reply、6〜8=続き 0〜2（システムメッセージも seq を消費する。ADR 0033）。
 	seqs := func(b messagesBody) string {
 		s := make([]string, len(b.Messages))
 		for i, m := range b.Messages {
@@ -125,12 +132,12 @@ func TestMessageFlow(t *testing.T) {
 		wantSeqs string
 		wantMore bool
 	}{
-		{"?limit=2", "4,5", true},
+		{"?limit=2", "7,8", true},
 		{"?before_seq=4&limit=2", "2,3", true},
 		{"?before_seq=2", "1", false},
 		{"?after_seq=2&limit=2", "3,4", true},
-		{"?after_seq=4", "5", false},
-		{"?after_seq=5", "", false},
+		{"?after_seq=5&limit=3", "6,7,8", false},
+		{"?after_seq=8", "", false},
 	} {
 		r = c.as(bob, http.MethodGet, messages+tt.query, nil)
 		expectStatus(t, r, http.StatusOK)
@@ -138,7 +145,7 @@ func TestMessageFlow(t *testing.T) {
 			t.Errorf("%s: seqs %s (has_more %v), want %s (has_more %v)", tt.query, seqs(got), got.HasMore, tt.wantSeqs, tt.wantMore)
 		}
 	}
-	if r = c.as(bob, http.MethodGet, messages+"?after_seq=5", nil); !strings.Contains(string(r.body), `"messages":[]`) {
+	if r = c.as(bob, http.MethodGet, messages+"?after_seq="+strconv.FormatInt(latestSeq, 10), nil); !strings.Contains(string(r.body), `"messages":[]`) {
 		t.Errorf("empty page = %s, want an empty array", r.body)
 	}
 	for _, q := range []string{"?before_seq=abc", "?after_seq=1.5", "?limit=0", "?after_change_seq=x"} {
@@ -147,10 +154,11 @@ func TestMessageFlow(t *testing.T) {
 	expectProblem(t, c.as(bob, http.MethodGet, messages+"?before_seq=3&after_seq=1", nil), http.StatusUnprocessableEntity, "validation-error")
 	expectProblem(t, c.as(bob, http.MethodGet, messages+"?after_seq=3&after_change_seq=1", nil), http.StatusUnprocessableEntity, "validation-error")
 	// 差分取得（ADR 0014）: change_seq の順に返し、ルームの last_change_seq を付ける。
-	r = c.as(bob, http.MethodGet, messages+"?after_change_seq=3", nil)
+	// ここまで編集も削除もしていないので、change_seq は seq と同じ値になっている。
+	r = c.as(bob, http.MethodGet, messages+"?after_change_seq=5", nil)
 	expectStatus(t, r, http.StatusOK)
-	if got := decode[messagesBody](t, r); seqs(got) != "4,5" || got.HasMore || got.LastChangeSeq != 5 || got.Messages[0].ChangeSeq != 4 {
-		t.Errorf("after_change_seq=3: %s", r.body)
+	if got := decode[messagesBody](t, r); seqs(got) != "6,7,8" || got.HasMore || got.LastChangeSeq != 8 || got.Messages[0].ChangeSeq != 6 {
+		t.Errorf("after_change_seq=5: %s", r.body)
 	}
 	expectProblem(t, c.as(bob, http.MethodGet, "/api/v1/rooms/"+ulid.Make().String()+"/messages", nil), http.StatusNotFound, "not-found")
 
@@ -169,17 +177,20 @@ func TestMessageFlow(t *testing.T) {
 	expectStatus(t, c.as(owner, http.MethodDelete, msgPath, nil), http.StatusNoContent)
 	expectStatus(t, c.as(alice, http.MethodDelete, msgPath, nil), http.StatusNoContent)
 	expectProblem(t, c.as(alice, http.MethodPatch, msgPath, map[string]string{"body": "復活"}), http.StatusConflict, "message-deleted")
-	r = c.as(bob, http.MethodGet, messages+"?limit=5", nil)
+	// 間にシステムメッセージが挟まるので、見たい 1 件ずつを after_seq で名指しして取る。
+	r = c.as(bob, http.MethodGet, messages+"?after_seq="+strconv.FormatInt(first.Seq-1, 10)+"&limit=1", nil)
 	expectStatus(t, r, http.StatusOK)
-	history := decode[messagesBody](t, r)
-	if m := history.Messages[0]; m.ID != first.ID || m.Body != "" || m.DeletedAt == nil {
+	if m := decode[messagesBody](t, r).Messages[0]; m.ID != first.ID || m.Body != "" || m.DeletedAt == nil {
 		t.Errorf("tombstone = %+v", m)
 	}
-	if m := history.Messages[1]; m.ReplyTo == nil || !m.ReplyTo.Deleted || m.ReplyTo.Body != "" {
+	r = c.as(bob, http.MethodGet, messages+"?after_seq="+strconv.FormatInt(reply.Seq-1, 10)+"&limit=1", nil)
+	expectStatus(t, r, http.StatusOK)
+	if m := decode[messagesBody](t, r).Messages[0]; m.ID != reply.ID || m.ReplyTo == nil || !m.ReplyTo.Deleted || m.ReplyTo.Body != "" {
 		t.Errorf("reply to deleted = %+v", m.ReplyTo)
 	}
 
-	// 既読と未読数。bob は seq 2 まで送信済み（= 既読）で、alice が 3〜5 を送った。
+	// 既読と未読数。bob は返信（seq 5）まで送信済み（= 既読）で、alice が 3 件送った。
+	// 未読は人の発言だけを数える（ADR 0033）ので、間のログは数に入らない。
 	r = c.as(bob, http.MethodGet, "/api/v1/workspaces/"+ws.ID+"/rooms", nil)
 	expectStatus(t, r, http.StatusOK)
 	var sidebar roomWithReadBody
@@ -190,7 +201,7 @@ func TestMessageFlow(t *testing.T) {
 			sidebar = rm
 		}
 	}
-	if sidebar.LastReadSeq == nil || *sidebar.LastReadSeq != 2 || sidebar.UnreadCount != 3 || sidebar.LastMessage == nil || sidebar.LastMessage.Body != "続き 2" {
+	if sidebar.LastReadSeq == nil || *sidebar.LastReadSeq != reply.Seq || sidebar.UnreadCount != 3 || sidebar.LastMessage == nil || sidebar.LastMessage.Body != "続き 2" {
 		t.Errorf("sidebar room = %+v", sidebar)
 	}
 	readPath := "/api/v1/rooms/" + room.ID + "/read"
@@ -199,13 +210,13 @@ func TestMessageFlow(t *testing.T) {
 	if got := decode[struct {
 		LastReadSeq int64 `json:"last_read_seq"`
 		UnreadCount int64 `json:"unread_count"`
-	}](t, r); got.LastReadSeq != 5 || got.UnreadCount != 0 {
+	}](t, r); got.LastReadSeq != latestSeq || got.UnreadCount != 0 {
 		t.Errorf("read state = %s", r.body)
 	}
 	expectProblem(t, c.as(bob, http.MethodPost, readPath, map[string]string{}), http.StatusUnprocessableEntity, "validation-error")
 	r = c.as(owner, http.MethodGet, "/api/v1/rooms/"+other.ID, nil)
 	expectStatus(t, r, http.StatusOK)
-	if got := decode[roomWithReadBody](t, r); got.LastReadSeq == nil || *got.LastReadSeq != 1 || got.UnreadCount != 0 || got.LastMessage == nil {
+	if got := decode[roomWithReadBody](t, r); got.LastReadSeq == nil || *got.LastReadSeq != foreign.Seq || got.UnreadCount != 0 || got.LastMessage == nil {
 		t.Errorf("owner's room = %s", r.body)
 	}
 }

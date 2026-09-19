@@ -25,17 +25,39 @@ type messageResponse struct {
 	RoomID string `json:"room_id"`
 	Seq    int64  `json:"seq"`
 	// ChangeSeq は同期のカーソル（ADR 0014）。表示の並びには seq を使う。
-	ChangeSeq int64               `json:"change_seq"`
-	Sender    userProfileResponse `json:"sender"`
+	ChangeSeq int64 `json:"change_seq"`
+	// UserSeq は人の発言だけを数えた番号。未読数の計算に使う（ADR 0033）。
+	UserSeq int64               `json:"user_seq"`
+	Sender  userProfileResponse `json:"sender"`
 	// ClientMsgID は、クライアントが楽観的に表示したメッセージと、REST / WebSocket で届いたメッセージを突き合わせるために返す（ADR 0004）。
-	ClientMsgID string                `json:"client_msg_id"`
-	Body        string                `json:"body"`
-	ReplyTo     *replyPreviewResponse `json:"reply_to"`
+	ClientMsgID string `json:"client_msg_id"`
+	// Kind は user（人の発言）か system（参加や名前の変更のログ。ADR 0033）。
+	Kind chat.MessageKind `json:"kind"`
+	// System は kind が system のときだけ入る。文言はクライアントが作る。
+	System *systemEventResponse `json:"system,omitzero"`
+	Body   string               `json:"body"`
+
+	ReplyTo *replyPreviewResponse `json:"reply_to"`
 	// Attachments は削除済みのメッセージでは空配列。GET URL は含めない（ADR 0013）。
 	Attachments []messageAttachmentResponse `json:"attachments"`
 	CreatedAt   time.Time                   `json:"created_at"`
 	EditedAt    *time.Time                  `json:"edited_at"`
 	DeletedAt   *time.Time                  `json:"deleted_at"`
+}
+
+// systemEventResponse はシステムメッセージの中身（ADR 0033）。主語は sender。
+type systemEventResponse struct {
+	Type chat.SystemEventType `json:"type"`
+	// OldName と NewName は room_renamed だけで入る。
+	OldName string `json:"old_name,omitzero"`
+	NewName string `json:"new_name,omitzero"`
+}
+
+func newSystemEventResponse(e *chat.SystemEvent) *systemEventResponse {
+	if e == nil {
+		return nil
+	}
+	return &systemEventResponse{Type: e.Type, OldName: e.OldName, NewName: e.NewName}
 }
 
 func newMessageResponse(m chat.Message) messageResponse {
@@ -44,8 +66,11 @@ func newMessageResponse(m chat.Message) messageResponse {
 		RoomID:      m.RoomID.String(),
 		Seq:         m.Seq,
 		ChangeSeq:   m.ChangeSeq,
+		UserSeq:     m.UserSeq,
 		Sender:      newUserProfileResponse(m.Sender),
 		ClientMsgID: m.ClientMsgID.String(),
+		Kind:        m.Kind,
+		System:      newSystemEventResponse(m.System),
 		Body:        m.Body,
 		Attachments: newMessageAttachmentsResponse(m.Attachments),
 		CreatedAt:   m.CreatedAt,
@@ -238,7 +263,9 @@ type markRoomReadRequest struct {
 
 type readStateResponse struct {
 	LastReadSeq int64 `json:"last_read_seq"`
-	UnreadCount int64 `json:"unread_count"`
+	// LastReadUserSeq は既読位置に対応する user_seq。クライアントが未読数を求め直すのに使う（ADR 0033）。
+	LastReadUserSeq int64 `json:"last_read_user_seq"`
+	UnreadCount     int64 `json:"unread_count"`
 }
 
 // markRoomRead は既読位置を進め、切り詰めた後の既読位置と未読数を返す。
@@ -263,5 +290,7 @@ func (h *chatHandlers) markRoomRead(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, readStateResponse{LastReadSeq: st.LastReadSeq, UnreadCount: st.UnreadCount})
+	writeJSON(w, http.StatusOK, readStateResponse{
+		LastReadSeq: st.LastReadSeq, LastReadUserSeq: st.LastReadUserSeq, UnreadCount: st.UnreadCount,
+	})
 }

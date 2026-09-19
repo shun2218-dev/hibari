@@ -33,13 +33,27 @@ func roomLastMessageSeq(t *testing.T, env *chattest.Env, roomID ulid.ULID) int64
 	return seq
 }
 
-func messageCount(t *testing.T, env *chattest.Env, roomID ulid.ULID) int {
+// userMessageCount は人の発言だけを数える。システムメッセージ（ADR 0033）も messages の行なので、
+// 「送信が何件増えたか」を見たいときは全行ではなくこちらを数える。
+func userMessageCount(t *testing.T, env *chattest.Env, roomID ulid.ULID) int {
 	t.Helper()
 	var n int
-	if err := env.Pool.QueryRow(t.Context(), `SELECT count(*) FROM messages WHERE room_id = $1`, roomID).Scan(&n); err != nil {
+	if err := env.Pool.QueryRow(t.Context(), `SELECT count(*) FROM messages WHERE room_id = $1 AND kind = 'user'`, roomID).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
+}
+
+// userMessagesOf は一覧から人の発言だけを取り出す。参加や作成のログ（ADR 0033）が混ざる一覧で、
+// 元々の検査の対象だけを見るために使う。
+func userMessagesOf(msgs []chat.Message) []chat.Message {
+	out := make([]chat.Message, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Kind == chat.MessageKindUser {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func seqsOf(msgs []chat.Message) []int64 {
@@ -71,6 +85,9 @@ func TestSendMessage(t *testing.T) {
 	if _, err := env.Service.JoinRoom(t.Context(), r.admin, public.ID); err != nil {
 		t.Fatal(err)
 	}
+	// ルームの作成と参加のログ（ADR 0033）が seq を消費しているので、以降は base からの相対で見る。
+	base := roomLastMessageSeq(t, env, public.ID)
+	adminRead := lastReadSeq(t, env, public.ID, r.admin)
 
 	env.Clock.Advance(time.Minute)
 	clientMsgID := env.IDs.New()
@@ -78,17 +95,17 @@ func TestSendMessage(t *testing.T) {
 	if err != nil || !created {
 		t.Fatalf("SendMessage() = created %v, error %v", created, err)
 	}
-	if msg.Seq != 1 || msg.RoomID != public.ID || msg.Body != "  字下げを保つ\n2 行目" || msg.ClientMsgID != clientMsgID ||
-		msg.Sender.ID != r.member || msg.Sender.DisplayName == "" || msg.ReplyTo != nil ||
+	if msg.Seq != base+1 || msg.RoomID != public.ID || msg.Body != "  字下げを保つ\n2 行目" || msg.ClientMsgID != clientMsgID ||
+		msg.Sender.ID != r.member || msg.Sender.DisplayName == "" || msg.ReplyTo != nil || msg.Kind != chat.MessageKindUser ||
 		!msg.CreatedAt.Equal(env.Clock.Now()) || msg.EditedAt != nil || msg.DeletedAt != nil {
 		t.Errorf("message = %+v", msg)
 	}
 	// 送信者の既読位置は自分のメッセージまで進み、他のメンバーには未読になる。
-	if got := lastReadSeq(t, env, public.ID, r.member); got != 1 {
-		t.Errorf("sender's last_read_seq = %d, want 1", got)
+	if got := lastReadSeq(t, env, public.ID, r.member); got != msg.Seq {
+		t.Errorf("sender's last_read_seq = %d, want %d", got, msg.Seq)
 	}
-	if got := lastReadSeq(t, env, public.ID, r.admin); got != 0 {
-		t.Errorf("other member's last_read_seq = %d, want 0", got)
+	if got := lastReadSeq(t, env, public.ID, r.admin); got != adminRead {
+		t.Errorf("other member's last_read_seq = %d, want %d (unchanged)", got, adminRead)
 	}
 
 	for _, tt := range []struct {
@@ -156,6 +173,9 @@ func TestSendMessageIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// ルームの作成と参加のログ（ADR 0033）が seq を消費しているので、以降は base からの相対で見る。
+	base := roomLastMessageSeq(t, env, room.ID)
+
 	clientMsgID := env.IDs.New()
 	first, created, err := env.Service.SendMessage(t.Context(), r.member, room.ID, chat.SendMessageInput{ClientMsgID: clientMsgID, Body: "1 回目"})
 	if err != nil || !created {
@@ -163,20 +183,20 @@ func TestSendMessageIdempotent(t *testing.T) {
 	}
 	// 本文が違っても比べずに既存を返す。
 	again, created, err := env.Service.SendMessage(t.Context(), r.member, room.ID, chat.SendMessageInput{ClientMsgID: clientMsgID, Body: "2 回目"})
-	if err != nil || created || again.ID != first.ID || again.Seq != 1 || again.Body != "1 回目" {
+	if err != nil || created || again.ID != first.ID || again.Seq != base+1 || again.Body != "1 回目" {
 		t.Fatalf("retry = %+v, created %v, error %v; want the first message", again, created, err)
 	}
-	if n := messageCount(t, env, room.ID); n != 1 || roomLastMessageSeq(t, env, room.ID) != 1 {
-		t.Fatalf("messages = %d, last_message_seq = %d; want 1, 1", n, roomLastMessageSeq(t, env, room.ID))
+	if n := userMessageCount(t, env, room.ID); n != 1 || roomLastMessageSeq(t, env, room.ID) != base+1 {
+		t.Fatalf("user messages = %d, last_message_seq = %d; want 1, %d", n, roomLastMessageSeq(t, env, room.ID), base+1)
 	}
 	// 他人が同じ client_msg_id を使っても、他人のメッセージは引き出せず、別のメッセージになる。
 	other, created, err := env.Service.SendMessage(t.Context(), r.member2, room.ID, chat.SendMessageInput{ClientMsgID: clientMsgID, Body: "別人"})
-	if err != nil || !created || other.ID == first.ID || other.Seq != 2 {
+	if err != nil || !created || other.ID == first.ID || other.Seq != base+2 {
 		t.Errorf("same client_msg_id by another sender = %+v, created %v, error %v", other, created, err)
 	}
 	// 次の送信は欠番なく続く。
-	if next := send(t, env, r.member, room.ID, "次"); next.Seq != 3 {
-		t.Errorf("next seq = %d, want 3", next.Seq)
+	if next := send(t, env, r.member, room.ID, "次"); next.Seq != base+3 {
+		t.Errorf("next seq = %d, want %d", next.Seq, base+3)
 	}
 }
 
@@ -186,6 +206,8 @@ func TestSendMessageIdempotentConcurrent(t *testing.T) {
 	owner := env.CreateUser(t)
 	ws := env.CreateWorkspace(t, owner)
 	room := createRoom(t, env, owner, ws.ID, "public", "public")
+	// ルームの作成のログ（ADR 0033）が seq を 1 つ使っている。
+	base := roomLastMessageSeq(t, env, room.ID)
 
 	const n = 50
 	var (
@@ -215,9 +237,9 @@ func TestSendMessageIdempotentConcurrent(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	if len(ids) != 1 || created != 1 || messageCount(t, env, room.ID) != 1 || roomLastMessageSeq(t, env, room.ID) != 1 {
-		t.Errorf("distinct ids = %d, created = %d, messages = %d, last_message_seq = %d; want 1, 1, 1, 1",
-			len(ids), created, messageCount(t, env, room.ID), roomLastMessageSeq(t, env, room.ID))
+	if len(ids) != 1 || created != 1 || userMessageCount(t, env, room.ID) != 1 || roomLastMessageSeq(t, env, room.ID) != base+1 {
+		t.Errorf("distinct ids = %d, created = %d, user messages = %d, last_message_seq = %d; want 1, 1, 1, %d",
+			len(ids), created, userMessageCount(t, env, room.ID), roomLastMessageSeq(t, env, room.ID), base+1)
 	}
 }
 
@@ -282,6 +304,8 @@ func TestSendMessageConcurrentSeq(t *testing.T) {
 	close(start)
 	wg.Wait()
 
+	// 欠番の検査は全行で行う。システムメッセージ（ルームの作成・参加のログ。ADR 0033）も seq を消費するので、
+	// 送信の件数と突き合わせるのは人の発言だけ。
 	rows, err := env.Pool.Query(t.Context(), `SELECT seq FROM messages WHERE room_id = $1 ORDER BY seq`, room.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -301,8 +325,9 @@ func TestSendMessageConcurrentSeq(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if int(want) != created || roomLastMessageSeq(t, env, room.ID) != want {
-		t.Errorf("messages = %d, created = %d, last_message_seq = %d; want all equal", want, created, roomLastMessageSeq(t, env, room.ID))
+	if roomLastMessageSeq(t, env, room.ID) != want || userMessageCount(t, env, room.ID) != created {
+		t.Errorf("messages = %d, user messages = %d, created = %d, last_message_seq = %d; want the last seq to match the row count and the sends",
+			want, userMessageCount(t, env, room.ID), created, roomLastMessageSeq(t, env, room.ID))
 	}
 }
 
@@ -326,12 +351,14 @@ func TestSendMessageReply(t *testing.T) {
 	}
 
 	// 別のルームのメッセージや存在しないメッセージへの返信は、DB の複合 FK で拒否され、seq も消費しない（ロードマップ Phase 3b の DoD）。
+	// ルームの作成と参加のログ（ADR 0033）も seq を使っているので、拒否の前後で動かないことだけを見る。
+	before := roomLastMessageSeq(t, env, room.ID)
 	for name, replyTo := range map[string]ulid.ULID{"another room": foreign.ID, "unknown": env.IDs.New()} {
 		t.Run(name, func(t *testing.T) {
 			_, _, err := env.Service.SendMessage(t.Context(), r.member2, room.ID, chat.SendMessageInput{ClientMsgID: env.IDs.New(), Body: "x", ReplyToID: &replyTo})
 			expectValidation(t, err, "reply_to_id", chat.ReasonInvalidValue)
-			if roomLastMessageSeq(t, env, room.ID) != 2 {
-				t.Errorf("last_message_seq = %d, want 2", roomLastMessageSeq(t, env, room.ID))
+			if roomLastMessageSeq(t, env, room.ID) != before {
+				t.Errorf("last_message_seq = %d, want %d", roomLastMessageSeq(t, env, room.ID), before)
 			}
 		})
 	}
@@ -351,6 +378,8 @@ func TestListMessages(t *testing.T) {
 	r := setupRoles(t, env)
 	public := createRoom(t, env, r.member, r.ws.ID, "public", "public")
 	private := createRoom(t, env, r.member, r.ws.ID, "private", "private")
+	// base はルームの作成のログ（ADR 0033）の seq。一覧にはそれも含まれるので、人の発言は base+1 から並ぶ。
+	base := roomLastMessageSeq(t, env, public.ID)
 	for i := range 7 {
 		env.Clock.Advance(time.Second)
 		send(t, env, r.member, public.ID, strings.Repeat("x", i+1))
@@ -364,15 +393,15 @@ func TestListMessages(t *testing.T) {
 		wantSeqs []int64
 		wantMore bool
 	}{
-		{"latest", chat.MessageQuery{Limit: 3}, []int64{5, 6, 7}, true},
-		{"latest all", chat.MessageQuery{}, []int64{1, 2, 3, 4, 5, 6, 7}, false},
-		{"before", chat.MessageQuery{BeforeSeq: seq(5), Limit: 3}, []int64{2, 3, 4}, true},
-		{"before exactly the rest", chat.MessageQuery{BeforeSeq: seq(4), Limit: 3}, []int64{1, 2, 3}, false},
-		{"before the first", chat.MessageQuery{BeforeSeq: seq(1)}, []int64{}, false},
-		{"before beyond the latest", chat.MessageQuery{BeforeSeq: seq(100), Limit: 2}, []int64{6, 7}, true},
-		{"after zero", chat.MessageQuery{AfterSeq: seq(0), Limit: 3}, []int64{1, 2, 3}, true},
-		{"after exactly the rest", chat.MessageQuery{AfterSeq: seq(4), Limit: 3}, []int64{5, 6, 7}, false},
-		{"after the latest", chat.MessageQuery{AfterSeq: seq(7)}, []int64{}, false},
+		{"latest", chat.MessageQuery{Limit: 3}, []int64{base + 5, base + 6, base + 7}, true},
+		{"latest all", chat.MessageQuery{}, []int64{base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7}, false},
+		{"before", chat.MessageQuery{BeforeSeq: seq(base + 5), Limit: 3}, []int64{base + 2, base + 3, base + 4}, true},
+		{"before exactly the rest", chat.MessageQuery{BeforeSeq: seq(base + 3), Limit: 3}, []int64{base, base + 1, base + 2}, false},
+		{"before the first", chat.MessageQuery{BeforeSeq: seq(base)}, []int64{}, false},
+		{"before beyond the latest", chat.MessageQuery{BeforeSeq: seq(100), Limit: 2}, []int64{base + 6, base + 7}, true},
+		{"after zero", chat.MessageQuery{AfterSeq: seq(0), Limit: 3}, []int64{base, base + 1, base + 2}, true},
+		{"after exactly the rest", chat.MessageQuery{AfterSeq: seq(base + 4), Limit: 3}, []int64{base + 5, base + 6, base + 7}, false},
+		{"after the latest", chat.MessageQuery{AfterSeq: seq(base + 7)}, []int64{}, false},
 		{"after beyond the latest", chat.MessageQuery{AfterSeq: seq(100)}, []int64{}, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -386,7 +415,7 @@ func TestListMessages(t *testing.T) {
 		})
 	}
 
-	page, err := env.Service.ListMessages(t.Context(), r.member2, public.ID, chat.MessageQuery{AfterSeq: seq(1), Limit: 1})
+	page, err := env.Service.ListMessages(t.Context(), r.member2, public.ID, chat.MessageQuery{AfterSeq: seq(base + 1), Limit: 1})
 	if err != nil || len(page.Messages) != 1 {
 		t.Fatalf("page = %+v, %v", page, err)
 	}
@@ -422,15 +451,18 @@ func TestListMessagesLimit(t *testing.T) {
 	owner := env.CreateUser(t)
 	ws := env.CreateWorkspace(t, owner)
 	room := createRoom(t, env, owner, ws.ID, "public", "public")
+	// ルームの作成のログ（ADR 0033）がすでに seq を使っているので、その続きから入れる。
+	base := roomLastMessageSeq(t, env, room.ID)
 	// 送信のユースケースを 120 回通すと遅いので、seq の不変条件を満たす行を SQL で直接入れる。
 	_, err := env.Pool.Exec(t.Context(), `
 		WITH s AS (SELECT generate_series(1, 120) AS seq)
-		INSERT INTO messages (id, room_id, seq, change_seq, sender_id, client_msg_id, body, created_at)
-		SELECT gen_random_uuid(), $1, s.seq, s.seq, $2, gen_random_uuid(), 'bulk', $3 FROM s`, room.ID, owner, env.Clock.Now())
+		INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, created_at)
+		SELECT gen_random_uuid(), $1, $4 + s.seq, $4 + s.seq, s.seq, $2, gen_random_uuid(), 'bulk', $3 FROM s`,
+		room.ID, owner, env.Clock.Now(), base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	setLastMessageSeq(t, env, room.ID, 120)
+	setLastMessageSeq(t, env, room.ID, base+120)
 
 	for _, tt := range []struct {
 		limit int
@@ -458,6 +490,8 @@ func TestListMessagesAfterSeqSync(t *testing.T) {
 		}
 	}
 	reader := users[0]
+	// ルームの作成と参加のログ（ADR 0033）が seq を消費しているので、以降は base からの相対で見る。
+	base := roomLastMessageSeq(t, env, room.ID)
 
 	// 接続中に受け取った分。
 	for range 3 {
@@ -516,7 +550,7 @@ func TestListMessagesAfterSeqSync(t *testing.T) {
 			break
 		}
 	}
-	if want := int64(3 + writers*perWriter); lastSeq != want {
+	if want := base + int64(3+writers*perWriter); lastSeq != want {
 		t.Errorf("last received seq = %d, want %d", lastSeq, want)
 	}
 }
@@ -673,11 +707,13 @@ func TestMarkRoomReadAndUnread(t *testing.T) {
 	if _, err := env.Service.JoinRoom(t.Context(), r.member2, room.ID); err != nil {
 		t.Fatal(err)
 	}
-	var last chat.Message
+	var sent []chat.Message
 	for range 5 {
-		last = send(t, env, r.member, room.ID, "未読")
+		sent = append(sent, send(t, env, r.member, room.ID, "未読"))
 	}
-	send(t, env, r.member2, room.ID, "自分の送信") // seq 6。送信者の既読位置は 6 まで進む
+	last := sent[len(sent)-1]
+	// 人の発言は 6 件目。送信者（member2）の既読位置はここまで進む。
+	sent = append(sent, send(t, env, r.member2, room.ID, "自分の送信"))
 	if err := env.Service.DeleteMessage(t.Context(), r.member, room.ID, last.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -692,31 +728,37 @@ func TestMarkRoomReadAndUnread(t *testing.T) {
 		byID[room.ID] = room
 	}
 	got := byID[room.ID]
-	if got.LastReadSeq == nil || *got.LastReadSeq != 5 || got.UnreadCount != 1 || got.LastMessage == nil ||
+	if got.LastReadSeq == nil || *got.LastReadSeq != last.Seq || got.UnreadCount != 1 || got.LastMessage == nil ||
 		got.LastMessage.Sender.ID != r.member2 || got.LastMessage.Body != "自分の送信" || got.LastMessage.Deleted {
 		t.Errorf("room in list = %+v (last message %+v)", got, got.LastMessage)
 	}
-	if p := byID[private.ID]; p.LastMessage != nil || p.UnreadCount != 0 || p.LastReadSeq == nil || *p.LastReadSeq != 0 {
-		t.Errorf("empty private room in list = %+v", p)
+	// 人の発言のない private ルームにも作成のログだけは残る（ADR 0033）。ログは未読に数えない。
+	if p := byID[private.ID]; p.LastMessage == nil || p.LastMessage.Kind != chat.MessageKindSystem ||
+		p.LastMessage.System == nil || p.LastMessage.System.Type != chat.SystemRoomCreated ||
+		p.UnreadCount != 0 || p.LastReadSeq == nil || *p.LastReadSeq != 0 {
+		t.Errorf("private room with only the creation log = %+v (last message %+v)", p, p.LastMessage)
 	}
 
 	if _, err := env.Service.MarkRoomRead(t.Context(), r.owner, room.ID, 1); !errors.Is(err, chat.ErrForbidden) {
 		t.Errorf("public non-member MarkRoomRead() error = %v, want ErrForbidden", err)
 	}
-	// admin は既読位置 6（参加時点の最新）で参加する。0 に戻してから順に進める。
+	// admin は参加時点の最新を既読にして参加する。0 に戻してから順に進める。
 	if _, err := env.Service.JoinRoom(t.Context(), r.admin, room.ID); err != nil {
 		t.Fatal(err)
 	}
 	setLastReadSeq(t, env, room.ID, r.admin, 0)
+	// 未読数は人の発言だけで数える（ADR 0033）ので、期待値は送ったメッセージの seq で組み立てる。
+	// 最新はルームの最終 seq（admin の参加のログ）。
+	latest := roomLastMessageSeq(t, env, room.ID)
 	for _, tt := range []struct {
 		name       string
 		seq        int64
 		wantRead   int64
 		wantUnread int64
 	}{
-		{"advance", 3, 3, 3},
-		{"never goes backwards", 1, 3, 3},
-		{"clamped to the latest", 100, 6, 0},
+		{"advance", sent[2].Seq, sent[2].Seq, 3},
+		{"never goes backwards", sent[0].Seq, sent[2].Seq, 3},
+		{"clamped to the latest", 100, latest, 0},
 	} {
 		st, err := env.Service.MarkRoomRead(t.Context(), r.admin, room.ID, tt.seq)
 		if err != nil || st.LastReadSeq != tt.wantRead || st.UnreadCount != tt.wantUnread {
@@ -743,9 +785,16 @@ func TestMarkRoomReadAndUnread(t *testing.T) {
 	}
 }
 
+// setLastReadSeq は既読位置を直接書き換える。未読数の元になる last_read_user_seq（ADR 0033）も、
+// その seq 以下の最大の user_seq に揃える（AdvanceLastReadSeq と同じ考え方）。
 func setLastReadSeq(t *testing.T, env *chattest.Env, roomID, userID ulid.ULID, seq int64) {
 	t.Helper()
-	if _, err := env.Pool.Exec(t.Context(), `UPDATE room_members SET last_read_seq = $3 WHERE room_id = $1 AND user_id = $2`, roomID, userID, seq); err != nil {
+	_, err := env.Pool.Exec(t.Context(), `
+		UPDATE room_members
+		   SET last_read_seq = $3,
+		       last_read_user_seq = COALESCE((SELECT max(m.user_seq) FROM messages m WHERE m.room_id = $1 AND m.seq <= $3), 0)
+		 WHERE room_id = $1 AND user_id = $2`, roomID, userID, seq)
+	if err != nil {
 		t.Fatal(err)
 	}
 }
