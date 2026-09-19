@@ -628,6 +628,7 @@ describe("WorkspaceScreen", () => {
     it("shows a notice when kicked from the workspace and moves on", async () => {
       rememberLocation("ws-1", "r-design");
       const { sockets } = await connected();
+      expect(screen.getByRole("button", { name: "チャンネルの設定" })).toBeInTheDocument();
 
       sockets.last().receive({
         type: "workspace.member_removed",
@@ -636,6 +637,8 @@ describe("WorkspaceScreen", () => {
 
       expect(await screen.findByRole("heading", { name: "ワークスペースから削除されました" })).toBeInTheDocument();
       expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
+      // ヘッダーは名前とメンバーだけを残し、もう開けない設定の入口は出さない（chat/removed-from-workspace.png）
+      expect(screen.queryByRole("button", { name: "チャンネルの設定" })).not.toBeInTheDocument();
       expect(nav.router.replace).not.toHaveBeenCalledWith("/");
 
       await userEvent.click(screen.getByRole("button", { name: "別のワークスペースに移動" }));
