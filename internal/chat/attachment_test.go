@@ -571,6 +571,9 @@ func TestCleanupAttachments(t *testing.T) {
 		keys[id] = objectKey(t, env, id)
 	}
 
+	// 件数は「少なくとも自分の 3 件」までしか確かめない。テスト用 DB はパッケージをまたいで共有していて、
+	// 削除されたメッセージの添付（status = deleted）は古さに関係なく対象になるので、ほかのパッケージのテスト
+	// （internal/httpx のメッセージの削除など）が同時に作った行もこの実行で消えうる。
 	n, err := env.Service.CleanupAttachments(t.Context())
 	if err != nil {
 		t.Fatalf("CleanupAttachments() error = %v", err)
@@ -599,9 +602,15 @@ func TestCleanupAttachments(t *testing.T) {
 		})
 	}
 
-	// 対象がなければ何もしない。
-	if n, err := env.Service.CleanupAttachments(t.Context()); err != nil || n != 0 {
-		t.Errorf("second CleanupAttachments() = %d, %v; want 0, nil", n, err)
+	// もう一度実行しても、残すべき添付は残る（自分の対象はもうない）。
+	// 件数が 0 であることは確かめない。上と同じ理由で、ほかのテストが同時に作った行を消すことがある。
+	if _, err := env.Service.CleanupAttachments(t.Context()); err != nil {
+		t.Fatalf("second CleanupAttachments() error = %v", err)
+	}
+	for _, id := range []ulid.ULID{oldAttached.ID, freshUploaded.ID} {
+		if attachmentStatus(t, env, id) == "" || !objectExists(t, env, keys[id]) {
+			t.Errorf("attachment %s was deleted by the second run", id)
+		}
 	}
 }
 
