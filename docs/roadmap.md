@@ -507,9 +507,11 @@ Phase 6.16  検索
 - チャンネル側の見え方 → 「スレッドに返信しました」のラベルだけ。親の抜粋は出さない
 
 **DoD**
-- [ ] 「チャンネルにも投稿する」を付けた返信が、スレッドとチャンネルの両方に出る。付けない返信はチャンネルに出ない
-- [ ] 切断中に流された返信も、再接続の同期でチャンネルとスレッドの両方に揃う
-- [ ] 未読とサイドバーの並びが、ADR で決めたとおりに動く
+- [x] 「チャンネルにも投稿する」を付けた返信が、スレッドとチャンネルの両方に出る。付けない返信はチャンネルに出ない（`internal/chat/thread_broadcast_test.go` の `TestSendThreadReplyAlsoInChannel`、`internal/httpx/thread_test.go` の `TestThreadReplyAlsoInChannel`（返信でなければ 422）、`views.test.ts` の「チャンネルにも投稿する（ADR 0039）」、`workspace-screen.test.tsx` の同名の節）
+- [x] 切断中に流された返信も、再接続の同期でチャンネルとスレッドの両方に揃う（差分（`after_change_seq`）は返信もそのまま返すので、振り分けはクライアント側。`store.test.ts` の `restores a broadcast reply sent while disconnected in both the channel and the thread` で、同期した 1 行がチャンネルとスレッドの両方に入ることを確かめている。チャンネルの `after_seq` の取得に載ることは `TestThreadReplyAlsoInChannel`）
+- [x] 未読とサイドバーの並びが、ADR で決めたとおりに動く（`TestSendThreadReplyAlsoInChannel`（`last_user_seq` と送信者の既読位置）、`TestBroadcastReplyStaysWhenRootIsDeleted`（親を消しても残り、サイドバーの 1 行になる）、`messages.test.ts` / `store.test.ts`）
+
+実装は ADR 0039 の追記のとおり（設計 → デザイン → DB と API → Web）。オーナーによる実物での確認は未実施。
 
 ---
 
