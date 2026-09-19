@@ -1076,6 +1076,17 @@ export function createChatStore(
     },
 
     /**
+     * 自分でルームから退出する。失敗したら ApiError を投げる。
+     * 後始末は room.member_removed（reason: left）と同じにする。イベントは別の端末にも届くので同じ結果になるが、
+     * WS が切れていると届かないので、この端末では応答を待ってすぐに行う（ワークスペースの退出と同じ）。
+     */
+    async leaveRoom(roomId: string): Promise<void> {
+      await api.removeRoomMember(roomId, userId);
+      const workspaceId = state.rooms[roomId]?.workspace_id;
+      if (workspaceId) removedFromRoom(workspaceId, roomId, "left");
+    },
+
+    /**
      * ルームを開く。ルームの情報（メンバー数・既読位置）を取り直し、表示したいちばん新しいメッセージまで読んだことにする。
      *
      * 前に開いて手元に残っているなら、差分（after_change_seq）だけを取る。なければ最新のページを取る（ADR 0026）。

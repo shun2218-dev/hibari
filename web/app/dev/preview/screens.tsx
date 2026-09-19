@@ -39,6 +39,7 @@ import {
   AddRoomMemberDialog,
   CreateRoomDialog,
   DeleteMessageDialog,
+  LeaveRoomDialog,
   RoomSettingsDialog,
   StartDmDialog,
 } from "@/components/chat/room-dialogs";
@@ -403,6 +404,22 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/room-header-settings": roomHeaderFrame,
   "chat/member-add-dialog": () =>
     chat({ dialog: <AddRoomMemberDialog open candidates={dmCandidates} selectedId={users.ryo.id} /> }),
+  // 退出はロールに関係なくできるので、読み取り専用（member）の設定で見せる
+  "chat/room-settings-leave": () =>
+    chat({
+      dialog: (
+        <RoomSettingsDialog
+          open
+          kind="private"
+          name="リリース準備"
+          canEdit={false}
+          members={roomSettingsMembers}
+          onLeave={noop}
+        />
+      ),
+    }),
+  "chat/dialog-leave-room": () => chat({ dialog: <LeaveRoomDialog open kind="public" name="デザインレビュー" /> }),
+  "chat/dialog-leave-room-private": () => chat({ dialog: <LeaveRoomDialog open kind="private" name="リリース準備" /> }),
   "chat/system-messages": () => chat({ systemMessages: true }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),
   "chat/mobile-room": () => chat(),

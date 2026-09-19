@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { CreateRoomDialog, DeleteMessageDialog, RoomSettingsDialog, StartDmDialog } from "./room-dialogs";
+import { CreateRoomDialog, DeleteMessageDialog, LeaveRoomDialog, RoomSettingsDialog, StartDmDialog } from "./room-dialogs";
 
 describe("CreateRoomDialog", () => {
   it("says that the visibility cannot be changed later", () => {
@@ -93,6 +93,41 @@ describe("RoomSettingsDialog", () => {
     expect(screen.queryByRole("button", { name: "メンバーを追加" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "外す" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "閉じる" })).toBeInTheDocument();
+  });
+
+  it("offers leaving to anyone who has joined, even without permission to edit", async () => {
+    const onLeave = vi.fn();
+    render(<RoomSettingsDialog open kind="private" name="リリース準備" members={members} canEdit={false} onLeave={onLeave} />);
+
+    expect(screen.getByText(/退出すると読めなくなります/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "退出する" }));
+    expect(onLeave).toHaveBeenCalledOnce();
+  });
+
+  it("does not offer leaving when onLeave is not given (a public room I have not joined)", () => {
+    render(<RoomSettingsDialog open kind="public" name="雑談" members={[]} canEdit />);
+
+    expect(screen.queryByRole("button", { name: "退出する" })).not.toBeInTheDocument();
+  });
+});
+
+describe("LeaveRoomDialog", () => {
+  it.each([
+    { kind: "public" as const, consequence: "退出したあとも読めます" },
+    { kind: "private" as const, consequence: "退出すると読めなくなります" },
+  ])("names the room and says whether it stays readable ($kind)", async ({ kind, consequence }) => {
+    const onConfirm = vi.fn();
+    render(<LeaveRoomDialog open kind={kind} name="リリース準備" onConfirm={onConfirm} />);
+
+    expect(screen.getByText(new RegExp(`リリース準備 から退出します。.*${consequence}`))).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "退出する" }));
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  it("cannot be confirmed twice while leaving", () => {
+    render(<LeaveRoomDialog open kind="public" name="雑談" pending />);
+
+    expect(screen.getByRole("button", { name: "退出する" })).toBeDisabled();
   });
 });
 

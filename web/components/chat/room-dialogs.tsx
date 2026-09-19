@@ -259,6 +259,9 @@ export type RoomMemberRowView = UserRef & { isSelf: boolean; canRemove: boolean 
 /**
  * ルームの名前とメンバーを変える。変更できるのは、そのルームを読める admin 以上（ADR 0011）。
  * public は参加が自由なのでメンバーの一覧は出さない。DM は設定を変えられないので、この画面自体を開かない。
+ *
+ * 退出はロールに関係なく参加している人なら誰でもできるので、`onLeave` を渡したときだけ下に出す
+ * （参加していない public を開いたときは渡さない）。形はワークスペースの退出（`workspace/settings-as-member.png`）に合わせる。
  */
 export function RoomSettingsDialog({
   open,
@@ -269,6 +272,7 @@ export function RoomSettingsDialog({
   onNameChange,
   onAddMember,
   onRemoveMember,
+  onLeave,
   onCancel,
   onSave,
   saving,
@@ -281,6 +285,7 @@ export function RoomSettingsDialog({
   onNameChange?: (name: string) => void;
   onAddMember?: () => void;
   onRemoveMember?: (userId: string) => void;
+  onLeave?: () => void;
   onCancel?: () => void;
   onSave?: () => void;
   saving?: boolean;
@@ -349,7 +354,60 @@ export function RoomSettingsDialog({
           <p className="text-2xs text-text-muted">非公開チャンネルのメンバーだけが読めます。参加前の履歴も読めます。</p>
         </div>
       )}
+
+      {onLeave && (
+        <section className="flex flex-col gap-1 border-t border-border pt-4">
+          <h3 className="text-sm font-bold text-text">チャンネルを退出</h3>
+          <p className="pb-3 text-sm text-text-secondary">{leaveConsequence(kind)}</p>
+          <Button variant="danger-outline" onClick={onLeave} className="self-start">
+            退出する
+          </Button>
+        </section>
+      )}
     </Dialog>
+  );
+}
+
+/** 退出したあとに読めるかどうかは公開範囲で変わる（ADR 0011）。設定の画面と確認で同じ文言にする。 */
+function leaveConsequence(kind: CreatableRoomKind): string {
+  return kind === "public"
+    ? "公開チャンネルなので、退出したあとも読めます。投稿するには、もう一度参加してください。"
+    : "非公開チャンネルなので、退出すると読めなくなります。戻るには、メンバーに追加してもらう必要があります。";
+}
+
+/** 退出の確認。どのチャンネルから抜けるのかを名前で示す。 */
+export function LeaveRoomDialog({
+  open,
+  kind,
+  name,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  kind: CreatableRoomKind;
+  name: string;
+  pending?: boolean;
+  onCancel?: () => void;
+  onConfirm?: () => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onClose={onCancel}
+      title="チャンネルを退出しますか？"
+      description={`${name} から退出します。${leaveConsequence(kind)}`}
+      actions={
+        <>
+          <Button variant="secondary" onClick={onCancel}>
+            キャンセル
+          </Button>
+          <Button variant="danger" onClick={onConfirm} disabled={pending}>
+            退出する
+          </Button>
+        </>
+      }
+    />
   );
 }
 
