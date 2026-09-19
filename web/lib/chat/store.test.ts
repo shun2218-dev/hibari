@@ -1040,6 +1040,55 @@ describe("createChatStore rooms", () => {
     await store.removeRoomMember("r1", miyuki.id);
     expect(store.getSnapshot().roomMembers.r1?.members.map((m) => m.user.id)).toEqual([naoki.id]);
   });
+
+  describe("leaveRoom", () => {
+    function setupLeave(kind: "public" | "private") {
+      return setup({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "雑談", { kind }), room("r2", "設計")] }),
+        [`DELETE /api/v1/rooms/r1/members/${naoki.id}`]: () => new Response(null, { status: 204 }),
+      });
+    }
+
+    it("keeps a public room readable as a room I have not joined, without waiting for the event", async () => {
+      const { store, requests } = setupLeave("public");
+      await store.loadRooms("ws-1");
+
+      await store.leaveRoom("r1");
+
+      expect(requests()).toContain(`DELETE /api/v1/rooms/r1/members/${naoki.id}`);
+      const state = store.getSnapshot();
+      expect(state.rooms.r1).toMatchObject({ is_member: false, unread_count: 0 });
+      expect(state.roomLists["ws-1"]?.ids).toContain("r1");
+      expect(state.removedRooms.r1).toBeUndefined();
+    });
+
+    it("marks an open private room as left (not removed) so the screen goes back instead of showing a notice", async () => {
+      const { store } = setupLeave("private");
+      await store.loadRooms("ws-1");
+      store.setFocus({ roomId: "r1", caughtUp: true });
+
+      await store.leaveRoom("r1");
+      // 同じ端末にもイベントが届く。2 回目の後始末で状態が変わらない
+      store.applyEvent({ type: "room.member_removed", data: { workspace_id: "ws-1", room_id: "r1", reason: "left" } });
+
+      expect(store.getSnapshot().removedRooms.r1).toBe("left");
+      store.setFocus(null);
+      expect(store.getSnapshot().roomLists["ws-1"]?.ids).toEqual(["r2"]);
+    });
+
+    it("leaves the room as it was when the server refuses", async () => {
+      const { store } = setup({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "雑談", { kind: "private" })] }),
+        [`DELETE /api/v1/rooms/r1/members/${naoki.id}`]: () => problem(403, "forbidden"),
+      });
+      await store.loadRooms("ws-1");
+
+      await expect(store.leaveRoom("r1")).rejects.toThrow();
+
+      expect(store.getSnapshot().removedRooms.r1).toBeUndefined();
+      expect(store.getSnapshot().roomLists["ws-1"]?.ids).toEqual(["r1"]);
+    });
+  });
 });
 
 describe("createChatStore workspace admin", () => {
