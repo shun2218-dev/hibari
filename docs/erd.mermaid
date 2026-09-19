@@ -172,10 +172,10 @@ erDiagram
   }
 
   message_mentions {
-    uuid message_id FK "(room_id, これ) → messages の複合 FK。本文が変われば作り直す（ADR 0040）"
+    uuid message_id FK "(room_id, これ) → messages の複合 FK。本文が変われば作り直す（ADR 0041）"
     uuid user_id FK "宛先。null は「ルームの全員」（@channel）。(room_id, これ) → room_members の複合 FK"
     uuid room_id FK "ルームを抜けたら CASCADE で消える"
-    text kind "user / channel / here。数え方には使わない（ADR 0040）"
+    text kind "user / channel / here。数え方には使わない（ADR 0041）"
     timestamptz created_at
   }
 
