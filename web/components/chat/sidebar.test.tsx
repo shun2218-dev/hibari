@@ -9,10 +9,10 @@ const workspace = { id: "w1", name: "hibari 開発" };
 const currentUser = { id: "u1", name: "あなた" };
 
 const rooms: RoomSummaryView[] = [
-  { id: "r1", kind: "public", name: "デザインレビュー", lastMessage: "中村 涼: 確認します", timeLabel: "11:05", unreadCount: 0 },
-  { id: "r2", kind: "private", name: "リリース準備", timeLabel: "昨日", unreadCount: 3 },
-  { id: "d1", kind: "dm", name: "佐藤 直樹", peer: { id: "u2", online: true }, unreadCount: 0 },
-  { id: "d2", kind: "dm", name: "中村 涼", peer: { id: "u3", online: false }, unreadCount: 1 },
+  { id: "r1", kind: "public", name: "デザインレビュー", lastMessage: "中村 涼: 確認します", timeLabel: "11:05", unreadCount: 0, mentionCount: 0 },
+  { id: "r2", kind: "private", name: "リリース準備", timeLabel: "昨日", unreadCount: 3, mentionCount: 0 },
+  { id: "d1", kind: "dm", name: "佐藤 直樹", peer: { id: "u2", online: true }, unreadCount: 0, mentionCount: 0 },
+  { id: "d2", kind: "dm", name: "中村 涼", peer: { id: "u3", online: false }, unreadCount: 1, mentionCount: 0 },
 ];
 
 function renderSidebar(props: Partial<Parameters<typeof Sidebar>[0]> = {}) {
@@ -75,6 +75,26 @@ describe("Sidebar", () => {
     expect(screen.getByLabelText("未読 3 件")).toBeInTheDocument();
     expect(screen.getByLabelText("未読 1 件")).toBeInTheDocument();
     expect(screen.queryByLabelText("未読 0 件")).not.toBeInTheDocument();
+  });
+
+  it("メンションがあるとバッジが @N になる（ADR 0042）", () => {
+    renderSidebar({
+      rooms: [
+        { id: "r1", kind: "public", name: "デザインレビュー", timeLabel: "11:05", unreadCount: 7, mentionCount: 2 },
+        { id: "r2", kind: "private", name: "リリース準備", timeLabel: "昨日", unreadCount: 3, mentionCount: 0 },
+        { id: "r3", kind: "public", name: "雑談", timeLabel: "昨日", unreadCount: 0, mentionCount: 0 },
+      ],
+    });
+
+    // メンションのある行は @2。バッジは 1 つなので、未読の 7 は出ない
+    expect(screen.getByLabelText("メンション 2 件")).toHaveTextContent("@2");
+    expect(screen.queryByLabelText("未読 7 件")).not.toBeInTheDocument();
+
+    // メンションのない未読は今までどおり数字だけ
+    expect(screen.getByLabelText("未読 3 件")).toHaveTextContent("3");
+
+    // 未読もメンションもなければバッジは出ない
+    expect(within(screen.getByRole("link", { name: /雑談/ })).queryByLabelText(/未読|メンション/)).not.toBeInTheDocument();
   });
 
   it("shows presence only for online DM peers", () => {

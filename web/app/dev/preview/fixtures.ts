@@ -16,6 +16,7 @@ import type {
 import type { TransferCandidate } from "@/components/workspace/member-dialogs";
 import type { InviteRowView, MemberRowView, WorkspaceRole } from "@/components/workspace/types";
 import type { DeviceView } from "@/components/settings/settings-sections";
+import type { MentionCandidate } from "@/lib/chat/mentions";
 
 /**
  * /dev/preview のモックのアバター画像（public/dev/）。
@@ -54,6 +55,7 @@ export const rooms: RoomSummaryView[] = [
     lastMessage: "中村 涼: presence 表示を確認しておきます",
     timeLabel: "11:05",
     unreadCount: 0,
+    mentionCount: 0,
   },
   {
     id: "room-chat",
@@ -62,6 +64,7 @@ export const rooms: RoomSummaryView[] = [
     lastMessage: "高橋 みゆき: 近所に新しい喫茶店ができたらしい",
     timeLabel: "10:22",
     unreadCount: 3,
+    mentionCount: 0,
   },
   {
     id: "room-release",
@@ -70,6 +73,7 @@ export const rooms: RoomSummaryView[] = [
     lastMessage: "佐藤 直樹: 金曜の夕方で確定しました",
     timeLabel: "昨日",
     unreadCount: 0,
+    mentionCount: 0,
   },
   {
     id: "dm-naoki",
@@ -79,6 +83,7 @@ export const rooms: RoomSummaryView[] = [
     lastMessage: "縦バーの件、あとで画面で見ます",
     timeLabel: "10:14",
     unreadCount: 0,
+    mentionCount: 0,
   },
   {
     id: "dm-miyuki",
@@ -88,6 +93,7 @@ export const rooms: RoomSummaryView[] = [
     lastMessage: "モックのリンク送りますね",
     timeLabel: "09:58",
     unreadCount: 1,
+    mentionCount: 0,
   },
   {
     id: "dm-ryo",
@@ -97,6 +103,7 @@ export const rooms: RoomSummaryView[] = [
     lastMessage: "ありがとうございます、確認しました",
     timeLabel: "昨日",
     unreadCount: 0,
+    mentionCount: 0,
   },
 ];
 
@@ -266,7 +273,7 @@ export const threadList: ThreadListItemView[] = [
     root: { sender: you, timeLabel: "09:41", body: "おはようございます。昨日の続きで、未読まわりを琥珀に寄せてみました。", deleted: false },
     replyCount: 3,
     lastReplyLabel: "10:18",
-    unreadCount: 1,
+    unreadCount: 1
   },
   {
     key: "m-chat-0930",
@@ -274,7 +281,7 @@ export const threadList: ThreadListItemView[] = [
     root: { sender: miyuki, timeLabel: "09:30", body: "近所に新しい喫茶店ができたらしい。今度の金曜、誰か一緒に行きませんか？", deleted: false },
     replyCount: 5,
     lastReplyLabel: "10:02",
-    unreadCount: 2,
+    unreadCount: 2
   },
   {
     key: "m-release-1740",
@@ -282,7 +289,7 @@ export const threadList: ThreadListItemView[] = [
     root: { sender: naoki, timeLabel: "昨日", body: "", deleted: true },
     replyCount: 2,
     lastReplyLabel: "昨日",
-    unreadCount: 0,
+    unreadCount: 0
   },
   {
     key: "m-dm-1612",
@@ -290,12 +297,52 @@ export const threadList: ThreadListItemView[] = [
     root: { sender: you, timeLabel: "9月11日", body: "縦バーの件、画面の録画を撮っておきました。あとで見てもらえますか？", deleted: false },
     replyCount: 1,
     lastReplyLabel: "9月11日",
-    unreadCount: 0,
+    unreadCount: 0
   },
 ];
 
 /** サイドバーの「スレッド」のバッジ（未読のあるスレッドの数）。 */
 export const unreadThreadCount = threadList.filter((thread) => thread.unreadCount > 0).length;
+
+/**
+ * メンションのあるタイムライン（ADR 0042）。本文は保存される形のトークンで持ち、表示のときに名前へ置き換える。
+ * 自分宛て（`mentionsMe`）の行だけ琥珀にする。
+ */
+export const timelineWithMentions: TimelineItem[] = [
+  { type: "date", key: "d-0913m", label: "2026年9月13日" },
+  message("m-m01", miyuki, "10:02", `<@${users.you.id}> サイドバーのバッジの色、決まりました？`, {
+    mentionNames: { [users.you.id]: users.you.name },
+    mentionsMe: true,
+  }),
+  message("m-m02", you, "10:04", `<@${users.miyuki.id}> 琥珀で確定です。緑は押せるものだけに残します。`, {
+    mentionNames: { [users.miyuki.id]: users.miyuki.name },
+  }),
+  message("m-m03", ryo, "10:20", "<!here> いまから 10 分だけ、配色の確認に付き合える人いますか？", { mentionsMe: true }),
+  message("m-m04", naoki, "10:26", `<!channel> 金曜のリリース、<@${users.you.id}> が手順をまとめてくれています。`, {
+    mentionNames: { [users.you.id]: users.you.name },
+    mentionsMe: true,
+  }),
+  message("m-m05", naoki, "10:27", "確認だけお願いします。", { grouped: true }),
+];
+
+/** メンションの未読があるサイドバー（バッジが `@N` になる。ADR 0042）。 */
+export const roomsWithMentions: RoomSummaryView[] = rooms.map((room) =>
+  room.id === "room-chat"
+    ? { ...room, unreadCount: 7, mentionCount: 2 }
+    : room.id === "room-release"
+      ? { ...room, unreadCount: 3, mentionCount: 0 }
+      : room,
+);
+
+/** `@` の補完に出す候補（ルームのメンバーと全員宛て。ADR 0042）。 */
+export const mentionCandidates: MentionCandidate[] = [
+  { kind: "user", id: users.naoki.id, handle: users.naoki.handle, name: users.naoki.name },
+  { kind: "user", id: users.miyuki.id, handle: users.miyuki.handle, name: users.miyuki.name },
+  { kind: "user", id: users.ryo.id, handle: users.ryo.handle, name: users.ryo.name },
+  { kind: "user", id: users.misaki.id, handle: users.misaki.handle, name: users.misaki.name },
+  { kind: "channel", description: "このチャンネルの全員" },
+  { kind: "here", description: "いまオンラインの人" },
+];
 
 export const roomMembers: RoomMemberView[] = [
   { ...naoki, online: true, roleLabel: "オーナー" },

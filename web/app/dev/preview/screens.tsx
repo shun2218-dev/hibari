@@ -90,7 +90,10 @@ import {
   timeline,
   timelineWithAvatars,
   timelineWithSystemMessages,
+  mentionCandidates,
+  roomsWithMentions,
   timelineWithBroadcast,
+  timelineWithMentions,
   timelineWithThreads,
   unreadThreadCount,
   transferCandidates,
@@ -146,6 +149,10 @@ type ChatOptions = {
   broadcastInChannel?: boolean;
   /** ルームの代わりに、参加しているスレッドの一覧を出す。 */
   threads?: "list" | "empty";
+  /** メンションのあるタイムラインとサイドバーにする（ADR 0042）。 */
+  mentions?: boolean;
+  /** 入力欄の `@` の補完を開いた状態で出す（`@` の後ろに打った文字。ADR 0042）。 */
+  mentionQuery?: string;
 };
 
 /** スレッドのパネルに出す親と返信。 */
@@ -191,6 +198,8 @@ function chat({
   thread,
   broadcastInChannel,
   threads,
+  mentions,
+  mentionQuery,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
   const roomRemoved = body === "removed-room";
@@ -203,7 +212,7 @@ function chat({
           <Sidebar
             workspace={workspaces.dev}
             currentUser={currentUser}
-            rooms={noRooms ? [] : roomRemoved ? rooms.filter((r) => r.id !== selectedRoom.id) : rooms}
+            rooms={noRooms ? [] : roomRemoved ? rooms.filter((r) => r.id !== selectedRoom.id) : mentions ? roomsWithMentions : rooms}
             selectedRoomId={roomRemoved || threads ? undefined : selectedRoom.id}
             threads={
               thread || threads
@@ -259,7 +268,9 @@ function chat({
             items={
               thread
                 ? threadTimeline(thread)
-                : broadcastInChannel
+                : mentions
+                  ? timelineWithMentions
+                  : broadcastInChannel
                   ? timelineWithBroadcast
                   : systemMessages
                   ? timelineWithSystemMessages
@@ -280,7 +291,14 @@ function chat({
         {roomRemoved && <RoomUnavailable />}
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
         {footer === "composer" && !threads && (
-          <Composer value="" canSend={false} typingNames={typingNames} attachments={attachments} />
+          <Composer
+            value={mentionQuery === undefined ? "" : `金曜の件、@${mentionQuery}`}
+            canSend={mentionQuery !== undefined}
+            typingNames={mentions ? [] : typingNames}
+            attachments={attachments}
+            mentionCandidates={mentionCandidates}
+            forceMentionQuery={mentionQuery}
+          />
         )}
         {footer === "join" && <JoinRoomBar />}
       </ChatLayout>
@@ -503,10 +521,16 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/thread-panel-empty": () => chat({ thread: "empty" }),
   "chat/thread-root-deleted": () => chat({ thread: "root-deleted" }),
   "chat/thread-broadcast": () => chat({ thread: "broadcast" }),
+  "chat/mentions": () => chat({ mentions: true }),
+  "chat/mentions-dark": () => chat({ mentions: true }),
+  "chat/mention-completion": () => chat({ mentions: true, mentionQuery: "" }),
+  "chat/mention-completion-typed": () => chat({ mentions: true, mentionQuery: "n" }),
   "chat/threads": () => chat({ threads: "list" }),
   "chat/threads-empty": () => chat({ threads: "empty" }),
   "chat/mobile-thread": () => chat({ thread: "replies" }),
   "chat/mobile-thread-broadcast": () => chat({ thread: "broadcast" }),
+  "chat/mobile-mentions": () => chat({ mentions: true }),
+  "chat/mobile-mention-completion": () => chat({ mentions: true, mentionQuery: "" }),
   "chat/mobile-room-broadcast": () => chat({ broadcastInChannel: true }),
   "chat/mobile-threads": () => chat({ threads: "list" }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),

@@ -225,7 +225,7 @@ function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string
           </span>
           <span className="flex items-center justify-between gap-2">
             <span className="truncate text-xs text-text-muted">{room.lastMessage}</span>
-            <UnreadBadge count={room.unreadCount} />
+            <UnreadBadge count={room.unreadCount} mentionCount={room.mentionCount} />
           </span>
         </span>
       </Link>
