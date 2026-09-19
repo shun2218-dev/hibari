@@ -1,8 +1,19 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { MentionCandidate } from "@/lib/chat/mentions";
+
 import { AttachmentChip, Composer, TypingIndicator } from "./composer";
+
+const ALICE = "01J8ZZZZZZZZZZZZZZZZZZZZZA";
+const candidates: MentionCandidate[] = [
+  { kind: "user", id: ALICE, handle: "alice", name: "田中 あおい" },
+  { kind: "user", id: "01J8ZZZZZZZZZZZZZZZZZZZZZB", handle: "bob", name: "佐藤 直樹" },
+  { kind: "channel", description: "このチャンネルの全員" },
+  { kind: "here", description: "いまオンラインの人" },
+];
 
 describe("Composer", () => {
   it("sends on Enter only when there is something to send", async () => {
@@ -90,6 +101,80 @@ describe("Composer", () => {
     render(<Composer value="" canSend={false} />);
 
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+});
+
+describe("Composer の @ 補完（ADR 0043）", () => {
+  /** 親が本文を持つので、テストの中でも同じように持ち回る。 */
+  function Harness({ onSend }: { onSend?: () => void } = {}) {
+    const [value, setValue] = useState("");
+    return <Composer value={value} onChange={setValue} canSend onSend={onSend} mentionCandidates={candidates} />;
+  }
+
+  it("@ を打つと候補が出て、選ぶとハンドルが入る", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await userEvent.type(input, "やあ @ali");
+
+    const list = screen.getByRole("list", { name: "メンションの候補" });
+    expect(within(list).getByText("田中 あおい")).toBeInTheDocument();
+    expect(within(list).queryByText("佐藤 直樹")).not.toBeInTheDocument();
+
+    await userEvent.click(within(list).getByText("田中 あおい"));
+    expect(input).toHaveValue("やあ @alice ");
+    expect(screen.queryByRole("list", { name: "メンションの候補" })).not.toBeInTheDocument();
+  });
+
+  it("↑↓ で選び、Enter で確定する（送信しない）", async () => {
+    const onSend = vi.fn();
+    render(<Harness onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await userEvent.type(input, "@");
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+
+    expect(input).toHaveValue("@bob ");
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("Escape で閉じると、次の Enter は送信になる", async () => {
+    const onSend = vi.fn();
+    render(<Harness onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await userEvent.type(input, "@ali");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("list", { name: "メンションの候補" })).not.toBeInTheDocument();
+
+    await userEvent.keyboard("{Enter}");
+    expect(onSend).toHaveBeenCalledOnce();
+  });
+
+  it("@channel と @here も候補に出る", async () => {
+    render(<Harness />);
+
+    await userEvent.type(screen.getByRole("textbox", { name: "メッセージ" }), "@ch");
+
+    const list = screen.getByRole("list", { name: "メンションの候補" });
+    expect(within(list).getByText("@channel")).toBeInTheDocument();
+    expect(within(list).queryByText("@here")).not.toBeInTheDocument();
+  });
+
+  it("誰にも当たらなければ閉じたままにする", async () => {
+    render(<Harness />);
+
+    await userEvent.type(screen.getByRole("textbox", { name: "メッセージ" }), "@zzz");
+
+    expect(screen.queryByRole("list", { name: "メンションの候補" })).not.toBeInTheDocument();
+  });
+
+  it("候補を渡さなければ補完は開かない", async () => {
+    render(<Composer value="@ali" canSend />);
+
+    await userEvent.click(screen.getByRole("textbox", { name: "メッセージ" }));
+
+    expect(screen.queryByRole("list", { name: "メンションの候補" })).not.toBeInTheDocument();
   });
 });
 

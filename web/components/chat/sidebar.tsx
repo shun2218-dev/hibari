@@ -220,12 +220,21 @@ function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string
         )}
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-base font-semibold text-text">{room.name}</span>
+            {/* 知らせの要らない未読は、バッジではなく名前の太字で示す（ADR 0043） */}
+            <span className={cx("truncate text-base text-text", room.unreadCount > 0 ? "font-bold" : "font-semibold")}>{room.name}</span>
             {room.timeLabel && <span className="shrink-0 font-mono text-2xs text-text-muted">{room.timeLabel}</span>}
           </span>
           <span className="flex items-center justify-between gap-2">
             <span className="truncate text-xs text-text-muted">{room.lastMessage}</span>
-            <UnreadBadge count={room.unreadCount} />
+            {/*
+              数字のバッジは知らせが要るものだけ（ADR 0043）。チャンネルは自分宛てのメンションの数、
+              DM は 1 通が知らせなので未読の数をそのまま出す。ただの未読のチャンネルには出さない。
+            */}
+            {room.kind === "dm" ? (
+              <UnreadBadge count={room.unreadCount} />
+            ) : (
+              <UnreadBadge count={room.mentionCount} mention />
+            )}
           </span>
         </span>
       </Link>

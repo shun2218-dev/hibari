@@ -1,9 +1,12 @@
 "use client";
 
-import { type KeyboardEvent, useRef } from "react";
+import { type KeyboardEvent, useRef, useState } from "react";
 
+import { Avatar } from "@/components/ui/avatar";
 import { Button, IconButton, TextButton } from "@/components/ui/button";
 import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon } from "@/components/ui/icons";
+import { applyCompletion, candidateKey, filterCandidates, findMentionQuery, type MentionCandidate } from "@/lib/chat/mentions";
+import { cx } from "@/lib/cx";
 
 import type { AttachmentDraftView } from "./types";
 
@@ -27,6 +30,13 @@ type ComposerProps = {
    * 文言はルームの種類で変わる（DM なら「DM にも投稿する」）ので、呼ぶ側が作る。
    */
   alsoInChannel?: { label: string; checked: boolean; onChange?: (checked: boolean) => void };
+  /**
+   * `@` の補完に出す候補（ADR 0043）。ルームのメンバーと `@channel` / `@here`。
+   * 渡さなければ補完は開かない。入力中の文字で絞るのはこの中でやる。
+   */
+  mentionCandidates?: readonly MentionCandidate[];
+  /** 補完を開いた状態で出す（/dev/preview で状態を再現するため）。 */
+  forceMentionQuery?: string;
 };
 
 export function Composer({
@@ -41,12 +51,68 @@ export function Composer({
   canSend,
   target = "room",
   alsoInChannel,
+  mentionCandidates,
+  forceMentionQuery,
 }: ComposerProps) {
   const fileInput = useRef<HTMLInputElement>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  // 補完の対象。null なら閉じている。start は `@` の位置、caret は確定のときに置き換える終わり
+  const [query, setQuery] = useState<MentionQuery | null>(
+    forceMentionQuery === undefined ? null : { start: 0, query: forceMentionQuery, caret: forceMentionQuery.length + 1 },
+  );
+  const [active, setActive] = useState(0);
+
+  const matches = query && mentionCandidates ? filterCandidates(mentionCandidates, query.query) : [];
+  const open = matches.length > 0;
+  // 候補が減って選択が範囲の外に出ることがあるので、使うときに丸める
+  const activeIndex = Math.min(active, matches.length - 1);
+
+  /** 入力とキャレットの移動のたびに、直前が `@…` かどうかを見直す。 */
+  function syncQuery(value: string, caret: number) {
+    const found = mentionCandidates ? findMentionQuery(value, caret) : null;
+    setQuery(found && { ...found, caret });
+    // 打ち直したら候補の中身が変わるので、選択は先頭に戻す
+    if (found?.query !== query?.query) setActive(0);
+  }
+
+  function choose(candidate: MentionCandidate) {
+    if (!query) return;
+    const next = applyCompletion(value, query.start, query.caret, candidate);
+    onChange?.(next.value);
+    setQuery(null);
+    // 値は親が持つので、キャレットは描き直しのあとに置き直す
+    requestAnimationFrame(() => {
+      textarea.current?.focus();
+      textarea.current?.setSelectionRange(next.caret, next.caret);
+    });
+  }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    // IME の変換を確定する Enter では送らない
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    // IME の変換中はどのキーも拾わない（変換を確定する Enter で送らないため）
+    if (e.nativeEvent.isComposing) return;
+    // 補完が開いている間は、Enter は確定に使う（送信しない）
+    if (open) {
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          setActive((i) => (i + 1) % matches.length);
+          return;
+        case "ArrowUp":
+          e.preventDefault();
+          setActive((i) => (i - 1 + matches.length) % matches.length);
+          return;
+        case "Enter":
+        case "Tab":
+          e.preventDefault();
+          choose(matches[activeIndex]);
+          return;
+        case "Escape":
+          e.preventDefault();
+          setQuery(null);
+          return;
+      }
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (canSend) onSend?.();
     }
@@ -68,9 +134,12 @@ export function Composer({
           ))}
         </ul>
       )}
-      <div
-        className="flex items-end gap-1 rounded-md border border-border bg-surface p-2 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-primary"
-      >
+      {/* 補完は入力欄の上に重ねるので、位置の基準になる箱で包む */}
+      <div className="relative">
+        {open && <MentionList candidates={matches} active={activeIndex} onChoose={choose} />}
+        <div
+          className="flex items-end gap-1 rounded-md border border-border bg-surface p-2 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-primary"
+        >
         <IconButton label="ファイルを添付" onClick={() => fileInput.current?.click()}>
           <PaperclipIcon className="size-4" />
         </IconButton>
@@ -88,10 +157,17 @@ export function Composer({
           }}
         />
         <textarea
+          ref={textarea}
           aria-label={target === "thread" ? "スレッドに返信" : "メッセージ"}
           rows={1}
           value={value}
-          onChange={(e) => onChange?.(e.target.value)}
+          onChange={(e) => {
+            onChange?.(e.target.value);
+            syncQuery(e.target.value, e.target.selectionStart);
+          }}
+          // クリックや矢印でキャレットだけ動いたときも開閉を見直す
+          onSelect={(e) => syncQuery(e.currentTarget.value, e.currentTarget.selectionStart)}
+          onBlur={() => setQuery(null)}
           onKeyDown={handleKeyDown}
           placeholder={target === "thread" ? "スレッドに返信" : "メッセージを入力"}
           className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1.5 py-1 text-lg leading-normal text-text focus-visible:outline-none"
@@ -99,6 +175,7 @@ export function Composer({
         <Button size="sm" onClick={onSend} disabled={!canSend}>
           送信
         </Button>
+        </div>
       </div>
       <div className="flex items-center justify-between gap-3 pt-1.5">
         {alsoInChannel && (
@@ -116,6 +193,62 @@ export function Composer({
         <p className="ml-auto text-2xs text-text-muted">Enter で送信 / Shift + Enter で改行</p>
       </div>
     </div>
+  );
+}
+
+/** 補完の対象。start は `@` の位置、query は `@` の後ろに打った文字、caret は確定のときに置き換える終わり。 */
+type MentionQuery = { start: number; query: string; caret: number };
+
+/**
+ * `@` の補完（ADR 0043）。入力欄の上に重ねて出す。
+ *
+ * キャレットの位置には付けない。textarea では文字の座標を測れないので、入力欄の左上に固定で出す。
+ * マウスで選ぶときに `onMouseDown` で確定するのは、textarea の blur で閉じてしまう前に拾うため。
+ */
+function MentionList({
+  candidates,
+  active,
+  onChoose,
+}: {
+  candidates: MentionCandidate[];
+  active: number;
+  onChoose: (candidate: MentionCandidate) => void;
+}) {
+  return (
+    <ul
+      aria-label="メンションの候補"
+      className="absolute bottom-full left-0 z-10 mb-1 max-h-64 w-72 overflow-y-auto rounded-md border border-border bg-surface py-1 shadow-lg"
+    >
+      {candidates.map((candidate, i) => (
+        <li key={candidateKey(candidate)}>
+          <button
+            type="button"
+            aria-current={i === active ? "true" : undefined}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onChoose(candidate);
+            }}
+            className={cx("flex w-full items-center gap-2 px-3 py-1.5 text-left", i === active && "bg-surface-muted")}
+          >
+            {candidate.kind === "user" ? (
+              <>
+                <Avatar id={candidate.id} name={candidate.name} imageUrl={candidate.avatarUrl} size="sm" />
+                <span className="truncate text-base font-semibold text-text">{candidate.name}</span>
+                <span className="truncate text-xs text-text-muted">@{candidate.handle}</span>
+              </>
+            ) : (
+              <>
+                <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-base font-semibold text-text-secondary">
+                  @
+                </span>
+                <span className="text-base font-semibold text-text">@{candidate.kind}</span>
+                <span className="truncate text-xs text-text-muted">{candidate.description}</span>
+              </>
+            )}
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

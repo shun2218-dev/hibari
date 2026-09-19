@@ -4,6 +4,7 @@ import { ChevronRightIcon, ClockIcon, FileIcon, MoreIcon, ReplyIcon, ThreadIcon 
 import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
 
+import { MessageBody } from "./message-body";
 import { MessageLinkCard } from "./message-link-card";
 import type { MessageAttachmentView, MessageView } from "./types";
 
@@ -47,6 +48,8 @@ type MessageItemProps = {
   onEdit?: () => void;
   onDelete?: () => void;
   editing?: MessageEditingView | null;
+  /** 本文のメンションのチップを押した（Phase 6.9 のプロフィールのカード。ADR 0043）。 */
+  onOpenProfile?: (userId: string) => void;
   /** ホバーしたときの見た目を固定で出す（/dev/preview で状態を再現するため）。 */
   forceHover?: boolean;
 };
@@ -69,16 +72,20 @@ export function MessageItem({
   onEdit,
   onDelete,
   editing = null,
+  onOpenProfile,
   forceHover,
 }: MessageItemProps) {
   const { sender, status, deleted } = message;
   // 削除済みには操作の対象がなく、送信失敗には専用の操作（再送・削除）があるので、ホバーの操作を出さない
   const hasMenu = canEdit || canDelete || copyLink !== undefined;
   const actionable = status !== "failed" && !deleted && editing === null && (canReply || hasMenu);
+  // 自分宛ては「いま起きていること」なので琥珀（ADR 0043）。既読になっても消さない。
+  // スレッドで開いている親は、どれを開いているかの方が先に要るので、そちらの色を優先する
+  const mentionsMe = Boolean(message.mentionsMe) && !deleted;
 
   return (
     <article
-      aria-label={`${sender.name} ${message.timeLabel}`}
+      aria-label={`${sender.name} ${message.timeLabel}${mentionsMe ? " あなた宛て" : ""}`}
       className={cx(
         "group relative flex gap-2.5 px-3 md:gap-3 md:px-4",
         message.grouped ? "py-1" : "pt-3 pb-1",
@@ -86,10 +93,13 @@ export function MessageItem({
           ? "bg-primary-subtle"
           : forceHover
             ? "bg-surface-muted"
-            : "hover:bg-surface-muted focus-within:bg-surface-muted",
+            : mentionsMe
+              ? "bg-attention-subtle hover:bg-surface-muted focus-within:bg-surface-muted"
+              : "hover:bg-surface-muted focus-within:bg-surface-muted",
       )}
     >
       {status === "failed" && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-danger" />}
+      {mentionsMe && status !== "failed" && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-attention" />}
 
       {message.grouped ? (
         <span aria-hidden className="w-8 shrink-0 md:w-10" />
@@ -128,7 +138,7 @@ export function MessageItem({
                 status === "pending" ? "text-text-muted" : "text-text",
               )}
             >
-              {message.body}
+              <MessageBody body={message.body} mentionNames={message.mentionNames} onOpenProfile={onOpenProfile} />
               {message.edited && <span className="ml-1.5 text-2xs text-text-muted">（編集済み）</span>}
             </p>
             {status === "pending" && (

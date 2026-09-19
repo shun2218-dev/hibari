@@ -23,6 +23,8 @@ export type RoomSummaryView = {
   lastMessage?: string;
   timeLabel?: string;
   unreadCount: number;
+  /** 自分宛ての未読のメンションの数（ADR 0041）。0 より大きいとバッジが `@N` になる（ADR 0043）。 */
+  mentionCount: number;
 };
 
 export type MessageAttachmentView =
@@ -59,6 +61,13 @@ export type MessageView = {
   linkCards?: MessageLinkCardView[];
   /** 直前のメッセージと同じ送信者なので、アバターと名前を省いて続けて表示する。 */
   grouped: boolean;
+  /**
+   * 本文に出てくるメンションの表示名（ADR 0043）。ID から引く。
+   * 本文は `<@ULID>` のまま持っているので、チップに置き換えるのにこの表を使う。引けない ID は文字列のまま出す。
+   */
+  mentionNames?: Readonly<Record<string, string>>;
+  /** 自分宛てのメンションがある（`@channel` / `@here` を含む）。行の背景を琥珀にする。 */
+  mentionsMe?: boolean;
 };
 
 /**

@@ -9,10 +9,10 @@ const workspace = { id: "w1", name: "hibari 開発" };
 const currentUser = { id: "u1", name: "あなた" };
 
 const rooms: RoomSummaryView[] = [
-  { id: "r1", kind: "public", name: "デザインレビュー", lastMessage: "中村 涼: 確認します", timeLabel: "11:05", unreadCount: 0 },
-  { id: "r2", kind: "private", name: "リリース準備", timeLabel: "昨日", unreadCount: 3 },
-  { id: "d1", kind: "dm", name: "佐藤 直樹", peer: { id: "u2", online: true }, unreadCount: 0 },
-  { id: "d2", kind: "dm", name: "中村 涼", peer: { id: "u3", online: false }, unreadCount: 1 },
+  { id: "r1", kind: "public", name: "デザインレビュー", lastMessage: "中村 涼: 確認します", timeLabel: "11:05", unreadCount: 0, mentionCount: 0 },
+  { id: "r2", kind: "private", name: "リリース準備", timeLabel: "昨日", unreadCount: 3, mentionCount: 0 },
+  { id: "d1", kind: "dm", name: "佐藤 直樹", peer: { id: "u2", online: true }, unreadCount: 0, mentionCount: 0 },
+  { id: "d2", kind: "dm", name: "中村 涼", peer: { id: "u3", online: false }, unreadCount: 1, mentionCount: 0 },
 ];
 
 function renderSidebar(props: Partial<Parameters<typeof Sidebar>[0]> = {}) {
@@ -72,9 +72,37 @@ describe("Sidebar", () => {
   it("shows unread counts only for rooms with unread messages", () => {
     renderSidebar();
 
-    expect(screen.getByLabelText("未読 3 件")).toBeInTheDocument();
+    // DM の未読は数字のバッジ、チャンネルの未読は名前の太字（ADR 0043）
     expect(screen.getByLabelText("未読 1 件")).toBeInTheDocument();
-    expect(screen.queryByLabelText("未読 0 件")).not.toBeInTheDocument();
+    expect(screen.getByText("リリース準備")).toHaveClass("font-bold");
+    expect(screen.queryByLabelText("未読 3 件")).not.toBeInTheDocument();
+    expect(screen.getByText("デザインレビュー")).not.toHaveClass("font-bold");
+  });
+
+  it("数字のバッジは知らせが要るものだけに出す（ADR 0043）", () => {
+    renderSidebar({
+      rooms: [
+        { id: "r1", kind: "public", name: "デザインレビュー", timeLabel: "11:05", unreadCount: 7, mentionCount: 2 },
+        { id: "r2", kind: "private", name: "リリース準備", timeLabel: "昨日", unreadCount: 3, mentionCount: 0 },
+        { id: "r3", kind: "public", name: "雑談", timeLabel: "昨日", unreadCount: 0, mentionCount: 0 },
+        { id: "d1", kind: "dm", name: "佐藤 直樹", peer: { id: "u2", online: true }, unreadCount: 2, mentionCount: 0 },
+      ],
+    });
+
+    // 自分宛てのあるチャンネルは @2。未読の 7 はバッジにしない（名前の太字で示す）
+    expect(screen.getByLabelText("メンション 2 件")).toHaveTextContent("@2");
+    expect(screen.getByText("デザインレビュー")).toHaveClass("font-bold");
+    expect(screen.queryByLabelText("未読 7 件")).not.toBeInTheDocument();
+
+    // 自分宛てのない未読のチャンネルは、太字だけでバッジは出さない
+    expect(screen.getByText("リリース準備")).toHaveClass("font-bold");
+    expect(within(screen.getByRole("link", { name: /リリース準備/ })).queryByLabelText(/未読|メンション/)).not.toBeInTheDocument();
+
+    // DM は 1 通が知らせなので、未読の数をそのまま出す
+    expect(screen.getByLabelText("未読 2 件")).toHaveTextContent("2");
+
+    // 何もなければ太字にもバッジにもしない
+    expect(screen.getByText("雑談")).not.toHaveClass("font-bold");
   });
 
   it("shows presence only for online DM peers", () => {

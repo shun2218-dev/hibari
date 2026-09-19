@@ -33,19 +33,24 @@ export function Badge({ tone = "neutral", children, className }: { tone?: BadgeT
 }
 
 /**
- * 未読数。「いま起きていること」なので琥珀にする（primary にしない。docs/ui/tokens.md）。
+ * 知らせが要るものの数。「いま起きていること」なので琥珀にする（primary にしない。docs/ui/tokens.md）。
  * 0 のときは何も出さない。
+ *
+ * 数字のバッジは「本人に知らせが要るもの」にだけ出す（ADR 0043。オーナーの判断。2026-09-19。Slack に合わせる）。
+ * チャンネルでは自分宛てのメンションがそれにあたり、`@3` と出す。DM は 1 通が知らせなので、数をそのまま出す。
+ * ただ読んでいないだけのチャンネルにはバッジを出さず、名前を太字にして示す（sidebar.tsx が出し分ける）。
  */
-export function UnreadBadge({ count, className }: { count: number; className?: string }) {
+export function UnreadBadge({ count, mention = false, className }: { count: number; mention?: boolean; className?: string }) {
   if (count <= 0) return null;
   return (
     <span
-      aria-label={`未読 ${count} 件`}
+      aria-label={mention ? `メンション ${count} 件` : `未読 ${count} 件`}
       className={cx(
         "inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-attention px-1.5 text-2xs leading-none font-semibold text-on-attention",
         className,
       )}
     >
+      {mention && "@"}
       {count > 99 ? "99+" : count}
     </span>
   );

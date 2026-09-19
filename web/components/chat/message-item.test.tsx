@@ -106,8 +106,37 @@ describe("MessageItem", () => {
     render(<MessageItem message={message({ status: "pending" })} />);
 
     expect(screen.getByRole("img", { name: "送信中" })).toBeInTheDocument();
-    expect(screen.getByText("賛成です。")).toHaveClass("text-text-muted");
+    // 本文はメンションのチップに分かれうるので、色は段落に付く（ADR 0043）
+    expect(screen.getByText("賛成です。").closest("p")).toHaveClass("text-text-muted");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("自分宛ての行は琥珀にする（ADR 0043）", () => {
+    const { rerender } = render(<MessageItem message={message({ mentionsMe: true })} />);
+
+    const article = screen.getByRole("article", { name: "佐藤 直樹 10:12 あなた宛て" });
+    expect(article).toHaveClass("bg-attention-subtle");
+
+    rerender(<MessageItem message={message()} />);
+    expect(screen.getByRole("article", { name: "佐藤 直樹 10:12" })).not.toHaveClass("bg-attention-subtle");
+  });
+
+  it("削除されたメッセージは自分宛てでも琥珀にしない", () => {
+    render(<MessageItem message={message({ mentionsMe: true, deleted: true })} />);
+
+    expect(screen.getByRole("article", { name: "佐藤 直樹 10:12" })).not.toHaveClass("bg-attention-subtle");
+  });
+
+  it("本文のメンションをチップにする", () => {
+    const alice = "01J8ZZZZZZZZZZZZZZZZZZZZZA";
+    render(
+      <MessageItem
+        message={message({ body: `<@${alice}> お願いします`, mentionNames: { [alice]: "田中 あおい" } })}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "@田中 あおい" })).toBeInTheDocument();
+    expect(screen.getByText("お願いします", { exact: false })).toBeInTheDocument();
   });
 
   it("offers retry and discard for a failed message", async () => {

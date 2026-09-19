@@ -115,6 +115,7 @@ export function toRoomSummaryView(
     lastMessage,
     timeLabel: room.last_message_at ? formatListTime(new Date(room.last_message_at), now, timeZone) : undefined,
     unreadCount: room.unread_count,
+    mentionCount: room.mention_count,
   };
 }
 
