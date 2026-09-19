@@ -541,9 +541,17 @@ describe("createChatStore realtime", () => {
       vi.useRealTimers();
     });
 
-    const typing = (user: typeof miyuki) => ({
+    const typing = (user: typeof miyuki, threadRootId: string | null = null) => ({
       type: "typing.started" as const,
-      data: { workspace_id: "ws-1", room_id: "r1", user },
+      data: { workspace_id: "ws-1", room_id: "r1", thread_root_id: threadRootId, user },
+    });
+
+    it("does not show typing in a thread as typing in the channel (ADR 0036)", () => {
+      const { store } = setup({});
+
+      store.applyEvent(typing(miyuki, "m-1"));
+
+      expect(store.getSnapshot().typing.r1).toBeUndefined();
     });
 
     it("shows who is typing for 6 seconds after the last notice", async () => {

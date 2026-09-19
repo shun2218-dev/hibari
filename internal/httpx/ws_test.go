@@ -438,6 +438,25 @@ func TestWSProtocol(t *testing.T) {
 		if got := eventsOfType(alice.sync(), "typing.started"); len(got) != 0 {
 			t.Errorf("alice received her own typing.started: %v", got)
 		}
+
+		// スレッドでの入力はチャンネルと別に間引き、thread_root_id を付けて届ける（ADR 0036）。
+		r := c.as(f.alice, http.MethodPost, "/api/v1/rooms/"+f.private.ID+"/messages", map[string]string{"client_msg_id": ulid.Make().String(), "body": "親"})
+		expectStatus(t, r, http.StatusCreated)
+		root := decode[messageBody](t, r)
+		bob.sync()
+		if ack, _ := alice.request(map[string]any{"type": "typing", "room_id": f.private.ID, "thread_root_id": root.ID}); ack.Error != "" {
+			t.Fatal(ack.Error)
+		}
+		got = eventsOfType(bob.sync(), "typing.started")
+		if len(got) != 1 || !strings.Contains(string(got[0].Data), `"thread_root_id":"`+root.ID+`"`) {
+			t.Fatalf("thread typing.started = %v", got)
+		}
+		if ack, _ := alice.request(map[string]any{"type": "typing", "room_id": f.private.ID, "thread_root_id": "nope"}); ack.Error != "invalid_message" {
+			t.Errorf("malformed thread_root_id = %q, want invalid_message", ack.Error)
+		}
+		if ack, _ := alice.request(map[string]any{"type": "typing", "room_id": f.private.ID, "thread_root_id": ulid.Make().String()}); ack.Error != "not_found" {
+			t.Errorf("unknown thread_root_id = %q, want not_found", ack.Error)
+		}
 	})
 
 	t.Run("binary frame closes the connection", func(t *testing.T) {

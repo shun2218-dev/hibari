@@ -28,33 +28,34 @@ func isThreadRoot(kind string, threadRootID *ulid.ULID) bool {
 }
 
 // sendThreadReply は SendMessage の中で、スレッドに返信する（手順 1・2 の判定と冪等性の確認は済んでいる）。
+// 返信のほかに、コミットの後に届けるイベント（親の返信数の message.updated と、新しく参加した人への thread.followed）を返す。
 //
 // ロックの順序は room_members（済み）→ 親のメッセージ → rooms → thread_members。
 // 編集・削除の「room_members → メッセージ → rooms」と同じ向きにそろえる。rooms を持ったまま親を待つと、親の編集とデッドロックする。
-func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, roomID, rootID ulid.ULID, in SendMessageInput) (Message, error) {
+func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, workspaceID, roomID, rootID ulid.ULID, in SendMessageInput) (Message, []Event, error) {
 	root, err := q.GetMessageForUpdate(ctx, store.GetMessageForUpdateParams{RoomID: roomID, ID: rootID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 別のルームのメッセージも、存在しない ID と同じく見つからない。
-		return Message{}, errInvalidThreadRoot()
+		return Message{}, nil, errInvalidThreadRoot()
 	}
 	if err != nil {
-		return Message{}, fmt.Errorf("lock thread root: %w", err)
+		return Message{}, nil, fmt.Errorf("lock thread root: %w", err)
 	}
 	if !isThreadRoot(root.Kind, root.ThreadRootID) {
-		return Message{}, errInvalidThreadRoot()
+		return Message{}, nil, errInvalidThreadRoot()
 	}
 	// 削除済みの親にも返信できる。削除と返信は並行して起きうるので、拒んでも結局生まれる（ADR 0012 の返信と同じ）。
 
 	now := s.clock.Now()
 	allocated, err := q.AllocateThreadReplySeq(ctx, roomID)
 	if err != nil {
-		return Message{}, fmt.Errorf("allocate thread reply seq: %w", err)
+		return Message{}, nil, fmt.Errorf("allocate thread reply seq: %w", err)
 	}
 	// change_seq は 2 つ採番した。返信が 1 つ目、親（返信数の変化）が 2 つ目。
 	replyChangeSeq, rootChangeSeq := allocated.LastChangeSeq-1, allocated.LastChangeSeq
 	threadSeq, err := q.AddThreadReply(ctx, store.AddThreadReplyParams{ID: rootID, Now: now, ChangeSeq: rootChangeSeq})
 	if err != nil {
-		return Message{}, fmt.Errorf("add thread reply: %w", err)
+		return Message{}, nil, fmt.Errorf("add thread reply: %w", err)
 	}
 	id := s.ids.New()
 	err = q.CreateMessage(ctx, store.CreateMessageParams{
@@ -64,39 +65,56 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 		Body: in.Body, ThreadRootID: &rootID, ThreadSeq: &threadSeq, Now: now,
 	})
 	if err != nil {
-		return Message{}, fmt.Errorf("create thread reply: %w", err)
+		return Message{}, nil, fmt.Errorf("create thread reply: %w", err)
 	}
 	if err := attachToMessage(ctx, q, actor, roomID, id, in.AttachmentIDs); err != nil {
-		return Message{}, err
+		return Message{}, nil, err
 	}
 
 	// 返信した人はスレッドに参加し、自分の返信まで既読にする。チャンネルの既読位置は動かさない（返信はチャンネルに出ていない）。
+	var events []Event
 	followed, err := q.FollowThread(ctx, store.FollowThreadParams{ThreadRootID: rootID, LastReadThreadSeq: threadSeq, Now: now, RoomID: roomID, UserID: actor})
 	if err != nil {
-		return Message{}, fmt.Errorf("follow thread: %w", err)
+		return Message{}, nil, fmt.Errorf("follow thread: %w", err)
 	}
-	if followed == 0 {
+	if followed == 1 {
+		events = append(events, threadFollowedEvent(workspaceID, roomID, rootID, actor, threadSeq))
+	} else {
 		if err := q.AdvanceThreadReadToThreadSeq(ctx, store.AdvanceThreadReadToThreadSeqParams{ThreadSeq: threadSeq, ThreadRootID: rootID, UserID: actor}); err != nil {
-			return Message{}, fmt.Errorf("advance thread read: %w", err)
+			return Message{}, nil, fmt.Errorf("advance thread read: %w", err)
 		}
 	}
 	// 親の投稿者は、最初の返信で参加する（既読位置 0 なので、その返信が未読になる）。
 	// ルームを抜けていれば FollowThread は何もしない。2 件目以降で入れないのは、抜けて戻った人の過去の返信を全部未読にしないため。
 	if threadSeq == 1 && root.SenderID != actor {
-		if _, err := q.FollowThread(ctx, store.FollowThreadParams{ThreadRootID: rootID, LastReadThreadSeq: 0, Now: now, RoomID: roomID, UserID: root.SenderID}); err != nil {
-			return Message{}, fmt.Errorf("follow thread by root sender: %w", err)
+		n, err := q.FollowThread(ctx, store.FollowThreadParams{ThreadRootID: rootID, LastReadThreadSeq: 0, Now: now, RoomID: roomID, UserID: root.SenderID})
+		if err != nil {
+			return Message{}, nil, fmt.Errorf("follow thread by root sender: %w", err)
+		}
+		if n == 1 {
+			events = append(events, threadFollowedEvent(workspaceID, roomID, rootID, root.SenderID, 0))
 		}
 	}
-	return getMessage(ctx, q, roomID, id)
+	reply, err := getMessage(ctx, q, roomID, id)
+	if err != nil {
+		return Message{}, nil, err
+	}
+	updatedRoot, err := getMessage(ctx, q, roomID, rootID)
+	if err != nil {
+		return Message{}, nil, err
+	}
+	// 親の返信数の変化は、参加より先に届ける（ルームの購読者全員に関係する）。
+	return reply, append([]Event{messageEvent(EventMessageUpdated, updatedRoot)}, events...), nil
 }
 
 // softDeleteMessage は DeleteMessage の中で、ロック済みのメッセージ m を論理削除する。
 // スレッドの返信なら、親の行もロックして返信数を減らし、親の change_seq も進める（返信数の変化を同期に載せる。ADR 0036）。
+// そのときは、配信する更新後の親を返す（返信でなければ nil）。
 // ロックの順序は 返信 → 親 → rooms。返信の送信（親 → rooms）とは、親より先に取るロックが重ならないのでデッドロックしない。
-func (s *Service) softDeleteMessage(ctx context.Context, q *store.Queries, roomID ulid.ULID, m store.Message) error {
+func (s *Service) softDeleteMessage(ctx context.Context, q *store.Queries, roomID ulid.ULID, m store.Message) (*Message, error) {
 	if m.ThreadRootID != nil {
 		if _, err := q.GetMessageForUpdate(ctx, store.GetMessageForUpdateParams{RoomID: roomID, ID: *m.ThreadRootID}); err != nil {
-			return fmt.Errorf("lock thread root: %w", err)
+			return nil, fmt.Errorf("lock thread root: %w", err)
 		}
 	}
 	n := int64(1)
@@ -105,18 +123,23 @@ func (s *Service) softDeleteMessage(ctx context.Context, q *store.Queries, roomI
 	}
 	last, err := q.AllocateChangeSeq(ctx, store.AllocateChangeSeqParams{RoomID: roomID, N: n})
 	if err != nil {
-		return fmt.Errorf("allocate change_seq: %w", err)
+		return nil, fmt.Errorf("allocate change_seq: %w", err)
 	}
 	// 返信の削除では、削除した返信が 1 つ目、親が 2 つ目の番号を使う（送信と同じ並び）。
 	if err := q.SoftDeleteMessage(ctx, store.SoftDeleteMessageParams{ID: m.ID, Now: s.clock.Now(), ChangeSeq: last - n + 1}); err != nil {
-		return fmt.Errorf("delete message: %w", err)
+		return nil, fmt.Errorf("delete message: %w", err)
 	}
-	if m.ThreadRootID != nil {
-		if err := q.RemoveThreadReply(ctx, store.RemoveThreadReplyParams{ID: *m.ThreadRootID, ChangeSeq: last}); err != nil {
-			return fmt.Errorf("remove thread reply: %w", err)
-		}
+	if m.ThreadRootID == nil {
+		return nil, nil
 	}
-	return nil
+	if err := q.RemoveThreadReply(ctx, store.RemoveThreadReplyParams{ID: *m.ThreadRootID, ChangeSeq: last}); err != nil {
+		return nil, fmt.Errorf("remove thread reply: %w", err)
+	}
+	root, err := getMessage(ctx, q, roomID, *m.ThreadRootID)
+	if err != nil {
+		return nil, err
+	}
+	return &root, nil
 }
 
 // ThreadQuery はスレッドの返信の取得の指定。BeforeSeq と AfterSeq は 1 つまでしか指定できない。
@@ -258,7 +281,17 @@ func (s *Service) MarkThreadRead(ctx context.Context, actor, roomID, rootID ulid
 	if err != nil {
 		return ThreadReadState{}, fmt.Errorf("advance thread read: %w", err)
 	}
-	return ThreadReadState{Following: true, LastReadThreadSeq: row.LastReadThreadSeq, UnreadCount: row.LastThreadSeq - row.LastReadThreadSeq}, nil
+	st := ThreadReadState{Following: true, LastReadThreadSeq: row.LastReadThreadSeq, UnreadCount: row.LastThreadSeq - row.LastReadThreadSeq}
+	// 既読位置が進まなかったときも送る。別の端末が古い未読数を表示していれば、それを揃えられる（room.read と同じ）。
+	s.deliver(ctx, Event{
+		Type: EventThreadRead,
+		To:   Audience{Users: []ulid.ULID{actor}},
+		Data: ThreadRead{
+			WorkspaceID: a.room.WorkspaceID, RoomID: roomID, ThreadRootID: rootID,
+			LastReadThreadSeq: st.LastReadThreadSeq, UnreadCount: st.UnreadCount,
+		},
+	})
+	return st, nil
 }
 
 // FollowedThread は参加しているスレッドの一覧の 1 件。

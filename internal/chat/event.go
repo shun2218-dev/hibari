@@ -40,6 +40,8 @@ const (
 	EventWorkspaceRoleChanged   EventType = "workspace.role_changed"
 	EventPresenceChanged        EventType = "presence.changed"
 	EventTypingStarted          EventType = "typing.started"
+	EventThreadRead             EventType = "thread.read"
+	EventThreadFollowed         EventType = "thread.followed"
 )
 
 // Audience はイベントの宛先。複数の経路で同じ接続に当たっても、実装は 1 回だけ届ける。
@@ -82,6 +84,8 @@ type Event struct {
 //	workspace.role_changed              → WorkspaceRoleChanged
 //	presence.changed                    → PresenceChanged
 //	typing.started                      → TypingStarted
+//	thread.read                         → ThreadRead
+//	thread.followed                     → ThreadFollowed
 
 // RemovalReason はメンバーから外れた理由。
 type RemovalReason string
@@ -153,7 +157,27 @@ type PresenceChanged struct {
 type TypingStarted struct {
 	WorkspaceID ulid.ULID
 	RoomID      ulid.ULID
-	User        UserProfile
+	// ThreadRootID は、スレッドで入力しているときの親（ADR 0036）。チャンネルなら nil。
+	ThreadRootID *ulid.ULID `json:",omitzero"`
+	User         UserProfile
+}
+
+// ThreadRead は自分のスレッドの既読位置が進んだ（別の端末を含む。ADR 0036）。
+type ThreadRead struct {
+	WorkspaceID       ulid.ULID
+	RoomID            ulid.ULID
+	ThreadRootID      ulid.ULID
+	LastReadThreadSeq int64
+	UnreadCount       int64
+}
+
+// ThreadFollowed は自分がスレッドに参加した（自分の返信、自分の投稿への最初の返信。ADR 0036）。
+// 誰が参加するかはサーバーだけが決める。クライアントはこれを受けて、参加中のスレッドの一覧と未読を取り直す。
+type ThreadFollowed struct {
+	WorkspaceID       ulid.ULID
+	RoomID            ulid.ULID
+	ThreadRootID      ulid.ULID
+	LastReadThreadSeq int64
 }
 
 // deliver はコミットの後にイベントを渡す。リクエストの ctx がレスポンスの直後にキャンセルされても配信は続ける。
@@ -161,6 +185,15 @@ func (s *Service) deliver(ctx context.Context, events ...Event) {
 	ctx = context.WithoutCancel(ctx)
 	for _, ev := range events {
 		s.delivery.Deliver(ctx, ev)
+	}
+}
+
+// threadFollowedEvent は、参加した本人のすべての接続に届ける。
+func threadFollowedEvent(workspaceID, roomID, rootID, userID ulid.ULID, lastRead int64) Event {
+	return Event{
+		Type: EventThreadFollowed,
+		To:   Audience{Users: []ulid.ULID{userID}},
+		Data: ThreadFollowed{WorkspaceID: workspaceID, RoomID: roomID, ThreadRootID: rootID, LastReadThreadSeq: lastRead},
 	}
 }
 

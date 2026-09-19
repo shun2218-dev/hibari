@@ -364,3 +364,74 @@ func TestAcceptInviteEvents(t *testing.T) {
 	}
 	expectEvents(t, env)
 }
+
+// スレッド（ADR 0036）: 返信はルームの購読者に message.created、親の返信数は message.updated で届く。
+// 参加（thread.followed）と既読（thread.read）は本人に届く。
+func TestThreadEvents(t *testing.T) {
+	env := chattest.New(t)
+	r := setupRoles(t, env)
+	room := createRoom(t, env, r.member, r.ws.ID, "public", "public")
+	if _, err := env.Service.JoinRoom(t.Context(), r.member2, room.ID); err != nil {
+		t.Fatal(err)
+	}
+	root := send(t, env, r.member, room.ID, "親")
+	env.Deliveries.Take()
+	toRoom := chat.Audience{Rooms: idList(room.ID)}
+
+	// 最初の返信: 返信した人と親の投稿者が参加する。
+	first := reply(t, env, r.member2, room.ID, root.ID, "返信 1")
+	evs := expectEvents(t, env,
+		chat.Event{Type: chat.EventMessageCreated, To: toRoom},
+		chat.Event{Type: chat.EventMessageUpdated, To: toRoom},
+		chat.Event{Type: chat.EventThreadFollowed, To: chat.Audience{Users: idList(r.member2)}},
+		chat.Event{Type: chat.EventThreadFollowed, To: chat.Audience{Users: idList(r.member)}},
+	)
+	if m := evs[0].Data.(chat.Message); m.ID != first.ID || m.ThreadRootID == nil || *m.ThreadRootID != root.ID {
+		t.Errorf("message.created data = %+v", m)
+	}
+	// 親の更新は、返信の次の change_seq を持つ（クライアントはこの順に反映できる）。
+	if m := evs[1].Data.(chat.Message); m.ID != root.ID || m.Thread == nil || m.Thread.ReplyCount != 1 || m.ChangeSeq != first.ChangeSeq+1 {
+		t.Errorf("message.updated data = %+v", m)
+	}
+	if d := evs[2].Data.(chat.ThreadFollowed); d.ThreadRootID != root.ID || d.RoomID != room.ID || d.WorkspaceID != r.ws.ID || d.LastReadThreadSeq != 1 {
+		t.Errorf("thread.followed (replier) = %+v", d)
+	}
+	if d := evs[3].Data.(chat.ThreadFollowed); d.LastReadThreadSeq != 0 {
+		t.Errorf("thread.followed (root sender) = %+v", d)
+	}
+
+	// 参加済みの人の返信では、参加のイベントは出ない。
+	second := reply(t, env, r.member, room.ID, root.ID, "返信 2")
+	expectEvents(t, env, chat.Event{Type: chat.EventMessageCreated, To: toRoom}, chat.Event{Type: chat.EventMessageUpdated, To: toRoom})
+	// 冪等な再送は配信しない。
+	if _, _, err := env.Service.SendMessage(t.Context(), r.member, room.ID, chat.SendMessageInput{ClientMsgID: second.ClientMsgID, Body: "返信 2", ThreadRootID: &root.ID}); err != nil {
+		t.Fatal(err)
+	}
+	expectEvents(t, env)
+
+	// 返信の削除: tombstone の後に、返信数が減った親。
+	if err := env.Service.DeleteMessage(t.Context(), r.member2, room.ID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	evs = expectEvents(t, env, chat.Event{Type: chat.EventMessageDeleted, To: toRoom}, chat.Event{Type: chat.EventMessageUpdated, To: toRoom})
+	if m := evs[1].Data.(chat.Message); m.ID != root.ID || m.Thread.ReplyCount != 1 || m.ChangeSeq != evs[0].Data.(chat.Message).ChangeSeq+1 {
+		t.Errorf("message.updated after delete = %+v", m)
+	}
+
+	// 既読は本人のすべての接続に届ける。参加していない人の既読は何も起きない。
+	if _, err := env.Service.MarkThreadRead(t.Context(), r.member2, room.ID, root.ID, second.Seq); err != nil {
+		t.Fatal(err)
+	}
+	evs = expectEvents(t, env, chat.Event{Type: chat.EventThreadRead, To: chat.Audience{Users: idList(r.member2)}})
+	if d := evs[0].Data.(chat.ThreadRead); d.ThreadRootID != root.ID || d.LastReadThreadSeq != 2 || d.UnreadCount != 0 || d.WorkspaceID != r.ws.ID {
+		t.Errorf("thread.read data = %+v", d)
+	}
+	if _, err := env.Service.JoinRoom(t.Context(), r.admin, room.ID); err != nil {
+		t.Fatal(err)
+	}
+	env.Deliveries.Take()
+	if _, err := env.Service.MarkThreadRead(t.Context(), r.admin, room.ID, root.ID, second.Seq); err != nil {
+		t.Fatal(err)
+	}
+	expectEvents(t, env)
+}

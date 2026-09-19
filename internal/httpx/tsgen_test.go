@@ -178,6 +178,8 @@ var tsDecls = []tsDecl{
 	response[workspaceRoleChangedData]("WorkspaceRoleChangedData"),
 	response[presenceChangedData]("PresenceChangedData"),
 	response[typingStartedData]("TypingStartedData"),
+	response[threadReadData]("ThreadReadData"),
+	response[threadFollowedData]("ThreadFollowedData"),
 }
 
 // tsSkipped は JSON のタグを持つが、クライアントの型にしない struct。
@@ -215,6 +217,8 @@ var tsEvents = []struct {
 	{chat.EventWorkspaceRoleChanged, chat.WorkspaceRoleChanged{}},
 	{chat.EventPresenceChanged, chat.PresenceChanged{}},
 	{chat.EventTypingStarted, chat.TypingStarted{}},
+	{chat.EventThreadRead, chat.ThreadRead{}},
+	{chat.EventThreadFollowed, chat.ThreadFollowed{}},
 }
 
 func TestTypeScriptTypes(t *testing.T) {

@@ -82,7 +82,8 @@ func (a *SubscriptionAuthorizer) Allowed(ctx context.Context, userID ulid.ULID, 
 
 // AuthorizeTyping は userID がルームで入力中を知らせられるかを判定し、typing.started に載せる情報を返す。
 // 読めなければ ErrNotFound、読めるが投稿できなければ ErrForbidden。
-func (a *SubscriptionAuthorizer) AuthorizeTyping(ctx context.Context, userID, roomID ulid.ULID) (TypingStarted, error) {
+// threadRootID を渡したら、それがこのルームのスレッドの親であることも確かめる（ADR 0036）。親でなければ ErrNotFound。
+func (a *SubscriptionAuthorizer) AuthorizeTyping(ctx context.Context, userID, roomID ulid.ULID, threadRootID *ulid.ULID) (TypingStarted, error) {
 	q := store.New(a.db)
 	rooms, err := a.roomAccess(ctx, userID, []ulid.ULID{roomID})
 	if err != nil {
@@ -95,11 +96,20 @@ func (a *SubscriptionAuthorizer) AuthorizeTyping(ctx context.Context, userID, ro
 	case !authz.CanSendTyping(r.kind, r.actor):
 		return TypingStarted{}, ErrForbidden
 	}
+	if threadRootID != nil {
+		root, err := q.GetMessageView(ctx, store.GetMessageViewParams{RoomID: roomID, ID: *threadRootID})
+		if err != nil {
+			return TypingStarted{}, notFoundIfNoRows(err, "get thread root")
+		}
+		if !isThreadRoot(root.Kind, root.ThreadRootID) {
+			return TypingStarted{}, ErrNotFound
+		}
+	}
 	user, err := userProfile(ctx, q, userID)
 	if err != nil {
 		return TypingStarted{}, err
 	}
-	return TypingStarted{WorkspaceID: r.workspaceID, RoomID: roomID, User: user}, nil
+	return TypingStarted{WorkspaceID: r.workspaceID, RoomID: roomID, ThreadRootID: threadRootID, User: user}, nil
 }
 
 // WorkspaceIDs は userID が所属するワークスペースを返す。presence.changed の宛先に使う。

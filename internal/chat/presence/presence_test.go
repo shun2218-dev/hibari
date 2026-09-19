@@ -231,19 +231,25 @@ func TestStartTyping(t *testing.T) {
 	rdb := openRedis(t)
 	st := presence.New(rdb, ids.New())
 	room, other, alice, bob := ids.New(), ids.New(), ids.New(), ids.New()
+	thread, otherThread := ids.New(), ids.New()
 
 	for _, tt := range []struct {
 		name       string
 		room, user ulid.ULID
+		thread     *ulid.ULID
 		want       bool
 	}{
-		{"first", room, alice, true},
+		{"first", room, alice, nil, true},
 		// TTL の間は配信し直さない。
-		{"again within ttl", room, alice, false},
-		{"other user", room, bob, true},
-		{"other room", other, alice, true},
+		{"again within ttl", room, alice, nil, false},
+		{"other user", room, bob, nil, true},
+		{"other room", other, alice, nil, true},
+		// スレッドはチャンネルと別に間引く（ADR 0036）。
+		{"thread in the same room", room, alice, &thread, true},
+		{"same thread within ttl", room, alice, &thread, false},
+		{"other thread", room, alice, &otherThread, true},
 	} {
-		got, err := st.StartTyping(t.Context(), tt.room, tt.user)
+		got, err := st.StartTyping(t.Context(), tt.room, tt.user, tt.thread)
 		if err != nil || got != tt.want {
 			t.Errorf("%s: StartTyping() = %v, %v; want %v", tt.name, got, err, tt.want)
 		}
@@ -260,7 +266,7 @@ func TestStartTyping(t *testing.T) {
 	if err := rdb.Del(t.Context(), "typing:"+room.String()+":"+alice.String()).Err(); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := st.StartTyping(t.Context(), room, alice); err != nil || !got {
+	if got, err := st.StartTyping(t.Context(), room, alice, nil); err != nil || !got {
 		t.Errorf("StartTyping() after expiry = %v, %v; want true", got, err)
 	}
 }

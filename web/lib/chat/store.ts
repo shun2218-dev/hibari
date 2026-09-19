@@ -823,7 +823,13 @@ export function createChatStore(
         return;
       }
       case "typing.started":
+        // スレッドでの入力はチャンネルの入力中に出さない。スレッドのパネルに出すのは構築順 5（ADR 0036）
+        if (event.data.thread_root_id !== null) return;
         receiveTyping(event.data.room_id, event.data.user);
+        return;
+      case "thread.read":
+      case "thread.followed":
+        // スレッドの未読と参加中の一覧は、スレッドの画面と一緒に持つ（Phase 6.5 の構築順 5）
         return;
     }
   }

@@ -55,7 +55,9 @@ func TestWireRoundTrip(t *testing.T) {
 		},
 		{Type: chat.EventWorkspaceRoleChanged, To: chat.Audience{Workspaces: []ulid.ULID{u()}}, Data: chat.WorkspaceRoleChanged{WorkspaceID: u(), UserID: u(), Role: "admin"}},
 		{Type: chat.EventPresenceChanged, To: chat.Audience{Workspaces: []ulid.ULID{u(), u()}}, Data: chat.PresenceChanged{UserID: u(), Online: true}},
-		{Type: chat.EventTypingStarted, To: chat.Audience{Rooms: []ulid.ULID{u()}, ExceptUser: user.ID}, Data: chat.TypingStarted{WorkspaceID: u(), RoomID: u(), User: user}},
+		{Type: chat.EventTypingStarted, To: chat.Audience{Rooms: []ulid.ULID{u()}, ExceptUser: user.ID}, Data: chat.TypingStarted{WorkspaceID: u(), RoomID: u(), ThreadRootID: &threadRootID, User: user}},
+		{Type: chat.EventThreadRead, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ThreadRead{WorkspaceID: u(), RoomID: u(), ThreadRootID: u(), LastReadThreadSeq: 2, UnreadCount: 1}},
+		{Type: chat.EventThreadFollowed, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ThreadFollowed{WorkspaceID: u(), RoomID: u(), ThreadRootID: u(), LastReadThreadSeq: 3}},
 	}
 	if len(events) != len(dataDecoders) {
 		t.Fatalf("test covers %d event types, dataDecoders has %d", len(events), len(dataDecoders))

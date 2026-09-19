@@ -564,7 +564,7 @@ describe("WorkspaceScreen", () => {
     it("shows who is typing", async () => {
       const { sockets } = await connected();
 
-      sockets.last().receive({ type: "typing.started", data: { workspace_id: "ws-1", room_id: "r-design", user: miyuki } });
+      sockets.last().receive({ type: "typing.started", data: { workspace_id: "ws-1", room_id: "r-design", thread_root_id: null, user: miyuki } });
 
       expect(await screen.findByText("高橋 みゆき が入力中")).toBeInTheDocument();
     });
