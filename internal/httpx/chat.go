@@ -43,6 +43,7 @@ type ChatService interface {
 
 	SendMessage(ctx context.Context, actor, roomID ulid.ULID, in chat.SendMessageInput) (chat.Message, bool, error)
 	ListMessages(ctx context.Context, actor, roomID ulid.ULID, q chat.MessageQuery) (chat.MessagePage, error)
+	ResolveMessageLinks(ctx context.Context, actor ulid.ULID, links []chat.MessageLink) ([]chat.MessageLinkResult, error)
 	EditMessage(ctx context.Context, actor, roomID, messageID ulid.ULID, body string) (chat.Message, error)
 	DeleteMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) error
 	MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq int64) (chat.ReadState, error)
@@ -95,6 +96,8 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 
 	handle("POST /api/v1/rooms/{roomID}/messages", h.sendMessage)
 	handle("GET /api/v1/rooms/{roomID}/messages", h.listMessages)
+	// 本文に貼られたパーマリンクのカードをまとめて取る（ADR 0040）。ルームをまたぐのでルームのパスの下に置かない。
+	handle("POST /api/v1/messages/links", h.resolveMessageLinks)
 	handle("PATCH /api/v1/rooms/{roomID}/messages/{messageID}", h.editMessage)
 	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}", h.deleteMessage)
 	handle("POST /api/v1/rooms/{roomID}/read", h.markRoomRead)
