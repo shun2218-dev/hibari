@@ -35,6 +35,14 @@
 | [0026](0026-web-realtime-client.md) | Web の WebSocket クライアント（Phase 6。バックオフ + ジッターと ping、購読の ack の後に取り直す、タイムラインを残して差分で同期、見ている間だけ既読、外されたときの表示） | 採用 |
 | [0027](0027-web-sending-messages.md) | Web のメッセージの送信（Phase 6。送信中は outgoing に持つ、ルームごとに 1 件ずつ送る、時間切れと同じ client_msg_id での再送、端末に保存しない、返信・編集・削除） | 採用 |
 | [0028](0028-web-attachments-and-avatars.md) | Web の添付とアバターの表示（Phase 6。XHR で直接 PUT、uploaded を待ってから送信、許可リストにない種類は octet-stream で発行し直す、アバターはまとめて期限で取り直し、添付の画像は読み込みの失敗で取り直す） | 採用 |
+| [0029](0029-web-workspace-admin.md) | Web のワークスペースの管理画面（Phase 6。URL、権限の写し、招待コードの扱い） | 採用 |
+| [0030](0030-web-invite-accept.md) | Web の招待リンクの受け入れ（Phase 6。URL、ログインの振り分け、使えない招待の扱い） | 採用 |
+| [0031](0031-web-user-settings.md) | Web のユーザー設定（Phase 6。プロフィール・アバター・デバイス・テーマ） | 採用 |
+| [0032](0032-web-added-entry-points.md) | デザインに足した入口（Phase 6。DM・チャンネルの設定・チャットに戻る）と、実装から撮るスクリーンショット | 採用 |
+| [0033](0033-system-messages.md) | システムメッセージ（Phase 6.4。参加・退出・作成・名前の変更をログに残し、未読は user_seq で数える） | 採用 |
+| [0034](0034-web-leave-room.md) | チャンネルを自分で退出する入口（Phase 6） | 採用 |
+| [0035](0035-web-removed-room-no-access.md) | 非公開チャンネルから外されたときは「アクセスできません」だけを出す（Phase 6） | 採用 |
+| [0036](0036-threads.md) | スレッド（Phase 6.5。返信をタイムラインから分け、ルームの seq を共有し、未読は thread_seq で数える） | 採用 |
 
 ## テンプレート
 
