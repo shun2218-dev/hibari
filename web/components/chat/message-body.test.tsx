@@ -25,12 +25,12 @@ describe("MessageBody", () => {
     expect(onOpenProfile).toHaveBeenCalledWith(ALICE);
   });
 
-  it("@channel と @here は押せない（琥珀にも緑にもしない）", () => {
+  it("@channel と @here は琥珀で目立たせる（押せない）", () => {
     render(<MessageBody body="<!channel> と <!here>" />);
 
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(screen.getByText("@channel")).toHaveClass("text-text-secondary");
-    expect(screen.getByText("@here")).toHaveClass("text-text-secondary");
+    expect(screen.getByText("@channel")).toHaveClass("bg-attention");
+    expect(screen.getByText("@here")).toHaveClass("bg-attention");
   });
 
   it("名前を引けない ID は書かれたままの文字列で出す", () => {

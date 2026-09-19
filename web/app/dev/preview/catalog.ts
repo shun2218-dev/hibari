@@ -86,6 +86,7 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "chat/mentions-dark", title: "メンション（ダーク）", dark: true },
   { name: "chat/mention-completion", title: "メンション: @ の補完" },
   { name: "chat/mention-completion-typed", title: "メンション: 名前で絞った補完" },
+  { name: "chat/mention-all-confirm", title: "メンション: @channel を送る前の確認" },
   { name: "chat/threads", title: "参加しているスレッドの一覧" },
   { name: "chat/threads-empty", title: "参加しているスレッドが 0 件" },
   { name: "chat/mobile-thread", title: "スレッド（モバイル）", mobile: true },

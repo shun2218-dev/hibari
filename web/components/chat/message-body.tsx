@@ -5,8 +5,12 @@ import { splitBody } from "@/lib/chat/mentions";
 /**
  * メッセージの本文（ADR 0043）。`<@ULID>` / `<!channel>` / `<!here>` をチップにして、残りはそのまま出す。
  *
- * 色は `docs/ui/tokens.md` の決まりどおり、押せるものだけを緑にする。
- * 個人のチップは Phase 6.9 でプロフィールのカードを開くので緑、`@channel` / `@here` は押せないので灰色。
+ * 色は `docs/ui/tokens.md` の決まりどおり。個人のチップは Phase 6.9 でプロフィールのカードを開く、
+ * つまりリンクと同じ「押せるもの」なので緑にする。
+ *
+ * `@channel` / `@here` はルームの全員に飛ぶので、個人より目立たせる（オーナーの判断。2026-09-19。Slack に合わせる）。
+ * 押せないので琥珀を当てられる（「琥珀の要素を押せるようにしない」に触れない）。自分宛ての行の背景も琥珀なので、
+ * そこに埋もれないように、薄い琥珀ではなく地の琥珀で塗る。
  *
  * Phase 6.10（本文の書式）が入ったら、この分解はそちらの解釈に吸収する。
  */
@@ -40,10 +44,7 @@ export function MessageBody({
             @{segment.name}
           </button>
         ) : (
-          <span
-            key={i}
-            className="rounded-sm bg-surface-muted px-1 font-semibold text-text-secondary"
-          >
+          <span key={i} className="rounded-sm bg-attention px-1 font-semibold text-on-attention">
             @{segment.kind}
           </span>
         ),

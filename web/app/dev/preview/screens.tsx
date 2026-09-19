@@ -38,6 +38,7 @@ import { RoomHeader } from "@/components/chat/room-header";
 import {
   AddRoomMemberDialog,
   CreateRoomDialog,
+  ConfirmMentionAllDialog,
   DeleteMessageDialog,
   LeaveRoomDialog,
   RoomSettingsDialog,
@@ -525,6 +526,8 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/mentions-dark": () => chat({ mentions: true }),
   "chat/mention-completion": () => chat({ mentions: true, mentionQuery: "" }),
   "chat/mention-completion-typed": () => chat({ mentions: true, mentionQuery: "n" }),
+  "chat/mention-all-confirm": () =>
+    chat({ mentions: true, dialog: <ConfirmMentionAllDialog open kind="channel" memberCount={selectedRoom.memberCount} /> }),
   "chat/threads": () => chat({ threads: "list" }),
   "chat/threads-empty": () => chat({ threads: "empty" }),
   "chat/mobile-thread": () => chat({ thread: "replies" }),
