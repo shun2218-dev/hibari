@@ -3,19 +3,17 @@ import type { ReactNode } from "react";
 import { IconButton } from "@/components/ui/button";
 import { ChevronLeftIcon, CloseIcon, LockIcon } from "@/components/ui/icons";
 
-import { MessageItem } from "./message-item";
-import type { MessageView, RoomKind } from "./types";
+import type { RoomKind } from "./types";
 
 type ThreadPanelProps = {
   room: { kind: RoomKind; name: string };
-  /** 親のメッセージ。削除されていても tombstone のまま出す（スレッドは残る。ADR 0036）。 */
-  root: MessageView;
-  /** 返信。並びは受け取った順のまま（seq で並べるのはデータ層。CLAUDE.md ルール 3）。 */
-  replies: MessageView[];
-  /** 返信の数（削除された返信を除く）。区切りの見出しに出す。 */
-  replyCount: number;
+  /**
+   * 親と返信の並び。`Timeline` に、親・「N 件の返信」の区切り（thread-divider）・返信を並べて渡す（toThreadTimelineItems）。
+   * 取得中は何も渡さない。
+   */
+  children?: ReactNode;
   /** 下の入力欄（`Composer` の target="thread"）。返信できない人（参加していない public）には JoinRoomBar などを渡す。 */
-  footer: ReactNode;
+  footer?: ReactNode;
   onClose?: () => void;
 };
 
@@ -24,7 +22,7 @@ type ThreadPanelProps = {
  * モバイルでシートにしないのは、返信を読みながら入力するには高さが足りないため。
  * 同じ要素をレイアウトだけ切り替えて使い、DOM に 2 回描かない。
  */
-export function ThreadPanel({ room, root, replies, replyCount, footer, onClose }: ThreadPanelProps) {
+export function ThreadPanel({ room, children, footer, onClose }: ThreadPanelProps) {
   return (
     <aside
       aria-label="スレッド"
@@ -48,27 +46,7 @@ export function ThreadPanel({ room, root, replies, replyCount, footer, onClose }
           <CloseIcon className="size-4" />
         </IconButton>
       </header>
-
-      <div className="min-h-0 flex-1 overflow-y-auto pb-4">
-        {/* 親は「N 件の返信」を出さない（パネルの中では区切りの見出しが同じことを言う） */}
-        <MessageItem message={{ ...root, thread: undefined, grouped: false }} canReply={false} />
-        {replyCount > 0 ? (
-          <div className="flex items-center gap-3 px-4 pt-3 pb-1">
-            <span className="text-2xs font-medium text-text-secondary">{replyCount} 件の返信</span>
-            <span aria-hidden className="h-px flex-1 bg-border" />
-          </div>
-        ) : (
-          <p className="px-4 pt-6 text-center text-xs text-text-muted">まだ返信はありません</p>
-        )}
-        <ol aria-label="返信" className="flex flex-col">
-          {replies.map((reply) => (
-            <li key={reply.key}>
-              <MessageItem message={reply} canReply={false} />
-            </li>
-          ))}
-        </ol>
-      </div>
-
+      {children ?? <div className="min-h-0 flex-1" />}
       {footer}
     </aside>
   );

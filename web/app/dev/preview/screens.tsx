@@ -81,6 +81,7 @@ import {
   selectedRoom,
   deletedThreadReplies,
   deletedThreadRoot,
+  threadItems,
   threadList,
   threadReplies,
   threadRoot,
@@ -219,11 +220,10 @@ function chat({
           ) : threadContent ? (
             <ThreadPanel
               room={{ kind: selectedRoom.kind, name: selectedRoom.name }}
-              root={threadContent.root}
-              replies={threadContent.replies}
-              replyCount={threadContent.root.thread?.replyCount ?? 0}
               footer={<Composer value="" canSend={false} target="thread" typingNames={threadContent.typing} />}
-            />
+            >
+              <Timeline items={threadItems(threadContent.root, threadContent.replies)} />
+            </ThreadPanel>
           ) : undefined
         }
       >

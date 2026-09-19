@@ -13,6 +13,8 @@ import {
   toRoomMemberRows,
   toRoomMemberView,
   toRoomSummaryView,
+  toThreadListItemView,
+  toThreadTimelineItems,
   toTimelineItems,
 } from "./views";
 
@@ -28,6 +30,8 @@ function outline(items: TimelineItem[]): string[] {
         return "[unread]";
       case "system":
         return `[system: ${item.text}]`;
+      case "thread-divider":
+        return `[${item.replyCount} replies]`;
       case "message":
         return item.message.grouped ? `+${item.message.body}` : item.message.body;
     }
@@ -237,6 +241,7 @@ describe("toTimelineItems", () => {
         {
           clientMsgId: "c-x",
           body: "送信中",
+          threadRootId: null,
           attachments: [pdf],
           status: "pending",
           createdAt: "2026-09-13T01:01:00Z",
@@ -244,6 +249,7 @@ describe("toTimelineItems", () => {
         {
           clientMsgId: "c-y",
           body: "失敗",
+          threadRootId: null,
           attachments: [],
           status: "failed",
           createdAt: "2026-09-13T01:02:00Z",
@@ -473,3 +479,80 @@ describe("システムメッセージ（ADR 0033）", () => {
     expect(view.lastMessage).toBe("佐藤 直樹 がチャンネルに参加しました");
   });
 });
+
+describe("threads (ADR 0036)", () => {
+  const thread = { reply_count: 2, last_thread_seq: 3, last_reply_at: "2026-09-13T02:30:00Z" };
+
+  it("shows the reply count under a root only while it has replies", () => {
+    const items = toTimelineItems(
+      [message(1, { thread }), message(2, { thread: { ...thread, reply_count: 0 } }), message(3)],
+      { unreadAfterSeq: null, timeZone: tz, now: new Date("2026-09-13T03:00:00Z") },
+    );
+    const [withReplies, allDeleted, plain] = items.flatMap((item) => (item.type === "message" ? [item.message] : []));
+
+    expect(withReplies!.thread).toEqual({ replyCount: 2, lastReplyLabel: "11:30" });
+    expect(allDeleted!.thread).toBeUndefined();
+    expect(plain!.thread).toBeUndefined();
+  });
+
+  it("keeps my unsent thread replies out of the channel", () => {
+    const items = toTimelineItems([message(1)], {
+      unreadAfterSeq: null,
+      me: naoki,
+      outgoing: [{ clientMsgId: "c-t", body: "スレッドへ", threadRootId: "m-1", attachments: [], status: "pending", createdAt: "2026-09-13T01:01:00Z" }],
+      timeZone: tz,
+    });
+
+    expect(outline(items)).toEqual(["[2026年9月13日]", "本文 1"]);
+  });
+
+  it("lays out the thread panel as root, divider, replies and my unsent replies, without dates or the root's summary", () => {
+    const root = message(1, { thread, body: "親" });
+    const replies = [
+      message(2, { body: "返信 1", thread_root_id: "m-1", thread_seq: 1, created_at: "2026-09-14T01:00:00Z" }),
+      message(4, { body: "返信 2", thread_root_id: "m-1", thread_seq: 2, created_at: "2026-09-14T01:01:00Z" }),
+    ];
+    const items = toThreadTimelineItems(
+      { root, replies },
+      {
+        me: naoki,
+        outgoing: [
+          { clientMsgId: "c-t", body: "送信中の返信", threadRootId: "m-1", attachments: [], status: "pending", createdAt: "2026-09-14T01:02:00Z" },
+          { clientMsgId: "c-c", body: "チャンネルへ", threadRootId: null, attachments: [], status: "pending", createdAt: "2026-09-14T01:02:00Z" },
+        ],
+        timeZone: tz,
+      },
+    );
+
+    expect(outline(items)).toEqual(["親", "[2 replies]", "返信 1", "+返信 2", "送信中の返信"]);
+    expect(items[0]!.type === "message" && items[0].message.thread).toBeUndefined();
+    expect(toThreadTimelineItems({ root: null, replies }, { timeZone: tz })).toEqual([]);
+  });
+
+  it("maps a followed thread to a list row, naming a dm by the peer", () => {
+    const view = toThreadListItemView(
+      {
+        room: { id: "d1", kind: "dm", name: null, dm_peer: naoki },
+        root: { id: "m-1", sender: miyuki, kind: "user", body: "親", created_at: "2026-09-12T01:00:00Z", deleted: false },
+        root_seq: 1,
+        reply_count: 3,
+        last_reply_at: "2026-09-13T02:30:00Z",
+        last_thread_seq: 3,
+        last_read_thread_seq: 1,
+        unread_count: 2,
+      },
+      new Date("2026-09-13T03:00:00Z"),
+      { timeZone: tz },
+    );
+
+    expect(view).toMatchObject({
+      key: "m-1",
+      room: { kind: "dm", name: "佐藤 直樹" },
+      root: { sender: { id: miyuki.id, name: "高橋 みゆき" }, timeLabel: "昨日", body: "親", deleted: false },
+      replyCount: 3,
+      lastReplyLabel: "11:30",
+      unreadCount: 2,
+    });
+  });
+});
+

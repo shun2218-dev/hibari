@@ -213,3 +213,8 @@ GET  /api/v1/workspaces/{id}/threads                    参加しているスレ
   同じキーにすると、チャンネルで入力した直後のスレッドの入力中が 5 秒届かない。親の確認は、間引きを通った 1 回目だけ DB で行う（ルームの判定と同じ。ADR 0015）。
 - Web は、スレッドでの入力中をチャンネルに出さず、`thread.read` / `thread.followed` は構築順 5 まで受け取っても何もしない。
 
+### 2026-09-19 Web（Phase 6.5 の構築順 5）
+
+- 参加中のスレッドの一覧（`GET /workspaces/{id}/threads`）の各行に、`last_thread_seq` と `last_read_thread_seq` を足した。
+  クライアントは親の `message.updated` と `thread.read` を受けて、未読数を引き算で求め直す（ADR 0037）。
+

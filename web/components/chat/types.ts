@@ -72,6 +72,8 @@ export type ThreadListItemView = {
 export type TimelineItem =
   | { type: "date"; key: string; label: string }
   | { type: "unread"; key: string }
+  /** スレッドのパネルで、親と返信の間に置く「N 件の返信」（0 件なら「まだ返信はありません」。ADR 0036）。 */
+  | { type: "thread-divider"; key: string; replyCount: number }
   /** 参加・退出・作成・名前の変更のログ（ADR 0033）。文言はデータ層が作る。 */
   | { type: "system"; key: string; text: string; timeLabel: string }
   | { type: "message"; message: MessageView };

@@ -440,13 +440,13 @@ Phase 6 の後に独立したフェーズとして行う（設計 → API → We
 2. デザイン: スレッドのパネル、「N 件の返信」、サイドバーの「スレッド」と一覧、モバイル、削除された親、返信 0 件。`/dev/preview` に描いて `docs/ui/` に足し、オーナーに見てもらう ← 完了（`docs/ui/README.md` の「Phase 6.5 で足した画面」）
 3. DB と REST: マイグレーション（`reply_to_id` の削除を含む）、返信の送信・編集・削除、スレッドの履歴・既読・一覧 ← 完了（ADR 0036 の追記。Web の引用付きの返信もここで取り除いた）
 4. WebSocket: `message.updated`（親の返信数）、`thread.read` / `thread.followed`、`typing` の `thread_root_id`。`docs/events.md` の更新 ← 完了（ADR 0036 の追記）
-5. Web: スレッドのパネル、スレッドの未読、引用付きの返信の撤去
+5. Web: スレッドのパネル、スレッドの未読、引用付きの返信の撤去 ← 完了（ADR 0037。引用付きの返信の撤去は構築順 3 で済ませた）
 
 **DoD**
-- [ ] メッセージからスレッドを開いて返信でき、チャンネルのタイムラインには出ない
-- [ ] 親メッセージに返信数と最終返信が出て、リアルタイムに更新される（返信の削除で返信数が減る）
-- [ ] スレッドの返信でチャンネルの未読数が増えず、サイドバーの並びも動かない。参加しているスレッドの未読が分かる
-- [ ] 切断中に届いたスレッドの返信も、再接続の同期（`after_change_seq`）で揃う
+- [x] メッセージからスレッドを開いて返信でき、チャンネルのタイムラインには出ない（`workspace-screen.test.tsx` の threads。compose の実物での確認は未）
+- [x] 親メッセージに返信数と最終返信が出て、リアルタイムに更新される（返信の削除で返信数が減る）（`TestThreadEvents`、`workspace-screen.test.tsx`）
+- [x] スレッドの返信でチャンネルの未読数が増えず、サイドバーの並びも動かない。参加しているスレッドの未読が分かる（`TestSendThreadReply`、`store.test.ts` / `workspace-screen.test.tsx` の threads）
+- [x] 切断中に届いたスレッドの返信も、再接続の同期（`after_change_seq`）で揃う（`TestSendThreadReply` の差分取得、再接続でパネルと一覧を取り直す `realtime.test.ts`。compose の実物での確認は未）
 - [x] 同じ client_msg_id の再送でスレッドに二重投稿されない（`internal/chat/thread_test.go` の `TestSendThreadReplyIdempotent`）
 - [x] 50 goroutine で同じスレッドに同時に返信しても、`thread_seq` に欠番も重複もなく、親の編集と並行してもデッドロックしない（`TestSendThreadReplyConcurrent`、`TestEditAndReplyConcurrentNoDeadlock`、`TestDeleteThreadReplyConcurrent`）
 - [x] ルームから外れると、そのルームのスレッドは参加中の一覧と未読から消える（`TestThreadFollowGoneWhenLeavingRoom`、`db/schema_test.go` の `TestThreadMembersConstraints`）

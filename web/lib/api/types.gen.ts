@@ -438,6 +438,9 @@ export interface FollowedThread {
   root_seq: number;
   reply_count: number;
   last_reply_at: string;
+  /** last_thread_seq - LastReadThreadSeq = UnreadCount。クライアントは message.updated（親）と thread.read で求め直す。 */
+  last_thread_seq: number;
+  last_read_thread_seq: number;
   unread_count: number;
 }
 

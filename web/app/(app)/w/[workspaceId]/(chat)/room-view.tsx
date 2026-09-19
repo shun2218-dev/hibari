@@ -6,11 +6,10 @@ import { useEffect, useMemo, useState } from "react";
 import { EmptyMessages, JoinRoomBar, RemovedFromWorkspace, RoomUnavailable } from "@/components/chat/chat-states";
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
-import { DeleteMessageDialog } from "@/components/chat/room-dialogs";
+import { useMessageActions } from "./message-actions";
 import { RoomSettings } from "./room-settings";
 import { RoomHeader } from "@/components/chat/room-header";
 import { Timeline } from "@/components/chat/timeline";
-import { ApiError } from "@/lib/api/error";
 import { useSessionState } from "@/lib/auth/session-provider";
 import {
   useAttachmentUploader,
@@ -23,7 +22,7 @@ import {
 } from "@/lib/chat/chat-provider";
 import { forgetLocation } from "@/lib/chat/last-location";
 import { draftsReady } from "@/lib/chat/uploads";
-import { messageActions, previewImageIds, roomName, toAttachmentDraftView, toTimelineItems } from "@/lib/chat/views";
+import { previewImageIds, roomName, toAttachmentDraftView, toTimelineItems } from "@/lib/chat/views";
 import { useDocumentVisible } from "@/lib/use-document-visible";
 
 /** 本文の上限（rune。ADR 0012）。超えたら送信できないようにする（送っても 422 で失敗にしかならない）。 */
@@ -36,6 +35,10 @@ type RoomViewProps = {
   onToggleMembers: () => void;
   onBack: () => void;
   onLeaveRemovedWorkspace: () => void;
+  /** スレッドのパネルで開いている親（ADR 0036）。タイムラインで強調する。 */
+  openThreadId?: string;
+  /** 「返信」か「N 件の返信」を押した。親の ID を渡す。 */
+  onOpenThread: (rootId: string) => void;
 };
 
 /**
@@ -60,6 +63,8 @@ export function RoomView({
   onToggleMembers,
   onBack,
   onLeaveRemovedWorkspace,
+  openThreadId,
+  onOpenThread,
 }: RoomViewProps) {
   const router = useRouter();
   const store = useChatStore();
@@ -82,9 +87,6 @@ export function RoomView({
   const [draft, setDraft] = useState("");
   const { uploader, drafts } = useAttachmentUploader(roomId);
   const [sentCount, setSentCount] = useState(0);
-  const [openMenuKey, setOpenMenuKey] = useState<string>();
-  const [editing, setEditing] = useState<{ messageId: string; value: string; saving: boolean } | null>(null);
-  const [deleting, setDeleting] = useState<{ messageId: string; body: string; pending: boolean } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const visible = useDocumentVisible();
 
@@ -122,6 +124,7 @@ export function RoomView({
   // 並びが変わったときだけ作り直し、タイムラインのスクロール位置の合わせ直しを起こさない
   const messages = timeline?.messages;
   const unreadAfterSeq = timeline?.unreadAfterSeq ?? null;
+  const { timelineProps, deleteDialog } = useMessageActions({ roomId, room, messages, me, myRole, members });
 
   // アバターと画像の URL は、chat のレスポンスに載らないので、画面に出すものの ID を集めて引く（ADR 0013 / 0020 / 0028）
   const senderIds = useMemo(() => [...(messages ?? []).map((m) => m.sender.id), ...(me ? [me.id] : [])], [messages, me]);
@@ -147,9 +150,6 @@ export function RoomView({
   if (!room || otherWorkspace) return null;
 
   const findMessage = (key: string) => messages?.find((m) => m.id === key);
-  // 編集中に削除された（別のタブ、管理者）ら、編集をやめる
-  const editingMessage = editing ? findMessage(editing.messageId) : undefined;
-  const activeEditing = editing && editingMessage?.deleted_at === null ? editing : null;
   // 添付があれば本文は空でもよい。アップロード中・失敗した添付が残っていたら送らない（ADR 0013 / 0028）
   const canSend =
     (draft.trim() !== "" || drafts.length > 0) && draftsReady(drafts) && [...draft].length <= MAX_BODY_LENGTH;
@@ -164,46 +164,6 @@ export function RoomView({
     store.sendMessage(roomId, { body: draft, attachments: uploader.take() });
     setDraft("");
     setSentCount((n) => n + 1);
-  }
-
-  function actionsFor(key: string) {
-    const message = findMessage(key);
-    // 送信中のメッセージはまだ ID がないので、編集も削除もできない
-    if (!message || !me) return { canEdit: false, canDelete: false };
-    const senderRole = members?.find((m) => m.user.id === message.sender.id)?.role;
-    return messageActions(message, { userId: me.id, room: room!, myRole, senderRole });
-  }
-
-  async function saveEdit() {
-    if (!activeEditing || !editingMessage) return;
-    if (activeEditing.value === editingMessage.body) {
-      setEditing(null);
-      return;
-    }
-    setEditing({ ...activeEditing, saving: true });
-    try {
-      await store.editMessage(roomId, activeEditing.messageId, activeEditing.value);
-      setEditing(null);
-    } catch (err) {
-      // 失敗の表示はデザインにない。消されていた（409）・読めなくなった（404）なら閉じ、それ以外は保存し直せるように戻す
-      console.error("failed to edit message", err);
-      if (err instanceof ApiError && (err.status === 404 || err.status === 409)) setEditing(null);
-      else setEditing((current) => current && { ...current, saving: false });
-    }
-  }
-
-  async function confirmDelete() {
-    if (!deleting) return;
-    setDeleting({ ...deleting, pending: true });
-    try {
-      await store.deleteMessage(roomId, deleting.messageId);
-      setDeleting(null);
-    } catch (err) {
-      // 失敗の表示はデザインにない。権限がない（403）・見つからない（404）なら閉じ、それ以外は押し直せるように戻す
-      console.error("failed to delete message", err);
-      if (err instanceof ApiError && (err.status === 403 || err.status === 404)) setDeleting(null);
-      else setDeleting((current) => current && { ...current, pending: false });
-    }
   }
 
   async function download(attachmentId: string) {
@@ -271,31 +231,13 @@ export function RoomView({
             onDiscard={(key) => store.discardMessage(roomId, key)}
             onDownload={download}
             onImageError={(id, url) => media.attachmentImageFailed(id, url)}
-            actionsFor={actionsFor}
-            openMenuKey={openMenuKey}
-            onToggleMenu={(key) => setOpenMenuKey((current) => (current === key ? undefined : key))}
-            onEdit={(key) => {
-              setOpenMenuKey(undefined);
-              const message = findMessage(key);
-              if (message) setEditing({ messageId: message.id, value: message.body, saving: false });
+            {...timelineProps}
+            // スレッドは確定したメッセージにだけ作れる（送信中のものにはまだ ID がない）。返信・システムメッセージの「返信」は出ない
+            onReply={(key) => {
+              if (findMessage(key)) onOpenThread(key);
             }}
-            onDelete={(key) => {
-              setOpenMenuKey(undefined);
-              const message = findMessage(key);
-              if (message) setDeleting({ messageId: message.id, body: message.body, pending: false });
-            }}
-            editingKey={activeEditing?.messageId}
-            editing={
-              activeEditing
-                ? {
-                    value: activeEditing.value,
-                    saving: activeEditing.saving,
-                    onChange: (value) => setEditing({ ...activeEditing, value }),
-                    onSave: saveEdit,
-                    onCancel: () => setEditing(null),
-                  }
-                : undefined
-            }
+            onOpenThread={onOpenThread}
+            openThreadKey={openThreadId}
           />
         ))}
       {room.kind === "public" && !room.is_member ? (
@@ -315,13 +257,7 @@ export function RoomView({
           />
         )
       )}
-      <DeleteMessageDialog
-        open={deleting !== null}
-        body={deleting?.body ?? ""}
-        pending={deleting?.pending}
-        onCancel={() => setDeleting(null)}
-        onConfirm={confirmDelete}
-      />
+      {deleteDialog}
       <RoomSettings
         workspaceId={workspaceId}
         roomId={roomId}

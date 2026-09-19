@@ -182,12 +182,15 @@ export function createRealtime({ store, ...connectionOptions }: RealtimeOptions)
   /** 購読できたものについて、購読より前の変更を REST で取り直す。 */
   async function syncAfterSubscribe(workspaceId: string, targets: Target[]) {
     const state = store.getSnapshot();
-    const tasks: Promise<void>[] = [store.reloadRooms(workspaceId)];
+    // 参加中のスレッドの一覧（サイドバーのバッジ）も、購読より前の変更を取り直す（ADR 0036）
+    const tasks: Promise<void>[] = [store.reloadRooms(workspaceId), store.reloadThreads(workspaceId)];
     for (const { kind, id } of targets) {
       if (kind !== "room") continue;
       if (state.timelines[id]?.status === "ready") tasks.push(store.syncTimeline(id));
       // メンバー一覧（presence を含む）は、開いているルームの分だけ取り直す。ほかはパネルを開いたときに取る
       if (state.focus?.roomId === id && state.roomMembers[id]) tasks.push(store.loadRoomMembers(id));
+      // 開いているスレッドは取り直す。ルームの差分に返信も入っているが、差分が大きすぎて最新のページで置き換えたときに抜けうる
+      if (state.threadFocus?.roomId === id) tasks.push(store.reloadThread(id, state.threadFocus.rootId));
     }
     await Promise.all(tasks);
   }
@@ -216,12 +219,18 @@ export function createRealtime({ store, ...connectionOptions }: RealtimeOptions)
      * 入力中を知らせる。入力欄が変わるたびに呼んでよい（間隔を空けて送る）。
      * 購読していないルームには送らない（サーバーが not_subscribed を返すだけ）。つながっていなければ落とす。
      */
-    sendTyping(roomId: string) {
+    /** threadRootId を渡すと、そのスレッドで入力している（ADR 0036）。チャンネルとは別に間引く（サーバーと同じ）。 */
+    sendTyping(roomId: string, threadRootId?: string) {
       if (connectionState.status !== "open" || !subscribed.has(keyOf({ kind: "room", id: roomId }))) return;
-      const last = lastTypingAt.get(roomId);
+      const key = threadRootId === undefined ? roomId : `${roomId}:${threadRootId}`;
+      const last = lastTypingAt.get(key);
       if (last !== undefined && now() - last < TYPING_INTERVAL_MS) return;
-      lastTypingAt.set(roomId, now());
-      connection.notify({ type: "typing", room_id: roomId });
+      lastTypingAt.set(key, now());
+      connection.notify(
+        threadRootId === undefined
+          ? { type: "typing", room_id: roomId }
+          : { type: "typing", room_id: roomId, thread_root_id: threadRootId },
+      );
     },
 
     /** 「再試行」ボタン。 */

@@ -116,3 +116,14 @@ export function insertByActivity(ids: readonly string[], room: Room, rooms: Reco
     at === null ? -1 : without.findIndex((id) => Date.parse(rooms[id]?.last_message_at ?? "1970-01-01T00:00:00Z") < at);
   return index === -1 ? [...without, room.id] : [...without.slice(0, index), room.id, ...without.slice(index)];
 }
+
+/**
+ * チャンネルのタイムラインに出る、いちばん新しいメッセージの seq。手元のメッセージにはスレッドの返信も入っている
+ * （change_seq のカーソルを進めるため）が、既読や「ここから未読」はチャンネルに出ているものだけで決める（ADR 0036）。
+ */
+export function newestChannelSeq(messages: readonly Message[]): number | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.thread_root_id === null) return messages[i]!.seq;
+  }
+  return undefined;
+}

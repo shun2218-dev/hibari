@@ -1,6 +1,7 @@
 import type { ConnectionBannerStatus } from "@/components/chat/types";
 import { ApiError } from "@/lib/api/error";
 import type {
+  FollowedThread,
   Invite,
   InviteAcceptance,
   InvitePolicy,
@@ -28,7 +29,9 @@ import {
   insertByActivity,
   mergeIntoWindow,
   mergeMessages,
+  newestChannelSeq,
 } from "./messages";
+import { applyRootToThreads, applyThreadRead, mergeReplies, mergeRepliesIntoWindow } from "./threads";
 
 /**
  * - loading: 取得中（まだ一度も取れていない）
@@ -63,11 +66,30 @@ export type TimelineState = {
 export type OutgoingMessage = {
   clientMsgId: string;
   body: string;
+  /** スレッドへの返信なら親の ID（ADR 0036）。チャンネルへの投稿なら null。送信の順番はルームで 1 本のまま。 */
+  threadRootId: string | null;
   /** アップロードを終えた（uploaded の）添付。送信で attachment_ids として付ける（ADR 0013）。 */
   attachments: MessageAttachment[];
   status: "pending" | "failed";
   /** 手元の時刻（ISO 8601）。表示の時刻と日付の区切りにだけ使い、並びには使わない。 */
   createdAt: string;
+};
+
+/**
+ * 開いているスレッド（ADR 0036）。親と返信を持つ。返信はルームのタイムライン（TimelineState.messages）にも入っているが、
+ * そちらは読み込んだ範囲のチャンネルに合わせて持つので、スレッドの返信を全部持っているとは限らない。スレッドはスレッドで取る。
+ */
+export type ThreadState = {
+  status: LoadStatus;
+  roomId: string;
+  /** 親のメッセージ。削除されていれば tombstone。取得前は null。 */
+  root: Message | null;
+  /** seq の昇順。 */
+  replies: Message[];
+  hasOlder: boolean;
+  loadingOlder: boolean;
+  /** 自分の既読位置。スレッドに参加していなければ null（未読を持たない）。 */
+  lastReadThreadSeq: number | null;
 };
 
 /** 入力中の人。expiresAt を過ぎたら消す（typing.stopped はない。docs/events.md）。 */
@@ -103,6 +125,16 @@ export type ChatState = {
    */
   focus: { roomId: string; caughtUp: boolean } | null;
   typing: Record<string, TypingUser[] | undefined>;
+  /** スレッドの親の ID ごとの状態（開いたことのあるスレッド）。 */
+  threads: Record<string, ThreadState | undefined>;
+  /** ワークスペースごとの、参加しているスレッド。最後の返信が新しい順（API と同じ）。 */
+  threadLists: Record<string, { status: LoadStatus; list: FollowedThread[] } | undefined>;
+  /** ルーム一覧の unread_thread_count。参加しているスレッドの一覧を取るまでの、サイドバーのバッジ。 */
+  unreadThreadCounts: Record<string, number | undefined>;
+  /** スレッドの親の ID ごとの、そのスレッドで入力中の人。 */
+  threadTyping: Record<string, TypingUser[] | undefined>;
+  /** 開いているスレッドのパネル。再接続の後に取り直す（realtime.ts）。 */
+  threadFocus: { roomId: string; rootId: string } | null;
   /** ルームごとの、確定していない自分のメッセージ。入力した順（送る順）に並ぶ。 */
   outgoing: Record<string, OutgoingMessage[] | undefined>;
   /**
@@ -166,6 +198,11 @@ export function createChatStore(
     activeWorkspaceId: null,
     focus: null,
     typing: {},
+    threads: {},
+    threadLists: {},
+    unreadThreadCounts: {},
+    threadTyping: {},
+    threadFocus: null,
     outgoing: {},
     removedRooms: {},
     removedWorkspaces: {},
@@ -347,6 +384,179 @@ export function createChatStore(
     });
   }
 
+  // ---- スレッド（ADR 0036）----
+
+  function patchThread(rootId: string, recipe: (thread: ThreadState) => ThreadState) {
+    update((s) => {
+      const thread = s.threads[rootId];
+      if (!thread) return s;
+      const next = recipe(thread);
+      return next === thread ? s : { ...s, threads: { ...s.threads, [rootId]: next } };
+    });
+  }
+
+  function patchThreadList(workspaceId: string, recipe: (list: FollowedThread[]) => FollowedThread[]) {
+    update((s) => {
+      const current = s.threadLists[workspaceId];
+      if (!current) return s;
+      const list = recipe(current.list);
+      return list === current.list ? s : { ...s, threadLists: { ...s.threadLists, [workspaceId]: { ...current, list } } };
+    });
+  }
+
+  /** 自分の既読位置を進める（スレッドとワークスペースの一覧の両方）。 */
+  function advanceThreadRead(roomId: string, rootId: string, lastReadThreadSeq: number) {
+    patchThread(rootId, (t) =>
+      t.lastReadThreadSeq === null || t.lastReadThreadSeq >= lastReadThreadSeq
+        ? t
+        : { ...t, lastReadThreadSeq: lastReadThreadSeq },
+    );
+    const workspaceId = state.rooms[roomId]?.workspace_id;
+    if (workspaceId) patchThreadList(workspaceId, (list) => applyThreadRead(list, rootId, lastReadThreadSeq));
+  }
+
+  /**
+   * 届いたメッセージ（イベント・差分・送信の応答）を、スレッドに反映する。
+   * - 返信: 開いたことのあるスレッドに足す。自分の返信なら、サーバーが自分の既読位置も進めている
+   * - 親（thread を持つ）: スレッドの親と、参加中の一覧の返信数・未読数を書き換える
+   */
+  function absorbThreadMessages(messages: readonly Message[], created: boolean) {
+    for (const message of messages) {
+      const rootId = message.thread_root_id;
+      if (rootId !== null) {
+        patchThread(rootId, (t) => {
+          const replies = mergeRepliesIntoWindow(t.replies, t.hasOlder, [message]);
+          return replies === t.replies ? t : { ...t, replies };
+        });
+        if (created && message.sender.id === userId && message.thread_seq !== null) {
+          advanceThreadRead(message.room_id, rootId, message.thread_seq);
+        }
+        if (created) removeThreadTyping(rootId, message.sender.id);
+      }
+      if (message.thread !== null) {
+        patchThread(message.id, (t) =>
+          t.root && t.root.change_seq > message.change_seq ? t : { ...t, root: message },
+        );
+        const workspaceId = state.rooms[message.room_id]?.workspace_id;
+        if (workspaceId) patchThreadList(workspaceId, (list) => applyRootToThreads(list, message));
+      } else {
+        // 親の削除（tombstone）や編集。返信がまだないメッセージは親として持っていないので、開いていたときだけ書き換える
+        patchThread(message.id, (t) =>
+          t.root && t.root.change_seq > message.change_seq ? t : { ...t, root: message },
+        );
+      }
+    }
+  }
+
+  function removeThreadTyping(rootId: string, typingUserId: string) {
+    const key = `thread:${rootId}:${typingUserId}`;
+    clearTimeout(typingTimers.get(key));
+    typingTimers.delete(key);
+    update((s) => {
+      const current = s.threadTyping[rootId];
+      if (!current?.some((t) => t.user.id === typingUserId)) return s;
+      const rest = current.filter((t) => t.user.id !== typingUserId);
+      return { ...s, threadTyping: { ...s.threadTyping, [rootId]: rest.length > 0 ? rest : undefined } };
+    });
+  }
+
+  function receiveThreadTyping(rootId: string, user: UserProfile) {
+    if (user.id === userId) return;
+    const key = `thread:${rootId}:${user.id}`;
+    clearTimeout(typingTimers.get(key));
+    typingTimers.set(key, setTimeout(() => removeThreadTyping(rootId, user.id), TYPING_TTL_MS));
+    update((s) => {
+      const others = (s.threadTyping[rootId] ?? []).filter((t) => t.user.id !== user.id);
+      return {
+        ...s,
+        threadTyping: { ...s.threadTyping, [rootId]: [...others, { user, expiresAt: now() + TYPING_TTL_MS }] },
+      };
+    });
+  }
+
+  function loadThreads(workspaceId: string): Promise<void> {
+    return once(`threads:${workspaceId}`, async () => {
+      update((s) =>
+        s.threadLists[workspaceId]
+          ? s
+          : { ...s, threadLists: { ...s.threadLists, [workspaceId]: { status: "loading", list: [] } } },
+      );
+      try {
+        const list = await api.listAllThreads(workspaceId);
+        update((s) => ({ ...s, threadLists: { ...s.threadLists, [workspaceId]: { status: "ready", list } } }));
+      } catch (err) {
+        update((s) => ({
+          ...s,
+          threadLists: {
+            ...s.threadLists,
+            [workspaceId]: { status: statusOf(err), list: s.threadLists[workspaceId]?.list ?? [] },
+          },
+        }));
+        if (statusOf(err) === "error") console.error("failed to load threads", err);
+      }
+    });
+  }
+
+  /** 取得中のものがあれば、それが終わってからもう 1 回取る（reloadRooms と同じ理由）。 */
+  async function reloadThreads(workspaceId: string): Promise<void> {
+    await inflight.get(`threads:${workspaceId}`);
+    return loadThreads(workspaceId);
+  }
+
+  /**
+   * スレッドの最新のページを取る。取得の間に届いた返信は残す（openRoom と同じ）。
+   * 取り直し（再接続）では、取れるまで手元の状態をそのまま見せる。既読位置も後退させない。
+   */
+  function loadThread(roomId: string, rootId: string): Promise<void> {
+    return once(`thread:${rootId}`, async () => {
+      update((s) => {
+        const current = s.threads[rootId];
+        if (current && current.roomId === roomId) return s;
+        const thread: ThreadState = {
+          status: "loading",
+          roomId,
+          root: null,
+          replies: [],
+          hasOlder: false,
+          loadingOlder: false,
+          lastReadThreadSeq: null,
+        };
+        return { ...s, threads: { ...s.threads, [rootId]: thread } };
+      });
+      try {
+        const page = await api.listThreadMessages(roomId, rootId);
+        update((s) => {
+          const current = s.threads[rootId];
+          const arrived = (current?.replies ?? []).filter((m) => m.change_seq > page.last_change_seq);
+          const replies = mergeRepliesIntoWindow(mergeReplies([], page.messages), page.has_more, arrived);
+          const root = current?.root && current.root.change_seq > page.root.change_seq ? current.root : page.root;
+          const lastRead =
+            page.last_read_thread_seq === null
+              ? null
+              : Math.max(page.last_read_thread_seq, current?.lastReadThreadSeq ?? 0);
+          return {
+            ...s,
+            threads: {
+              ...s.threads,
+              [rootId]: {
+                status: "ready",
+                roomId,
+                root,
+                replies,
+                hasOlder: page.has_more,
+                loadingOlder: false,
+                lastReadThreadSeq: lastRead,
+              },
+            },
+          };
+        });
+      } catch (err) {
+        patchThread(rootId, (t) => ({ ...t, status: statusOf(err) }));
+        if (statusOf(err) === "error") console.error("failed to load thread", err);
+      }
+    });
+  }
+
   // ---- 既読 ----
 
   async function markRead(roomId: string, seq: number): Promise<void> {
@@ -395,13 +605,13 @@ export function createChatStore(
   function afterNewMessages(roomId: string, previousNewest: number | undefined, added: readonly Message[]) {
     const timeline = state.timelines[roomId];
     const room = state.rooms[roomId];
-    const newest = timeline?.messages.at(-1)?.seq;
+    const newest = timeline ? newestChannelSeq(timeline.messages) : undefined;
     if (!timeline || timeline.status !== "ready" || newest === undefined || previousNewest === undefined) return;
     if (newest <= previousNewest || !room || room.last_read_seq === null) return;
 
     const seen =
       (state.focus?.roomId === roomId && state.focus.caughtUp) ||
-      added.filter((m) => m.seq > previousNewest).every((m) => m.sender.id === userId);
+      added.filter((m) => m.seq > previousNewest && m.thread_root_id === null).every((m) => m.sender.id === userId);
     if (seen) {
       if (timeline.unreadAfterSeq !== null && timeline.unreadAfterSeq >= previousNewest) {
         patchTimeline(roomId, { unreadAfterSeq: newest });
@@ -416,9 +626,10 @@ export function createChatStore(
   async function syncOnce(roomId: string) {
     const timeline = state.timelines[roomId];
     if (!timeline || timeline.status !== "ready") return;
-    const previousNewest = timeline.messages.at(-1)?.seq;
+    const previousNewest = newestChannelSeq(timeline.messages);
 
     const page = await api.listChanges(roomId, timeline.changeSeq);
+    absorbThreadMessages(page.messages, false);
     if (!page.has_more) {
       update((s) => {
         const current = s.timelines[roomId];
@@ -521,6 +732,7 @@ export function createChatStore(
     const sending = api.sendMessage(roomId, {
       client_msg_id: item.clientMsgId,
       body: item.body,
+      ...(item.threadRootId === null ? {} : { thread_root_id: item.threadRootId }),
       ...(item.attachments.length === 0 ? {} : { attachment_ids: item.attachments.map((a) => a.id) }),
     });
     // 待ちきれずに失敗にした後で応答が届いても、確定として扱う（同じ client_msg_id の再送は同じメッセージを返す）
@@ -581,7 +793,8 @@ export function createChatStore(
         ids[0] === roomId || !ids.includes(roomId) ? ids : [roomId, ...ids.filter((id) => id !== roomId)],
       );
     }
-    if (created) removeTyping(roomId, message.sender.id);
+    if (created && message.thread_root_id === null) removeTyping(roomId, message.sender.id);
+    absorbThreadMessages([message], created);
 
     const timeline = state.timelines[roomId];
     if (!timeline) return;
@@ -592,7 +805,7 @@ export function createChatStore(
     }
     if (timeline.status !== "ready" || message.change_seq <= timeline.changeSeq) return;
 
-    const previousNewest = timeline.messages.at(-1)?.seq;
+    const previousNewest = newestChannelSeq(timeline.messages);
     const messages = mergeIntoWindow(timeline.messages, timeline.hasOlder, [message]);
     // 読み込んでいない範囲の変更は足さないが、番号が続いていれば反映したことにしてよい（表示するものがない）
     const next = message.change_seq === timeline.changeSeq + 1 ? message.change_seq : timeline.changeSeq;
@@ -658,6 +871,17 @@ export function createChatStore(
 
   function removedFromRoom(workspaceId: string, roomId: string, reason: RemovalReason) {
     const room = state.rooms[roomId];
+    // ルームを抜けるとスレッドへの参加も消える（thread_members は room_members への FK を持つ。ADR 0036）
+    patchThreadList(workspaceId, (list) =>
+      list.some((t) => t.room.id === roomId) ? list.filter((t) => t.room.id !== roomId) : list,
+    );
+    update((s) => {
+      const ids = Object.entries(s.threads).flatMap(([id, t]) => (t?.roomId === roomId ? [id] : []));
+      if (ids.length === 0) return s;
+      const threads = { ...s.threads };
+      for (const id of ids) threads[id] = room?.kind === "public" ? { ...threads[id]!, lastReadThreadSeq: null } : undefined;
+      return { ...s, threads };
+    });
     if (room?.kind === "public") {
       // 参加していなくても読めるので、一覧にも画面にも残し、参加していない状態に戻す
       patchRoom(roomId, (r) => ({ ...r, is_member: false, last_read_seq: null, unread_count: 0 }));
@@ -824,13 +1048,21 @@ export function createChatStore(
       }
       case "typing.started":
         // スレッドでの入力はチャンネルの入力中に出さない。スレッドのパネルに出すのは構築順 5（ADR 0036）
-        if (event.data.thread_root_id !== null) return;
-        receiveTyping(event.data.room_id, event.data.user);
+        if (event.data.thread_root_id !== null) receiveThreadTyping(event.data.thread_root_id, event.data.user);
+        else receiveTyping(event.data.room_id, event.data.user);
         return;
       case "thread.read":
-      case "thread.followed":
-        // スレッドの未読と参加中の一覧は、スレッドの画面と一緒に持つ（Phase 6.5 の構築順 5）
+        advanceThreadRead(event.data.room_id, event.data.thread_root_id, event.data.last_read_thread_seq);
         return;
+      case "thread.followed": {
+        // 誰が参加するかはサーバーが決める。一覧の 1 行（親の冒頭など）はイベントにないので取り直す
+        const { thread_root_id, last_read_thread_seq, workspace_id } = event.data;
+        patchThread(thread_root_id, (t) =>
+          t.lastReadThreadSeq !== null ? t : { ...t, lastReadThreadSeq: last_read_thread_seq },
+        );
+        void reloadThreads(workspace_id);
+        return;
+      }
     }
   }
 
@@ -842,10 +1074,14 @@ export function createChatStore(
           : { ...s, roomLists: { ...s.roomLists, [workspaceId]: { status: "loading", ids: [] } } },
       );
       try {
-        const { rooms } = await api.listRooms(workspaceId);
+        const { rooms, unread_thread_count } = await api.listRooms(workspaceId);
         for (const room of rooms) putRoom(room);
         const ids = rooms.map((r) => r.id);
-        update((s) => ({ ...s, roomLists: { ...s.roomLists, [workspaceId]: { status: "ready", ids } } }));
+        update((s) => ({
+          ...s,
+          roomLists: { ...s.roomLists, [workspaceId]: { status: "ready", ids } },
+          unreadThreadCounts: { ...s.unreadThreadCounts, [workspaceId]: unread_thread_count },
+        }));
       } catch (err) {
         update((s) => ({
           ...s,
@@ -1137,7 +1373,7 @@ export function createChatStore(
 
         // 画面に出したいちばん新しいメッセージまで読んだことにする。ルームの last_message_seq を使わないのは、
         // 取得の間に届いたメッセージを、見せる前に既読にしないため。メンバーでなければ既読位置はない
-        const latestSeq = state.timelines[roomId]?.messages.at(-1)?.seq;
+        const latestSeq = newestChannelSeq(state.timelines[roomId]?.messages ?? []);
         if (latestSeq !== undefined) await requestMarkRead(roomId, latestSeq);
       });
     },
@@ -1195,11 +1431,12 @@ export function createChatStore(
      */
     sendMessage(
       roomId: string,
-      input: { body: string; attachments?: MessageAttachment[] },
+      input: { body: string; attachments?: MessageAttachment[]; threadRootId?: string | null },
     ) {
       const item: OutgoingMessage = {
         clientMsgId: ulid(now()),
         body: input.body,
+        threadRootId: input.threadRootId ?? null,
         attachments: input.attachments ?? [],
         status: "pending",
         createdAt: new Date(now()).toISOString(),
@@ -1243,6 +1480,72 @@ export function createChatStore(
       await syncTimeline(roomId);
     },
 
+    // ---- スレッド（ADR 0036）----
+
+    loadThreads,
+
+    reloadThreads,
+
+    /** スレッドのパネルを開いた。まだ取っていなければ最新のページを取る。 */
+    openThread(roomId: string, rootId: string): Promise<void> {
+      const current = state.threads[rootId];
+      if (current?.status === "ready" && current.roomId === roomId) return Promise.resolve();
+      return loadThread(roomId, rootId);
+    },
+
+    /** 再接続の後に取り直す。取得の間に届いた返信は残す。 */
+    async reloadThread(roomId: string, rootId: string): Promise<void> {
+      await inflight.get(`thread:${rootId}`);
+      return loadThread(roomId, rootId);
+    },
+
+    /** いちばん古い返信より前のページを取る。取得中やもうないときは何もしない。 */
+    async loadOlderThread(rootId: string): Promise<void> {
+      const thread = state.threads[rootId];
+      if (!thread || thread.status !== "ready" || !thread.hasOlder || thread.loadingOlder) return;
+      const oldest = thread.replies[0];
+      if (!oldest) return;
+      patchThread(rootId, (t) => ({ ...t, loadingOlder: true }));
+      try {
+        const page = await api.listThreadMessages(thread.roomId, rootId, { beforeSeq: oldest.seq });
+        patchThread(rootId, (t) => ({
+          ...t,
+          replies: mergeReplies(t.replies, page.messages),
+          hasOlder: page.has_more,
+          loadingOlder: false,
+        }));
+      } catch (err) {
+        patchThread(rootId, (t) => ({ ...t, loadingOlder: false }));
+        console.error("failed to load older replies", err);
+      }
+    },
+
+    /**
+     * 開いているスレッドを、表示している最新の返信まで既読にする。参加していない・未読がないときは何もしない。
+     * 失敗はログに出して投げない（次に返信が届いたときにもう一度試す）。
+     */
+    markThreadRead(rootId: string): Promise<void> {
+      const thread = state.threads[rootId];
+      const newest = thread?.replies.at(-1);
+      if (!thread || thread.status !== "ready" || !newest || thread.lastReadThreadSeq === null) return Promise.resolve();
+      // サーバーは seq 以下で最後の返信の thread_seq まで進める。表示している最新の返信まで読んであれば送らない
+      if ((newest.thread_seq ?? 0) <= thread.lastReadThreadSeq) return Promise.resolve();
+      return once(`thread-read:${rootId}`, async () => {
+        try {
+          const read = await api.markThreadRead(thread.roomId, rootId, { seq: newest.seq });
+          if (read.following) advanceThreadRead(thread.roomId, rootId, read.last_read_thread_seq);
+        } catch (err) {
+          console.error("failed to mark thread read", err);
+        }
+      });
+    },
+
+    setThreadFocus(focus: { roomId: string; rootId: string } | null) {
+      update((s) =>
+        s.threadFocus?.rootId === focus?.rootId && s.threadFocus?.roomId === focus?.roomId ? s : { ...s, threadFocus: focus },
+      );
+    },
+
     // ---- リアルタイム ----
 
     applyEvent,
@@ -1266,7 +1569,7 @@ export function createChatStore(
         update((s) => ({ ...s, removedRooms: { ...s.removedRooms, [previous.roomId]: undefined } }));
       }
       if (focus?.caughtUp) {
-        const latestSeq = state.timelines[focus.roomId]?.messages.at(-1)?.seq;
+        const latestSeq = newestChannelSeq(state.timelines[focus.roomId]?.messages ?? []);
         if (latestSeq !== undefined && state.timelines[focus.roomId]?.status === "ready") {
           void requestMarkRead(focus.roomId, latestSeq);
         }

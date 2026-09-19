@@ -15,6 +15,8 @@ export type MessageActions = { canEdit: boolean; canDelete: boolean };
 
 type TimelineProps = {
   items: TimelineItem[];
+  /** 読み上げの名前。スレッドのパネルはチャンネルと同じ画面に並ぶので、名前を分ける（ADR 0036）。 */
+  label?: string;
   onRetry?: (key: string) => void;
   onDiscard?: (key: string) => void;
   /** 「返信」を押した（スレッドを開く。ADR 0036）。渡さなければ「返信」を出さない。 */
@@ -68,6 +70,7 @@ type ScrollAnchor = { key: string; offsetTop: number; atBottom: boolean };
  */
 export function Timeline({
   items,
+  label = "メッセージ",
   onRetry,
   onDiscard,
   onReply,
@@ -143,7 +146,7 @@ export function Timeline({
         if (e.currentTarget.scrollTop < REACH_START_PX) onReachStart?.();
       }}
     >
-      <ol ref={listRef} aria-label="メッセージ" className="flex flex-col">
+      <ol ref={listRef} aria-label={label} className="flex flex-col">
         {items.map((item) => {
           switch (item.type) {
             case "date":
@@ -166,6 +169,18 @@ export function Timeline({
                     すべて既読にする
                   </TextButton>
                   <span aria-hidden className="h-px w-4 bg-attention" />
+                </li>
+              );
+            case "thread-divider":
+              // スレッドのパネルで、親と返信の間に置く（ADR 0036）
+              return item.replyCount > 0 ? (
+                <li key={item.key} data-key={item.key} className="flex items-center gap-3 px-4 pt-3 pb-1">
+                  <span className="text-2xs font-medium text-text-secondary">{item.replyCount} 件の返信</span>
+                  <span aria-hidden className="h-px flex-1 bg-border" />
+                </li>
+              ) : (
+                <li key={item.key} data-key={item.key} className="px-4 pt-6 text-center text-xs text-text-muted">
+                  まだ返信はありません
                 </li>
               );
             case "system":

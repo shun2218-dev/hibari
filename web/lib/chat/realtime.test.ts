@@ -75,8 +75,9 @@ describe("createRealtime", () => {
       "ws subscribe ws-1",
       "ws subscribe r1",
       "ws subscribe r2",
-      // ack を待ってから、購読より前の変更を取り直す
+      // ack を待ってから、購読より前の変更を取り直す（参加中のスレッドの一覧も。ADR 0036）
       "GET /api/v1/workspaces/ws-1/rooms",
+      "GET /api/v1/workspaces/ws-1/threads?limit=200",
     ]);
     expect(store.getSnapshot().connection).toEqual({ banner: null, unavailable: null });
     realtime.stop();
@@ -102,7 +103,7 @@ describe("createRealtime", () => {
 
     sockets.last().receive({ type: "ack", id: second.id! });
     await vi.advanceTimersByTimeAsync(0);
-    expect(log).toEqual(["GET /api/v1/workspaces/ws-1/rooms"]);
+    expect(log).toEqual(["GET /api/v1/workspaces/ws-1/rooms", "GET /api/v1/workspaces/ws-1/threads?limit=200"]);
     realtime.stop();
   });
 

@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { ThreadPanel } from "./thread-panel";
-import type { MessageView } from "./types";
+import { Timeline } from "./timeline";
+import type { MessageView, TimelineItem } from "./types";
 
 function message(key: string, overrides: Partial<MessageView> = {}): MessageView {
   return {
@@ -20,59 +21,62 @@ function message(key: string, overrides: Partial<MessageView> = {}): MessageView
   };
 }
 
-const room = { kind: "public", name: "デザインレビュー" } as const;
-const root = message("root", { thread: { replyCount: 2, lastReplyLabel: "10:18" } });
-
-function renderPanel(props: Partial<Parameters<typeof ThreadPanel>[0]> = {}) {
-  return render(
-    <ThreadPanel
-      room={room}
-      root={root}
-      replies={[message("r1"), message("r2", { status: "pending" })]}
-      replyCount={2}
-      footer={<p>入力欄</p>}
-      {...props}
-    />,
-  );
+function items(root: MessageView, replies: MessageView[], replyCount = replies.length): TimelineItem[] {
+  return [
+    { type: "message", message: root },
+    { type: "thread-divider", key: "divider", replyCount },
+    ...replies.map((m): TimelineItem => ({ type: "message", message: m })),
+  ];
 }
+
+const room = { kind: "public", name: "デザインレビュー" } as const;
 
 describe("ThreadPanel", () => {
   it("shows the room, the root, the reply count and the replies in the given order", () => {
-    renderPanel();
+    render(
+      <ThreadPanel room={room} footer={<p>入力欄</p>}>
+        <Timeline items={items(message("root"), [message("r1"), message("r2", { status: "pending" })])} />
+      </ThreadPanel>,
+    );
 
     const panel = screen.getByRole("complementary", { name: "スレッド" });
     expect(within(panel).getByText("デザインレビュー")).toBeInTheDocument();
-    expect(within(panel).getByText("本文 root")).toBeInTheDocument();
     expect(within(panel).getByText("2 件の返信")).toBeInTheDocument();
-    const replies = within(panel).getByRole("list", { name: "返信" });
-    expect(within(replies).getAllByRole("article").map((a) => a.textContent)).toEqual([
+    expect(within(panel).getAllByRole("article").map((a) => a.textContent)).toEqual([
+      expect.stringContaining("本文 root"),
       expect.stringContaining("本文 r1"),
       expect.stringContaining("本文 r2"),
     ]);
     expect(within(panel).getByText("入力欄")).toBeInTheDocument();
   });
 
-  it("does not repeat the thread summary on the root inside the panel", () => {
-    renderPanel();
-
-    expect(screen.queryByRole("button", { name: /件の返信/ })).not.toBeInTheDocument();
-  });
-
   it("offers no reply action inside the thread (threads are not nested)", () => {
-    renderPanel();
+    render(
+      <ThreadPanel room={room}>
+        <Timeline items={items(message("root"), [message("r1")])} />
+      </ThreadPanel>,
+    );
 
     expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
   });
 
   it("says there are no replies yet", () => {
-    renderPanel({ root: message("root"), replies: [], replyCount: 0 });
+    render(
+      <ThreadPanel room={room}>
+        <Timeline items={items(message("root"), [])} />
+      </ThreadPanel>,
+    );
 
     expect(screen.getByText("まだ返信はありません")).toBeInTheDocument();
     expect(screen.queryByText(/件の返信/)).not.toBeInTheDocument();
   });
 
   it("keeps the thread when the root is deleted", () => {
-    renderPanel({ root: message("root", { deleted: true, body: "" }) });
+    render(
+      <ThreadPanel room={room}>
+        <Timeline items={items(message("root", { deleted: true, body: "" }), [message("r1")])} />
+      </ThreadPanel>,
+    );
 
     expect(screen.getByText("このメッセージは削除されました")).toBeInTheDocument();
     expect(screen.getByText("本文 r1")).toBeInTheDocument();
@@ -80,7 +84,7 @@ describe("ThreadPanel", () => {
 
   it("closes from the close button (desktop) and the back button (mobile)", async () => {
     const onClose = vi.fn();
-    renderPanel({ onClose });
+    render(<ThreadPanel room={room} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "スレッドを閉じる" }));
     await userEvent.click(screen.getByRole("button", { name: "チャンネルに戻る" }));

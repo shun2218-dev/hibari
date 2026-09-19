@@ -8,6 +8,7 @@ import type {
   CreateRoomRequest,
   CreateWorkspaceRequest,
   EditMessageRequest,
+  FollowedThread,
   Invite,
   InviteAcceptance,
   InviteList,
@@ -26,6 +27,9 @@ import type {
   RoomMemberList,
   SendMessageRequest,
   SignedURL,
+  ThreadList,
+  ThreadMessageList,
+  ThreadReadState,
   TransferOwnershipRequest,
   UpdateWorkspaceRequest,
   WSTicket,
@@ -149,6 +153,24 @@ export function createChatApi(request: Session["request"]) {
     markRead: (roomId: string, body: MarkRoomReadRequest) =>
       request<ReadState>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/read`, body),
 
+    /** スレッドの親と返信。before_seq を省くと最新のページ。messages は seq の昇順（ADR 0036）。 */
+    listThreadMessages: (roomId: string, rootId: string, { beforeSeq }: { beforeSeq?: number } = {}) => {
+      const params = new URLSearchParams({ limit: String(MESSAGE_PAGE_SIZE) });
+      if (beforeSeq !== undefined) params.set("before_seq", String(beforeSeq));
+      return request<ThreadMessageList>(
+        "GET",
+        `/api/v1/rooms/${encodeURIComponent(roomId)}/threads/${encodeURIComponent(rootId)}/messages?${params}`,
+      );
+    },
+
+    /** 参加していないスレッドでは following: false が返る（エラーにならない。ADR 0036）。 */
+    markThreadRead: (roomId: string, rootId: string, body: MarkRoomReadRequest) =>
+      request<ThreadReadState>(
+        "POST",
+        `/api/v1/rooms/${encodeURIComponent(roomId)}/threads/${encodeURIComponent(rootId)}/read`,
+        body,
+      ),
+
     /** 添付の署名付き PUT URL を発行する。pending の行ができる（ADR 0013）。 */
     createAttachment: (roomId: string, body: CreateAttachmentRequest) =>
       request<CreateAttachmentResponse>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/attachments`, body),
@@ -183,6 +205,14 @@ export function createChatApi(request: Session["request"]) {
         (params) =>
           request<MemberList>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members?${params}`),
         (page) => page.members,
+      ),
+
+    /** 参加しているスレッドを全部取る。最後の返信が新しい順（ADR 0036）。サイドバーのバッジを手元の一覧から数えるため、途中で止めない。 */
+    listAllThreads: (workspaceId: string): Promise<FollowedThread[]> =>
+      listAll(
+        (params) =>
+          request<ThreadList>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/threads?${params}`),
+        (page) => page.threads,
       ),
 
     /** 招待リンクを全部取る。取り消し済み・期限切れも含む（ADR 0011）。 */

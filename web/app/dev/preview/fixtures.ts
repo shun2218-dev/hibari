@@ -219,6 +219,15 @@ export const threadReplies: MessageView[] = [
   messageView(message("r-1018", naoki, "10:18", "入力中は琥珀、送信ボタンは緑、で筋が通りますね。")),
 ];
 
+/** スレッドのパネルの並び（親・「N 件の返信」・返信）。データ層の toThreadTimelineItems と同じ形にする。 */
+export function threadItems(root: MessageView, replies: MessageView[]): TimelineItem[] {
+  return [
+    { type: "message", message: { ...root, thread: undefined, grouped: false } },
+    { type: "thread-divider", key: `divider-${root.key}`, replyCount: root.thread?.replyCount ?? 0 },
+    ...replies.map((message): TimelineItem => ({ type: "message", message })),
+  ];
+}
+
 /** 返信がまだない親（「返信」から開いた直後。chat/thread-panel-empty.png）。 */
 export const threadRootWithoutReplies: MessageView = messageView(timelineWithThreads[7]);
 
