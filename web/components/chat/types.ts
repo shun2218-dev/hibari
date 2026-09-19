@@ -55,6 +55,8 @@ export type MessageView = {
 export type TimelineItem =
   | { type: "date"; key: string; label: string }
   | { type: "unread"; key: string }
+  /** 参加・退出・作成・名前の変更のログ（ADR 0033）。文言はデータ層が作る。 */
+  | { type: "system"; key: string; text: string; timeLabel: string }
   | { type: "message"; message: MessageView };
 
 /**

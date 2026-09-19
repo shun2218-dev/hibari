@@ -122,7 +122,9 @@ type RoomRead struct {
 	WorkspaceID ulid.ULID
 	RoomID      ulid.ULID
 	LastReadSeq int64
-	UnreadCount int64
+	// LastReadUserSeq は既読位置に対応する user_seq（ADR 0033）。
+	LastReadUserSeq int64
+	UnreadCount     int64
 }
 
 type WorkspaceUpdated struct {

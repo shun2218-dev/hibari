@@ -33,8 +33,21 @@ type createdAttachmentBody struct {
 
 type messageWithAttachmentsBody struct {
 	ID          string           `json:"id"`
+	Kind        string           `json:"kind"`
 	Body        string           `json:"body"`
 	Attachments []attachmentBody `json:"attachments"`
+}
+
+// userMessages は履歴から人の発言だけを取り出す。参加や作成のログ（ADR 0033）も履歴に並ぶので、
+// 添付の検査はその分を除いてから行う。
+func userMessages(msgs []messageWithAttachmentsBody) []messageWithAttachmentsBody {
+	out := make([]messageWithAttachmentsBody, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Kind == "user" {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // storageRequest はクライアントとして、署名付き URL のストレージに直接リクエストを送る（API サーバーを経由しない）。
@@ -137,7 +150,7 @@ func TestAttachmentAPIFlow(t *testing.T) {
 	history := decode[struct {
 		Messages []messageWithAttachmentsBody `json:"messages"`
 	}](t, r)
-	if len(history.Messages) != 2 || len(history.Messages[0].Attachments) != 1 || history.Messages[1].Attachments == nil || len(history.Messages[1].Attachments) != 0 {
+	if msgs := userMessages(history.Messages); len(msgs) != 2 || len(msgs[0].Attachments) != 1 || msgs[1].Attachments == nil || len(msgs[1].Attachments) != 0 {
 		t.Fatalf("history = %s", r.body)
 	}
 

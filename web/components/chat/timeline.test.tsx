@@ -57,6 +57,22 @@ describe("Timeline", () => {
     expect(onRetry).toHaveBeenCalledWith("client-1");
   });
 
+  it("shows a system log as a quiet line, not as a message", () => {
+    render(
+      <Timeline
+        items={[
+          msg("a", "おはよう"),
+          { type: "system", key: "s1", text: "佐藤 直樹 がチャンネルに参加しました", timeLabel: "10:05" },
+        ]}
+      />,
+    );
+
+    // ログは article（メッセージ）にしない。アバターも名前も出さない
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.getByText("佐藤 直樹 がチャンネルに参加しました")).toBeInTheDocument();
+    expect(screen.getByText("10:05")).toBeInTheDocument();
+  });
+
   describe("scrolling", () => {
     const ROW = 100;
     const VIEWPORT = 250;

@@ -543,7 +543,10 @@ type roomResponse struct {
 	LastMessageAt  *time.Time      `json:"last_message_at"`
 	// LastReadSeq はルームのメンバーでなければ null。
 	LastReadSeq *int64 `json:"last_read_seq"`
-	UnreadCount int64  `json:"unread_count"`
+	// LastUserSeq は人の発言の総数、LastReadUserSeq はその既読位置（未読数の根拠。ADR 0033）。
+	LastUserSeq     int64  `json:"last_user_seq"`
+	LastReadUserSeq *int64 `json:"last_read_user_seq"`
+	UnreadCount     int64  `json:"unread_count"`
 	// LastMessage はメッセージが 1 件もなければ null。
 	LastMessage *lastMessageResponse `json:"last_message"`
 	CreatedAt   time.Time            `json:"created_at"`
@@ -557,28 +560,36 @@ type dmPeerResponse struct {
 
 // lastMessageResponse はサイドバーの最終メッセージ。相対時刻の表示はクライアントが created_at から作る。
 type lastMessageResponse struct {
-	ID        string              `json:"id"`
-	Sender    userProfileResponse `json:"sender"`
-	Body      string              `json:"body"`
-	CreatedAt time.Time           `json:"created_at"`
-	Deleted   bool                `json:"deleted"`
+	ID     string              `json:"id"`
+	Sender userProfileResponse `json:"sender"`
+	// Kind と System は、サイドバーの 1 行にログの文言を出すために返す（ADR 0033）。
+	Kind      chat.MessageKind     `json:"kind"`
+	System    *systemEventResponse `json:"system,omitzero"`
+	Body      string               `json:"body"`
+	CreatedAt time.Time            `json:"created_at"`
+	Deleted   bool                 `json:"deleted"`
 }
 
 func newRoomResponse(r chat.Room, withCount bool) roomResponse {
 	resp := roomResponse{
-		ID:             r.ID.String(),
-		WorkspaceID:    r.WorkspaceID.String(),
-		Kind:           r.Kind,
-		IsDefault:      r.IsDefault,
-		IsMember:       r.IsMember,
-		LastMessageSeq: r.LastMessageSeq,
-		LastMessageAt:  r.LastMessageAt,
-		LastReadSeq:    r.LastReadSeq,
-		UnreadCount:    r.UnreadCount,
-		CreatedAt:      r.CreatedAt,
+		ID:              r.ID.String(),
+		WorkspaceID:     r.WorkspaceID.String(),
+		Kind:            r.Kind,
+		IsDefault:       r.IsDefault,
+		IsMember:        r.IsMember,
+		LastMessageSeq:  r.LastMessageSeq,
+		LastMessageAt:   r.LastMessageAt,
+		LastReadSeq:     r.LastReadSeq,
+		LastUserSeq:     r.LastUserSeq,
+		LastReadUserSeq: r.LastReadUserSeq,
+		UnreadCount:     r.UnreadCount,
+		CreatedAt:       r.CreatedAt,
 	}
 	if m := r.LastMessage; m != nil {
-		resp.LastMessage = &lastMessageResponse{ID: m.ID.String(), Sender: newUserProfileResponse(m.Sender), Body: m.Body, CreatedAt: m.CreatedAt, Deleted: m.Deleted}
+		resp.LastMessage = &lastMessageResponse{
+			ID: m.ID.String(), Sender: newUserProfileResponse(m.Sender), Kind: m.Kind,
+			System: newSystemEventResponse(m.System), Body: m.Body, CreatedAt: m.CreatedAt, Deleted: m.Deleted,
+		}
 	}
 	if r.Kind != authz.RoomDM {
 		resp.Name = &r.Name

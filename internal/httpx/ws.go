@@ -499,7 +499,9 @@ type roomReadData struct {
 	WorkspaceID string `json:"workspace_id"`
 	RoomID      string `json:"room_id"`
 	LastReadSeq int64  `json:"last_read_seq"`
-	UnreadCount int64  `json:"unread_count"`
+	// LastReadUserSeq は既読位置に対応する user_seq（ADR 0033）。
+	LastReadUserSeq int64 `json:"last_read_user_seq"`
+	UnreadCount     int64 `json:"unread_count"`
 }
 
 type workspaceUpdatedData struct {
@@ -554,7 +556,7 @@ func eventData(d any) (any, error) {
 	case chat.RoomMemberRemoved:
 		return roomMemberRemovedData{d.WorkspaceID.String(), d.RoomID.String(), d.Reason}, nil
 	case chat.RoomRead:
-		return roomReadData{d.WorkspaceID.String(), d.RoomID.String(), d.LastReadSeq, d.UnreadCount}, nil
+		return roomReadData{d.WorkspaceID.String(), d.RoomID.String(), d.LastReadSeq, d.LastReadUserSeq, d.UnreadCount}, nil
 	case chat.WorkspaceUpdated:
 		return workspaceUpdatedData{d.WorkspaceID.String(), d.Name, d.InvitePolicy}, nil
 	case chat.WorkspaceMemberRemoved:

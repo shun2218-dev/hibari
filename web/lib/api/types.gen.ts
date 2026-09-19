@@ -16,6 +16,10 @@ export type AttachmentStatus = "pending" | "uploaded" | "attached" | "deleted";
 
 export type RemovalReason = "left" | "removed";
 
+export type MessageKind = "user" | "system";
+
+export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed";
+
 export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid";
 
 export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "ping";
@@ -272,6 +276,9 @@ export interface Room {
   last_message_at: string | null;
   /** last_read_seq はルームのメンバーでなければ null。 */
   last_read_seq: number | null;
+  /** last_user_seq は人の発言の総数、LastReadUserSeq はその既読位置（未読数の根拠。ADR 0033）。 */
+  last_user_seq: number;
+  last_read_user_seq: number | null;
   unread_count: number;
   /** last_message はメッセージが 1 件もなければ null。 */
   last_message: LastMessage | null;
@@ -292,6 +299,9 @@ export interface DMPeer {
 export interface LastMessage {
   id: string;
   sender: UserProfile;
+  /** kind と System は、サイドバーの 1 行にログの文言を出すために返す（ADR 0033）。 */
+  kind: MessageKind;
+  system?: SystemEvent;
   body: string;
   created_at: string;
   deleted: boolean;
@@ -330,9 +340,15 @@ export interface Message {
   seq: number;
   /** change_seq は同期のカーソル（ADR 0014）。表示の並びには seq を使う。 */
   change_seq: number;
+  /** user_seq は人の発言だけを数えた番号。未読数の計算に使う（ADR 0033）。 */
+  user_seq: number;
   sender: UserProfile;
   /** client_msg_id は、クライアントが楽観的に表示したメッセージと、REST / WebSocket で届いたメッセージを突き合わせるために返す（ADR 0004）。 */
   client_msg_id: string;
+  /** kind は user（人の発言）か system（参加や名前の変更のログ。ADR 0033）。 */
+  kind: MessageKind;
+  /** system は kind が system のときだけ入る。文言はクライアントが作る。 */
+  system?: SystemEvent;
   body: string;
   reply_to: ReplyPreview | null;
   /** attachments は削除済みのメッセージでは空配列。GET URL は含めない（ADR 0013）。 */
@@ -340,6 +356,13 @@ export interface Message {
   created_at: string;
   edited_at: string | null;
   deleted_at: string | null;
+}
+
+export interface SystemEvent {
+  type: SystemEventType;
+  /** old_name と NewName は room_renamed だけで入る。 */
+  old_name?: string;
+  new_name?: string;
 }
 
 export interface ReplyPreview {
@@ -372,6 +395,8 @@ export interface MarkRoomReadRequest {
 
 export interface ReadState {
   last_read_seq: number;
+  /** last_read_user_seq は既読位置に対応する user_seq。クライアントが未読数を求め直すのに使う（ADR 0033）。 */
+  last_read_user_seq: number;
   unread_count: number;
 }
 
@@ -448,6 +473,8 @@ export interface RoomReadData {
   workspace_id: string;
   room_id: string;
   last_read_seq: number;
+  /** last_read_user_seq は既読位置に対応する user_seq（ADR 0033）。 */
+  last_read_user_seq: number;
   unread_count: number;
 }
 

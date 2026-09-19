@@ -53,8 +53,9 @@ export function advanceCursor(cursor: number, messages: readonly Message[]): num
 /**
  * 届いたメッセージを、ルームの一覧に出す情報（最後のメッセージ・未読数）に反映する。
  *
- * 未読数は last_message_seq - last_read_seq で求め直す（CLAUDE.md「未読数」）。足し引きしないので、
+ * 未読数は last_user_seq - last_read_user_seq で求め直す（CLAUDE.md「未読数」、ADR 0033）。足し引きしないので、
  * 同じイベントが 2 回届いても（ADR 0016）数がずれない。自分の送信は、サーバーが自分の既読位置も進めている。
+ * システムメッセージ（参加や名前の変更のログ）は user_seq を進めないので、未読数も増えない。
  */
 export function applyMessageToRoom(room: Room, message: Message, userId: string, created: boolean): Room {
   if (!created) {
@@ -63,15 +64,19 @@ export function applyMessageToRoom(room: Room, message: Message, userId: string,
   }
   if (message.seq <= room.last_message_seq) return room;
 
-  const lastReadSeq =
-    room.last_read_seq !== null && message.sender.id === userId ? message.seq : room.last_read_seq;
+  const mine = message.sender.id === userId && message.kind === "user";
+  const lastReadSeq = room.last_read_seq !== null && mine ? message.seq : room.last_read_seq;
+  const lastReadUserSeq =
+    room.last_read_user_seq !== null && mine ? message.user_seq : room.last_read_user_seq;
   return {
     ...room,
     last_message_seq: message.seq,
+    last_user_seq: message.user_seq,
     last_message_at: message.created_at,
     last_message: toLastMessage(message),
     last_read_seq: lastReadSeq,
-    unread_count: lastReadSeq === null ? room.unread_count : message.seq - lastReadSeq,
+    last_read_user_seq: lastReadUserSeq,
+    unread_count: lastReadUserSeq === null ? room.unread_count : message.user_seq - lastReadUserSeq,
   };
 }
 
@@ -79,6 +84,8 @@ function toLastMessage(message: Message): LastMessage {
   return {
     id: message.id,
     sender: message.sender,
+    kind: message.kind,
+    system: message.system,
     body: message.body,
     created_at: message.created_at,
     deleted: message.deleted_at !== null,
@@ -86,12 +93,14 @@ function toLastMessage(message: Message): LastMessage {
 }
 
 /** 既読位置を進める。後退させず、未読数は手元の最新の seq から求め直す（既読の応答とメッセージのイベントが前後しても揃う）。 */
-export function applyReadToRoom(room: Room, lastReadSeq: number): Room {
-  if (room.last_read_seq === null) return room;
-  const next = Math.max(room.last_read_seq, lastReadSeq);
-  const unread = Math.max(0, room.last_message_seq - next);
-  if (next === room.last_read_seq && unread === room.unread_count) return room;
-  return { ...room, last_read_seq: next, unread_count: unread };
+export function applyReadToRoom(room: Room, read: { lastReadSeq: number; lastReadUserSeq: number }): Room {
+  if (room.last_read_seq === null || room.last_read_user_seq === null) return room;
+  const next = Math.max(room.last_read_seq, read.lastReadSeq);
+  const nextUser = Math.max(room.last_read_user_seq, read.lastReadUserSeq);
+  // 未読はシステムメッセージを数えない（ADR 0033）
+  const unread = Math.max(0, room.last_user_seq - nextUser);
+  if (next === room.last_read_seq && nextUser === room.last_read_user_seq && unread === room.unread_count) return room;
+  return { ...room, last_read_seq: next, last_read_user_seq: nextUser, unread_count: unread };
 }
 
 /**

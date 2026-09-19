@@ -125,8 +125,8 @@ func insertRoom(t *testing.T, tx pgx.Tx, workspaceID, creator ulid.ULID, name st
 func insertMessage(t *testing.T, tx pgx.Tx, roomID, sender ulid.ULID, seq int64, replyTo *ulid.ULID) ulid.ULID {
 	t.Helper()
 	mid := ids.New()
-	mustExec(t, tx, `INSERT INTO messages (id, room_id, seq, change_seq, sender_id, client_msg_id, body, reply_to_id, created_at)
-		VALUES ($1, $2, $3, $3, $4, $5, 'hi', $6, $7)`, mid, roomID, seq, sender, ids.New(), replyTo, now)
+	mustExec(t, tx, `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, reply_to_id, created_at)
+		VALUES ($1, $2, $3, $3, $3, $4, $5, 'hi', $6, $7)`, mid, roomID, seq, sender, ids.New(), replyTo, now)
 	return mid
 }
 
@@ -274,8 +274,8 @@ func TestMessagesConstraints(t *testing.T) {
 		w := insertWorkspace(t, tx, alice)
 		r1 := insertRoom(t, tx, w, alice, "general")
 		r2 := insertRoom(t, tx, w, alice, "random")
-		const insert = `INSERT INTO messages (id, room_id, seq, change_seq, sender_id, client_msg_id, body, reply_to_id, created_at)
-			VALUES ($1, $2, $3::bigint, $3::bigint + 1000, $4, $5, 'hi', $6, $7)`
+		const insert = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, reply_to_id, created_at)
+			VALUES ($1, $2, $3::bigint, $3::bigint + 1000, $3::bigint, $4, $5, 'hi', $6, $7)`
 
 		clientMsgID := ids.New()
 		m1 := ids.New()
@@ -290,15 +290,15 @@ func TestMessagesConstraints(t *testing.T) {
 		})
 
 		t.Run("change_seq is unique per room and required", func(t *testing.T) {
-			const withChangeSeq = `INSERT INTO messages (id, room_id, seq, change_seq, sender_id, client_msg_id, body, created_at)
-				VALUES ($1, $2, $3, $4, $5, $6, 'hi', $7)`
+			const withChangeSeq = `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, created_at)
+				VALUES ($1, $2, $3, $4, $3, $5, $6, 'hi', $7)`
 			// m1 の change_seq（1001）を別の seq で使い回せない（ADR 0014）。
 			expectViolation(t, tx, sqlstateUnique, "messages_room_id_change_seq_idx",
 				withChangeSeq, ids.New(), r1, 500, 1001, bob, ids.New(), now)
 			expectViolation(t, tx, sqlstateCheck, "messages_change_seq_check",
 				withChangeSeq, ids.New(), r1, 501, 0, bob, ids.New(), now)
 			expectViolation(t, tx, sqlstateNotNull, "",
-				`INSERT INTO messages (id, room_id, seq, sender_id, client_msg_id, body, created_at) VALUES ($1, $2, 502, $3, $4, 'hi', $5)`,
+				`INSERT INTO messages (id, room_id, seq, user_seq, sender_id, client_msg_id, body, created_at) VALUES ($1, $2, 502, 502, $3, $4, 'hi', $5)`,
 				ids.New(), r1, bob, ids.New(), now)
 		})
 
@@ -406,8 +406,8 @@ func allocateAndInsert(ctx context.Context, pool *pgxpool.Pool, roomID, sender u
 		return 0, fmt.Errorf("allocate: %w", err)
 	}
 	seq := allocated.LastMessageSeq
-	if _, err := tx.Exec(ctx, `INSERT INTO messages (id, room_id, seq, change_seq, sender_id, client_msg_id, body, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'hi', $7)`, ids.New(), roomID, seq, allocated.LastChangeSeq, sender, ids.New(), now); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO messages (id, room_id, seq, change_seq, user_seq, sender_id, client_msg_id, body, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'hi', $8)`, ids.New(), roomID, seq, allocated.LastChangeSeq, allocated.LastUserSeq, sender, ids.New(), now); err != nil {
 		return 0, fmt.Errorf("insert: %w", err)
 	}
 	if !commit {

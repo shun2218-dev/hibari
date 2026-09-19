@@ -328,7 +328,8 @@ func TestWSDeliversMessages(t *testing.T) {
 	if string(restJSON) != string(wsJSON) {
 		t.Errorf("websocket message differs from REST:\n ws:   %s\n rest: %s", wsJSON, restJSON)
 	}
-	if wsMsg["change_seq"] != float64(1) || wsMsg["seq"] != float64(1) {
+	// seq 1 はルームの作成のログ、2 は bob の参加のログ（ADR 0033）。人の発言はその次から。
+	if wsMsg["change_seq"] != float64(3) || wsMsg["seq"] != float64(3) {
 		t.Errorf("seq / change_seq = %v / %v", wsMsg["seq"], wsMsg["change_seq"])
 	}
 	// 送信者も購読していれば受け取る（REST のレスポンスと client_msg_id で重複を除く。ADR 0004）。
@@ -341,10 +342,10 @@ func TestWSDeliversMessages(t *testing.T) {
 	expectStatus(t, c.as(f.alice, http.MethodPatch, "/api/v1/rooms/"+f.public.ID+"/messages/"+msgID, map[string]string{"body": "こんばんは"}), http.StatusOK)
 	expectStatus(t, c.as(f.alice, http.MethodDelete, "/api/v1/rooms/"+f.public.ID+"/messages/"+msgID, nil), http.StatusNoContent)
 	events := bob.sync()
-	if got := eventsOfType(events, "message.updated"); len(got) != 1 || !strings.Contains(string(got[0].Data), `"change_seq":2`) {
+	if got := eventsOfType(events, "message.updated"); len(got) != 1 || !strings.Contains(string(got[0].Data), `"change_seq":4`) {
 		t.Errorf("message.updated = %v", got)
 	}
-	if got := eventsOfType(events, "message.deleted"); len(got) != 1 || !strings.Contains(string(got[0].Data), `"change_seq":3`) || !strings.Contains(string(got[0].Data), `"body":""`) {
+	if got := eventsOfType(events, "message.deleted"); len(got) != 1 || !strings.Contains(string(got[0].Data), `"change_seq":5`) || !strings.Contains(string(got[0].Data), `"body":""`) {
 		t.Errorf("message.deleted = %v", got)
 	}
 
@@ -475,8 +476,9 @@ func TestWSReconnectSync(t *testing.T) {
 		_ = json.Unmarshal(ev.Data, &m)
 		cursor = m.ChangeSeq
 	}
-	if cursor != 1 {
-		t.Fatalf("cursor = %d, want 1", cursor)
+	// ルームの作成と bob の参加のログ（ADR 0033）が先に change_seq を使っているので、first は 3。
+	if cursor != first.ChangeSeq {
+		t.Fatalf("cursor = %d, want %d", cursor, first.ChangeSeq)
 	}
 
 	// 切断中に、新規・既存の編集・削除が起きる。
@@ -490,7 +492,7 @@ func TestWSReconnectSync(t *testing.T) {
 		wantBodies = append(wantBodies, body)
 	}
 	expectStatus(t, c.as(f.alice, http.MethodPatch, messages+"/"+first.ID, map[string]string{"body": "編集した"}), http.StatusOK)
-	second := decode[messagesBody](t, c.as(f.bob, http.MethodGet, messages+"?after_seq=1&limit=1", nil)).Messages[0]
+	second := decode[messagesBody](t, c.as(f.bob, http.MethodGet, messages+"?after_seq="+strconv.FormatInt(first.Seq, 10)+"&limit=1", nil)).Messages[0]
 	expectStatus(t, c.as(f.alice, http.MethodDelete, messages+"/"+second.ID, nil), http.StatusNoContent)
 
 	// 再接続: 先に購読し、その後に REST で差分を取る（docs/events.md の同期の手順）。
@@ -542,22 +544,22 @@ func TestWSReconnectSync(t *testing.T) {
 	if got := local[second.ID]; got.DeletedAt == nil || got.Body != "" {
 		t.Errorf("deleted message = %+v", got)
 	}
-	// seq 2〜7（切断中の 5 件と再接続の直後の 1 件）が欠けずに揃う。
+	// first の次の 6 件（切断中の 5 件と再接続の直後の 1 件）が欠けずに揃う。
 	bySeq := map[int64]syncedMessage{}
 	for _, m := range local {
 		bySeq[m.Seq] = m
 	}
-	for seq := int64(2); seq <= 7; seq++ {
+	for seq := first.Seq + 1; seq <= first.Seq+6; seq++ {
 		if _, ok := bySeq[seq]; !ok {
 			t.Errorf("seq %d is missing after sync", seq)
 		}
 	}
-	if bySeq[3].Body != wantBodies[1] {
-		t.Errorf("seq 3 body = %q, want %q", bySeq[3].Body, wantBodies[1])
+	if bySeq[first.Seq+2].Body != wantBodies[1] {
+		t.Errorf("seq %d body = %q, want %q", first.Seq+2, bySeq[first.Seq+2].Body, wantBodies[1])
 	}
-	// 最初の 1 件、切断中の 5 件・編集・削除、再接続の直後の 1 件で 9。
-	if cursor != 9 {
-		t.Errorf("cursor = %d, want 9", cursor)
+	// first の後に、切断中の 5 件・編集・削除、再接続の直後の 1 件で 8 つ進む。
+	if cursor != first.ChangeSeq+8 {
+		t.Errorf("cursor = %d, want %d", cursor, first.ChangeSeq+8)
 	}
 }
 

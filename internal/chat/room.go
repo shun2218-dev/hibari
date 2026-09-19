@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -50,7 +51,11 @@ type Room struct {
 	LastMessageAt  *time.Time
 	// LastReadSeq は actor の既読位置。ルームのメンバーでなければ nil。
 	LastReadSeq *int64
-	// UnreadCount は last_message_seq - last_read_seq。削除済みのメッセージも数える近似（ADR 0002）。メンバーでなければ 0。
+	// LastUserSeq は人の発言の総数。未読数の根拠（ADR 0033）。
+	LastUserSeq int64
+	// LastReadUserSeq は自分の既読位置に対応する user_seq。メンバーでなければ nil。
+	LastReadUserSeq *int64
+	// UnreadCount は last_user_seq - last_read_user_seq。削除済みのメッセージも数える近似（ADR 0002 / 0033）。メンバーでなければ 0。
 	UnreadCount int64
 	// LastMessage はサイドバーに出す最終メッセージ。メッセージがなければ nil。
 	LastMessage *MessagePreview
@@ -61,7 +66,11 @@ type Room struct {
 type MessagePreview struct {
 	ID     ulid.ULID
 	Sender UserProfile
-	// Body は削除済みなら空。
+	// Kind は user（人の発言）か system（ログ。ADR 0033）。
+	Kind MessageKind
+	// System は Kind が system のときだけ入る。
+	System *SystemEvent
+	// Body は削除済みなら空。システムメッセージでは常に空。
 	Body      string
 	CreatedAt time.Time
 	Deleted   bool
@@ -71,30 +80,44 @@ type MessagePreview struct {
 // GetRoomSummary の行は、同じ列の store.ListRoomsForUserRow に変換してから渡す。
 func toRoom(r store.ListRoomsForUserRow) Room {
 	room := Room{
-		ID:             r.Room.ID,
-		WorkspaceID:    r.Room.WorkspaceID,
-		Kind:           RoomKind(r.Room.Kind),
-		IsDefault:      r.Room.IsDefault,
-		IsMember:       r.IsMember,
-		LastMessageSeq: r.Room.LastMessageSeq,
-		LastMessageAt:  r.Room.LastMessageAt,
-		LastReadSeq:    r.LastReadSeq,
-		CreatedAt:      r.Room.CreatedAt,
+		ID:              r.Room.ID,
+		WorkspaceID:     r.Room.WorkspaceID,
+		Kind:            RoomKind(r.Room.Kind),
+		IsDefault:       r.Room.IsDefault,
+		IsMember:        r.IsMember,
+		LastMessageSeq:  r.Room.LastMessageSeq,
+		LastMessageAt:   r.Room.LastMessageAt,
+		LastReadSeq:     r.LastReadSeq,
+		LastUserSeq:     r.Room.LastUserSeq,
+		LastReadUserSeq: r.LastReadUserSeq,
+		CreatedAt:       r.Room.CreatedAt,
 	}
 	if r.Room.Name != nil {
 		room.Name = *r.Room.Name
 	}
-	if r.LastReadSeq != nil {
-		room.UnreadCount = r.Room.LastMessageSeq - *r.LastReadSeq
+	if r.LastReadSeq != nil && r.LastReadUserSeq != nil {
+		// システムメッセージは数えない。人の発言だけを数えた番号の差を取る（ADR 0033）。
+		room.UnreadCount = r.Room.LastUserSeq - *r.LastReadUserSeq
 	}
 	if r.LastMessageID != nil {
-		room.LastMessage = &MessagePreview{
+		preview := &MessagePreview{
 			ID:        *r.LastMessageID,
 			Sender:    UserProfile{ID: *r.LastMessageSenderID, Handle: *r.LastMessageSenderHandle, DisplayName: *r.LastMessageSenderDisplayName},
+			Kind:      MessageKind(*r.LastMessageKind),
 			Body:      *r.LastMessageBody,
 			CreatedAt: *r.LastMessageCreatedAt,
 			Deleted:   r.LastMessageDeletedAt != nil,
 		}
+		// サイドバーの 1 行にもログの文言を出せるよう、種類を渡す（文言はクライアントが作る。ADR 0033）。
+		if preview.Kind == MessageKindSystem && r.LastMessageSystemType != nil {
+			preview.System = &SystemEvent{Type: SystemEventType(*r.LastMessageSystemType)}
+			if len(r.LastMessageSystemData) > 0 {
+				if err := json.Unmarshal(r.LastMessageSystemData, preview.System); err != nil {
+					preview.System = &SystemEvent{Type: SystemEventType(*r.LastMessageSystemType)}
+				}
+			}
+		}
+		room.LastMessage = preview
 	}
 	return room
 }
@@ -312,6 +335,12 @@ func (s *Service) createNamedRoom(ctx context.Context, q *store.Queries, actor, 
 	}
 	if _, err := q.AddRoomMember(ctx, store.AddRoomMemberParams{RoomID: r.ID, UserID: actor, Now: now}); err != nil {
 		return Room{}, fmt.Errorf("add creator: %w", err)
+	}
+	// 「作成しました」を 1 行目に残す（ADR 0033）。作成者の member_joined は出さない（作成の行で分かる）。
+	// 返ってくる message.created は配信しない。この時点ではこのルームを購読している人がまだ誰もおらず
+	// （作成者も、作成の応答を受け取ってから購読する）、届く先がないため。
+	if _, err := s.writeSystemMessage(ctx, q, r.ID, actor, SystemEvent{Type: SystemRoomCreated}); err != nil {
+		return Room{}, err
 	}
 	room, err := roomSummary(ctx, q, actor, r.ID)
 	if err != nil {
@@ -539,8 +568,9 @@ func (s *Service) UpdateRoom(ctx context.Context, actor, roomID ulid.ULID, in Ro
 	}
 
 	var (
-		room    Room
-		updated bool
+		room         Room
+		updated      bool
+		systemEvents []Event
 	)
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
@@ -552,6 +582,7 @@ func (s *Service) UpdateRoom(ctx context.Context, actor, roomID ulid.ULID, in Ro
 			return ErrForbidden
 		}
 		if params.Name != nil || params.IsDefault != nil {
+			previousName := a.room.Name
 			if _, err := q.UpdateRoom(ctx, params); err != nil {
 				if isUniqueViolation(err, "rooms_workspace_id_name_idx") {
 					return ErrRoomNameTaken
@@ -559,6 +590,16 @@ func (s *Service) UpdateRoom(ctx context.Context, actor, roomID ulid.ULID, in Ro
 				return fmt.Errorf("update room: %w", err)
 			}
 			updated = true
+			// 名前が実際に変わったときだけログに残す（同じ名前での保存や is_default だけの変更では出さない。ADR 0033）。
+			if params.Name != nil && previousName != nil && *params.Name != *previousName {
+				renamed, err := s.writeSystemMessage(ctx, q, roomID, actor, SystemEvent{
+					Type: SystemRoomRenamed, OldName: *previousName, NewName: *params.Name,
+				})
+				if err != nil {
+					return err
+				}
+				systemEvents = append(systemEvents, renamed)
+			}
 		}
 		room, err = getRoom(ctx, q, actor, roomID)
 		return err
@@ -572,11 +613,11 @@ func (s *Service) UpdateRoom(ctx context.Context, actor, roomID ulid.ULID, in Ro
 			// public ルームは参加していないメンバーのサイドバーにも出るので、ワークスペースの購読者にも届ける。
 			to.Workspaces = []ulid.ULID{room.WorkspaceID}
 		}
-		s.deliver(ctx, Event{
+		s.deliver(ctx, append([]Event{{
 			Type: EventRoomUpdated,
 			To:   to,
 			Data: RoomUpdated{WorkspaceID: room.WorkspaceID, RoomID: roomID, Name: room.Name, IsDefault: room.IsDefault},
-		})
+		}}, systemEvents...)...)
 	}
 	return room, nil
 }
@@ -604,6 +645,11 @@ func (s *Service) JoinRoom(ctx context.Context, actor, roomID ulid.ULID) (Room, 
 			if events, err = newRoomMembers(ctx, q, a.room.WorkspaceID, roomID, []ulid.ULID{actor}); err != nil {
 				return err
 			}
+			joined, err := s.writeSystemMessage(ctx, q, roomID, actor, SystemEvent{Type: SystemMemberJoined})
+			if err != nil {
+				return err
+			}
+			events = append(events, joined)
 		}
 		room, err = getRoom(ctx, q, actor, roomID)
 		return err
@@ -636,9 +682,17 @@ func (s *Service) AddRoomMember(ctx context.Context, actor, roomID, target ulid.
 		}
 		if n > 0 {
 			// 追加された本人はまだこのルームを購読していないので、本人にも member.joined を届ける（ADR 0015）。
-			events, err = newRoomMembers(ctx, q, a.room.WorkspaceID, roomID, []ulid.ULID{target})
+			if events, err = newRoomMembers(ctx, q, a.room.WorkspaceID, roomID, []ulid.ULID{target}); err != nil {
+				return err
+			}
+			// ログの主語は追加された人（自分で参加したときと同じ行にする。ADR 0033）。
+			joined, err := s.writeSystemMessage(ctx, q, roomID, target, SystemEvent{Type: SystemMemberJoined})
+			if err != nil {
+				return err
+			}
+			events = append(events, joined)
 		}
-		return err
+		return nil
 	})
 	if err != nil {
 		return err
@@ -649,7 +703,10 @@ func (s *Service) AddRoomMember(ctx context.Context, actor, roomID, target ulid.
 
 // RemoveRoomMember は target をルームから外す。target が actor 自身なら退出として扱う。
 func (s *Service) RemoveRoomMember(ctx context.Context, actor, roomID, target ulid.ULID) error {
-	var workspaceID ulid.ULID
+	var (
+		workspaceID  ulid.ULID
+		systemEvents []Event
+	)
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
 		a, err := loadRoomAccess(ctx, q, shareLock, roomID, actor, target)
@@ -674,6 +731,16 @@ func (s *Service) RemoveRoomMember(ctx context.Context, actor, roomID, target ul
 			return fmt.Errorf("delete room member: %w", err)
 		}
 		workspaceID = a.room.WorkspaceID
+		// 主語は抜けた人。誰が外したかは出さない（ADR 0033）。
+		systemType := SystemMemberRemoved
+		if actor == target {
+			systemType = SystemMemberLeft
+		}
+		left, err := s.writeSystemMessage(ctx, q, roomID, target, SystemEvent{Type: systemType})
+		if err != nil {
+			return err
+		}
+		systemEvents = append(systemEvents, left)
 		return nil
 	})
 	if err != nil {
@@ -684,15 +751,15 @@ func (s *Service) RemoveRoomMember(ctx context.Context, actor, roomID, target ul
 		reason = RemovalLeft
 	}
 	// 本人の購読を先に再検証させてから（private なら外れる）、本人とルームの購読者に知らせる（CLAUDE.md ルール 8）。
-	s.deliver(ctx,
-		Event{
+	s.deliver(ctx, append([]Event{
+		{
 			Type:          EventRoomMemberRemoved,
 			To:            Audience{Users: []ulid.ULID{target}},
 			AccessChanges: []AccessChange{{UserID: target, WorkspaceID: workspaceID}},
 			Data:          RoomMemberRemoved{WorkspaceID: workspaceID, RoomID: roomID, Reason: reason},
 		},
 		memberLeftEvent(workspaceID, roomID, target),
-	)
+	}, systemEvents...)...)
 	return nil
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { message, miyuki, naoki, room } from "@/test/chat-data";
+import { message, miyuki, naoki, room, systemMessage } from "@/test/chat-data";
 
 import { advanceCursor, applyMessageToRoom, applyReadToRoom, insertByActivity, mergeIntoWindow, mergeMessages } from "./messages";
 
@@ -67,7 +67,9 @@ describe("advanceCursor", () => {
 
 describe("applyMessageToRoom", () => {
   const me = naoki.id;
-  const base = room("r1", "雑談", { last_message_seq: 5, last_read_seq: 3, unread_count: 2 });
+  const base = room("r1", "雑談", {
+    last_message_seq: 5, last_read_seq: 3, last_user_seq: 5, last_read_user_seq: 3, unread_count: 2,
+  });
 
   it("updates the last message and recomputes unread from seq, so a duplicate does not count twice", () => {
     const created = message(6, { sender: miyuki, body: "新着" });
@@ -79,6 +81,17 @@ describe("applyMessageToRoom", () => {
     expect(twice).toBe(once);
   });
 
+  it("does not count a system message as unread (ADR 0033)", () => {
+    const joined = systemMessage(6, { type: "member_joined" });
+
+    // user_seq が進まないので未読数は変わらず、サイドバーの 1 行だけが入れ替わる
+    expect(applyMessageToRoom(base, joined, me, true)).toMatchObject({
+      last_message_seq: 6,
+      unread_count: 2,
+      last_message: { kind: "system" },
+    });
+  });
+
   it("moves my read position with my own message", () => {
     expect(applyMessageToRoom(base, message(6, { sender: naoki }), me, true)).toMatchObject({
       last_read_seq: 6,
@@ -87,7 +100,9 @@ describe("applyMessageToRoom", () => {
   });
 
   it("keeps unread at zero in a public room I have not joined", () => {
-    const guest = room("r1", "雑談", { is_member: false, last_read_seq: null, last_message_seq: 5 });
+    const guest = room("r1", "雑談", {
+      is_member: false, last_read_seq: null, last_read_user_seq: null, last_message_seq: 5, last_user_seq: 5,
+    });
 
     expect(applyMessageToRoom(guest, message(6), me, true)).toMatchObject({ last_read_seq: null, unread_count: 0 });
   });
@@ -103,10 +118,15 @@ describe("applyMessageToRoom", () => {
 
 describe("applyReadToRoom", () => {
   it("never moves the read position back", () => {
-    const r = room("r1", "雑談", { last_message_seq: 9, last_read_seq: 7, unread_count: 2 });
+    const r = room("r1", "雑談", {
+      last_message_seq: 9, last_read_seq: 7, last_user_seq: 9, last_read_user_seq: 7, unread_count: 2,
+    });
 
-    expect(applyReadToRoom(r, 5)).toBe(r);
-    expect(applyReadToRoom(r, 9)).toMatchObject({ last_read_seq: 9, unread_count: 0 });
+    expect(applyReadToRoom(r, { lastReadSeq: 5, lastReadUserSeq: 5 })).toBe(r);
+    expect(applyReadToRoom(r, { lastReadSeq: 9, lastReadUserSeq: 9 })).toMatchObject({
+      last_read_seq: 9,
+      unread_count: 0,
+    });
   });
 });
 

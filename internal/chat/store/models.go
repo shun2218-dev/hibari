@@ -37,6 +37,10 @@ type Message struct {
 	EditedAt    *time.Time
 	DeletedAt   *time.Time
 	ChangeSeq   int64
+	Kind        string
+	SystemType  *string
+	SystemData  []byte
+	UserSeq     int64
 }
 
 type Room struct {
@@ -52,6 +56,7 @@ type Room struct {
 	CreatedAt      time.Time
 	ArchivedAt     *time.Time
 	LastChangeSeq  int64
+	LastUserSeq    int64
 }
 
 type Workspace struct {

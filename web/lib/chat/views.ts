@@ -19,6 +19,29 @@ import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./f
  * どれも純粋な関数にして、時刻の文言はタイムゾーンを引数で固定してテストする。
  */
 
+/**
+ * システムメッセージの文言（ADR 0033）。サーバーは種類と、そのときの名前だけを返す（`body` は空）。
+ * 主語は sender（参加した人、名前を変えた人）。
+ */
+export function systemMessageText(message: Pick<Message, "sender" | "system">): string {
+  const name = message.sender.display_name;
+  switch (message.system?.type) {
+    case "room_created":
+      return `${name} がこのチャンネルを作成しました`;
+    case "member_joined":
+      return `${name} がチャンネルに参加しました`;
+    case "member_left":
+      return `${name} がチャンネルを退出しました`;
+    case "member_removed":
+      return `${name} がチャンネルから外されました`;
+    case "room_renamed":
+      return `${name} がチャンネル名を ${message.system.old_name} から ${message.system.new_name} に変更しました`;
+    default:
+      // 知らない種類（サーバーが先に増えた）。行を落とすより、何かが起きたことだけ出す
+      return `${name} がチャンネルを更新しました`;
+  }
+}
+
 /** 削除済みのメッセージの本文の代わり。タイムラインの表示（MessageItem）と同じ文言にする。 */
 export const DELETED_MESSAGE_TEXT = "このメッセージは削除されました";
 
@@ -46,7 +69,10 @@ export function toRoomSummaryView(
 ): RoomSummaryView {
   const last = room.last_message;
   let lastMessage: string | undefined;
-  if (last) {
+  if (last?.kind === "system") {
+    // ログは文そのものが「誰が何をした」なので、送信者を前に付けない（ADR 0033）
+    lastMessage = systemMessageText(last);
+  } else if (last) {
     const body = last.deleted ? DELETED_MESSAGE_TEXT : last.body === "" ? ATTACHMENT_ONLY_TEXT : last.body;
     // DM は相手と自分しかいないので送信者を省く（sidebar のデザイン）
     lastMessage = room.kind === "dm" ? body : `${last.sender.display_name}: ${body}`;
@@ -85,6 +111,8 @@ type TimelineOptions = {
 type Entry = {
   key: string;
   seq: number | null;
+  /** システムメッセージ（ADR 0033）なら、その文言。人の発言では undefined。 */
+  systemText?: string;
   sender: UserProfile;
   createdAt: Date;
   body: string;
@@ -99,6 +127,7 @@ function fromMessage(message: Message): Entry {
   return {
     key: message.id,
     seq: message.seq,
+    systemText: message.kind === "system" ? systemMessageText(message) : undefined,
     sender: message.sender,
     createdAt: new Date(message.created_at),
     body: message.body,
@@ -157,11 +186,24 @@ export function toTimelineItems(
       previousDay = day;
       breakGroup = true;
     }
-    // 自分の送信中のメッセージは未読にならない
-    if (!unreadInserted && entry.seq !== null && entry.seq > unreadAfterSeq!) {
+    // 自分の送信中のメッセージは未読にならない。システムメッセージも未読に数えない（ADR 0033）ので、
+    // 区切りは「未読の人の発言」の前に出す
+    if (!unreadInserted && entry.seq !== null && entry.systemText === undefined && entry.seq > unreadAfterSeq!) {
       items.push({ type: "unread", key: "unread" });
       unreadInserted = true;
       breakGroup = true;
+    }
+
+    if (entry.systemText !== undefined) {
+      // ログは人の発言ではないので、続けて表示（grouped）の基準にもしない
+      items.push({
+        type: "system",
+        key: entry.key,
+        text: entry.systemText,
+        timeLabel: formatTime(entry.createdAt, timeZone),
+      });
+      previous = undefined;
+      continue;
     }
 
     const grouped =

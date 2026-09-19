@@ -1,0 +1,56 @@
+package chat
+
+import (
+	"context"
+	"encoding/json/v2"
+	"fmt"
+
+	"github.com/oklog/ulid/v2"
+
+	"github.com/shun2218-dev/hibari/internal/chat/store"
+)
+
+// システムメッセージ（参加・退出・作成・名前の変更のログ。ADR 0033）。
+//
+// 人の発言と同じ messages の行として seq を採番するので、並び・ページング・差分取得・配信の仕組みがそのまま効く。
+// 未読数には数えないので、user_seq は進めない（採番は AllocateSystemMessageSeq）。
+// sender はその行の主語（参加した人、名前を変えた人）にする。対象者を別に JOIN しないで文を組み立てられるようにするため。
+
+// writeSystemMessage はシステムメッセージを 1 行書き、配信するイベントを返す。
+// DM には書かない（メンバーが固定で、名前もない）ので、呼び出し側が種類を確かめてから呼ぶ。
+func (s *Service) writeSystemMessage(
+	ctx context.Context,
+	q *store.Queries,
+	roomID ulid.ULID,
+	subject ulid.ULID,
+	event SystemEvent,
+) (Event, error) {
+	now := s.clock.Now()
+	allocated, err := q.AllocateSystemMessageSeq(ctx, store.AllocateSystemMessageSeqParams{RoomID: roomID, Now: now})
+	if err != nil {
+		return Event{}, fmt.Errorf("allocate system message seq: %w", err)
+	}
+	var data []byte
+	if event.OldName != "" || event.NewName != "" {
+		if data, err = json.Marshal(event); err != nil {
+			return Event{}, fmt.Errorf("marshal system data: %w", err)
+		}
+	}
+	id := s.ids.New()
+	systemType := string(event.Type)
+	err = q.CreateSystemMessage(ctx, store.CreateSystemMessageParams{
+		ID: id, RoomID: roomID, Seq: allocated.LastMessageSeq, ChangeSeq: allocated.LastChangeSeq,
+		UserSeq: allocated.LastUserSeq, SenderID: subject,
+		// client_msg_id は冪等な再送のための値だが、システムメッセージはクライアントから送られない。
+		// NOT NULL なのでサーバーが ULID を作って入れる（UNIQUE(room_id, sender_id, client_msg_id) は自然に満たされる）。
+		ClientMsgID: s.ids.New(), SystemType: &systemType, SystemData: data, Now: now,
+	})
+	if err != nil {
+		return Event{}, fmt.Errorf("create system message: %w", err)
+	}
+	msg, err := getMessage(ctx, q, roomID, id)
+	if err != nil {
+		return Event{}, err
+	}
+	return Event{Type: EventMessageCreated, To: Audience{Rooms: []ulid.ULID{roomID}}, Data: msg}, nil
+}

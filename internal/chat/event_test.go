@@ -101,13 +101,21 @@ func TestMessageEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	env.Deliveries.Take()
-	if _, err := env.Service.MarkRoomRead(t.Context(), r.admin, room.ID, 2); err != nil {
+	// 最新はルームの作成・参加のログ（ADR 0033）も含んだ seq。既読にすれば未読は 0 になる。
+	latest := roomLastMessageSeq(t, env, room.ID)
+	if _, err := env.Service.MarkRoomRead(t.Context(), r.admin, room.ID, latest); err != nil {
 		t.Fatal(err)
 	}
 	evs = expectEvents(t, env, chat.Event{Type: chat.EventRoomRead, To: chat.Audience{Users: idList(r.admin)}})
-	if d := evs[0].Data.(chat.RoomRead); d.RoomID != room.ID || d.WorkspaceID != r.ws.ID || d.LastReadSeq != 2 || d.UnreadCount != 0 {
+	if d := evs[0].Data.(chat.RoomRead); d.RoomID != room.ID || d.WorkspaceID != r.ws.ID || d.LastReadSeq != latest || d.UnreadCount != 0 {
 		t.Errorf("room.read data = %+v", d)
 	}
+}
+
+// systemMessageEvent は、システムメッセージ（ADR 0033）がルームの購読者に届く message.created の期待値。
+// 参加・退出・名前の変更では、元からのイベントに加えてこれが 1 件増える。
+func systemMessageEvent(roomID ulid.ULID) chat.Event {
+	return chat.Event{Type: chat.EventMessageCreated, To: chat.Audience{Rooms: idList(roomID)}}
 }
 
 func TestRoomEvents(t *testing.T) {
@@ -143,7 +151,9 @@ func TestRoomEvents(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	expectEvents(t, env, chat.Event{Type: chat.EventMemberJoined, To: chat.Audience{Rooms: idList(public.ID), Users: idList(r.admin)}})
+	expectEvents(t, env,
+		chat.Event{Type: chat.EventMemberJoined, To: chat.Audience{Rooms: idList(public.ID), Users: idList(r.admin)}},
+		systemMessageEvent(public.ID))
 	private := createRoom(t, env, r.member, r.ws.ID, "private", "private")
 	env.Deliveries.Take()
 	for range 2 {
@@ -151,22 +161,32 @@ func TestRoomEvents(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	expectEvents(t, env, chat.Event{Type: chat.EventMemberJoined, To: chat.Audience{Rooms: idList(private.ID), Users: idList(r.admin2)}})
+	expectEvents(t, env,
+		chat.Event{Type: chat.EventMemberJoined, To: chat.Audience{Rooms: idList(private.ID), Users: idList(r.admin2)}},
+		systemMessageEvent(private.ID))
 
 	// 名前の変更は、public ならワークスペースの購読者にも。
 	name := "改名"
 	if _, err := env.Service.UpdateRoom(t.Context(), r.admin, public.ID, chat.RoomUpdate{Name: &name}); err != nil {
 		t.Fatal(err)
 	}
-	evs = expectEvents(t, env, chat.Event{Type: chat.EventRoomUpdated, To: chat.Audience{Rooms: idList(public.ID), Workspaces: idList(r.ws.ID)}})
+	evs = expectEvents(t, env,
+		chat.Event{Type: chat.EventRoomUpdated, To: chat.Audience{Rooms: idList(public.ID), Workspaces: idList(r.ws.ID)}},
+		// 名前を変えたログはルームの購読者だけに届く（サイドバーの更新は room.updated が担う）。
+		systemMessageEvent(public.ID))
 	if d := evs[0].Data.(chat.RoomUpdated); d.Name != "改名" || d.RoomID != public.ID {
 		t.Errorf("room.updated data = %+v", d)
+	}
+	if m := evs[1].Data.(chat.Message); m.System == nil || m.System.Type != chat.SystemRoomRenamed || m.System.NewName != "改名" {
+		t.Errorf("room_renamed data = %+v", m.System)
 	}
 	privateName := "改名（非公開）"
 	if _, err := env.Service.UpdateRoom(t.Context(), r.admin2, private.ID, chat.RoomUpdate{Name: &privateName}); err != nil {
 		t.Fatal(err)
 	}
-	expectEvents(t, env, chat.Event{Type: chat.EventRoomUpdated, To: chat.Audience{Rooms: idList(private.ID)}})
+	expectEvents(t, env,
+		chat.Event{Type: chat.EventRoomUpdated, To: chat.Audience{Rooms: idList(private.ID)}},
+		systemMessageEvent(private.ID))
 
 	// 外された本人の購読を先に再検証させ、本人には room.member_removed、ルームの購読者には member.left。
 	if err := env.Service.RemoveRoomMember(t.Context(), r.admin2, private.ID, r.member); err != nil {
@@ -178,7 +198,11 @@ func TestRoomEvents(t *testing.T) {
 			AccessChanges: []chat.AccessChange{{UserID: r.member, WorkspaceID: r.ws.ID}},
 		},
 		chat.Event{Type: chat.EventMemberLeft, To: chat.Audience{Rooms: idList(private.ID)}},
+		systemMessageEvent(private.ID),
 	)
+	if m := evs[2].Data.(chat.Message); m.System == nil || m.System.Type != chat.SystemMemberRemoved || m.Sender.ID != r.member {
+		t.Errorf("member_removed log = %+v (sender %s)", m.System, m.Sender.ID)
+	}
 	if d := evs[0].Data.(chat.RoomMemberRemoved); d.Reason != chat.RemovalRemoved || d.RoomID != private.ID {
 		t.Errorf("room.member_removed data = %+v", d)
 	}
@@ -195,9 +219,13 @@ func TestRoomEvents(t *testing.T) {
 			AccessChanges: []chat.AccessChange{{UserID: r.admin, WorkspaceID: r.ws.ID}},
 		},
 		chat.Event{Type: chat.EventMemberLeft, To: chat.Audience{Rooms: idList(public.ID)}},
+		systemMessageEvent(public.ID),
 	)
 	if d := evs[0].Data.(chat.RoomMemberRemoved); d.Reason != chat.RemovalLeft {
 		t.Errorf("reason = %s, want left", d.Reason)
+	}
+	if m := evs[2].Data.(chat.Message); m.System == nil || m.System.Type != chat.SystemMemberLeft || m.Sender.ID != r.admin {
+		t.Errorf("member_left log = %+v (sender %s)", m.System, m.Sender.ID)
 	}
 }
 
@@ -303,10 +331,20 @@ func TestAcceptInviteEvents(t *testing.T) {
 	if _, err := env.Service.AcceptInvite(t.Context(), guest, inv.Code); err != nil {
 		t.Fatal(err)
 	}
-	// default ルームごとに、本人とルームの購読者へ member.joined。
+	// default ルームごとに、本人とルームの購読者へ member.joined。加えて「参加しました」のログ（ADR 0033）。
 	evs := env.Deliveries.Take()
-	var rooms []ulid.ULID
+	var rooms, loggedRooms []ulid.ULID
 	for _, ev := range evs {
+		if ev.Type == chat.EventMessageCreated {
+			m, ok := ev.Data.(chat.Message)
+			if !ok || m.Kind != chat.MessageKindSystem || m.System == nil || m.System.Type != chat.SystemMemberJoined ||
+				m.Sender.ID != guest || !sameIDs(ev.To.Rooms, idList(m.RoomID)) {
+				t.Errorf("system message event = %+v", ev)
+				continue
+			}
+			loggedRooms = append(loggedRooms, m.RoomID)
+			continue
+		}
 		d, ok := ev.Data.(chat.MemberJoined)
 		if ev.Type != chat.EventMemberJoined || !ok || d.User.ID != guest || !sameIDs(ev.To.Users, idList(guest)) || !sameIDs(ev.To.Rooms, idList(d.RoomID)) {
 			t.Errorf("event = %+v", ev)
@@ -316,6 +354,9 @@ func TestAcceptInviteEvents(t *testing.T) {
 	}
 	if !sameIDs(rooms, idList(general, announce)) {
 		t.Errorf("joined rooms = %v, want %v", rooms, idList(general, announce))
+	}
+	if !sameIDs(loggedRooms, idList(general, announce)) {
+		t.Errorf("logged rooms = %v, want %v", loggedRooms, idList(general, announce))
 	}
 	// すでにメンバーなら何も起きない。
 	if _, err := env.Service.AcceptInvite(t.Context(), guest, inv.Code); err != nil {

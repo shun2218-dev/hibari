@@ -314,9 +314,10 @@ func (s *Service) AcceptInvite(ctx context.Context, actor ulid.ULID, code string
 		return InviteAcceptance{}, ErrInviteInvalid
 	}
 	var (
-		result InviteAcceptance
-		joined []ulid.ULID
-		me     UserProfile
+		result       InviteAcceptance
+		joined       []ulid.ULID
+		me           UserProfile
+		systemEvents []Event
 	)
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
@@ -366,6 +367,14 @@ func (s *Service) AcceptInvite(ctx context.Context, actor ulid.ULID, code string
 				if me, err = userProfile(ctx, q, actor); err != nil {
 					return err
 				}
+				// 既定のルームにも「参加しました」を残す（ADR 0033）。is_default は多くて数件。
+				for _, roomID := range joined {
+					ev, err := s.writeSystemMessage(ctx, q, roomID, actor, SystemEvent{Type: SystemMemberJoined})
+					if err != nil {
+						return err
+					}
+					systemEvents = append(systemEvents, ev)
+				}
 			}
 		}
 		result.Workspace, err = getWorkspace(ctx, q, actor, inv.WorkspaceID)
@@ -375,10 +384,10 @@ func (s *Service) AcceptInvite(ctx context.Context, actor ulid.ULID, code string
 		return InviteAcceptance{}, err
 	}
 	// 本人は default ルームをまだ購読していないので、member.joined を本人にも届けてサイドバーに出させる（ADR 0015）。
-	events := make([]Event, len(joined))
-	for i, roomID := range joined {
-		events[i] = memberJoinedEvent(result.Workspace.ID, roomID, me)
+	events := make([]Event, 0, len(joined)+len(systemEvents))
+	for _, roomID := range joined {
+		events = append(events, memberJoinedEvent(result.Workspace.ID, roomID, me))
 	}
-	s.deliver(ctx, events...)
+	s.deliver(ctx, append(events, systemEvents...)...)
 	return result, nil
 }

@@ -242,7 +242,9 @@ func TestAttachmentFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Messages) != 2 || len(page.Messages[0].Attachments) != 1 || page.Messages[1].ID != plain.ID || page.Messages[1].Attachments == nil || len(page.Messages[1].Attachments) != 0 {
+	// 一覧にはルームの作成などのログ（ADR 0033）も混ざるので、人の発言だけを見る。
+	msgs := userMessagesOf(page.Messages)
+	if len(msgs) != 2 || len(msgs[0].Attachments) != 1 || msgs[1].ID != plain.ID || msgs[1].Attachments == nil || len(msgs[1].Attachments) != 0 {
 		t.Errorf("messages = %+v", page.Messages)
 	}
 
@@ -414,6 +416,8 @@ func TestAttachConcurrent(t *testing.T) {
 	owner := env.CreateUser(t)
 	ws := env.CreateWorkspace(t, owner)
 	room := createRoom(t, env, owner, ws.ID, "public", "public")
+	// ルームの作成のログ（ADR 0033）が seq を 1 つ使っている。
+	base := roomLastMessageSeq(t, env, room.ID)
 	body := []byte("x")
 	att := uploadAttachment(t, env, owner, room.ID, textInput("a.txt", body), body)
 
@@ -442,8 +446,9 @@ func TestAttachConcurrent(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	if succeeded != 1 || messageCount(t, env, room.ID) != 1 || roomLastMessageSeq(t, env, room.ID) != 1 {
-		t.Errorf("succeeded = %d, messages = %d, last_message_seq = %d; want 1, 1, 1", succeeded, messageCount(t, env, room.ID), roomLastMessageSeq(t, env, room.ID))
+	if succeeded != 1 || userMessageCount(t, env, room.ID) != 1 || roomLastMessageSeq(t, env, room.ID) != base+1 {
+		t.Errorf("succeeded = %d, user messages = %d, last_message_seq = %d; want 1, 1, %d",
+			succeeded, userMessageCount(t, env, room.ID), roomLastMessageSeq(t, env, room.ID), base+1)
 	}
 }
 
@@ -504,7 +509,9 @@ func TestDeleteMessageMarksAttachmentsDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Messages) != 1 || page.Messages[0].DeletedAt == nil || len(page.Messages[0].Attachments) != 0 {
+	// 一覧にはルームの作成のログ（ADR 0033）も混ざるので、人の発言だけを見る。
+	msgs := userMessagesOf(page.Messages)
+	if len(msgs) != 1 || msgs[0].DeletedAt == nil || len(msgs[0].Attachments) != 0 {
 		t.Errorf("messages = %+v", page.Messages)
 	}
 	if _, err := env.Service.GetAttachmentURL(t.Context(), r.member, att.ID); !errors.Is(err, chat.ErrNotFound) {
