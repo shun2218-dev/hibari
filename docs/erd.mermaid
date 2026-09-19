@@ -22,6 +22,8 @@ erDiagram
   messages |o--o{ messages : "スレッドの親"
   messages ||--o{ thread_members : "参加者"
   room_members ||--o{ thread_members : "スレッドに参加"
+  messages ||--o{ message_mentions : "本文のメンション"
+  room_members |o--o{ message_mentions : "宛先。@channel は null"
 
   rooms ||--o{ attachments : "保存先"
   users ||--o{ attachments : "アップロード"
@@ -166,6 +168,14 @@ erDiagram
     uuid user_id PK, FK "複合主キー。INDEX(user_id)"
     uuid room_id FK "(room_id, user_id) → room_members の複合 FK。ルームを抜けたら CASCADE で消える"
     bigint last_read_thread_seq "未読数 = 親の last_thread_seq - これ（ADR 0036）"
+    timestamptz created_at
+  }
+
+  message_mentions {
+    uuid message_id FK "(room_id, これ) → messages の複合 FK。本文が変われば作り直す（ADR 0040）"
+    uuid user_id FK "宛先。null は「ルームの全員」（@channel）。(room_id, これ) → room_members の複合 FK"
+    uuid room_id FK "ルームを抜けたら CASCADE で消える"
+    text kind "user / channel / here。数え方には使わない（ADR 0040）"
     timestamptz created_at
   }
 
