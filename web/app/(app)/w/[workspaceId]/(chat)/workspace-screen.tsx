@@ -163,13 +163,16 @@ export function WorkspaceScreen() {
               setSwitcherOpen(false);
               setAccountMenuOpen((open) => !open);
             }}
-            // 「設定」（ユーザー設定）はまだない。構築順 6 の残り
             accountMenu={
               <AccountMenu
                 user={{ ...currentUser, handle: user.handle }}
                 onOpenWorkspaceSettings={() => {
                   setAccountMenuOpen(false);
                   router.push(`/w/${workspaceId}/admin/settings`);
+                }}
+                onOpenSettings={() => {
+                  setAccountMenuOpen(false);
+                  router.push("/settings");
                 }}
                 onLogout={() => session.logout()}
               />
