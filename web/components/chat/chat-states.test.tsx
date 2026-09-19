@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { EmptyMessages, JoinRoomBar, RemovedFromRoom, RemovedFromWorkspace, ServerUnavailable } from "./chat-states";
+import { EmptyMessages, JoinRoomBar, RemovedFromWorkspace, RoomUnavailable, ServerUnavailable } from "./chat-states";
 
 describe("chat states", () => {
   it.each([
@@ -13,11 +13,12 @@ describe("chat states", () => {
     expect(screen.getByText(text)).toBeInTheDocument();
   });
 
-  it("explains removal from a room", () => {
-    render(<RemovedFromRoom kind="public" name="デザインレビュー" />);
+  it("says only that the room cannot be accessed, not that I was removed", () => {
+    render(<RoomUnavailable />);
 
-    expect(screen.getByRole("heading", { name: "このチャンネルから外されました" })).toBeInTheDocument();
-    expect(screen.getByText(/「# デザインレビュー」のメンバーではなくなった/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "このチャンネルにはアクセスできません" })).toBeInTheDocument();
+    expect(screen.getByText("チャンネルが存在しないか、閲覧する権限がありません。")).toBeInTheDocument();
+    expect(screen.queryByText(/外され/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "チャンネル一覧に戻る" })).toBeInTheDocument();
   });
 

@@ -29,13 +29,16 @@ export function EmptyMessages({ kind, name }: { kind: RoomKind; name: string }) 
 }
 
 /**
- * 非公開チャンネルから外された（room.member_removed）。以降のメッセージは届かないので、履歴も隠す。
+ * 開いている非公開チャンネル（と DM）を読めなくなった（room.member_removed。ADR 0035）。履歴も隠す。
+ *
+ * 外されたことも、チャンネルの名前も言わない。非公開チャンネルは名前も含めてメンバーだけのものなので、
+ * 読めなくなった人には「存在しない」と区別できない形で出す（API が 404 で両者を区別しないのと同じ。ADR 0011）。
  */
-export function RemovedFromRoom({ kind, name, onBack }: { kind: RoomKind; name: string; onBack?: () => void }) {
+export function RoomUnavailable({ onBack }: { onBack?: () => void }) {
   return (
     <CenteredNotice
-      title="このチャンネルから外されました"
-      description={`「${roomLabel(kind, name)}」のメンバーではなくなったため、以降のメッセージは表示されません。`}
+      title="このチャンネルにはアクセスできません"
+      description="チャンネルが存在しないか、閲覧する権限がありません。"
       action={<Button onClick={onBack}>チャンネル一覧に戻る</Button>}
     />
   );

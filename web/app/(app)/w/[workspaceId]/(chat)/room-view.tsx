@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { EmptyMessages, JoinRoomBar, RemovedFromRoom, RemovedFromWorkspace } from "@/components/chat/chat-states";
+import { EmptyMessages, JoinRoomBar, RemovedFromWorkspace, RoomUnavailable } from "@/components/chat/chat-states";
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { DeleteMessageDialog } from "@/components/chat/room-dialogs";
@@ -247,7 +247,7 @@ export function RoomView({
     />
   );
 
-  // 外されたら、ヘッダーは残して本文を差し替える（chat/removed-from-workspace.png、chat/removed-from-channel.png）
+  // ワークスペースから外されたら、ヘッダーは残して本文を差し替える（chat/removed-from-workspace.png）
   if (workspaceRemoval?.reason === "removed") {
     return (
       <>
@@ -256,19 +256,15 @@ export function RoomView({
       </>
     );
   }
+  // 非公開チャンネルから外されたら、ヘッダーごと差し替える。名前も人数も、もう見せてよいものではない（ADR 0035）
   if (removal === "removed") {
     return (
-      <>
-        {header}
-        <RemovedFromRoom
-          kind={room.kind}
-          name={roomName(room)}
-          onBack={() => {
-            forgetLocation(workspaceId, roomId);
-            router.replace(`/w/${workspaceId}`);
-          }}
-        />
-      </>
+      <RoomUnavailable
+        onBack={() => {
+          forgetLocation(workspaceId, roomId);
+          router.replace(`/w/${workspaceId}`);
+        }}
+      />
     );
   }
 

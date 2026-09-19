@@ -118,7 +118,8 @@ export type ChatState = {
   /** ルームごとの、確定していない自分のメッセージ。入力した順（送る順）に並ぶ。 */
   outgoing: Record<string, OutgoingMessage[] | undefined>;
   /**
-   * 自分が外されたルーム（非公開と DM）。開いている間は一覧に残して「外されました」を出す（chat/removed-from-channel.png）。
+   * 自分が外されたルーム（非公開と DM）。一覧からはすぐに消し、開いている間だけ「アクセスできません」を出すために覚えておく
+   * （chat/removed-from-channel.png。ADR 0035）。
    * public ルームは参加していなくても読めるので、ここには入れず、参加していない状態に戻すだけ。
    */
   removedRooms: Record<string, RemovalReason | undefined>;
@@ -694,8 +695,8 @@ export function createChatStore(
     }));
     // もう投稿できない。送信中のものは届かず、再送もできない
     dropOutgoing(roomId);
-    // 開いているルームは、「外されました」を出している間だけ一覧に残す（離れたら setFocus が消す）
-    if (state.focus?.roomId !== roomId) patchRoomList(workspaceId, (ids) => ids.filter((id) => id !== roomId));
+    // 開いていても一覧からはすぐに消す。名前も含めて、もう見せてよいものではない（ADR 0035）
+    patchRoomList(workspaceId, (ids) => ids.filter((id) => id !== roomId));
   }
 
   function removedFromWorkspace(workspaceId: string, reason: RemovalReason) {
@@ -859,12 +860,8 @@ export function createChatStore(
       try {
         const { rooms } = await api.listRooms(workspaceId);
         for (const room of rooms) putRoom(room);
-        update((s) => {
-          // 「外されました」を出しているルームは、一覧を取り直しても開いている間は残す
-          const kept = s.roomLists[workspaceId]?.ids.filter((id) => s.removedRooms[id] && s.focus?.roomId === id) ?? [];
-          const ids = [...rooms.map((r) => r.id), ...kept.filter((id) => !rooms.some((r) => r.id === id))];
-          return { ...s, roomLists: { ...s.roomLists, [workspaceId]: { status: "ready", ids } } };
-        });
+        const ids = rooms.map((r) => r.id);
+        update((s) => ({ ...s, roomLists: { ...s.roomLists, [workspaceId]: { status: "ready", ids } } }));
       } catch (err) {
         update((s) => ({
           ...s,
@@ -1264,15 +1261,13 @@ export function createChatStore(
 
     /**
      * 開いているルームと、その最新を見ているかを知らせる。見始めたら、表示しているところまで既読にする。
-     * 「外されました」を出していたルームから離れたら、一覧から消す。
+     * 「アクセスできません」を出していたルームから離れたら、覚えていたことを忘れる。
      */
     setFocus(focus: { roomId: string; caughtUp: boolean } | null) {
       const previous = state.focus;
       if (previous?.roomId === focus?.roomId && previous?.caughtUp === focus?.caughtUp) return;
       update((s) => ({ ...s, focus }));
       if (previous && previous.roomId !== focus?.roomId && state.removedRooms[previous.roomId]) {
-        const workspaceId = state.rooms[previous.roomId]?.workspace_id;
-        if (workspaceId) patchRoomList(workspaceId, (ids) => ids.filter((id) => id !== previous.roomId));
         // もう一度 URL を開いたら、ほかの読めないルームと同じく 404 で入口に戻す
         update((s) => ({ ...s, removedRooms: { ...s.removedRooms, [previous.roomId]: undefined } }));
       }

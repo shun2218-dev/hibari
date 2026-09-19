@@ -676,7 +676,7 @@ describe("createChatStore realtime", () => {
       data: { workspace_id: "ws-1", room_id: roomId, reason: "removed" as const },
     });
 
-    it("keeps the open private room in the list with a notice until I leave it, and drops others at once", async () => {
+    it("drops a private room from the list at once, even the open one, and remembers it only while it stays open", async () => {
       const { store } = setup(privateRoomRoutes);
       await store.loadRooms("ws-1");
       store.setFocus({ roomId: "r1", caughtUp: true });
@@ -684,11 +684,11 @@ describe("createChatStore realtime", () => {
       store.applyEvent(removed("r1"));
       store.applyEvent(removed("r2"));
 
+      // 名前も見せないので、開いていても一覧に残さない（ADR 0035）
+      expect(store.getSnapshot().roomLists["ws-1"]?.ids).toEqual([]);
       expect(store.getSnapshot().removedRooms).toMatchObject({ r1: "removed", r2: "removed" });
-      expect(store.getSnapshot().roomLists["ws-1"]?.ids).toEqual(["r1"]);
 
       store.setFocus(null);
-      expect(store.getSnapshot().roomLists["ws-1"]?.ids).toEqual([]);
       expect(store.getSnapshot().removedRooms.r1).toBeUndefined();
     });
 

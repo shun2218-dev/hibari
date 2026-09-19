@@ -55,7 +55,7 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "chat/empty-rooms", title: "チャンネルが 0 件" },
   { name: "chat/empty-messages", title: "メッセージが 0 件" },
   { name: "chat/public-preview", title: "public ルームを参加せずに閲覧" },
-  { name: "chat/removed-from-channel", title: "チャンネルから外された" },
+  { name: "chat/removed-from-channel", title: "チャンネルにアクセスできない（外された）" },
   { name: "chat/removed-from-workspace", title: "ワークスペースから削除された" },
   { name: "chat/members-panel", title: "メンバーパネル" },
   { name: "chat/workspace-switcher", title: "ワークスペースの切り替え" },
