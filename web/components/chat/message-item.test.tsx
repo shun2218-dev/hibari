@@ -20,6 +20,75 @@ function message(overrides: Partial<MessageView> = {}): MessageView {
   };
 }
 
+describe("MessageItem のリンクのカード（ADR 0040）", () => {
+  const card = {
+    key: "01J8ZH5K000000000000000001/01J8ZH5K000000000000000002",
+    state: "ok",
+    href: "https://hibari.example/w/01J8ZH5K000000000000000000/r/01J8ZH5K000000000000000001?m=01J8ZH5K000000000000000002",
+    room: { kind: "public", name: "雑談" },
+    sender: { id: "01J8ZH5K000000000000000003", name: "田中 美咲" },
+    timeLabel: "09:41",
+    body: "こちらが元の発言です。",
+    clampedBody: "こちらが元の発言です。",
+    clamped: false,
+    attachmentCount: 0,
+    inThread: false,
+  } as const;
+
+  it("本文の下にカードを出す", () => {
+    render(<MessageItem message={message({ body: "これを見て", linkCards: [card] })} />);
+
+    expect(screen.getByText("これを見て")).toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "田中 美咲 のメッセージ" })).toBeInTheDocument();
+  });
+
+  it("削除済みのメッセージにはカードを出さない", () => {
+    render(<MessageItem message={message({ deleted: true, linkCards: [card] })} />);
+
+    expect(screen.queryByRole("article", { name: "田中 美咲 のメッセージ" })).not.toBeInTheDocument();
+  });
+
+  it("読めないリンクのカードは、中身を出さない", () => {
+    render(<MessageItem message={message({ linkCards: [{ key: "k", state: "unavailable" }] })} />);
+
+    expect(screen.getByText("このメッセージは表示できません")).toBeInTheDocument();
+  });
+
+  it("「リンクをコピー」をメニューに出し、押すと呼ばれる", async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+    render(
+      <MessageItem
+        message={message()}
+        copyLink={{ label: "リンクをコピー", onClick }}
+        menuOpen
+        onToggleMenu={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "リンクをコピー" }));
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("コピーの結果は、呼ぶ側が決めた文言で出す", () => {
+    render(<MessageItem message={message()} copyLink={{ label: "コピーしました", onClick: () => {} }} menuOpen />);
+
+    expect(screen.getByRole("button", { name: "コピーしました" })).toBeInTheDocument();
+  });
+
+  it("編集も削除もできなくても、「リンクをコピー」だけで「…」を出す", () => {
+    render(<MessageItem message={message()} copyLink={{ label: "リンクをコピー", onClick: () => {} }} />);
+
+    expect(screen.getByRole("button", { name: "その他の操作", hidden: true })).toBeInTheDocument();
+  });
+
+  it("コピーできないメッセージ（送信中）では「…」を出さない", () => {
+    render(<MessageItem message={message({ status: "pending" })} />);
+
+    expect(screen.queryByRole("button", { name: "その他の操作", hidden: true })).not.toBeInTheDocument();
+  });
+});
+
 describe("MessageItem", () => {
   it("shows the sender, time and body of a sent message", () => {
     render(<MessageItem message={message()} />);

@@ -55,9 +55,42 @@ export type MessageView = {
    */
   broadcast?: { in: "channel" } | { in: "thread"; label: string };
   attachments: MessageAttachmentView[];
+  /** 本文に貼られたパーマリンクのカード（ADR 0040）。最大 3 件。 */
+  linkCards?: MessageLinkCardView[];
   /** 直前のメッセージと同じ送信者なので、アバターと名前を省いて続けて表示する。 */
   grouped: boolean;
 };
+
+/**
+ * 本文に貼られたパーマリンクのカード（ADR 0040）。
+ *
+ * 中身は見る人の権限で取り直すので、読めないリンクは unavailable になる。
+ * 削除済みのメッセージも unavailable にする（削除は跡も残さず消える。ADR 0038）。
+ * 本文を畳むかどうかは、行数と文字数でデータ層が決めて body / clampedBody の両方を渡す（ADR 0040）。
+ */
+export type MessageLinkCardView =
+  | { key: string; state: "loading" }
+  | { key: string; state: "unavailable" }
+  | {
+      key: string;
+      state: "ok";
+      /** カード全体の遷移先（パーマリンクそのもの）。 */
+      href: string;
+      /** 今いるワークスペースと違うときだけ入る。同じなら出さない（いつも同じ名前が並ぶのを避ける）。 */
+      workspaceName?: string;
+      /** public / private はルーム名、DM は相手の表示名。 */
+      room: { kind: RoomKind; name: string };
+      sender: UserRef;
+      timeLabel: string;
+      body: string;
+      /** 畳んだときに出す本文。clamped が false なら body と同じ。 */
+      clampedBody: string;
+      /** 畳める（「すべて表示する」を出す）か。 */
+      clamped: boolean;
+      attachmentCount: number;
+      /** スレッドの返信を指している。 */
+      inThread: boolean;
+    };
 
 /** 親のメッセージの下に出す「N 件の返信」。件数は削除された返信を除いた数、時刻は整形済み。 */
 export type ThreadSummaryLabel = { replyCount: number; lastReplyLabel: string };

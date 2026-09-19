@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { TimelineItem } from "@/components/chat/types";
-import type { MessageAttachment } from "@/lib/api/types.gen";
+import type { MessageAttachment, MessageLink } from "@/lib/api/types.gen";
 import { kei, member, message, miyuki, naoki, room, roomMember, systemMessage } from "@/test/chat-data";
 
 import {
@@ -16,6 +16,7 @@ import {
   toThreadListItemView,
   toThreadTimelineItems,
   toTimelineItems,
+  permalinksIn,
 } from "./views";
 
 const tz = "Asia/Tokyo";
@@ -579,3 +580,153 @@ describe("threads (ADR 0036)", () => {
   });
 });
 
+
+// 本文に貼られたパーマリンクのカード（ADR 0040）
+
+const ORIGIN = "https://hibari.example";
+const WS = "01J9ZQZQZQZQZQZQZQZQZQZQZA";
+const OTHER_WS = "01J9ZQZQZQZQZQZQZQZQZQZQZF";
+const LINK_ROOM = "01J9ZQZQZQZQZQZQZQZQZQZQZB";
+const LINK_MSG = "01J9ZQZQZQZQZQZQZQZQZQZQZC";
+const PERMALINK = `${ORIGIN}/w/${WS}/r/${LINK_ROOM}?m=${LINK_MSG}`;
+const LINK_KEY = `${LINK_ROOM}/${LINK_MSG}`;
+
+function linkResult(overrides: Partial<MessageLink> = {}): MessageLink {
+  return {
+    room_id: LINK_ROOM,
+    message_id: LINK_MSG,
+    status: "ok",
+    workspace: { id: WS, name: "山と印刷" },
+    room: { id: LINK_ROOM, kind: "public", name: "雑談", dm_peer: null },
+    message: {
+      id: LINK_MSG,
+      seq: 7,
+      sender: naoki,
+      body: "元の発言",
+      thread_root_id: null,
+      attachment_count: 0,
+      created_at: "2026-09-13T01:30:00Z",
+      edited_at: null,
+      deleted_at: null,
+    },
+    ...overrides,
+  };
+}
+
+/** linkResult().message は必ず入る（ok の結果を作るヘルパー）ので、絞り込みを 1 箇所にまとめる。 */
+function linkMessage(): NonNullable<MessageLink["message"]> {
+  return linkResult().message!;
+}
+
+function cardsOf(
+  messages: Parameters<typeof toTimelineItems>[0],
+  linkCards: Record<string, MessageLink>,
+  extra: Partial<Parameters<typeof toTimelineItems>[1]> = {},
+) {
+  const items = toTimelineItems(messages, {
+    unreadAfterSeq: null,
+    origin: ORIGIN,
+    linkCards,
+    timeZone: tz,
+    ...extra,
+  });
+  const first = items.find((i): i is Extract<TimelineItem, { type: "message" }> => i.type === "message");
+  return first?.message.linkCards;
+}
+
+describe("permalinksIn", () => {
+  it("画面に出す本文からリンクを集め、重複をまとめる", () => {
+    const messages = [message(1, { body: `見て ${PERMALINK}` }), message(2, { body: `これも ${PERMALINK}` })];
+    expect(permalinksIn(messages, ORIGIN)).toEqual([{ workspaceId: WS, roomId: LINK_ROOM, messageId: LINK_MSG }]);
+  });
+
+  it("削除したメッセージの本文は見ない（本文が空になっている）", () => {
+    const messages = [message(1, { body: "", deleted_at: "2026-09-13T02:00:00Z" })];
+    expect(permalinksIn(messages, ORIGIN)).toEqual([]);
+  });
+});
+
+describe("toTimelineItems のリンクのカード", () => {
+  it("まだ取れていないリンクは loading にする", () => {
+    expect(cardsOf([message(1, { body: PERMALINK })], {})).toEqual([{ key: LINK_KEY, state: "loading" }]);
+  });
+
+  it("リンクのない本文にはカードを持たせない", () => {
+    expect(cardsOf([message(1, { body: "ただの本文" })], {})).toBeUndefined();
+  });
+
+  it("オリジンが分からなければカードを出さない（サーバー側の描画）", () => {
+    const items = toTimelineItems([message(1, { body: PERMALINK })], { unreadAfterSeq: null, timeZone: tz });
+    const first = items.find((i): i is Extract<TimelineItem, { type: "message" }> => i.type === "message");
+    expect(first?.message.linkCards).toBeUndefined();
+  });
+
+  it("読めるリンクは、ルーム・送信者・時刻を整形して渡す", () => {
+    const [card] = cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: linkResult() }) ?? [];
+    expect(card).toMatchObject({
+      key: LINK_KEY,
+      state: "ok",
+      room: { kind: "public", name: "雑談" },
+      sender: { id: naoki.id, name: naoki.display_name },
+      timeLabel: "10:30",
+      body: "元の発言",
+      clamped: false,
+      attachmentCount: 0,
+      inThread: false,
+    });
+  });
+
+  it("読めないリンクは unavailable にする", () => {
+    const result = linkResult({ status: "unavailable", workspace: null, room: null, message: null });
+    expect(cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: result })).toEqual([
+      { key: LINK_KEY, state: "unavailable" },
+    ]);
+  });
+
+  it("削除済みのリンクも、読めないリンクと同じ見え方にする（ADR 0038 / 0040。オーナーの確認: 2026-09-19）", () => {
+    const result = linkResult({
+      message: { ...linkMessage(), body: "", deleted_at: "2026-09-13T02:00:00Z" },
+    });
+    expect(cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: result })).toEqual([
+      { key: LINK_KEY, state: "unavailable" },
+    ]);
+  });
+
+  it("今いるワークスペースと同じならワークスペース名を出さない", () => {
+    const [card] = cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: linkResult() }, { currentWorkspaceId: WS }) ?? [];
+    expect(card).not.toHaveProperty("workspaceName");
+  });
+
+  it("別のワークスペースならワークスペース名を添える", () => {
+    const result = linkResult({ workspace: { id: OTHER_WS, name: "別の会社" } });
+    const [card] = cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: result }, { currentWorkspaceId: WS }) ?? [];
+    expect(card).toMatchObject({ workspaceName: "別の会社" });
+  });
+
+  it("dm はルーム名の代わりに相手の名前を出す", () => {
+    const result = linkResult({ room: { id: LINK_ROOM, kind: "dm", name: "", dm_peer: miyuki } });
+    const [card] = cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: result }) ?? [];
+    expect(card).toMatchObject({ room: { kind: "dm", name: miyuki.display_name } });
+  });
+
+  it("長い本文は畳んだ本文も一緒に渡す", () => {
+    const long = Array.from({ length: 10 }, (_, i) => `${i + 1} 行目`).join("\n");
+    const result = linkResult({ message: { ...linkMessage(), body: long } });
+    const [card] = cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: result }) ?? [];
+    expect(card).toMatchObject({ clamped: true, body: long });
+    expect((card as { clampedBody: string }).clampedBody.endsWith("…")).toBe(true);
+  });
+
+  it("スレッドの返信なら、カードの遷移先に親の ID を入れる", () => {
+    const root = "01J9ZQZQZQZQZQZQZQZQZQZQZD";
+    const result = linkResult({ message: { ...linkMessage(), thread_root_id: root } });
+    const [card] = cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: result }) ?? [];
+    expect(card).toMatchObject({ inThread: true, href: `${PERMALINK}&t=${root}` });
+  });
+
+  it("添付の件数を渡す", () => {
+    const result = linkResult({ message: { ...linkMessage(), attachment_count: 3 } });
+    const [card] = cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: result }) ?? [];
+    expect(card).toMatchObject({ attachmentCount: 3 });
+  });
+});

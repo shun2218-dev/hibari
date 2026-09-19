@@ -4,6 +4,7 @@ import { ChevronRightIcon, ClockIcon, FileIcon, MoreIcon, ReplyIcon, ThreadIcon 
 import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
 
+import { MessageLinkCard } from "./message-link-card";
 import type { MessageAttachmentView, MessageView } from "./types";
 
 /** 編集中の本文。null（既定）なら編集していない。編集できるのは自分のメッセージだけ（ADR 0012）。 */
@@ -32,9 +33,15 @@ type MessageItemProps = {
   onDownload?: (attachmentId: string) => void;
   /** 画像が読み込めなかった（署名付き URL の期限切れなど）。url は読み込みに使った URL。 */
   onImageError?: (attachmentId: string, url: string) => void;
-  /** 「…」で出せる操作。両方 false なら「…」自体を出さない。 */
+  /** 「…」で出せる操作。どれも無ければ「…」自体を出さない。 */
   canEdit?: boolean;
   canDelete?: boolean;
+  /**
+   * 「リンクをコピー」（ADR 0040）。読めている人なら誰でもコピーできるので、権限では出し分けない。
+   * まだ ID のない送信中のメッセージには渡さない（パーマリンクを作れない）。
+   * label は「リンクをコピー」/「コピーしました」/「コピーできませんでした」を呼ぶ側が決める。
+   */
+  copyLink?: { label: string; onClick: () => void };
   menuOpen?: boolean;
   onToggleMenu?: () => void;
   onEdit?: () => void;
@@ -56,6 +63,7 @@ export function MessageItem({
   onImageError,
   canEdit = false,
   canDelete = false,
+  copyLink,
   menuOpen = false,
   onToggleMenu,
   onEdit,
@@ -65,7 +73,7 @@ export function MessageItem({
 }: MessageItemProps) {
   const { sender, status, deleted } = message;
   // 削除済みには操作の対象がなく、送信失敗には専用の操作（再送・削除）があるので、ホバーの操作を出さない
-  const hasMenu = canEdit || canDelete;
+  const hasMenu = canEdit || canDelete || copyLink !== undefined;
   const actionable = status !== "failed" && !deleted && editing === null && (canReply || hasMenu);
 
   return (
@@ -141,6 +149,18 @@ export function MessageItem({
           </ul>
         )}
 
+        {/* 本文に貼られたパーマリンクのカード（ADR 0040）。本文の下に並べる。
+            本文中の URL 自体をリンクにするのは Phase 6.10（本文の書式）の仕事なので、ここではしない。 */}
+        {!deleted && !editing && message.linkCards && message.linkCards.length > 0 && (
+          <ul className="mt-2 flex flex-col gap-2">
+            {message.linkCards.map((card) => (
+              <li key={card.key}>
+                <MessageLinkCard card={card} />
+              </li>
+            ))}
+          </ul>
+        )}
+
         {message.broadcast?.in === "thread" && !deleted && !editing && (
           <p className="pt-0.5 text-2xs text-text-muted">{message.broadcast.label}</p>
         )}
@@ -187,6 +207,15 @@ export function MessageItem({
 
       {menuOpen && hasMenu && (
         <Popover label="メッセージの操作" className="top-6 right-4 w-52">
+          {copyLink && (
+            <button
+              type="button"
+              onClick={copyLink.onClick}
+              className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
+            >
+              {copyLink.label}
+            </button>
+          )}
           {canEdit && (
             <button
               type="button"

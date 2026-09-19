@@ -16,13 +16,16 @@ import {
   useAvatarUrls,
   useChatState,
   useChatStore,
+  useLinkCards,
   useMedia,
   useMediaState,
   useRealtime,
 } from "@/lib/chat/chat-provider";
 import { forgetLocation } from "@/lib/chat/last-location";
 import { draftsReady } from "@/lib/chat/uploads";
-import { previewImageIds, roomName, toAttachmentDraftView, toTimelineItems } from "@/lib/chat/views";
+import { permalinksIn, roomName, toAttachmentDraftView, toTimelineItems } from "@/lib/chat/views";
+import { previewImageIds } from "@/lib/chat/views";
+import { useOrigin } from "@/lib/chat/use-origin";
 import { useDocumentVisible } from "@/lib/use-document-visible";
 
 /** 本文の上限（rune。ADR 0012）。超えたら送信できないようにする（送っても 422 で失敗にしかならない）。 */
@@ -124,7 +127,7 @@ export function RoomView({
   // 並びが変わったときだけ作り直し、タイムラインのスクロール位置の合わせ直しを起こさない
   const messages = timeline?.messages;
   const unreadAfterSeq = timeline?.unreadAfterSeq ?? null;
-  const { timelineProps, deleteDialog } = useMessageActions({ roomId, room, messages, me, myRole, members });
+  const { timelineProps, deleteDialog } = useMessageActions({ workspaceId, roomId, room, messages, me, myRole, members });
 
   // アバターと画像の URL は、chat のレスポンスに載らないので、画面に出すものの ID を集めて引く（ADR 0013 / 0020 / 0028）
   const senderIds = useMemo(() => [...(messages ?? []).map((m) => m.sender.id), ...(me ? [me.id] : [])], [messages, me]);
@@ -135,9 +138,24 @@ export function RoomView({
     if (imageIds !== "") media.requestAttachmentUrls(imageIds.split(" "));
   }, [media, imageIds]);
 
+  // 本文に貼られたパーマリンクのカード（ADR 0040）。中身は本文に入っていないので、見る人の権限で取り直す
+  const origin = useOrigin();
+  const permalinks = useMemo(() => (origin ? permalinksIn(messages ?? [], origin) : []), [messages, origin]);
+  const linkCards = useLinkCards(permalinks);
+
   const items = useMemo(
-    () => toTimelineItems(messages ?? [], { unreadAfterSeq, outgoing, me, avatarUrls, attachmentUrls }),
-    [messages, unreadAfterSeq, outgoing, me, avatarUrls, attachmentUrls],
+    () =>
+      toTimelineItems(messages ?? [], {
+        unreadAfterSeq,
+        outgoing,
+        me,
+        avatarUrls,
+        attachmentUrls,
+        linkCards,
+        origin,
+        currentWorkspaceId: workspaceId,
+      }),
+    [messages, unreadAfterSeq, outgoing, me, avatarUrls, attachmentUrls, linkCards, origin, workspaceId],
   );
   const draftViews = useMemo(() => drafts.map(toAttachmentDraftView), [drafts]);
   const typingNames = useMemo(() => (typing ?? []).map((t) => t.user.display_name), [typing]);

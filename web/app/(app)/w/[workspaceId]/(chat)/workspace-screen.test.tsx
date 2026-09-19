@@ -679,8 +679,14 @@ describe("WorkspaceScreen", () => {
         });
 
         const article = history().getAllByRole("article")[2]!;
-        // 他人のメッセージには「…」がない（member なので削除もできない）
-        expect(within(history().getAllByRole("article")[1]!).queryByRole("button", { name: "その他の操作" })).not.toBeInTheDocument();
+        // 他人のメッセージの「…」には「リンクをコピー」しかない（member なので編集も削除もできない。ADR 0012 / 0040）
+        const others = history().getAllByRole("article")[1]!;
+        await userEvent.click(within(others).getByRole("button", { name: "その他の操作" }));
+        expect(screen.getByRole("button", { name: "リンクをコピー" })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "メッセージを編集" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "メッセージを削除" })).not.toBeInTheDocument();
+        await userEvent.click(within(others).getByRole("button", { name: "その他の操作" }));
+
         await userEvent.click(within(article).getByRole("button", { name: "その他の操作" }));
         await userEvent.click(screen.getByRole("button", { name: "メッセージを編集" }));
         const editor = screen.getByRole("textbox", { name: "メッセージを編集" });
