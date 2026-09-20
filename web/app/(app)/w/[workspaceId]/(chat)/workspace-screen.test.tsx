@@ -924,6 +924,92 @@ describe("WorkspaceScreen", () => {
         // サイドバーの最後の 1 行は、ひとつ前のメッセージを取り直す
         await waitFor(() => expect(api.paths().filter((p) => p === "GET /api/v1/rooms/r-design")).toHaveLength(2));
       });
+
+      describe("メッセージへのリンク（ADR 0040）", () => {
+        /** jsdom には clipboard がないので、書き込み先だけ差し替える。 */
+        function stubClipboard() {
+          const writeText = vi.fn(async () => {});
+          Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+          return writeText;
+        }
+
+        // パーマリンクは ULID しか受けない（links.ts）ので、リンク先だけ ULID の ID にする。
+        // リンク先のルームはサイドバーになくてよい。カードの中身は、見る人の権限で API が返したものだけで決まる
+        const LINK_WS = "01J9ZQZQZQZQZQZQZQZQZQZQZA";
+        const LINK_ROOM = "01J9ZQZQZQZQZQZQZQZQZQZQZB";
+        const LINK_MSG = "01J9ZQZQZQZQZQZQZQZQZQZQZC";
+        const HIDDEN_ROOM = "01J9ZQZQZQZQZQZQZQZQZQZQZD";
+        const HIDDEN_MSG = "01J9ZQZQZQZQZQZQZQZQZQZQZE";
+
+        it("「リンクをコピー」で、そのメッセージを指す URL がクリップボードに入る", async () => {
+          const writeText = stubClipboard();
+          await connected();
+
+          await userEvent.click(within(history().getAllByRole("article")[1]!).getByRole("button", { name: "その他の操作" }));
+          await userEvent.click(screen.getByRole("button", { name: "リンクをコピー" }));
+
+          expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/w/ws-1/r/r-design?m=m-2`);
+          // コピーできたことは、同じ行の文言で知らせる（ADR 0040）
+          expect(await screen.findByRole("button", { name: "コピーしました" })).toBeInTheDocument();
+        });
+
+        it("スレッドの返信のリンクには、開く親の ID が付く", async () => {
+          const writeText = stubClipboard();
+          const reply = message(3, { thread_root_id: "m-1", thread_seq: 1, also_in_channel: true, body: "チャンネルにも流した返信" });
+          await connected(openRoom(design, [message(1), message(2), reply]));
+
+          await userEvent.click(within(history().getAllByRole("article")[2]!).getByRole("button", { name: "その他の操作" }));
+          await userEvent.click(screen.getByRole("button", { name: "リンクをコピー" }));
+
+          expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/w/ws-1/r/r-design?m=m-3&t=m-1`);
+        });
+
+        it("本文に貼ったリンクをカードにし、読めないリンクは中身を出さない", async () => {
+          const readable = `${window.location.origin}/w/${LINK_WS}/r/${LINK_ROOM}?m=${LINK_MSG}`;
+          const hidden = `${window.location.origin}/w/${LINK_WS}/r/${HIDDEN_ROOM}?m=${HIDDEN_MSG}`;
+          const { api } = await connected({
+            ...openRoom(design, [message(1), message(2, { body: `これです ${readable} と ${hidden}` }), message(3)]),
+            "POST /api/v1/messages/links": () =>
+              json(200, {
+                links: [
+                  {
+                    room_id: LINK_ROOM,
+                    message_id: LINK_MSG,
+                    status: "ok",
+                    workspace: { id: LINK_WS, name: "山と印刷" },
+                    room: { id: LINK_ROOM, kind: "public", name: "雑談", dm_peer: null },
+                    message: {
+                      id: LINK_MSG,
+                      seq: 7,
+                      sender: miyuki,
+                      body: "つなぎの議事録",
+                      thread_root_id: null,
+                      attachment_count: 0,
+                      created_at: "2026-09-13T01:30:00Z",
+                      edited_at: null,
+                      deleted_at: null,
+                    },
+                  },
+                  // 読めない・存在しない・削除済みは、すべて同じ unavailable（ADR 0040）
+                  { room_id: HIDDEN_ROOM, message_id: HIDDEN_MSG, status: "unavailable", workspace: null, room: null, message: null },
+                ],
+              }),
+          });
+
+          const card = await history().findByRole("article", { name: "高橋 みゆき のメッセージ" });
+          expect(within(card).getByText("つなぎの議事録")).toBeInTheDocument();
+          // 別のワークスペースなので、ルーム名にワークスペース名を添える
+          expect(within(card).getByRole("link", { name: "山と印刷 / 雑談" })).toHaveAttribute("href", readable);
+          expect(history().getByText("このメッセージは表示できません")).toBeInTheDocument();
+          // 貼られた順に、1 回のリクエストでまとめて取る
+          expect(JSON.parse(api.calls.find((c) => c.path === "/api/v1/messages/links")!.init.body as string)).toEqual({
+            links: [
+              { room_id: LINK_ROOM, message_id: LINK_MSG },
+              { room_id: HIDDEN_ROOM, message_id: HIDDEN_MSG },
+            ],
+          });
+        });
+      });
     });
 
     it("shows who is typing", async () => {
