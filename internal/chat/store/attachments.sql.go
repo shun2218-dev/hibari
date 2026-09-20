@@ -58,6 +58,28 @@ func (q *Queries) AttachToMessage(ctx context.Context, arg AttachToMessageParams
 	return items, nil
 }
 
+const countMessageAttachments = `-- name: CountMessageAttachments :one
+SELECT count(*)::bigint
+  FROM attachments
+ WHERE room_id = $1
+   AND message_id = $2
+   AND status = 'attached'
+`
+
+type CountMessageAttachmentsParams struct {
+	RoomID    ulid.ULID
+	MessageID *ulid.ULID
+}
+
+// そのメッセージに残っている添付の数。最後の 1 件を消したかどうかの判定に使う（ADR 0045 決定 8）。
+// メッセージの行を FOR UPDATE で押さえた後に数えるので、並行した削除と数え違えない。
+func (q *Queries) CountMessageAttachments(ctx context.Context, arg CountMessageAttachmentsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countMessageAttachments, arg.RoomID, arg.MessageID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createAttachment = `-- name: CreateAttachment :exec
 
 INSERT INTO attachments (id, room_id, uploader_id, status, object_key, file_name, mime_type, size_bytes, width, height, created_at)
@@ -106,6 +128,32 @@ DELETE FROM attachments
 func (q *Queries) DeleteAttachments(ctx context.Context, ids []ulid.ULID) error {
 	_, err := q.db.Exec(ctx, deleteAttachments, ids)
 	return err
+}
+
+const deleteMessageAttachment = `-- name: DeleteMessageAttachment :execrows
+UPDATE attachments
+   SET status = 'deleted'
+ WHERE id = $1
+   AND room_id = $2
+   AND message_id = $3
+   AND status = 'attached'
+`
+
+type DeleteMessageAttachmentParams struct {
+	ID        ulid.ULID
+	RoomID    ulid.ULID
+	MessageID *ulid.ULID
+}
+
+// 添付 1 件だけの削除（ADR 0045 決定 6）。メッセージの論理削除と同じく status を deleted にするだけで、
+// ストレージのオブジェクトは既存の掃除ジョブが消す。message_id は残す（どのメッセージの添付だったかを掃除まで残すため）。
+// すでに deleted なら 0 行。呼ぶ側は「0 行なら change_seq を進めない」で冪等にできる（ADR 0044 と同じ形）。
+func (q *Queries) DeleteMessageAttachment(ctx context.Context, arg DeleteMessageAttachmentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMessageAttachment, arg.ID, arg.RoomID, arg.MessageID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getAttachment = `-- name: GetAttachment :one

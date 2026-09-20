@@ -57,6 +57,7 @@ type ChatService interface {
 	CreateAttachment(ctx context.Context, actor, roomID ulid.ULID, in chat.AttachmentInput) (chat.CreatedAttachment, error)
 	CompleteAttachment(ctx context.Context, actor, attachmentID ulid.ULID) (chat.Attachment, error)
 	GetAttachmentURL(ctx context.Context, actor, attachmentID ulid.ULID) (chat.DownloadURL, error)
+	DeleteMessageAttachment(ctx context.Context, actor, roomID, messageID, attachmentID ulid.ULID) (chat.Message, error)
 }
 
 type chatHandlers struct {
@@ -112,6 +113,8 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("GET /api/v1/workspaces/{workspaceID}/threads", h.listThreads)
 
 	handle("POST /api/v1/rooms/{roomID}/attachments", h.createAttachment)
+	// 添付ファイルだけの削除（ADR 0045）。メッセージのパスの下に置き、応答は更新後のメッセージにする。
+	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}/attachments/{attachmentID}", h.deleteMessageAttachment)
 	handle("POST /api/v1/attachments/{attachmentID}/complete", h.completeAttachment)
 	handle("GET /api/v1/attachments/{attachmentID}/url", h.getAttachmentURL)
 }

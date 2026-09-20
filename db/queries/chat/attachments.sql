@@ -67,3 +67,23 @@ SELECT id, object_key
 -- name: DeleteAttachments :exec
 DELETE FROM attachments
  WHERE id = ANY(sqlc.arg(ids)::uuid[]);
+
+-- name: DeleteMessageAttachment :execrows
+-- 添付 1 件だけの削除（ADR 0045 決定 6）。メッセージの論理削除と同じく status を deleted にするだけで、
+-- ストレージのオブジェクトは既存の掃除ジョブが消す。message_id は残す（どのメッセージの添付だったかを掃除まで残すため）。
+-- すでに deleted なら 0 行。呼ぶ側は「0 行なら change_seq を進めない」で冪等にできる（ADR 0044 と同じ形）。
+UPDATE attachments
+   SET status = 'deleted'
+ WHERE id = sqlc.arg(id)
+   AND room_id = sqlc.arg(room_id)
+   AND message_id = sqlc.arg(message_id)
+   AND status = 'attached';
+
+-- name: CountMessageAttachments :one
+-- そのメッセージに残っている添付の数。最後の 1 件を消したかどうかの判定に使う（ADR 0045 決定 8）。
+-- メッセージの行を FOR UPDATE で押さえた後に数えるので、並行した削除と数え違えない。
+SELECT count(*)::bigint
+  FROM attachments
+ WHERE room_id = sqlc.arg(room_id)
+   AND message_id = sqlc.arg(message_id)
+   AND status = 'attached';
