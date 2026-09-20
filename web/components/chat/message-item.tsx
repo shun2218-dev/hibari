@@ -1,6 +1,10 @@
-import type { ReactNode } from "react";
+"use client";
 
+import { type ReactNode, useRef } from "react";
+
+import { AnchoredPanel } from "@/components/ui/anchored-panel";
 import { Avatar } from "@/components/ui/avatar";
+import { Portal } from "@/components/ui/portal";
 import { Button, IconButton, TextButton } from "@/components/ui/button";
 import {
   ChevronRightIcon,
@@ -13,6 +17,7 @@ import {
 } from "@/components/ui/icons";
 import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
+import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 
 import { MessageBody } from "./message-body";
 import { MessageLinkCard } from "./message-link-card";
@@ -113,6 +118,10 @@ export function MessageItem({
   forceHover,
 }: MessageItemProps) {
   const { sender, status, deleted } = message;
+  // ピッカーの置き場所の基準。行そのものを測って、画面に浮かせる位置を決める（ADR 0044）
+  const rowRef = useRef<HTMLElement>(null);
+  // md 以上は画面に浮かせ、モバイルは下から出るシートにする。置き方が違うのでクラスでは書き分けられない
+  const desktopPicker = useMediaQuery(DESKTOP_QUERY);
   // 削除済みには操作の対象がなく、送信失敗には専用の操作（再送・削除）があるので、ホバーの操作を出さない
   const hasMenu = canEdit || canDelete || copyLink !== undefined;
   // リアクションは行が増減するだけで本文が変わらない（ADR 0044）。送信中・失敗・削除済みには付けられない
@@ -125,6 +134,7 @@ export function MessageItem({
 
   return (
     <article
+      ref={rowRef}
       aria-label={`${sender.name} ${message.timeLabel}${mentionsMe ? " あなた宛て" : ""}`}
       className={cx(
         "group relative flex gap-2.5 px-3 md:gap-3 md:px-4",
@@ -279,21 +289,33 @@ export function MessageItem({
         </div>
       )}
 
-      {pickerOpen && (
-        <>
-          {/* モバイルは下から出るシートにする（メンバーのシートと同じ形）。
-              ピッカーは 400px 近く高いので、ポップオーバーのままだとタイムラインの外にはみ出して上が切れる。 */}
-          <div aria-hidden className="fixed inset-0 z-30 bg-overlay md:hidden" onClick={onTogglePicker} />
-          <div
-            role="dialog"
-            aria-label="リアクションを選ぶ"
-            // 中身（emoji-mart）が自前の地と角丸を持つので、枠は外側で足すだけにして二重の額縁を避ける
-            className="fixed inset-x-0 bottom-0 z-40 overflow-hidden rounded-t-lg bg-surface md:absolute md:inset-x-auto md:top-6 md:right-4 md:bottom-auto md:w-88 md:rounded-md md:border md:border-border md:shadow-overlay"
+      {pickerOpen &&
+        (desktopPicker ? (
+          // 画面に浮かせる（fixed）。タイムラインの中に absolute で置くと、スクロールできる範囲が
+          // ピッカーのぶん広がって、いちばん下のメッセージで開いたときに下に余白ができる。
+          // 入力欄より上に出すのも狙いどおり（絵文字を選んでいる間は入力しない）。
+          // 中身（emoji-mart）が自前の地と角丸を持つので、枠は外側で足すだけにして二重の額縁を避ける
+          <AnchoredPanel
+            anchorRef={rowRef}
+            label="リアクションを選ぶ"
+            onDismiss={onTogglePicker}
+            className="w-88 overflow-hidden rounded-md border border-border bg-surface shadow-overlay"
           >
             {picker}
-          </div>
-        </>
-      )}
+          </AnchoredPanel>
+        ) : (
+          // モバイルは下から出るシート（メンバーのシートと同じ形）。画面が狭く、浮かせる余地がない
+          <Portal>
+            <div aria-hidden className="fixed inset-0 z-40 bg-overlay" onClick={onTogglePicker} />
+            <div
+              role="dialog"
+              aria-label="リアクションを選ぶ"
+              className="fixed inset-x-0 bottom-0 z-50 overflow-hidden rounded-t-lg bg-surface"
+            >
+              {picker}
+            </div>
+          </Portal>
+        ))}
 
       {menuOpen && hasMenu && (
         <Popover label="メッセージの操作" className="top-6 right-4 w-52">

@@ -4,7 +4,7 @@
  * /dev/preview の各画面。presentational コンポーネントにモックデータを渡して、docs/ui/screenshots/ と同じ状態を描く。
  * 操作しても状態は変わらない（見た目の確認だけが目的。データの流れは Phase 6-2）。
  */
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
 import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
@@ -99,6 +99,7 @@ import {
   timelineWithSystemMessages,
   mentionCandidates,
   hoveredReaction,
+  lastMessageKey,
   reactedMessageKey,
   reactionPickerKey,
   timelineWithReactions,
@@ -178,8 +179,9 @@ type ChatOptions = {
    * - row: 付いた絵文字の行
    * - names: チップにホバーして「誰が付けたか」を出したところ
    * - picker: ピッカーを開いたところ
+   * - picker-above: いちばん下のメッセージで開いて、上に開いたところ
    */
-  reactions?: "row" | "names" | "picker";
+  reactions?: "row" | "names" | "picker" | "picker-above";
   /**
    * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
@@ -327,7 +329,9 @@ function chat({
             hoveredKey={hoveredKey}
             onToggleReaction={noop}
             onTogglePicker={noop}
-            openPickerKey={reactions === "picker" ? reactionPickerKey : undefined}
+            openPickerKey={
+              reactions === "picker" ? reactionPickerKey : reactions === "picker-above" ? lastMessageKey : undefined
+            }
             reactionPicker={<EmojiPicker onPick={noop} theme={dark ? "dark" : "light"} />}
             hoveredReaction={reactions === "names" ? hoveredReaction : undefined}
             onReply={noop}
@@ -583,6 +587,7 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/reaction-names": () => chat({ reactions: "names" }),
   "chat/reaction-picker": () => chat({ reactions: "picker" }),
   "chat/reaction-picker-dark": () => chat({ reactions: "picker", dark: true }),
+  "chat/reaction-picker-above": () => chat({ reactions: "picker-above" }),
   "chat/unread-jump-bar": () => chat({ jump: "unread-bar" }),
   "chat/jump-highlight": () => chat({ jump: "highlight" }),
   "chat/message-not-found": () => chat({ jump: "not-found" }),
@@ -681,6 +686,15 @@ export const previewScreens: Record<string, () => ReactNode> = {
 
 export function PreviewScreen({ name, dark }: { name: string; dark: boolean }) {
   const render = previewScreens[name];
+  // 本物のアプリは `data-theme` を <html> に置く（lib/theme.ts）。ここでも置いておかないと、
+  // body の直下に出すもの（絵文字のピッカー。components/ui/portal.tsx）がダークを拾えない。
+  useEffect(() => {
+    if (!dark) return;
+    document.documentElement.dataset.theme = "dark";
+    return () => {
+      delete document.documentElement.dataset.theme;
+    };
+  }, [dark]);
   return (
     <div data-theme={dark ? "dark" : undefined} className="min-h-dvh bg-background text-text">
       {render?.()}

@@ -96,6 +96,7 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "chat/reaction-names", title: "リアクション: 誰が付けたか" },
   { name: "chat/reaction-picker", title: "リアクション: 絵文字のピッカー" },
   { name: "chat/reaction-picker-dark", title: "リアクション: 絵文字のピッカー（ダーク）", dark: true },
+  { name: "chat/reaction-picker-above", title: "リアクション: ピッカーが上に開く" },
   { name: "chat/threads", title: "参加しているスレッドの一覧" },
   { name: "chat/threads-empty", title: "参加しているスレッドが 0 件" },
   { name: "chat/mobile-thread", title: "スレッド（モバイル）", mobile: true },
