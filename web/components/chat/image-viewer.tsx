@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent, useEffect, useRef } from "react";
+import { type KeyboardEvent, useEffect, useEffectEvent, useRef } from "react";
 
 import { IconButton } from "@/components/ui/button";
 import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, DownloadIcon, TrashIcon } from "@/components/ui/icons";
@@ -50,6 +50,18 @@ export function ImageViewer({ images, index, onMove, onClose, onDownload, onDele
     return () => previous?.focus();
   }, []);
 
+  // キーは画面ぜんぶで受ける。端まで送ると矢印のボタンが押せなくなってフォーカスが外れるので、
+  // 中の要素からの伝わり（onKeyDown）だけに頼ると、そこでキーでの操作が止まってしまう
+  const handleKey = useEffectEvent((e: globalThis.KeyboardEvent) => {
+    if (e.key === "Escape") onClose();
+    if (e.key === "ArrowLeft" && hasPrevious) onMove(index - 1);
+    if (e.key === "ArrowRight" && hasNext) onMove(index + 1);
+  });
+  useEffect(() => {
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, []);
+
   if (!image) return null;
 
   return (
@@ -69,9 +81,6 @@ export function ImageViewer({ images, index, onMove, onClose, onDownload, onDele
           aria-label={`${image.fileName} の拡大表示`}
           tabIndex={-1}
           onKeyDown={(e) => {
-            if (e.key === "Escape") onClose();
-            if (e.key === "ArrowLeft" && hasPrevious) onMove(index - 1);
-            if (e.key === "ArrowRight" && hasNext) onMove(index + 1);
             if (e.key === "Tab") trapFocus(e, panelRef.current);
           }}
           // モバイルは全画面（ADR 0045 決定 3）。md 以上は大きなダイアログとして浮かせ、後ろのチャットを残す

@@ -43,13 +43,6 @@ const MAX_BODY_LENGTH = 4000;
 /** 飛んだ先を強調しておく時間（ADR 0042）。チャンネルと同じ。 */
 const HIGHLIGHT_MS = 4000;
 
-function startDownload(url: string) {
-  const link = document.createElement("a");
-  link.href = url;
-  link.rel = "noopener";
-  link.click();
-}
-
 /**
  * スレッドのパネル（ADR 0036、ADR 0037）。親・返信・入力欄をつなぐ。
  *
@@ -197,7 +190,7 @@ export function RoomThread({
       memberNames,
     ],
   );
-  const { timelineProps, deleteDialog } = useMessageActions({
+  const { timelineProps, overlays } = useMessageActions({
     workspaceId,
     roomId,
     room,
@@ -240,14 +233,6 @@ export function RoomThread({
     setAlsoInChannel(false);
     setConfirmAll(null);
     setSentCount((n) => n + 1);
-  }
-
-  async function download(attachmentId: string) {
-    try {
-      startDownload(await media.attachmentDownloadUrl(attachmentId));
-    } catch (err) {
-      console.error("failed to download an attachment", err);
-    }
   }
 
   async function join() {
@@ -308,13 +293,12 @@ export function RoomThread({
             scrollToLatestKey={sentCount}
             onRetry={(key) => store.retryMessage(roomId, key)}
             onDiscard={(key) => store.discardMessage(roomId, key)}
-            onDownload={download}
             onImageError={(id, url) => media.attachmentImageFailed(id, url)}
             {...timelineProps}
           />
         )}
       </ThreadPanel>
-      {deleteDialog}
+      {overlays}
       <ConfirmMentionAllDialog
         open={confirmAll !== null}
         kind={confirmAll ?? "channel"}
