@@ -373,3 +373,56 @@ describe("MessageItem actions", () => {
     expect(screen.queryByRole("button", { name: "スレッドに返信しました" })).not.toBeInTheDocument();
   });
 });
+
+describe("MessageItem の絵文字のリアクション（ADR 0044）", () => {
+  const reactions = [{ emoji: "👍", count: 2, me: true, names: ["あなた", "佐藤 直樹"] }];
+
+  it("本文の下にリアクションの行を出す", () => {
+    render(<MessageItem message={message({ reactions })} />);
+
+    expect(screen.getByRole("button", { name: "あなた、佐藤 直樹が 👍 を付けました" })).toBeInTheDocument();
+  });
+
+  it("付いていなければ行を出さず、ホバーの「＋」から足す", async () => {
+    const onTogglePicker = vi.fn();
+    render(<MessageItem message={message()} onTogglePicker={onTogglePicker} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "リアクションを追加", hidden: true }));
+
+    expect(onTogglePicker).toHaveBeenCalledOnce();
+  });
+
+  it("削除済み・送信中・送信失敗には、リアクションを出しも付けもしない", () => {
+    // 削除は跡も残さず消える（ADR 0038）ので、付いていた行も一緒に消す
+    const { rerender } = render(<MessageItem message={message({ deleted: true, reactions })} onTogglePicker={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /を付けました/, hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "リアクションを追加", hidden: true })).not.toBeInTheDocument();
+
+    // まだ ID の無いメッセージには PUT できない
+    rerender(<MessageItem message={message({ status: "pending", reactions })} onTogglePicker={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "リアクションを追加", hidden: true })).not.toBeInTheDocument();
+
+    rerender(<MessageItem message={message({ status: "failed", reactions })} onTogglePicker={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "リアクションを追加", hidden: true })).not.toBeInTheDocument();
+  });
+
+  it("ピッカーは開いているときだけ差し込む", () => {
+    const picker = <p>ピッカーの中身</p>;
+    const { rerender } = render(<MessageItem message={message()} onTogglePicker={vi.fn()} picker={picker} />);
+
+    expect(screen.queryByText("ピッカーの中身")).not.toBeInTheDocument();
+
+    rerender(<MessageItem message={message()} onTogglePicker={vi.fn()} picker={picker} pickerOpen />);
+
+    expect(within(screen.getByRole("dialog", { name: "リアクションを選ぶ" })).getByText("ピッカーの中身")).toBeInTheDocument();
+  });
+
+  it("チップを押すと、その絵文字を渡して呼ぶ", async () => {
+    const onToggleReaction = vi.fn();
+    render(<MessageItem message={message({ reactions })} onToggleReaction={onToggleReaction} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "あなた、佐藤 直樹が 👍 を付けました" }));
+
+    expect(onToggleReaction).toHaveBeenCalledWith("👍");
+  });
+});
