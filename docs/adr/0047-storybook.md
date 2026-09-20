@@ -66,8 +66,9 @@ docs/ui/screenshots/chat/image-viewer-dark.png
 `screens.tsx` の各エントリをそのまま story の `render` にし、`fixtures.ts` は `web/stories/fixtures.ts` に移す。
 **中身は変えない**（撮り直しの diff を空にするため。下の 10）。
 
-部品ごとの story（`components/**/*.stories.tsx`）は**いまは作らない**。移行の対象は「PNG と 1 対 1 の画面」だけで、
-部品ごとの story はそのどれとも対にならない。`.storybook/main.ts` の glob は両方を拾える形にしておき、必要になってから足す。
+部品ごとの story（`components/**/*.stories.tsx`）は移行では作らない。移行の対象は「PNG と 1 対 1 の画面」だけで、
+部品ごとの story はそのどれとも対にならない。`.storybook/main.ts` の glob は両方を拾える形にしておく。
+→ **オーナーの要望（2026-09-21）で、移行の直後に足すことにした（下の 12）。**
 
 ### 4. dark と mobile は story の parameters に持たせ、decorator が当てる
 
@@ -155,6 +156,36 @@ parameters: { screenshot: { size: "900x120", source: "app" } }
 
 `.github/workflows/web.yml` の `next build` の隣に `npm run build-storybook` を足す。
 ADR 0046 でこの出力を Fly に配ると決めているので、壊れたら PR で止める。
+
+### 12. 部品ごとの story を足す（2026-09-21 追記）
+
+移行のあと、オーナーの要望で部品のカタログを足す。**画面の story とは別の種類**として扱う。
+
+| | 画面の story | 部品の story |
+|---|---|---|
+| 置き場所 | `web/stories/<グループ>.stories.tsx` | `web/components/**/*.stories.tsx`（実装の隣） |
+| title | `chat` などの ASCII のグループ名 | `components/ui/Button` のようにパスに合わせる |
+| 目的 | `docs/ui/screenshots/` の PNG の再現 | props と状態の見本帳 |
+| `args` / controls | 使わない | 使う |
+| テーマ | `parameters.theme` で固定（PNG と 1 対 1 のため） | ツールバーの globals で切り替える |
+| `autodocs` | 付けない（PNG と対にならない項目がサイドバーに増えるため） | 付ける |
+| 撮影 | する | **しない** |
+
+**見分けは `screenshot` の tag ひとつにする。** 画面の story の meta に `tags: ["screenshot"]` と
+`parameters: { screenshot: { source: "app" } }` を置き、story ごとに大きさや出どころを上書きする。
+
+- `tools/shoot-ui.mjs` は `index.json` の tag で撮る対象を選ぶ（parameters は index.json に載らないので、tag が要る）。
+- decorator は `parameters.screenshot` の有無で囲いを変える（画面は全画面、部品は余白のある台の上）。
+- 検査（`web/stories/stories.test.tsx`）は、画面の story にだけ PNG との 1 対 1 を求め、
+  部品の story には「`screenshot` を持たない」「`autodocs` を持つ」「空でなく描ける」を求める。
+  どちらも glob で集めるので、**ファイルを足せば自動で検査に入る**。
+
+**作る範囲**（オーナーの判断、2026-09-21）: `components/ui/` の基礎部品と、「その部品だけが持つ状態の軸」があるもの。
+
+- 作る: `Button` / `Alert` / `Avatar` / `Badge` / `Field` / `Choice` / `Dialog` / `Spinner` / `Link` / `Icons`、
+  `MessageItem`（送信の状態）/ `Composer`（添付と補完）/ `ConnectionBanner` / `MessageReactions` / `MessageLinkCard` / `InviteAccept`
+- 作らない: `Timeline` / `Sidebar` / `ChatLayout` のような大きい部品（画面の story とほぼ同じものが二重になり、画面を直すたびに両方を直すことになる）
+- 作らない: `Portal` / `AnchoredPanel` / `Popover`（単体では見た目を持たない土台。使っている部品の story で見える）
 
 ## 理由
 

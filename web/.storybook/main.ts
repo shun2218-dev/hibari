@@ -10,8 +10,8 @@ const config: StorybookConfig = {
   stories: ["../stories/**/*.stories.tsx", "../components/**/*.stories.tsx"],
   // モックのアバター（public/dev/）を story から参照する。
   staticDirs: ["../public"],
-  // 匿名の利用統計を送らない。
-  core: { disableTelemetry: true },
+  // 匿名の利用統計と、Storybook 自身のお知らせを出さない（画面の確認に集中できるように）。
+  core: { disableTelemetry: true, disableWhatsNewNotifications: true },
 };
 
 export default config;

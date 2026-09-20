@@ -14,6 +14,11 @@ import { auth, goodStrength, login, noHref, noop } from "./screens";
  */
 const meta = {
   title: "auth",
+  // この tag が「docs/ui/screenshots/ の PNG と 1 対 1 の画面」の印。撮影ツールと 1 対 1 の検査がこれで選ぶ。
+  tags: ["screenshot"],
+  // 画面を見るための story で、引数をいじる想定がないので下のパネルは出さない。
+  // screenshot はこの tag と対で「撮影の対象」を表す。既定は実装から撮ったもの（story ごとに上書きする）。
+  parameters: { options: { showPanel: false }, screenshot: { source: "app" } },
 } satisfies Meta;
 
 export default meta;

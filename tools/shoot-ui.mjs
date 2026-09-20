@@ -5,6 +5,7 @@
 //   make web-shots                          # source: "app" の PNG を全部撮り直す
 //   make web-shots names="chat/room-header-settings chat/mobile-room"
 //
+// - 撮るのは `screenshot` の tag が付いた story だけ（部品の story は撮らない。ADR 0047 決定 12）。
 // - 名前は story の id の `--` を `/` にしたもの、つまり PNG のパスそのもの（ADR 0047 決定 2）。
 // - 撮る大きさと出どころは story の `parameters.screenshot` にある。index.json には parameters が載らないので、
 //   描画したページの `<html data-shot-size / data-shot-source>`（.storybook/preview.tsx の decorator が書く）から読む。
@@ -35,10 +36,15 @@ if (!index) {
   process.exit(1);
 }
 
-/** PNG のパス（`chat/image-viewer`）→ story の id。 */
+/**
+ * PNG のパス（`chat/image-viewer`）→ story の id。
+ *
+ * `screenshot` の tag が付いた story だけが「画面」で、PNG と 1 対 1 に対応する（ADR 0047 決定 12）。
+ * 部品の story（components/ 以下）はここに入れない。
+ */
 const stories = new Map(
   Object.values(index.entries)
-    .filter((entry) => entry.type === "story")
+    .filter((entry) => entry.type === "story" && entry.tags?.includes("screenshot"))
     .map((entry) => [entry.id.replace("--", "/"), entry.id]),
 );
 
