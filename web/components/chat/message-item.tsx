@@ -1,11 +1,22 @@
+import type { ReactNode } from "react";
+
 import { Avatar } from "@/components/ui/avatar";
 import { Button, IconButton, TextButton } from "@/components/ui/button";
-import { ChevronRightIcon, ClockIcon, FileIcon, MoreIcon, ReplyIcon, ThreadIcon } from "@/components/ui/icons";
+import {
+  ChevronRightIcon,
+  ClockIcon,
+  FileIcon,
+  MoreIcon,
+  ReplyIcon,
+  SmilePlusIcon,
+  ThreadIcon,
+} from "@/components/ui/icons";
 import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
 
 import { MessageBody } from "./message-body";
 import { MessageLinkCard } from "./message-link-card";
+import { MessageReactions } from "./message-reactions";
 import type { MessageAttachmentView, MessageView } from "./types";
 
 /** 編集中の本文。null（既定）なら編集していない。編集できるのは自分のメッセージだけ（ADR 0012）。 */
@@ -55,6 +66,21 @@ type MessageItemProps = {
   editing?: MessageEditingView | null;
   /** 本文のメンションのチップを押した（Phase 6.9 のプロフィールのカード。ADR 0043）。 */
   onOpenProfile?: (userId: string) => void;
+  /**
+   * リアクションの付け外し（ADR 0044）。渡さなければ、付いているリアクションを読むだけになる
+   * （参加していない public ルームは投稿できないので付けられない。ADR 0044 決定 6）。
+   */
+  onToggleReaction?: (emoji: string) => void;
+  /** ホバーの「＋」と、リアクションの行末の「＋」を押した（ピッカーの開け閉て）。「…」の onToggleMenu と同じく開閉の切り替え。 */
+  onTogglePicker?: () => void;
+  pickerOpen?: boolean;
+  /**
+   * 開いたときに出すピッカーの中身。emoji-mart をこの presentational に持ち込まないよう、外から差し込む
+   * （データ（1 MB 超）を読むのも、選んだ絵文字を送るのも、外側の責務）。
+   */
+  picker?: ReactNode;
+  /** ホバーの名前を固定で出すリアクションの絵文字（/dev/preview で状態を再現するため）。 */
+  forceHoverReaction?: string;
   /** ホバーしたときの見た目を固定で出す（/dev/preview で状態を再現するため）。 */
   forceHover?: boolean;
 };
@@ -79,12 +105,20 @@ export function MessageItem({
   onDelete,
   editing = null,
   onOpenProfile,
+  onToggleReaction,
+  onTogglePicker,
+  pickerOpen = false,
+  picker,
+  forceHoverReaction,
   forceHover,
 }: MessageItemProps) {
   const { sender, status, deleted } = message;
   // 削除済みには操作の対象がなく、送信失敗には専用の操作（再送・削除）があるので、ホバーの操作を出さない
   const hasMenu = canEdit || canDelete || copyLink !== undefined;
-  const actionable = status !== "failed" && !deleted && editing === null && (canReply || hasMenu);
+  // リアクションは行が増減するだけで本文が変わらない（ADR 0044）。送信中・失敗・削除済みには付けられない
+  const reactions = deleted || status !== "sent" ? [] : (message.reactions ?? []);
+  const canReact = onTogglePicker !== undefined && !deleted && status === "sent" && editing === null;
+  const actionable = status !== "failed" && !deleted && editing === null && (canReply || canReact || hasMenu);
   // 自分宛ては「いま起きていること」なので琥珀（ADR 0043）。既読になっても消さない。
   // スレッドで開いている親は、どれを開いているかの方が先に要るので、そちらの色を優先する
   const mentionsMe = Boolean(message.mentionsMe) && !deleted;
@@ -180,6 +214,17 @@ export function MessageItem({
           </ul>
         )}
 
+        {/* リアクションの行（ADR 0044）。本文と添付の下、「N 件の返信」より上に置く。
+            付いていなければ行ごと出さない（空の「＋」だけが並ぶとタイムラインが賑やかになりすぎる）。 */}
+        {!editing && reactions.length > 0 && (
+          <MessageReactions
+            reactions={reactions}
+            onToggle={onToggleReaction}
+            onAdd={canReact ? onTogglePicker : undefined}
+            forceHoverEmoji={forceHoverReaction}
+          />
+        )}
+
         {message.broadcast?.in === "thread" && !deleted && !editing && (
           <p className="pt-0.5 text-2xs text-text-muted">{message.broadcast.label}</p>
         )}
@@ -206,6 +251,16 @@ export function MessageItem({
             forceHover ? "flex" : "hidden group-hover:flex group-focus-within:flex",
           )}
         >
+          {canReact && (
+            <IconButton
+              label="リアクションを追加"
+              aria-expanded={pickerOpen}
+              onClick={onTogglePicker}
+              className={cx("size-7", pickerOpen && "bg-surface-muted")}
+            >
+              <SmilePlusIcon className="size-4" />
+            </IconButton>
+          )}
           {canReply && (
             <IconButton label="返信" onClick={onReply} className="size-7">
               <ReplyIcon className="size-4" />
@@ -222,6 +277,22 @@ export function MessageItem({
             </IconButton>
           )}
         </div>
+      )}
+
+      {pickerOpen && (
+        <>
+          {/* モバイルは下から出るシートにする（メンバーのシートと同じ形）。
+              ピッカーは 400px 近く高いので、ポップオーバーのままだとタイムラインの外にはみ出して上が切れる。 */}
+          <div aria-hidden className="fixed inset-0 z-30 bg-overlay md:hidden" onClick={onTogglePicker} />
+          <div
+            role="dialog"
+            aria-label="リアクションを選ぶ"
+            // 中身（emoji-mart）が自前の地と角丸を持つので、枠は外側で足すだけにして二重の額縁を避ける
+            className="fixed inset-x-0 bottom-0 z-40 overflow-hidden rounded-t-lg bg-surface md:absolute md:inset-x-auto md:top-6 md:right-4 md:bottom-auto md:w-88 md:rounded-md md:border md:border-border md:shadow-overlay"
+          >
+            {picker}
+          </div>
+        </>
       )}
 
       {menuOpen && hasMenu && (

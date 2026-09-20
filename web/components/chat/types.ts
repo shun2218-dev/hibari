@@ -59,6 +59,8 @@ export type MessageView = {
   attachments: MessageAttachmentView[];
   /** 本文に貼られたパーマリンクのカード（ADR 0040）。最大 3 件。 */
   linkCards?: MessageLinkCardView[];
+  /** 付いた絵文字のリアクション（ADR 0044）。1 件も無ければ持たない（行そのものを出さない）。 */
+  reactions?: MessageReactionView[];
   /** 直前のメッセージと同じ送信者なので、アバターと名前を省いて続けて表示する。 */
   grouped: boolean;
   /**
@@ -68,6 +70,23 @@ export type MessageView = {
   mentionNames?: Readonly<Record<string, string>>;
   /** 自分宛てのメンションがある（`@channel` / `@here` を含む）。行の背景を琥珀にする。 */
   mentionsMe?: boolean;
+};
+
+/**
+ * メッセージに付いた絵文字のリアクション 1 種類ぶん（ADR 0044）。
+ *
+ * 並びは最初に付いた順で、数が増えても入れ替わらない。数は行を数えた結果で、クライアントは持ち越さない。
+ */
+export type MessageReactionView = {
+  emoji: string;
+  count: number;
+  /** 自分が付けている。チップを「押している状態」（緑）にする。 */
+  me: boolean;
+  /**
+   * 付けた人の表示名。API が返すのは先頭 8 人の user_id だけなので（ADR 0044）、
+   * ここに並ぶのも最大 8 人で、count より少ないことがある。名前の解決はデータ層が行う。
+   */
+  names: string[];
 };
 
 /**

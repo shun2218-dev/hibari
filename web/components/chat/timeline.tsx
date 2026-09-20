@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffectEvent, useLayoutEffect, useRef } from "react";
+import { type ReactNode, useEffectEvent, useLayoutEffect, useRef } from "react";
 
 import { TextButton } from "@/components/ui/button";
 
@@ -47,8 +47,18 @@ type TimelineProps = {
   /** 編集中のメッセージ（1 度に 1 件）。 */
   editingKey?: string;
   editing?: MessageEditingView;
+  /** リアクションの付け外し（ADR 0044）。渡さなければ、付いているリアクションを読むだけになる。 */
+  onToggleReaction?: (key: string, emoji: string) => void;
+  /** 「リアクションを追加」を押した（ピッカーの開け閉て）。 */
+  onTogglePicker?: (key: string) => void;
+  /** ピッカーを開いているメッセージ（1 度に 1 件）。 */
+  openPickerKey?: string;
+  /** ピッカーの中身。emoji-mart は動的 import なので、作るのは外側に任せる（ADR 0044 決定 7）。 */
+  reactionPicker?: ReactNode;
   /** ホバーの見た目を固定で出すメッセージ（/dev/preview 用）。 */
   hoveredKey?: string;
+  /** リアクションのホバーの名前を固定で出す（/dev/preview 用）。 */
+  hoveredReaction?: { key: string; emoji: string };
   /**
    * いちばん上の近くまでスクロールした（古いメッセージを読み込むきっかけ）。
    * 内容が画面に収まってスクロールできないときも呼ぶ。もうないか、取得中かの判断は呼ぶ側が行う。
@@ -123,7 +133,12 @@ export function Timeline({
   onDelete,
   editingKey,
   editing,
+  onToggleReaction,
+  onTogglePicker,
+  openPickerKey,
+  reactionPicker,
   hoveredKey,
+  hoveredReaction,
   onReachStart,
   onReachEnd,
   scrollToKey,
@@ -270,6 +285,13 @@ export function Timeline({
                     onEdit={() => onEdit?.(key)}
                     onDelete={() => onDelete?.(key)}
                     editing={editingKey === key ? (editing ?? null) : null}
+                    onToggleReaction={
+                      onToggleReaction === undefined ? undefined : (emoji) => onToggleReaction(key, emoji)
+                    }
+                    onTogglePicker={onTogglePicker === undefined ? undefined : () => onTogglePicker(key)}
+                    pickerOpen={openPickerKey === key}
+                    picker={openPickerKey === key ? reactionPicker : undefined}
+                    forceHoverReaction={hoveredReaction?.key === key ? hoveredReaction.emoji : undefined}
                   />
                 </li>
               );

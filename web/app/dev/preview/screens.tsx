@@ -35,6 +35,7 @@ import {
 import { AccountMenu } from "@/components/chat/account-menu";
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
+import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { MembersPanel } from "@/components/chat/members-panel";
 import { RoomHeader } from "@/components/chat/room-header";
 import {
@@ -97,6 +98,10 @@ import {
   timelineWithAvatars,
   timelineWithSystemMessages,
   mentionCandidates,
+  hoveredReaction,
+  reactedMessageKey,
+  reactionPickerKey,
+  timelineWithReactions,
   roomsWithMentions,
   timelineWithBroadcast,
   timelineWithMentions,
@@ -168,6 +173,18 @@ type ChatOptions = {
   jump?: "unread-bar" | "highlight" | "not-found";
   /** 本文に貼られたパーマリンクのカードのあるタイムライン（ADR 0040）。 */
   linkCards?: boolean;
+  /**
+   * 絵文字のリアクション（ADR 0044）。
+   * - row: 付いた絵文字の行
+   * - names: チップにホバーして「誰が付けたか」を出したところ
+   * - picker: ピッカーを開いたところ
+   */
+  reactions?: "row" | "names" | "picker";
+  /**
+   * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
+   * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
+   */
+  dark?: boolean;
 };
 
 /** スレッドのパネルに出す親と返信。 */
@@ -217,6 +234,8 @@ function chat({
   mentionQuery,
   jump,
   linkCards,
+  reactions,
+  dark,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
   const roomRemoved = body === "removed-room";
@@ -285,7 +304,9 @@ function chat({
         {body === "timeline" && !threads && (
           <Timeline
             items={
-              linkCards
+              reactions
+                ? timelineWithReactions
+                : linkCards
                 ? timelineWithLinkCards
                 : jump
                 ? timelineJumped
@@ -304,6 +325,11 @@ function chat({
             openThreadKey={thread === "root-deleted" ? deletedThreadRoot.key : thread ? threadContent?.root.key : undefined}
             highlightedKey={jump === "highlight" ? jumpTargetKey : undefined}
             hoveredKey={hoveredKey}
+            onToggleReaction={noop}
+            onTogglePicker={noop}
+            openPickerKey={reactions === "picker" ? reactionPickerKey : undefined}
+            reactionPicker={<EmojiPicker onPick={noop} theme={dark ? "dark" : "light"} />}
+            hoveredReaction={reactions === "names" ? hoveredReaction : undefined}
             onReply={noop}
             actionsFor={(key) => ({ canEdit: key === pendingMessageKey, canDelete: key === pendingMessageKey })}
             openMenuKey={menuKey}
@@ -552,6 +578,11 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/mention-all-confirm": () =>
     chat({ mentions: true, dialog: <ConfirmMentionAllDialog open kind="channel" memberCount={selectedRoom.memberCount} /> }),
   "chat/message-link-card": () => chat({ linkCards: true }),
+  "chat/reactions": () => chat({ reactions: "row", hoveredKey: reactedMessageKey }),
+  "chat/reactions-dark": () => chat({ reactions: "row", dark: true }),
+  "chat/reaction-names": () => chat({ reactions: "names" }),
+  "chat/reaction-picker": () => chat({ reactions: "picker" }),
+  "chat/reaction-picker-dark": () => chat({ reactions: "picker", dark: true }),
   "chat/unread-jump-bar": () => chat({ jump: "unread-bar" }),
   "chat/jump-highlight": () => chat({ jump: "highlight" }),
   "chat/message-not-found": () => chat({ jump: "not-found" }),
@@ -565,6 +596,8 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/mobile-unread-jump-bar": () => chat({ jump: "unread-bar" }),
   "chat/mobile-jump-highlight": () => chat({ jump: "highlight" }),
   "chat/mobile-threads": () => chat({ threads: "list" }),
+  "chat/mobile-reactions": () => chat({ reactions: "row" }),
+  "chat/mobile-reaction-picker": () => chat({ reactions: "picker" }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),
   "chat/mobile-room": () => chat(),
   "chat/mobile-members-sheet": () => chat({ members: true }),

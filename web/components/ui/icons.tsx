@@ -29,6 +29,7 @@ import {
   Search,
   Settings,
   Smartphone,
+  SmilePlus,
   Users,
   X,
   Eye,
@@ -64,6 +65,7 @@ export const ReplyIcon = withDefaults(Reply);
 export const SearchIcon = withDefaults(Search);
 export const SettingsIcon = withDefaults(Settings);
 export const PhoneIcon = withDefaults(Smartphone);
+export const SmilePlusIcon = withDefaults(SmilePlus);
 export const UsersIcon = withDefaults(Users);
 export const CloseIcon = withDefaults(X);
 export const EyeIcon = withDefaults(Eye);
