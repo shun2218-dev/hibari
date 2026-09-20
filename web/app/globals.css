@@ -177,6 +177,17 @@
     color: var(--color-text-muted);
   }
 
+  /*
+   * 押せるものはポインタにする。Tailwind v4 の preflight は button に cursor: pointer を当てない
+   * （v3 から変わった）ので、ここで戻す。無効なものは「押せない」ことが先に伝わるように外す
+   * （utilities の disabled:cursor-not-allowed はレイヤの順で、この規則より後に当たる）。
+   */
+  button:not(:disabled),
+  [role="button"],
+  summary {
+    cursor: pointer;
+  }
+
   /* フォーカスリングはキーボード操作のときだけ出す。色は「操作できるもの」の primary */
   :focus-visible {
     outline: 2px solid var(--color-primary);
