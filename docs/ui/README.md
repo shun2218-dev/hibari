@@ -79,6 +79,19 @@ Claude Design で作った画面を取り込んだもの。**Phase 6 で画面�
 - スクリーンショットを足したら story も足す（足さないと `web/stories/stories.test.tsx` の 1 対 1 の検査が落ちる）。
   export 名がそのままファイル名になるので、`ImageViewerDark` → `chat/image-viewer-dark.png`。
 
+### 部品のカタログ
+
+画面の story とは別に、**部品ごとの story**（`web/components/**/*.stories.tsx`）がある（ADR 0047 決定 12）。
+こちらは PNG と対にならない。props を controls で変えられ、`autodocs` で props の表が出て、テーマはツールバーで切り替えられる。
+
+- `components/ui/`: `Button` / `Alert` / `Avatar` / `Badge` / `Field` / `Choice` / `Dialog` / `Spinner` / `Link` / `Icons`。
+  トークンの使い方（緑＝操作できるもの、琥珀＝いま起きていること）を目で確かめる場所でもある（`tokens.md`）。
+- 状態の軸がある部品: `MessageItem`（送信中 / 失敗 / 削除 / 編集済み）、`Composer`（添付と `@` の補完）、
+  `ConnectionBanner`、`MessageReactions`、`MessageLinkCard`、`InviteAccept`。
+- `Timeline` や `Sidebar` のような大きい部品は作らない（画面の story とほぼ同じものが二重になるため）。
+
+**画面と部品は `screenshot` の tag で見分ける。** 画面の story だけがこの tag を持ち、撮影と 1 対 1 の検査の対象になる。
+
 ### 撮り直し
 
 `make web-ui` を動かしたまま、別の端末で:
