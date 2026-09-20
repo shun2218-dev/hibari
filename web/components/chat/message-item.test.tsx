@@ -335,6 +335,16 @@ describe("MessageItem actions", () => {
     expect(screen.getByRole("article")).toHaveClass("bg-primary-subtle");
   });
 
+  it("飛んできた先には琥珀の地を敷き、ほかの地より優先する（ADR 0042）", () => {
+    const { rerender } = render(<MessageItem message={message()} highlighted />);
+    expect(screen.getByRole("article")).toHaveClass("bg-attention-subtle");
+
+    // スレッドを開いている親に飛んでも、飛んだ先の色にする
+    rerender(<MessageItem message={message()} highlighted threadOpen />);
+    expect(screen.getByRole("article")).toHaveClass("bg-attention-subtle");
+    expect(screen.getByRole("article")).not.toHaveClass("bg-primary-subtle");
+  });
+
   it("hides the reply action inside a thread (threads are not nested)", () => {
     const { rerender } = render(<MessageItem message={message()} canReply={false} />);
     expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();

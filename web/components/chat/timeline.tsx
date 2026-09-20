@@ -25,6 +25,8 @@ type TimelineProps = {
   onOpenThread?: (key: string) => void;
   /** スレッドのパネルで開いている親の key。 */
   openThreadKey?: string;
+  /** 飛んできた先の key（ADR 0042）。その行に琥珀の地を敷く。消すのは呼ぶ側。 */
+  highlightedKey?: string;
   onDownload?: (attachmentId: string) => void;
   onImageError?: (attachmentId: string, url: string) => void;
   onMarkAllRead?: () => void;
@@ -81,6 +83,7 @@ export function Timeline({
   onReply,
   onOpenThread,
   openThreadKey,
+  highlightedKey,
   onDownload,
   onImageError,
   onMarkAllRead,
@@ -215,6 +218,7 @@ export function Timeline({
                     canReply={onReply !== undefined}
                     onOpenThread={() => onOpenThread?.(key)}
                     threadOpen={openThreadKey === key}
+                    highlighted={highlightedKey === key}
                     onDownload={onDownload}
                     onImageError={onImageError}
                     canEdit={actions?.canEdit}

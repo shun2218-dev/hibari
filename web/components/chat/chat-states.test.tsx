@@ -1,7 +1,16 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
-import { EmptyMessages, JoinRoomBar, RemovedFromWorkspace, RoomUnavailable, ServerUnavailable } from "./chat-states";
+import {
+  EmptyMessages,
+  JoinRoomBar,
+  MessageNotFoundNotice,
+  RemovedFromWorkspace,
+  RoomUnavailable,
+  ServerUnavailable,
+  UnreadJumpBar,
+} from "./chat-states";
 
 describe("chat states", () => {
   it.each([
@@ -36,6 +45,26 @@ describe("chat states", () => {
 
     rerender(<JoinRoomBar joining />);
     expect(screen.getByRole("button", { name: "参加する" })).toBeDisabled();
+  });
+
+  it("未読の件数と、最初の未読へ飛ぶ操作を出す（ADR 0042）", async () => {
+    const onJump = vi.fn();
+    render(<UnreadJumpBar count={12} onJump={onJump} />);
+
+    expect(screen.getByText("未読 12 件")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "最初の未読へ" }));
+    expect(onJump).toHaveBeenCalledOnce();
+  });
+
+  it("見つからなかったメッセージは、理由を言わずに 1 行だけ知らせて閉じられる（ADR 0040 / 0042）", async () => {
+    const onClose = vi.fn();
+    render(<MessageNotFoundNotice onClose={onClose} />);
+
+    expect(screen.getByText("そのメッセージは見つかりませんでした")).toBeInTheDocument();
+    // ない・読めない・削除済みを区別しない
+    expect(screen.queryByText(/削除|権限/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "知らせを閉じる" }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("shows when the server was last reached", () => {

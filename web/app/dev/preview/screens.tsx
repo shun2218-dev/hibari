@@ -26,9 +26,11 @@ import { ChatLayout } from "@/components/chat/chat-layout";
 import {
   EmptyMessages,
   JoinRoomBar,
+  MessageNotFoundNotice,
   RemovedFromWorkspace,
   RoomUnavailable,
   ServerUnavailable,
+  UnreadJumpBar,
 } from "@/components/chat/chat-states";
 import { AccountMenu } from "@/components/chat/account-menu";
 import { Composer } from "@/components/chat/composer";
@@ -75,6 +77,7 @@ import {
   mockAvatars,
   roomSettingsMembers,
   invitesAs,
+  jumpTargetKey,
   membersAs,
   pendingMessageKey,
   roomMembers,
@@ -89,6 +92,8 @@ import {
   threadRepliesWithBroadcast,
   threadRootWithoutReplies,
   timeline,
+  timelineJumped,
+  timelineWithLinkCards,
   timelineWithAvatars,
   timelineWithSystemMessages,
   mentionCandidates,
@@ -154,6 +159,15 @@ type ChatOptions = {
   mentions?: boolean;
   /** 入力欄の `@` の補完を開いた状態で出す（`@` の後ろに打った文字。ADR 0043）。 */
   mentionQuery?: string;
+  /**
+   * 指定したメッセージへ飛ぶ仕組みの画面（ADR 0042）。
+   * - unread-bar: 未読が読み込んだページより古いときの「未読 N 件 / 最初の未読へ」
+   * - highlight: リンクやカードから飛んできた先の強調
+   * - not-found: リンク先が見つからなかったときの知らせ
+   */
+  jump?: "unread-bar" | "highlight" | "not-found";
+  /** 本文に貼られたパーマリンクのカードのあるタイムライン（ADR 0040）。 */
+  linkCards?: boolean;
 };
 
 /** スレッドのパネルに出す親と返信。 */
@@ -201,6 +215,8 @@ function chat({
   threads,
   mentions,
   mentionQuery,
+  jump,
+  linkCards,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
   const roomRemoved = body === "removed-room";
@@ -264,10 +280,16 @@ function chat({
           />
         )}
         <ConnectionBanner status={banner ?? null} />
+        {jump === "unread-bar" && <UnreadJumpBar count={12} onJump={noop} />}
+        {jump === "not-found" && <MessageNotFoundNotice onClose={noop} />}
         {body === "timeline" && !threads && (
           <Timeline
             items={
-              thread
+              linkCards
+                ? timelineWithLinkCards
+                : jump
+                ? timelineJumped
+                : thread
                 ? threadTimeline(thread)
                 : mentions
                   ? timelineWithMentions
@@ -280,6 +302,7 @@ function chat({
                     : timeline
             }
             openThreadKey={thread === "root-deleted" ? deletedThreadRoot.key : thread ? threadContent?.root.key : undefined}
+            highlightedKey={jump === "highlight" ? jumpTargetKey : undefined}
             hoveredKey={hoveredKey}
             onReply={noop}
             actionsFor={(key) => ({ canEdit: key === pendingMessageKey, canDelete: key === pendingMessageKey })}
@@ -528,6 +551,10 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/mention-completion-typed": () => chat({ mentions: true, mentionQuery: "n" }),
   "chat/mention-all-confirm": () =>
     chat({ mentions: true, dialog: <ConfirmMentionAllDialog open kind="channel" memberCount={selectedRoom.memberCount} /> }),
+  "chat/message-link-card": () => chat({ linkCards: true }),
+  "chat/unread-jump-bar": () => chat({ jump: "unread-bar" }),
+  "chat/jump-highlight": () => chat({ jump: "highlight" }),
+  "chat/message-not-found": () => chat({ jump: "not-found" }),
   "chat/threads": () => chat({ threads: "list" }),
   "chat/threads-empty": () => chat({ threads: "empty" }),
   "chat/mobile-thread": () => chat({ thread: "replies" }),
@@ -535,6 +562,8 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/mobile-mentions": () => chat({ mentions: true }),
   "chat/mobile-mention-completion": () => chat({ mentions: true, mentionQuery: "" }),
   "chat/mobile-room-broadcast": () => chat({ broadcastInChannel: true }),
+  "chat/mobile-unread-jump-bar": () => chat({ jump: "unread-bar" }),
+  "chat/mobile-jump-highlight": () => chat({ jump: "highlight" }),
   "chat/mobile-threads": () => chat({ threads: "list" }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),
   "chat/mobile-room": () => chat(),

@@ -31,6 +31,11 @@ type MessageItemProps = {
   onOpenThread?: () => void;
   /** スレッドのパネルで開いている親。選択中のチャンネルと同じ色で示す。 */
   threadOpen?: boolean;
+  /**
+   * リンクや一覧から飛んできた先のメッセージ（ADR 0042）。数秒だけ琥珀の地を敷いて、どれに飛んだかを示す。
+   * 消すのは呼ぶ側（時間か、押したとき）。
+   */
+  highlighted?: boolean;
   onDownload?: (attachmentId: string) => void;
   /** 画像が読み込めなかった（署名付き URL の期限切れなど）。url は読み込みに使った URL。 */
   onImageError?: (attachmentId: string, url: string) => void;
@@ -62,6 +67,7 @@ export function MessageItem({
   canReply = true,
   onOpenThread,
   threadOpen = false,
+  highlighted = false,
   onDownload,
   onImageError,
   canEdit = false,
@@ -89,13 +95,16 @@ export function MessageItem({
       className={cx(
         "group relative flex gap-2.5 px-3 md:gap-3 md:px-4",
         message.grouped ? "py-1" : "pt-3 pb-1",
-        threadOpen
-          ? "bg-primary-subtle"
-          : forceHover
-            ? "bg-surface-muted"
-            : mentionsMe
-              ? "bg-attention-subtle hover:bg-surface-muted focus-within:bg-surface-muted"
-              : "hover:bg-surface-muted focus-within:bg-surface-muted",
+        // 飛んできた先は、どれに飛んだかが先に要るので、ほかのどの地よりも優先する（ADR 0042）
+        highlighted
+          ? "bg-attention-subtle"
+          : threadOpen
+            ? "bg-primary-subtle"
+            : forceHover
+              ? "bg-surface-muted"
+              : mentionsMe
+                ? "bg-attention-subtle hover:bg-surface-muted focus-within:bg-surface-muted"
+                : "hover:bg-surface-muted focus-within:bg-surface-muted",
       )}
     >
       {status === "failed" && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-danger" />}
