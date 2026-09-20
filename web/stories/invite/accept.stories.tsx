@@ -2,16 +2,18 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { InviteAccept } from "@/components/invite/invite-accept";
 
-import { auth, inviteFooter, invitePreview, noHref } from "./screens";
+import { auth, inviteFooter, invitePreview, noHref } from "../screens";
 
 /**
- * 招待の受け入れ。
+ * 招待 / 受け入れ。
  *
- * story の id がそのまま docs/ui/screenshots/ の PNG のパスになる（`invite--…` ↔ `invite/….png`。ADR 0047 決定 2）。
- * 表示名は `name`、足したフェーズは `since:` の tag、撮影の大きさと出どころは `parameters.screenshot` に置く。
+ * story の id がそのまま docs/ui/screenshots/ の PNG のパスになる（`invite-accept--…` ↔ `invite/accept/….png`。ADR 0047 決定 2）。
+ * title は日本語にできるが、id は PNG のパスに合わせて固定する。
  */
 const meta = {
-  title: "invite",
+  title: "招待/受け入れ",
+  // PNG のパス（invite/accept/）と対応させる。title を日本語にしているので、id は自動生成に任せない。
+  id: "invite-accept",
   // この tag が「docs/ui/screenshots/ の PNG と 1 対 1 の画面」の印。撮影ツールと 1 対 1 の検査がこれで選ぶ。
   tags: ["screenshot"],
   // 画面を見るための story で、引数をいじる想定がないので下のパネルは出さない。

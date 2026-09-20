@@ -120,7 +120,7 @@ export type TypingUser = { user: UserProfile; expiresAt: number };
 /**
  * 接続の状態の表示。
  * - banner: 再接続中・同期中・復帰のバナー
- * - unavailable: サーバーに届かない画面（chat/server-error.png）を出すときだけ値がある
+ * - unavailable: サーバーに届かない画面（chat/connection/server-error.png）を出すときだけ値がある
  */
 export type ConnectionView = {
   banner: ConnectionBannerStatus | null;
@@ -161,11 +161,11 @@ export type ChatState = {
   outgoing: Record<string, OutgoingMessage[] | undefined>;
   /**
    * 自分が外されたルーム（非公開と DM）。一覧からはすぐに消し、開いている間だけ「アクセスできません」を出すために覚えておく
-   * （chat/removed-from-channel.png。ADR 0035）。
+   * （chat/room/removed-from-channel.png。ADR 0035）。
    * public ルームは参加していなくても読めるので、ここには入れず、参加していない状態に戻すだけ。
    */
   removedRooms: Record<string, RemovalReason | undefined>;
-  /** 自分が外されたワークスペース。一覧からは除き、その画面を開いている間だけ名前を残す（chat/removed-from-workspace.png）。 */
+  /** 自分が外されたワークスペース。一覧からは除き、その画面を開いている間だけ名前を残す（chat/workspace/removed-from-workspace.png）。 */
   removedWorkspaces: Record<string, { reason: RemovalReason; workspace: Workspace } | undefined>;
   connection: ConnectionView;
 };

@@ -21,23 +21,23 @@ Claude Design で作った画面を取り込んだもの。**Phase 6 で画面�
 
 | 状態 | スクリーンショット |
 |---|---|
-| メッセージの送信中 / 送信済み / 送信失敗 / 削除済み（＋編集済み・返信・画像・ファイル） | `chat/messages-all-states.png`、`chat/messages-all-states-dark.png` |
-| 送信失敗時の再送 UI | `chat/messages-all-states.png`（「再送する」「削除」） |
-| 再接続中バナー、同期中バナー（＋復帰） | `chat/banner-reconnecting.png`、`chat/banner-syncing.png`、`chat/banner-restored.png` |
-| 未読の区切り線 | `chat/default.png`（「ここから未読」「すべて既読にする」） |
-| 入力中インジケータ | `chat/default.png`（入力欄の上） |
-| ルームが 0 件 / メッセージが 0 件 | `chat/empty-rooms.png`、`chat/empty-messages.png` |
-| ログイン失敗時のエラー（ユーザーの存在有無を明かさない） | `auth/login-error-credentials.png`、`auth/login-error-rate-limit.png` |
-| ワークスペースの切り替え、作成 | `chat/workspace-switcher.png`、`chat/workspace-create-dialog.png` |
-| 招待リンクの作成（使用回数・有効期限）、コードは 1 度だけ表示 | `workspace/dialog-invite-new.png`、`workspace/dialog-invite-created.png`、`workspace/invites-as-owner.png` |
-| 招待リンクの受け入れ（プレビュー → 参加）、無効 / 期限切れ / 使用上限 | `invite/accept-preview.png`、`invite/accept-already.png`、`invite/accept-invalid.png`、`invite/accept-expired.png`、`invite/accept-maxed.png` |
-| メンバー一覧、ロールの変更、キック、owner の譲渡 | `workspace/members-as-owner.png`、`workspace/member-menu-role-picker.png`、`workspace/dialog-kick.png`、`workspace/dialog-transfer-pick.png`、`workspace/dialog-transfer-confirm.png` |
-| 権限不足で操作できない状態 | `workspace/member-menu-locked-reason.png`、`workspace/invites-as-member.png`、`workspace/settings-as-member.png`、`workspace/dialog-leave-blocked-owner.png` |
-| public ルームを参加せずに閲覧（「参加して投稿する」導線） | `chat/public-preview.png` |
-| キックされた / ルームから外された | `chat/removed-from-channel.png`、`chat/removed-from-workspace.png` |
-| 添付ファイルのアップロード中 / 失敗 / 画像プレビュー | `chat/attachment-uploading.png`、`chat/attachment-failed.png`、`chat/attachment-done.png`、`chat/messages-all-states.png` |
+| メッセージの送信中 / 送信済み / 送信失敗 / 削除済み（＋編集済み・返信・画像・ファイル） | `chat/timeline/messages-all-states.png`、`chat/timeline/messages-all-states-dark.png` |
+| 送信失敗時の再送 UI | `chat/timeline/messages-all-states.png`（「再送する」「削除」） |
+| 再接続中バナー、同期中バナー（＋復帰） | `chat/connection/banner-reconnecting.png`、`chat/connection/banner-syncing.png`、`chat/connection/banner-restored.png` |
+| 未読の区切り線 | `chat/timeline/default.png`（「ここから未読」「すべて既読にする」） |
+| 入力中インジケータ | `chat/timeline/default.png`（入力欄の上） |
+| ルームが 0 件 / メッセージが 0 件 | `chat/room/empty-rooms.png`、`chat/timeline/empty-messages.png` |
+| ログイン失敗時のエラー（ユーザーの存在有無を明かさない） | `auth/signin/login-error-credentials.png`、`auth/signin/login-error-rate-limit.png` |
+| ワークスペースの切り替え、作成 | `chat/workspace/workspace-switcher.png`、`chat/workspace/workspace-create-dialog.png` |
+| 招待リンクの作成（使用回数・有効期限）、コードは 1 度だけ表示 | `workspace/invite/dialog-invite-new.png`、`workspace/invite/dialog-invite-created.png`、`workspace/invite/invites-as-owner.png` |
+| 招待リンクの受け入れ（プレビュー → 参加）、無効 / 期限切れ / 使用上限 | `invite/accept/accept-preview.png`、`invite/accept/accept-already.png`、`invite/accept/accept-invalid.png`、`invite/accept/accept-expired.png`、`invite/accept/accept-maxed.png` |
+| メンバー一覧、ロールの変更、キック、owner の譲渡 | `workspace/member/members-as-owner.png`、`workspace/member/member-menu-role-picker.png`、`workspace/member/dialog-kick.png`、`workspace/settings/dialog-transfer-pick.png`、`workspace/settings/dialog-transfer-confirm.png` |
+| 権限不足で操作できない状態 | `workspace/member/member-menu-locked-reason.png`、`workspace/invite/invites-as-member.png`、`workspace/settings/settings-as-member.png`、`workspace/settings/dialog-leave-blocked-owner.png` |
+| public ルームを参加せずに閲覧（「参加して投稿する」導線） | `chat/room/public-preview.png` |
+| キックされた / ルームから外された | `chat/room/removed-from-channel.png`、`chat/workspace/removed-from-workspace.png` |
+| 添付ファイルのアップロード中 / 失敗 / 画像プレビュー | `chat/attachment/attachment-uploading.png`、`chat/attachment/attachment-failed.png`、`chat/attachment/attachment-done.png`、`chat/timeline/messages-all-states.png` |
 
-チェックリスト外で追加された状態: サーバーに接続できない（`chat/server-error.png`）、チャンネル検索の 0 件、パスワード再設定とメール確認の各状態（`auth/`）、ログイン中のデバイス（`settings/devices.png`）。
+チェックリスト外で追加された状態: サーバーに接続できない（`chat/connection/server-error.png`）、チャンネル検索の 0 件、パスワード再設定とメール確認の各状態（`auth/`）、ログイン中のデバイス（`settings/devices/devices.png`）。
 
 ## 取り込みの過程で設計に合わせて直したこと
 
@@ -54,7 +54,7 @@ Claude Design で作った画面を取り込んだもの。**Phase 6 で画面�
 | 「ユーザー名」 | 「ハンドル」 | `users.handle` |
 | member から見たワークスペース設定で、名前と招待ポリシーが編集できる見た目だった | 読み取り専用にし、「変更できるのは管理者とオーナーだけ」と表示 | ADR 0006 の権限表 |
 | 色・文字サイズ・角丸の直書き | トークンに集約。文字サイズ 7 段階、角丸 4 段階 | CLAUDE.md ルール 7 |
-| member から見た招待一覧で、`invite_policy = all_members` のとき他人の招待にも「取り消す」が出ていた（2026-09-14 に修正） | 管理者以上か、自分が作成した招待にだけ出す。`workspace/invites-as-member-policy-all.png` を撮り直した | ADR 0011 |
+| member から見た招待一覧で、`invite_policy = all_members` のとき他人の招待にも「取り消す」が出ていた（2026-09-14 に修正） | 管理者以上か、自分が作成した招待にだけ出す。`workspace/invite/invites-as-member-policy-all.png` を撮り直した | ADR 0011 |
 
 ## 解決済み
 
@@ -69,15 +69,16 @@ Claude Design で作った画面を取り込んだもの。**Phase 6 で画面�
 ## 画面の再現（Storybook。Phase 6.7.6 まで `/dev/preview`）
 
 `make web-ui` で Storybook（`http://localhost:6006`）を起動する。**story の id がそのままスクリーンショットのパス**で、
-`chat--banner-syncing` ↔ `screenshots/chat/banner-syncing.png` のように 1 対 1 に対応する（ADR 0047）。
+`chat-connection--banner-syncing` ↔ `screenshots/chat/connection/banner-syncing.png` のように 1 対 1 に対応する（ADR 0047）。
 サイドバーの検索で名前から探せて、`since:6.7` のような tag でフェーズごとに絞り込める。
 
-- story は `web/stories/<グループ>.stories.tsx`、画面の組み立ては `web/stories/screens.tsx`、モックは `web/stories/fixtures.ts`。
+- story は `web/stories/<グループ>/<サブグループ>.stories.tsx`、画面の組み立ては `web/stories/screens.tsx`、モックは `web/stories/fixtures.ts`。
+  **ファイルの置き場所は PNG のディレクトリと同じ**（`web/stories/chat/thread.stories.tsx` ↔ `screenshots/chat/thread/`）。
 - モバイルの画面（`mobile-*`）は 390x844 の viewport で描く。ダークの画面（`*-dark`）は `parameters.theme: "dark"` を付ける。
 - 画像の添付のストライプの模様は、モックの画像の中身なので再現していない（寸法の枠だけを出す）。
   拡大表示の画面（Phase 6.7.5）だけは中身が要るので、モックの画像を `web/public/dev/photo-*.png` に置いてある（アバターの画像と同じ扱い）。
 - スクリーンショットを足したら story も足す（足さないと `web/stories/stories.test.tsx` の 1 対 1 の検査が落ちる）。
-  export 名がそのままファイル名になるので、`ImageViewerDark` → `chat/image-viewer-dark.png`。
+  export 名がそのままファイル名になるので、`ImageViewerDark` → `chat/attachment/image-viewer-dark.png`。
 
 ### 部品のカタログ
 
@@ -91,6 +92,33 @@ Claude Design で作った画面を取り込んだもの。**Phase 6 で画面�
 - `Timeline` や `Sidebar` のような大きい部品は作らない（画面の story とほぼ同じものが二重になるため）。
 
 **画面と部品は `screenshot` の tag で見分ける。** 画面の story だけがこの tag を持ち、撮影と 1 対 1 の検査の対象になる。
+
+### スクリーンショットの置き場所
+
+話題ごとにディレクトリを分けてある（ADR 0047 決定 2）。**ディレクトリの名前は英小文字の 1 語**にする
+（story の id から戻すときに `-` で区切るため、ハイフンを使わない）。
+
+| ディレクトリ | 中身 |
+|---|---|
+| `auth/signin` / `auth/password` / `auth/verify` | ログインと登録 / パスワードの再設定 / メールの確認 |
+| `chat/timeline` | タイムライン、システムメッセージ、アバター、0 件 |
+| `chat/message` | メッセージの「…」・編集・削除 |
+| `chat/attachment` | 添付のアップロード、拡大表示、添付だけの削除 |
+| `chat/reaction` | 絵文字のリアクションとピッカー |
+| `chat/thread` | スレッドのパネル、参加しているスレッドの一覧、チャンネルにも投稿 |
+| `chat/mention` | メンションと `@` の補完 |
+| `chat/link` | リンクのカード、未読へ飛ぶ、飛んだ先の強調 |
+| `chat/room` | チャンネルの作成・設定・退出、メンバー、サイドバー |
+| `chat/workspace` | ワークスペースの切り替え・作成、アカウントメニュー |
+| `chat/connection` | 再接続・同期・復帰のバナー、サーバーに接続できない |
+| `invite/accept` | 招待リンクを開いたとき（有効・参加済み・無効・期限切れ・上限） |
+| `workspace/settings` / `workspace/member` / `workspace/invite` | 管理画面の 3 つの節 |
+| `settings/profile` / `settings/devices` / `settings/appearance` / `settings/nav` | ユーザー設定の 3 つの節と、チャットに戻る導線 |
+
+枚数が少なくても分ける（`invite` は 5 枚、`settings/appearance` は 1 枚）。Storybook のサイドバーの並びが揃うため。
+
+モバイルの画面は別にまとめず、同じ話題の中に置く（`chat/thread/mobile-thread.png`）。
+デスクトップと並べて見比べるのがふだんの使い方なので、離さない。
 
 ### 撮り直し
 
@@ -110,16 +138,16 @@ make web-shots names="chat/room-header-settings" # 名前を指定して 1 枚�
 ## 未解決（実装の前に決める）
 
 - **表示の密度「詰める」**: 設定画面に選択肢はあるが、行送りや余白の具体的な値がデザインにない。実装するならトークンを追加する前にデザインを足す。いまは選択肢を出したまま選べないようにしてある（ADR 0031）。
-- **サーバーに届かないときの認証まわりの表示**（Phase 6-2 で判明）: ログイン・登録の送信や、起動時のログイン状態の復元が通信の失敗や 500 になったときの画面がない。`chat/server-error.png` は接続できていたあとの切断用で、最終接続の時刻と再試行の回数を前提にしている。いまはフォームを戻すだけ・何も描かないにしている（ADR 0024）。
-- **確認メールの再送の結果**（Phase 6-2 で判明）: `auth/verify-pending.png` で再送を押したあとの「送りました」や回数制限（429）の表示がない。いまはボタンを押せない間だけ変わる。
-- **確認リンクを開いたあとの通信の失敗**（Phase 6-2 で判明）: `/verify-email` でサーバーに届かないときの画面がない。いまは確認中（`auth/verify-checking.png`）のままにしている。上の「サーバーに届かないときの認証まわりの表示」と一緒に決める。
+- **サーバーに届かないときの認証まわりの表示**（Phase 6-2 で判明）: ログイン・登録の送信や、起動時のログイン状態の復元が通信の失敗や 500 になったときの画面がない。`chat/connection/server-error.png` は接続できていたあとの切断用で、最終接続の時刻と再試行の回数を前提にしている。いまはフォームを戻すだけ・何も描かないにしている（ADR 0024）。
+- **確認メールの再送の結果**（Phase 6-2 で判明）: `auth/verify/verify-pending.png` で再送を押したあとの「送りました」や回数制限（429）の表示がない。いまはボタンを押せない間だけ変わる。
+- **確認リンクを開いたあとの通信の失敗**（Phase 6-2 で判明）: `/verify-email` でサーバーに届かないときの画面がない。いまは確認中（`auth/verify/verify-checking.png`）のままにしている。上の「サーバーに届かないときの認証まわりの表示」と一緒に決める。
 - **チャットの画面の取得中と失敗**（Phase 6-2 の構築順 2 で判明）: ワークスペースやルームの一覧、履歴の取得中と取得の失敗、チャンネルの作成や参加の失敗（チャンネル名の重複 `room-name-taken` を含む）の表示がない。いまは何も描かないか、ダイアログやボタンを戻してコンソールに出すだけにしている（ADR 0025）。
-- **送信・編集・削除の失敗の理由**（Phase 6-2 の構築順 4 で判明）: 本文が長すぎて送れない（4000 文字）、編集・削除の失敗、上位のロールの人のメッセージを削除できなかった（403）ことの表示がない。送信の失敗は `chat/messages-all-states.png` の「送信できませんでした」だけで、理由を出さない。いまは送信ボタンを押せなくする・ダイアログや編集欄を閉じるか戻すだけにしている（ADR 0027）。
+- **送信・編集・削除の失敗の理由**（Phase 6-2 の構築順 4 で判明）: 本文が長すぎて送れない（4000 文字）、編集・削除の失敗、上位のロールの人のメッセージを削除できなかった（403）ことの表示がない。送信の失敗は `chat/timeline/messages-all-states.png` の「送信できませんでした」だけで、理由を出さない。いまは送信ボタンを押せなくする・ダイアログや編集欄を閉じるか戻すだけにしている（ADR 0027）。
 - **添付だけのメッセージのサイドバーの 1 行**（ADR 0013 で先送り、Phase 6-2 の構築順 5 で判明）: 本文が空のメッセージが最後のとき、サイドバーに何を出すかがない。ルーム一覧の `last_message` に添付の情報がないので、いまは仮に「送信者: 添付ファイル」としている（ADR 0028）。ファイル名を出すなら API に足す。
 - **添付のアップロードの失敗の理由と上限**（Phase 6-2 の構築順 5 で判明）: 大きすぎる（25 MiB）・種類が許可されていない・11 個目以降を選んだ、の表示がない。いまは失敗は「アップロードできませんでした」、11 個目以降は何も言わずに並べない（ADR 0028）。
 - **画像の添付を押したとき**（Phase 6-2 の構築順 5 で判明）: 拡大表示やダウンロードの導線がデザインにない。いまは押しても何も起きない。→ **Phase 6.7.5 で作る**（ADR 0045）。添付ファイルだけを削除する導線も、そこで一緒に足す。
 - **管理画面の操作の失敗**（Phase 6-2 の構築順 6 で判明）: ロールの変更・キック・譲渡・退出（ワークスペースとチャンネル）・招待の作成と取り消し・ワークスペース名や招待ポリシーの変更が失敗したときの表示がない。いまはサーバーの値に戻す（または何も起きない）だけで、コンソールに出す（ADR 0029）。招待リンクのコピーに失敗したときの表示もない。
-- **招待リンクから登録した人の戻り先**（Phase 6-2 の構築順 6 で判明）: 登録すると「確認メールを送りました」（`auth/verify-pending.png`）で止まり、そこから招待の受け入れに戻る導線がない。メールの確認は必須ではない（ADR 0010）ので、いまはリンクをもう一度開いてもらう（ADR 0030）。
+- **招待リンクから登録した人の戻り先**（Phase 6-2 の構築順 6 で判明）: 登録すると「確認メールを送りました」（`auth/verify/verify-pending.png`）で止まり、そこから招待の受け入れに戻る導線がない。メールの確認は必須ではない（ADR 0010）ので、いまはリンクをもう一度開いてもらう（ADR 0030）。
 - **招待の受け入れの取得中と失敗**（Phase 6-2 の構築順 6 で判明）: `/j/{code}` を開いてからプレビューが返るまでの画面と、通信の失敗・500 の画面がない。いまは何も描かない。
 - **設定の画面の失敗の表示**（Phase 6-2 の構築順 6 で判明）: ハンドルの重複（409）、表示名の入力エラー、アバターの画像が大きすぎる・種類が違う、セッションの一覧の取得の失敗の表示がない。いまは値を戻す・何も描かないだけで、コンソールに出す（ADR 0031）。
 - **危険な操作のボタンの文字色**: `--color-on-danger` がないので、赤地のボタン（「削除する」「退出する」）の文字は `--color-on-primary` を使っている。ライト / ダークとも読めるが、役割の名前としては合っていない。
@@ -131,20 +159,20 @@ Phase 6-1 で「API はあるのに操作の入口や状態の画面がない」
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
-| チャンネルを作成（公開範囲は作成時に決める） | `chat/channel-create-dialog.png` | `POST /workspaces/{id}/rooms` |
-| ダイレクトメッセージを開く | `chat/dm-dialog.png` | `POST /workspaces/{id}/rooms`（kind: dm） |
-| チャンネルの設定（名前・非公開のメンバー） | `chat/room-settings-dialog.png` | `PATCH /rooms/{id}`、`POST` / `DELETE /rooms/{id}/members` |
-| メッセージの「…」メニュー | `chat/message-menu.png` | — |
-| メッセージの編集中 | `chat/message-editing.png` | `PATCH /rooms/{id}/messages/{messageID}` |
-| メッセージの削除の確認 | `chat/message-delete-dialog.png` | `DELETE /rooms/{id}/messages/{messageID}` |
-| アカウントメニュー（ワークスペース設定 / 設定 / ログアウト） | `chat/account-menu.png` | `POST /auth/logout` |
-| チャンネル検索の 0 件 | `chat/search-empty.png` | — |
-| メンバーの「…」にキックの入口を足したもの | `workspace/member-menu-with-kick.png` | `DELETE /workspaces/{id}/members/{userID}` |
-| プロフィールのアバター画像（あり / アップロード中 / 失敗） | `settings/profile-avatar.png`、`settings/profile-avatar-uploading.png`、`settings/profile-avatar-failed.png` | `POST` / `DELETE /users/me/avatar` |
-| 一覧での画像のアバター（頭文字と混在） | `chat/avatar-images.png` | `POST /users/avatars` |
+| チャンネルを作成（公開範囲は作成時に決める） | `chat/room/channel-create-dialog.png` | `POST /workspaces/{id}/rooms` |
+| ダイレクトメッセージを開く | `chat/room/dm-dialog.png` | `POST /workspaces/{id}/rooms`（kind: dm） |
+| チャンネルの設定（名前・非公開のメンバー） | `chat/room/room-settings-dialog.png` | `PATCH /rooms/{id}`、`POST` / `DELETE /rooms/{id}/members` |
+| メッセージの「…」メニュー | `chat/message/message-menu.png` | — |
+| メッセージの編集中 | `chat/message/message-editing.png` | `PATCH /rooms/{id}/messages/{messageID}` |
+| メッセージの削除の確認 | `chat/message/message-delete-dialog.png` | `DELETE /rooms/{id}/messages/{messageID}` |
+| アカウントメニュー（ワークスペース設定 / 設定 / ログアウト） | `chat/workspace/account-menu.png` | `POST /auth/logout` |
+| チャンネル検索の 0 件 | `chat/room/search-empty.png` | — |
+| メンバーの「…」にキックの入口を足したもの | `workspace/member/member-menu-with-kick.png` | `DELETE /workspaces/{id}/members/{userID}` |
+| プロフィールのアバター画像（あり / アップロード中 / 失敗） | `settings/profile/profile-avatar.png`、`settings/profile/profile-avatar-uploading.png`、`settings/profile/profile-avatar-failed.png` | `POST` / `DELETE /users/me/avatar` |
+| 一覧での画像のアバター（頭文字と混在） | `chat/timeline/avatar-images.png` | `POST /users/avatars` |
 
 - この 10 枚は画面全体ではなく、足した部分だけを切り出したフレーム（他のスクリーンショットは 1280×800 の画面全体）。
-- `workspace/member-menu-role-picker.png` はキックを足す前のメニュー。メニューの中身は `member-menu-with-kick.png` が新しい。
+- `workspace/member/member-menu-role-picker.png` はキックを足す前のメニュー。メニューの中身は `member-menu-with-kick.png` が新しい。
 - 決めたこと: 公開範囲は作成後に変えられない（API に kind の変更がない）、DM は相手ひとりだけ（メンバーを追加できない）、チャンネルの削除は置かない（API がない）、ルームの設定を変えられるのは「そのルームを読める admin 以上」（ADR 0011）。
 - アバター画像（ADR 0020）: 設定していない人はこれまでどおり頭文字と色。画像は円に切り取り（ワークスペースだけ角丸の四角）、読み込みに失敗したら頭文字に戻す。受け付けるのは PNG / JPEG / WebP で 2 MB まで。
 
@@ -154,14 +182,14 @@ Phase 6-1 で「API はあるのに操作の入口や状態の画面がない」
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
-| 再設定メールの依頼が回数制限になった | `auth/forgot-error-rate-limit.png` | `POST /auth/password-reset/request`（429） |
-| 新しいパスワードが制約を満たさない | `auth/reset-error-invalid-input.png` | `POST /auth/password-reset/confirm`（422） |
-| 確認リンクを開いて、結果を待っている | `auth/verify-checking.png` | `POST /auth/verify-email/confirm` |
-| 所属するワークスペースが 0 件 | `chat/empty-workspaces.png` | `GET /workspaces` |
+| 再設定メールの依頼が回数制限になった | `auth/password/forgot-error-rate-limit.png` | `POST /auth/password-reset/request`（429） |
+| 新しいパスワードが制約を満たさない | `auth/password/reset-error-invalid-input.png` | `POST /auth/password-reset/confirm`（422） |
+| 確認リンクを開いて、結果を待っている | `auth/verify/verify-checking.png` | `POST /auth/verify-email/confirm` |
+| 所属するワークスペースが 0 件 | `chat/workspace/empty-workspaces.png` | `GET /workspaces` |
 
 - 決めたこと: 再設定の失敗は、ログイン・登録と同じエラー枠（`Alert` の danger）をフォームの見出しの下に出す。文言もログインの回数制限と登録の入力エラーに合わせる。
 - 回数制限はアカウントの有無に関係なく数えるので、出してもアカウントの有無は明かさない。
-- ワークスペースが 0 件のときは、サイドバーに出すものがないので、チャットの画面ではなく認証と同じカードにする。「ワークスペースを作成」は既存の `chat/workspace-create-dialog.png` を開く。招待リンクから登録した人は受け入れの画面に戻るので、ここには来ない。
+- ワークスペースが 0 件のときは、サイドバーに出すものがないので、チャットの画面ではなく認証と同じカードにする。「ワークスペースを作成」は既存の `chat/workspace/workspace-create-dialog.png` を開く。招待リンクから登録した人は受け入れの画面に戻るので、ここには来ない。
 
 ### Phase 6-2 の構築順 6 で足した画面
 
@@ -171,15 +199,15 @@ Claude Design 側に取り込むときは、ほかの追加画面と同じキャ
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
-| サイドバーの見出しの「+」（チャンネルの作成 / DM を開く） | `chat/sidebar-add-entries.png`（320×560 の切り出し） | `POST /workspaces/{id}/rooms` |
-| ルームのヘッダーの設定のボタン | `chat/room-header-settings.png`（900×120 の切り出し） | — |
-| チャンネルにメンバーを追加（相手を選ぶ） | `chat/member-add-dialog.png` | `POST /rooms/{id}/members` |
-| 管理画面からチャットに戻る | `workspace/back-to-chat.png` | — |
-| 設定からチャットに戻る（デスクトップ / モバイル） | `settings/back-to-chat.png`、`settings/mobile-back-to-chat.png` | — |
+| サイドバーの見出しの「+」（チャンネルの作成 / DM を開く） | `chat/room/sidebar-add-entries.png`（320×560 の切り出し） | `POST /workspaces/{id}/rooms` |
+| ルームのヘッダーの設定のボタン | `chat/room/room-header-settings.png`（900×120 の切り出し） | — |
+| チャンネルにメンバーを追加（相手を選ぶ） | `chat/room/member-add-dialog.png` | `POST /rooms/{id}/members` |
+| 管理画面からチャットに戻る | `workspace/settings/nav/back-to-chat.png` | — |
+| 設定からチャットに戻る（デスクトップ / モバイル） | `settings/nav/back-to-chat.png`、`settings/nav/mobile-back-to-chat.png` | — |
 
-- 「+」は見出しの右に置き、チャンネルと DM で同じ形にした。ルームが 0 件のときは一覧ごと出ないので、`chat/empty-rooms.png` の「チャンネルを作成」はそのまま残す。
+- 「+」は見出しの右に置き、チャンネルと DM で同じ形にした。ルームが 0 件のときは一覧ごと出ないので、`chat/room/empty-rooms.png` の「チャンネルを作成」はそのまま残す。
 - 「チャットに戻る」は、管理画面と設定の左のナビの上（デスクトップ）と、設定の一覧のヘッダー（モバイル）に置いた。管理画面のモバイルは、これまでどおりヘッダーの「戻る」がチャットに戻る。
-- メンバーを追加する画面は、DM の相手を選ぶ画面（`chat/dm-dialog.png`）と同じ形にし、すでにチャンネルにいる人を候補から外す。
+- メンバーを追加する画面は、DM の相手を選ぶ画面（`chat/room/dm-dialog.png`）と同じ形にし、すでにチャンネルにいる人を候補から外す。
 - **既存のスクリーンショット（Claude Design 由来）には、これらの「+」「設定」「チャットに戻る」がまだ写っていない。** Claude Design 側を直したら撮り直す。
 ### Phase 6.4 で足した画面
 
@@ -188,7 +216,7 @@ Claude Design 側に取り込むときは、ほかの追加画面と同じキャ
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
-| 参加・名前の変更のログを挟んだタイムライン | `chat/system-messages.png` | `message.created`（`kind: "system"`） |
+| 参加・名前の変更のログを挟んだタイムライン | `chat/timeline/system-messages.png` | `message.created`（`kind: "system"`） |
 
 - ログは人の発言ではないので、アバターも名前も出さず、日付の区切りと同じ中央寄せの控えめな 1 行にする。続けて表示（grouped）の基準にもしない。
 - 文言は「{主語} が〜しました」。サーバーは種類とそのときの名前だけを返し、文言はクライアントが作る。
@@ -201,18 +229,18 @@ Claude Design 側に取り込むときは、ほかの追加画面と同じキャ
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
-| チャンネルの設定のいちばん下の「チャンネルを退出」（読み取り専用の member の例） | `chat/room-settings-leave.png` | — |
-| 退出の確認（公開 / 非公開） | `chat/dialog-leave-room.png`、`chat/dialog-leave-room-private.png` | `DELETE /rooms/{id}/members/{自分}` |
+| チャンネルの設定のいちばん下の「チャンネルを退出」（読み取り専用の member の例） | `chat/room/room-settings-leave.png` | — |
+| 退出の確認（公開 / 非公開） | `chat/room/dialog-leave-room.png`、`chat/room/dialog-leave-room-private.png` | `DELETE /rooms/{id}/members/{自分}` |
 
-- 形はワークスペースの退出（`workspace/settings-as-member.png`、`workspace/dialog-leave.png`）に合わせた。
+- 形はワークスペースの退出（`workspace/settings/settings-as-member.png`、`workspace/settings/dialog-leave.png`）に合わせた。
 - 参加していれば、ロールに関係なく出す。参加していない public と DM には出さない。
 - 説明は公開範囲で分ける。公開は退出したあとも読める、非公開は読めなくなる。
 - 退出したあとは、公開ならその場で「参加する」の状態に戻り、非公開なら「外されました」を出さずにワークスペースの入口に戻る。
-- `chat/room-settings-dialog.png`（Claude Design 由来）にはこの欄がまだ写っていない。
+- `chat/room/room-settings-dialog.png`（Claude Design 由来）にはこの欄がまだ写っていない。
 
 ### 非公開チャンネルから外されたときの画面を変えた
 
-オーナーの判断（2026-09-19、Slack に合わせる）で、Claude Design の `chat/removed-from-channel.png`
+オーナーの判断（2026-09-19、Slack に合わせる）で、Claude Design の `chat/room/removed-from-channel.png`
 （ヘッダーとサイドバーに名前を残し、「このチャンネルから外されました」と「『{名前}』のメンバーではなくなった」を出す）を置き換えた（ADR 0035）。
 **このスクリーンショットは、実装を headless Chrome で撮り直したもの**。Claude Design 側も合わせて直す。
 
@@ -229,12 +257,12 @@ Claude Design 側に取り込むときは、ほかの追加画面と同じキャ
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
-| スレッドのパネル（親・返信・入力中・入力欄）と、チャンネルの「N 件の返信」 | `chat/thread-panel.png` | `GET /rooms/{id}/threads/{rootID}/messages`、`POST /rooms/{id}/messages`（thread_root_id） |
-| 返信が 0 件のパネル（「返信」から開いた直後） | `chat/thread-panel-empty.png` | — |
-| 親が削除されたスレッド | `chat/thread-root-deleted.png` | — |
-| サイドバーの「スレッド」と、参加しているスレッドの一覧 | `chat/threads.png` | `GET /workspaces/{id}/threads` |
-| 参加しているスレッドが 0 件 | `chat/threads-empty.png` | — |
-| スレッド・スレッドの一覧（モバイル） | `chat/mobile-thread.png`、`chat/mobile-threads.png` | — |
+| スレッドのパネル（親・返信・入力中・入力欄）と、チャンネルの「N 件の返信」 | `chat/thread/thread-panel.png` | `GET /rooms/{id}/threads/{rootID}/messages`、`POST /rooms/{id}/messages`（thread_root_id） |
+| 返信が 0 件のパネル（「返信」から開いた直後） | `chat/thread/thread-panel-empty.png` | — |
+| 親が削除されたスレッド | `chat/thread/thread-root-deleted.png` | — |
+| サイドバーの「スレッド」と、参加しているスレッドの一覧 | `chat/thread/threads.png` | `GET /workspaces/{id}/threads` |
+| 参加しているスレッドが 0 件 | `chat/thread/threads-empty.png` | — |
+| スレッド・スレッドの一覧（モバイル） | `chat/thread/mobile-thread.png`、`chat/thread/mobile-threads.png` | — |
 
 - **パネル**: デスクトップはメンバーのパネルと同じ右のパネル（幅 384px）。モバイルはシートではなく全画面で重ねる（返信を読みながら入力するには高さが足りない）。
   見出しは「スレッド」とルームの名前。親の下に「N 件の返信」の区切り、その下に返信。
@@ -248,7 +276,7 @@ Claude Design 側に取り込むときは、ほかの追加画面と同じキャ
 - **スレッドの一覧**: ルームの代わりにメインの領域に出す。1 行に ルーム・親の冒頭（2 行まで）・返信の数・最後の返信・未読。
   スレッドの中身は展開せず、押すとそのルームのパネルを開く（読む場所と書く場所をパネルの 1 つにそろえる）。
 - **引用付きの返信は消した**: `chat/composer-reply.png`（Phase 6-1 で足した画面）は、API から `reply_to` を消したとき（Phase 6.5 の構築順 3）に削除した。
-  Claude Design 由来の `chat/messages-all-states.png` などには引用の行がまだ写っているが、実装にはない。Claude Design 側を直したら撮り直す。
+  Claude Design 由来の `chat/timeline/messages-all-states.png` などには引用の行がまだ写っているが、実装にはない。Claude Design 側を直したら撮り直す。
   メッセージのホバーの「返信」は、同じアイコンのままスレッドを開く操作にした（構築順 5。ADR 0037）。
 - 実装で決めたこと（ADR 0037）: スレッドは `?t=` の URL で開く（Phase 6.11b で `?thread=` から改名。ADR 0042 決定 6）。検索している間はサイドバーの「スレッド」を出さない。
   返信が全部削除された親には「N 件の返信」を出さない。パネルの取得中はヘッダーだけ。
@@ -259,14 +287,14 @@ ADR 0039 の「チャンネルにも投稿する」を、既存の部品とト�
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
-| チェックを付けた入力欄、スレッドの注記、チャンネルの「スレッドに返信しました」 | `chat/thread-broadcast.png` | `POST /rooms/{id}/messages`（thread_root_id、also_in_channel） |
-| スレッドのチェックボックス（モバイル） | `chat/mobile-thread-broadcast.png` | — |
-| チャンネルに流した返信（モバイル） | `chat/mobile-room-broadcast.png` | — |
+| チェックを付けた入力欄、スレッドの注記、チャンネルの「スレッドに返信しました」 | `chat/thread/thread-broadcast.png` | `POST /rooms/{id}/messages`（thread_root_id、also_in_channel） |
+| スレッドのチェックボックス（モバイル） | `chat/thread/mobile-thread-broadcast.png` | — |
+| チャンネルに流した返信（モバイル） | `chat/thread/mobile-room-broadcast.png` | — |
 
 - **チェックボックス**: スレッドの入力欄の下、「Enter で送信」の左。文言は「チャンネルにも投稿する」（DM では「DM にも投稿する」）。
   ブラウザの標準の checkbox に `accent-color` で `--color-primary` を当てる。角の小さい四角を描くには角丸のトークン（8px 以上しかない）が合わないため、新しいトークンを作らずにこうした。
   返信できない人（参加していない public）には入力欄ごと出さないので、チェックボックスも出ない。
-  スレッドの既存の画面（`chat/thread-panel.png` など 4 枚）も、チェックの付いていない状態で撮り直した。
+  スレッドの既存の画面（`chat/thread/thread-panel.png` など 4 枚）も、チェックの付いていない状態で撮り直した。
 - **チャンネルの行**: 名前と時刻の下に「スレッドに返信しました」を出す。押すとスレッドを開くので緑。親の本文の抜粋は出さない（ADR 0039）。
   直前が同じ人の発言でも続けて表示（アバターと名前の省略）にしない。スレッドから来た行だと分かるようにするため。
 - **スレッドの行**: 本文の下に「チャンネルにも投稿しました」（DM では「DM にも投稿しました」）を控えめに添える。押せない。
@@ -277,13 +305,13 @@ ADR 0043 のメンションを、既存の部品とトークンのまま足し�
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
-| 自分宛て・`@channel`・`@here` のある本文と、サイドバーの `@2` | `chat/mentions.png` | `GET /rooms`（mention_count）、メッセージの `mentions` |
-| 同（ダーク） | `chat/mentions-dark.png` | — |
-| `@` を打った直後の補完 | `chat/mention-completion.png` | `GET /rooms/{id}/members` |
-| 名前で絞った補完 | `chat/mention-completion-typed.png` | — |
-| `@channel` を送る前の確認 | `chat/mention-all-confirm.png` | — |
-| 自分宛てのある画面（モバイル） | `chat/mobile-mentions.png` | — |
-| `@` の補完（モバイル） | `chat/mobile-mention-completion.png` | — |
+| 自分宛て・`@channel`・`@here` のある本文と、サイドバーの `@2` | `chat/mention/mentions.png` | `GET /rooms`（mention_count）、メッセージの `mentions` |
+| 同（ダーク） | `chat/mention/mentions-dark.png` | — |
+| `@` を打った直後の補完 | `chat/mention/mention-completion.png` | `GET /rooms/{id}/members` |
+| 名前で絞った補完 | `chat/mention/mention-completion-typed.png` | — |
+| `@channel` を送る前の確認 | `chat/mention/mention-all-confirm.png` | — |
+| 自分宛てのある画面（モバイル） | `chat/mention/mobile-mentions.png` | — |
+| `@` の補完（モバイル） | `chat/mention/mobile-mention-completion.png` | — |
 
 - **本文のチップ**: 個人は `@表示名` で、`--color-primary-subtle` の上に `--color-primary`。Phase 6.9 でプロフィールのカードを開くので押せる（リンクと同じ緑）。
   `@channel` / `@here` はルームの全員に飛ぶので個人より目立たせ、`--color-attention` の上に `--color-on-attention` で塗る。押せない。
@@ -312,12 +340,12 @@ ADR 0042 の決定 7 のとおり、**飛ぶ側（6.11b）の実装はこの画�
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
-| 本文に貼られたリンクのカード（読めるもの・表示できないもの） | `chat/message-link-card.png` | `POST /messages/links` |
-| 未読が読み込んだページより古いときのバー | `chat/unread-jump-bar.png` | `GET /rooms/{id}/messages?after_seq=` |
-| リンクやカードから飛んできた先の強調 | `chat/jump-highlight.png` | `GET /rooms/{id}/messages?around_message_id=` |
-| リンク先のメッセージが見つからない | `chat/message-not-found.png` | 同上（`around: null`） |
-| 未読へ飛ぶバー（モバイル） | `chat/mobile-unread-jump-bar.png` | — |
-| 飛んできた先の強調（モバイル） | `chat/mobile-jump-highlight.png` | — |
+| 本文に貼られたリンクのカード（読めるもの・表示できないもの） | `chat/link/message-link-card.png` | `POST /messages/links` |
+| 未読が読み込んだページより古いときのバー | `chat/link/unread-jump-bar.png` | `GET /rooms/{id}/messages?after_seq=` |
+| リンクやカードから飛んできた先の強調 | `chat/link/jump-highlight.png` | `GET /rooms/{id}/messages?around_message_id=` |
+| リンク先のメッセージが見つからない | `chat/link/message-not-found.png` | 同上（`around: null`） |
+| 未読へ飛ぶバー（モバイル） | `chat/link/mobile-unread-jump-bar.png` | — |
+| 飛んできた先の強調（モバイル） | `chat/link/mobile-jump-highlight.png` | — |
 
 - **カード**（6.11a。実装済み）: 本文の下に、貼られた順に最大 3 件。ルーム名（別のワークスペースならワークスペース名も）・送信者・時刻・本文を出す。
   左の縦線は引用の印で、押せる要素ではないので緑にしない。長い本文はカードの中だけ畳み、「すべて表示する」で広げて「折りたたむ」も残す。
@@ -339,14 +367,14 @@ ADR 0044 のリアクションを、既存の部品とトークンのまま足�
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
-| リアクションの行と、ホバーの操作に足した「＋」 | `chat/reactions.png` | メッセージの `reactions` |
-| 同（ダーク） | `chat/reactions-dark.png` | — |
-| チップにホバーして「誰が付けたか」 | `chat/reaction-names.png` | 同上（`users` は先頭 8 人） |
-| 絵文字のピッカー | `chat/reaction-picker.png` | `PUT /rooms/{id}/messages/{id}/reactions/{emoji}` |
-| 同（ダーク） | `chat/reaction-picker-dark.png` | — |
-| ピッカーが上に開く（いちばん下のメッセージ） | `chat/reaction-picker-above.png` | — |
-| リアクションの行（モバイル） | `chat/mobile-reactions.png` | — |
-| ピッカー（モバイル） | `chat/mobile-reaction-picker.png` | — |
+| リアクションの行と、ホバーの操作に足した「＋」 | `chat/reaction/reactions.png` | メッセージの `reactions` |
+| 同（ダーク） | `chat/reaction/reactions-dark.png` | — |
+| チップにホバーして「誰が付けたか」 | `chat/reaction/reaction-names.png` | 同上（`users` は先頭 8 人） |
+| 絵文字のピッカー | `chat/reaction/reaction-picker.png` | `PUT /rooms/{id}/messages/{id}/reactions/{emoji}` |
+| 同（ダーク） | `chat/reaction/reaction-picker-dark.png` | — |
+| ピッカーが上に開く（いちばん下のメッセージ） | `chat/reaction/reaction-picker-above.png` | — |
+| リアクションの行（モバイル） | `chat/reaction/mobile-reactions.png` | — |
+| ピッカー（モバイル） | `chat/reaction/mobile-reaction-picker.png` | — |
 
 - **チップ**: 高さ 28px の `rounded-full`。絵文字 + 数（等幅）。並びは最初に付いた順のままで、数では並べ替えない（ADR 0044 決定 3）。
   **自分が付けているものは緑**（`--color-primary-subtle` の地に `--color-primary` の枠と文字）。押すと外れる操作なので、
@@ -383,14 +411,14 @@ ADR 0045 のとおり、既存の部品とトークンのまま足した（新�
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
-| 画像の拡大表示（同じメッセージの 3 枚を送る） | `chat/image-viewer.png` | 既存の GET URL（ADR 0028） |
-| 同（ダーク） | `chat/image-viewer-dark.png` | — |
-| 最後の画像（送れる向きにだけ矢印を出す） | `chat/image-viewer-last.png` | — |
-| 1 枚だけの画像（送る導線を出さない・消せない人） | `chat/image-viewer-single.png` | — |
-| 画像でない添付の行の「…」 | `chat/attachment-menu.png` | — |
-| 添付だけの削除の確認 | `chat/attachment-delete-dialog.png` | `DELETE /rooms/{id}/messages/{id}/attachments/{id}` |
-| 最後の 1 枚で、メッセージごと消えるときの確認 | `chat/attachment-delete-dialog-last.png` | 同上（応答は tombstone。ADR 0045 決定 8） |
-| 拡大表示（モバイル） | `chat/mobile-image-viewer.png` | — |
+| 画像の拡大表示（同じメッセージの 3 枚を送る） | `chat/attachment/image-viewer.png` | 既存の GET URL（ADR 0028） |
+| 同（ダーク） | `chat/attachment/image-viewer-dark.png` | — |
+| 最後の画像（送れる向きにだけ矢印を出す） | `chat/attachment/image-viewer-last.png` | — |
+| 1 枚だけの画像（送る導線を出さない・消せない人） | `chat/attachment/image-viewer-single.png` | — |
+| 画像でない添付の行の「…」 | `chat/attachment/attachment-menu.png` | — |
+| 添付だけの削除の確認 | `chat/attachment/attachment-delete-dialog.png` | `DELETE /rooms/{id}/messages/{id}/attachments/{id}` |
+| 最後の 1 枚で、メッセージごと消えるときの確認 | `chat/attachment/attachment-delete-dialog-last.png` | 同上（応答は tombstone。ADR 0045 決定 8） |
+| 拡大表示（モバイル） | `chat/attachment/mobile-image-viewer.png` | — |
 
 - **開けるのは画像だけ**: インラインで出している画像（PNG / JPEG / GIF / WebP。ADR 0028）を押すと開く。
   まだ GET URL の取れていない送信中の添付は押せない。画像でない添付はこれまでどおり、押すとダウンロードが始まる。
@@ -421,14 +449,14 @@ ADR 0045 のとおり、既存の部品とトークンのまま足した（新�
 オーナーの判断（2026-09-19、Slack に合わせる）で、削除したメッセージの跡（「このメッセージは削除されました」）をタイムラインに出さないことにした（ADR 0038）。
 
 - チャンネルでもスレッドの返信でも、削除したメッセージは並べない。
-- 例外は、返信の残っているスレッドの親。返信の入口として跡を残す（`chat/thread-root-deleted.png` のまま）。
+- 例外は、返信の残っているスレッドの親。返信の入口として跡を残す（`chat/thread/thread-root-deleted.png` のまま）。
 - サイドバーの最後の 1 行は、削除されていない最後のメッセージにする。
-- `chat/messages-all-states.png` / `chat/messages-all-states-dark.png`（Claude Design 由来）には削除済みの行が写っているが、実装では出さない。Claude Design 側を直したら撮り直す。
+- `chat/timeline/messages-all-states.png` / `chat/timeline/messages-all-states-dark.png`（Claude Design 由来）には削除済みの行が写っているが、実装では出さない。Claude Design 側を直したら撮り直す。
 
 ### 画面はあるが API がなかったもの（Phase 6 で追加した）
 
 | 画面 | 追加した API |
 |---|---|
-| `settings/devices.png`（ログイン中のデバイスの一覧・個別のログアウト・他のすべてのログアウト） | セッションの一覧と失効（ADR 0019） |
-| `settings/profile.png`（表示名・ハンドルの変更） | プロフィールの更新（ADR 0019） |
+| `settings/devices/devices.png`（ログイン中のデバイスの一覧・個別のログアウト・他のすべてのログアウト） | セッションの一覧と失効（ADR 0019） |
+| `settings/profile/profile.png`（表示名・ハンドルの変更） | プロフィールの更新（ADR 0019） |
 | `settings/profile-avatar*.png`（画像の変更・削除） | アバター画像のアップロードと配布（ADR 0020） |

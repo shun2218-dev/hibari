@@ -26,26 +26,30 @@ function compose(modules: Record<string, unknown>): ComposedStory[] {
   return Object.values(modules).flatMap((mod) => Object.values(composeStories(mod as never)) as ComposedStory[]);
 }
 
-const screens = compose(import.meta.glob("./*.stories.tsx", { eager: true }));
+const screens = compose(import.meta.glob("./**/*.stories.tsx", { eager: true }));
 const parts = compose(import.meta.glob("../components/**/*.stories.tsx", { eager: true }));
 
 /** 絞り込みに出すフェーズ。新しいフェーズの画面を足したら、ここにも足す。 */
 const phases = ["1.5", "6-1", "6-2", "6", "6.4", "6.5", "6.6", "6.7", "6.7.5", "6.11", "6.13"];
 
-/** story の id（`chat--image-viewer`）を PNG のパス（`chat/image-viewer`）にする。 */
+/**
+ * story の id を PNG のパスにする（`chat-thread--panel-empty` → `chat/thread/panel-empty`）。
+ * id の `--` より前がディレクトリで、`-` で区切る。**ディレクトリの名前にハイフンを使わない**のはこのため（ADR 0047 決定 2）。
+ */
 function screenshotName(id: string): string {
-  return id.replace("--", "/");
+  const [dirs, story] = id.split("--");
+  return [...dirs.split("-"), story].join("/");
 }
 
-// docs/ui/screenshots/ の PNG を「グループ/名前」の形で集める
-function screenshotNames(): string[] {
-  const root = path.join(import.meta.dirname, "../../docs/ui/screenshots");
-  return readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .flatMap((dir) =>
-      readdirSync(path.join(root, dir.name))
-        .filter((file) => file.endsWith(".png"))
-        .map((file) => `${dir.name}/${file.replace(/\.png$/, "")}`),
+// docs/ui/screenshots/ の PNG を、拡張子を外したパスの形で集める（ディレクトリの深さは問わない）
+function screenshotNames(dir = "", root = path.join(import.meta.dirname, "../../docs/ui/screenshots")): string[] {
+  return readdirSync(path.join(root, dir), { withFileTypes: true })
+    .flatMap((entry) =>
+      entry.isDirectory()
+        ? screenshotNames(path.join(dir, entry.name), root)
+        : entry.name.endsWith(".png")
+          ? [path.join(dir, entry.name.replace(/\.png$/, ""))]
+          : [],
     )
     .sort();
 }
@@ -76,7 +80,7 @@ describe("画面の story", () => {
       const dark = story.parameters.theme === "dark";
       const mobile = story.parameters.screenshot?.size === "390x844";
       expect(dark, name).toBe(name.endsWith("-dark"));
-      expect(mobile, name).toBe(name.split("/")[1].startsWith("mobile-"));
+      expect(mobile, name).toBe(name.split("/").at(-1)!.startsWith("mobile-"));
       // モバイルは Storybook 上でも 390px で見えるようにする（撮影は data-shot-size を見る）
       if (mobile) expect(story.globals.viewport, name).toEqual({ value: "mobile" });
     }

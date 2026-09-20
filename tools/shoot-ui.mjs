@@ -6,7 +6,8 @@
 //   make web-shots names="chat/room-header-settings chat/mobile-room"
 //
 // - 撮るのは `screenshot` の tag が付いた story だけ（部品の story は撮らない。ADR 0047 決定 12）。
-// - 名前は story の id の `--` を `/` にしたもの、つまり PNG のパスそのもの（ADR 0047 決定 2）。
+// - 名前は PNG のパスそのもの。story の id の `--` より前がディレクトリで、`-` で区切る
+//   （`chat-thread--panel-empty` ↔ `chat/thread/panel-empty.png`。ADR 0047 決定 2）。
 // - 撮る大きさと出どころは story の `parameters.screenshot` にある。index.json には parameters が載らないので、
 //   描画したページの `<html data-shot-size / data-shot-source>`（.storybook/preview.tsx の decorator が書く）から読む。
 // - headless Chrome の `--window-size --screenshot` は、幅が狭いときにレイアウトが崩れた（横に伸びる要素が縮まない）ので、
@@ -28,6 +29,12 @@ const POLL_MAX = 100;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** story の id を PNG のパスにする（`chat-thread--panel-empty` → `chat/thread/panel-empty`）。 */
+const screenshotName = (id) => {
+  const [dirs, story] = id.split("--");
+  return [...dirs.split("-"), story].join("/");
+};
+
 const index = await fetch(`${BASE_URL}/index.json`)
   .then((r) => (r.ok ? r.json() : null))
   .catch(() => null);
@@ -37,7 +44,7 @@ if (!index) {
 }
 
 /**
- * PNG のパス（`chat/image-viewer`）→ story の id。
+ * PNG のパス（`chat/attachment/image-viewer`）→ story の id（`chat-attachment--image-viewer`）。
  *
  * `screenshot` の tag が付いた story だけが「画面」で、PNG と 1 対 1 に対応する（ADR 0047 決定 12）。
  * 部品の story（components/ 以下）はここに入れない。
@@ -45,7 +52,7 @@ if (!index) {
 const stories = new Map(
   Object.values(index.entries)
     .filter((entry) => entry.type === "story" && entry.tags?.includes("screenshot"))
-    .map((entry) => [entry.id.replace("--", "/"), entry.id]),
+    .map((entry) => [screenshotName(entry.id), entry.id]),
 );
 
 const asked = process.argv.slice(2);

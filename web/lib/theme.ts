@@ -1,7 +1,7 @@
 import type { Theme } from "@/components/settings/settings-sections";
 
 /**
- * ライト / ダークの切り替え（`settings/appearance.png`）。
+ * ライト / ダークの切り替え（`settings/appearance/appearance.png`）。
  *
  * テーマは `<html data-theme="dark">` で切り替え、**OS の設定には追従しない**（CLAUDE.md「デザイン」）。
  * 端末ごとの見た目の好みなので、サーバーには持たず localStorage に置く。読み書きに失敗したら「覚えていない」と同じに扱う

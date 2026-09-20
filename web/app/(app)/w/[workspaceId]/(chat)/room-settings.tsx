@@ -8,7 +8,7 @@ import { useAvatarUrls, useChatState, useChatStore } from "@/lib/chat/chat-provi
 import { roomName, toDmCandidates, toRoomMemberRows } from "@/lib/chat/views";
 
 /**
- * チャンネルの設定（`chat/room-settings-dialog.png`）。名前の変更と、非公開チャンネルのメンバーの出し入れ。
+ * チャンネルの設定（`chat/room/room-settings-dialog.png`）。名前の変更と、非公開チャンネルのメンバーの出し入れ。
  *
  * 変更できるのは、そのチャンネルを読める admin 以上（ADR 0011）。member にも読み取り専用で開ける。
  * DM は設定を変えられないので、ヘッダーに入口を出さない（RoomView）。

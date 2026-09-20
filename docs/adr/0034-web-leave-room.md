@@ -15,7 +15,7 @@ ADR 0032 で足した入口の洗い出しからも漏れていた（そこで�
 ## 決定
 
 - **入口はチャンネルの設定ダイアログのいちばん下**に置く。見出し「チャンネルを退出」、結果の説明、`danger-outline` の「退出する」。
-  形はワークスペースの退出（`workspace/settings-as-member.png`）に合わせる。
+  形はワークスペースの退出（`workspace/settings/settings-as-member.png`）に合わせる。
 - **参加していれば、ロールに関係なく出す**（authz の `CanLeaveRoom` と同じ）。member が開く読み取り専用の設定にも出す。
   参加していない public を開いたときと、DM（設定自体を開かない）には出さない。
 - 押すと確認のダイアログ（`LeaveRoomDialog`）に替わる。キャンセルすると設定に戻る。
@@ -50,5 +50,5 @@ ADR 0032 で足した入口の洗い出しからも漏れていた（そこで�
 - 非公開チャンネルの最後のメンバーが退出すると、そのチャンネルは誰にも読めなくなる（admin 以上でも、読めないルームは管理できない。ADR 0011）。
   サーバーは止めていない。説明の文言で重さを伝えるにとどめる。
 - 退出の失敗の表示はデザインにない。ほかの操作と同じく、確認を残してコンソールに出す（`docs/ui/README.md` の未解決）。
-- `chat/room-settings-dialog.png`（Claude Design 由来）には退出の欄が写っていない。足した部分は実装から撮った
-  `chat/room-settings-leave.png` にある。
+- `chat/room/room-settings-dialog.png`（Claude Design 由来）には退出の欄が写っていない。足した部分は実装から撮った
+  `chat/room/room-settings-leave.png` にある。

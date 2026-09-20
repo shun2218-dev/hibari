@@ -1183,7 +1183,7 @@ describe("WorkspaceScreen", () => {
 
       expect(await screen.findByRole("heading", { name: "ワークスペースから削除されました" })).toBeInTheDocument();
       expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
-      // ヘッダーは名前とメンバーだけを残し、もう開けない設定の入口は出さない（chat/removed-from-workspace.png）
+      // ヘッダーは名前とメンバーだけを残し、もう開けない設定の入口は出さない（chat/workspace/removed-from-workspace.png）
       expect(screen.queryByRole("button", { name: "チャンネルの設定" })).not.toBeInTheDocument();
       expect(nav.router.replace).not.toHaveBeenCalledWith("/");
 

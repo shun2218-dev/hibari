@@ -24,7 +24,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     router.replace(back === "/" ? "/login" : `/login?next=${encodeURIComponent(back)}`);
   }, [state.status, pathname, router]);
 
-  // サーバーに届かないときの画面はデザインにない（chat/server-error.png は接続後の切断用）。いまは何も出さない。
+  // サーバーに届かないときの画面はデザインにない（chat/connection/server-error.png は接続後の切断用）。いまは何も出さない。
   if (state.status !== "signed_in") return null;
   // user の id を key にして、別の人がログインし直したらチャットの状態を作り直す（前の人のデータを見せない）
   return (

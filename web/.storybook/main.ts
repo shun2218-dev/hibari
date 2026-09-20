@@ -2,7 +2,7 @@ import type { StorybookConfig } from "@storybook/nextjs-vite";
 
 /**
  * Storybook は docs/ui/screenshots/ の PNG と 1 対 1 の「画面」を描くためのもの（ADR 0047）。
- * story の id がそのまま PNG のパスになる（`chat--image-viewer` ↔ `chat/image-viewer.png`）。
+ * story の id がそのまま PNG のパスになる（`chat-attachment--image-viewer` ↔ `chat/attachment/image-viewer.png`）。
  */
 const config: StorybookConfig = {
   framework: "@storybook/nextjs-vite",

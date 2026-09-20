@@ -45,26 +45,49 @@ web の Next 16.3 / React 19.2、`vitest@5` が持つ vite 8.3 のどれとも�
 消すもの: `web/app/dev/preview/` ごと（`catalog.ts` / `screens.tsx` / `catalog-browser.tsx` / `[...name]/page.tsx` /
 `page.tsx` と、それぞれのテスト）。`fixtures.ts` だけは中身を変えずに移す（下の 3）。
 
-### 2. story の id を PNG のパスにする
+### 2. story の id を PNG のパスにする（2026-09-21 追記: ディレクトリを 1 段深くした）
 
 ```
-docs/ui/screenshots/chat/image-viewer-dark.png
-                    ~~~~ ~~~~~~~~~~~~~~~~~~~
-                    │    └ export 名 ImageViewerDark（Storybook が kebab-case にする）
-                    └ meta.title
-→ story id: chat--image-viewer-dark
+docs/ui/screenshots/chat/attachment/image-viewer-dark.png
+                    ~~~~ ~~~~~~~~~~ ~~~~~~~~~~~~~~~~~
+                    │    │          └ export 名 ImageViewerDark（Storybook が kebab-case にする）
+                    └────┴ meta.id（`chat-attachment`）
+→ story id: chat-attachment--image-viewer-dark
 ```
 
-- `meta.title` は **ASCII のグループ名**（`auth` / `chat` / `invite` / `workspace` / `settings`）。
-  日本語のグループ名（「チャット」など）は付けない。id は title から作られるので、ここを日本語にすると id が PNG の名前とずれる。
-- **export 名が PNG のファイル名**になる。日本語の表示名は story の `name` に置く（表示名を変えても id は動かない）。
-- 対応表を別に持たない。`parameters.screenshot.name` のような項目も要らない。
-  名前が食い違ったら、下の 6 の検査が落ちる。
+- **`meta.id` を必ず書く**。`<グループ>-<サブグループ>` の形で、PNG のディレクトリと 1 対 1 に対応させる。
+  `id` を省くと title から自動で作られるので、title を日本語にした時点で PNG のパスとずれる。
+- **`meta.title` は日本語**にしてよい（サイドバーの見出し。「チャット/添付ファイル」）。id を固定してあるので表示名は自由に変えられる。
+- **export 名が PNG のファイル名**になる。日本語の表示名は story の `name` に置く。
+- **ディレクトリの名前にハイフンを使わない**（英小文字の 1 語にする）。
+  id からパスに戻すときに `--` の前を `-` で区切るので、ハイフンがあると分け方が決まらなくなる。
+- 対応表を別に持たない。名前が食い違ったら、下の 6 の検査が落ちる。
 
-### 3. story は `web/stories/<グループ>.stories.tsx` に置く
+**分け方**（オーナーの判断、2026-09-21。画面が 134 枚あり、`chat` だけで 79 枚あって一覧から探せなかったため）:
+
+| グループ | サブディレクトリ |
+|---|---|
+| `auth`（認証） | `signin` / `password` / `verify` |
+| `chat`（チャット） | `timeline` / `message` / `attachment` / `reaction` / `thread` / `mention` / `link` / `room` / `workspace` / `connection` |
+| `invite`（招待） | `accept` |
+| `workspace`（ワークスペースの管理） | `settings` / `member` / `invite` |
+| `settings`（ユーザー設定） | `profile` / `devices` / `appearance` / `nav` |
+
+- **枚数が少ないグループも分ける**（`invite` は 5 枚、`settings/appearance` は 1 枚）。
+  Storybook のサイドバーは、子を持たない title を持つグループだけ別扱いで先頭に並べるので、
+  分けないグループがあると並び順が揃わない。「全部のグループがサブディレクトリを持つ」のほうが規則として短い。
+
+- モバイルの画面は別のディレクトリにまとめず、**同じ話題の中に置く**（`chat/thread/mobile-thread.png`）。
+  デスクトップと並べて見比べるのがふだんの使い方なので、離さない。
+- **ファイル名（末尾）は変えない**（`chat/thread/thread-panel.png` のように話題の名前が重なるが、
+  ADR や `docs/ui/README.md` からの参照をディレクトリの追加だけで直せるようにするため）。
+
+### 3. story は `web/stories/<グループ>/<サブグループ>.stories.tsx` に置く
 
 `screens.tsx` の各エントリをそのまま story の `render` にし、`fixtures.ts` は `web/stories/fixtures.ts` に移す。
 **中身は変えない**（撮り直しの diff を空にするため。下の 10）。
+ファイルの置き場所は PNG のディレクトリに合わせる（`chat/thread/…png` ↔ `web/stories/chat/thread.stories.tsx`）。
+サブディレクトリを作らないグループは `web/stories/invite.stories.tsx` のように 1 枚のファイルにする。
 
 部品ごとの story（`components/**/*.stories.tsx`）は移行では作らない。移行の対象は「PNG と 1 対 1 の画面」だけで、
 部品ごとの story はそのどれとも対にならない。`.storybook/main.ts` の glob は両方を拾える形にしておく。

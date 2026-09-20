@@ -2,7 +2,7 @@ import type { DeviceKind, DeviceView } from "@/components/settings/settings-sect
 import type { Session } from "@/lib/api/types.gen";
 
 /**
- * ログイン中のデバイスの表示（`settings/devices.png`）。
+ * ログイン中のデバイスの表示（`settings/devices/devices.png`）。
  *
  * サーバーは User-Agent を保存したまま返し、表示用のラベルはクライアントが作る（ADR 0019）。
  * 解析は「だいたい当たればよい」もので、当たらなければ User-Agent をそのまま出す。
@@ -50,7 +50,7 @@ export function deviceKind(userAgent: string): DeviceKind {
 }
 
 /**
- * 最後に使った時刻の文言（`settings/devices.png` の「現在アクティブ」「2分前」「昨日 18:24」「3日前」「9月2日」）。
+ * 最後に使った時刻の文言（`settings/devices/devices.png` の「現在アクティブ」「2分前」「昨日 18:24」「3日前」「9月2日」）。
  * デザインにある例から、1 時間未満は分、同じ日は時刻、前日は「昨日 時刻」、1 週間以内は日、それより前は日付にした。
  */
 export function formatLastActive(date: Date, now: Date, timeZone?: string): string {

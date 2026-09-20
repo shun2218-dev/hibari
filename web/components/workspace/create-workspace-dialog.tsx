@@ -5,7 +5,7 @@ import { TextField } from "@/components/ui/field";
 /** ワークスペース名の上限（rune 単位）。サーバーの workspaceNameMax と同じ。 */
 const WORKSPACE_NAME_MAX = 50;
 
-/** ワークスペースを作成する（chat/workspace-create-dialog.png）。入力は名前だけ（ADR 0011）。 */
+/** ワークスペースを作成する（chat/workspace/workspace-create-dialog.png）。入力は名前だけ（ADR 0011）。 */
 export function CreateWorkspaceDialog({
   open,
   name = "",

@@ -194,7 +194,7 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 
 - `reason`: `left`（自分で抜けた）/ `removed`（他人に外された、またはサーバーの再検証で読めなくなった）
 - 届いた時点で、サーバーはその接続の購読を外している（読めなくなった場合）。public ルームは参加していなくても読めるので、購読が残ることがある。
-- 画面: `chat/removed-from-channel.png`。非公開チャンネルの名前も「外された」ことも出さず、「アクセスできません」だけにする（ADR 0035）
+- 画面: `chat/room/removed-from-channel.png`。非公開チャンネルの名前も「外された」ことも出さず、「アクセスできません」だけにする（ADR 0035）
 
 #### `room.read`
 
@@ -234,7 +234,7 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 ```
 
 - `reason`: `left` / `removed`
-- `user_id` が自分なら、そのワークスペースの購読（ワークスペースとルーム）はすべて外れている。画面: `chat/removed-from-workspace.png`
+- `user_id` が自分なら、そのワークスペースの購読（ワークスペースとルーム）はすべて外れている。画面: `chat/workspace/removed-from-workspace.png`
 
 #### `workspace.role_changed`
 
