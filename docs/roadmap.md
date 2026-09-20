@@ -839,7 +839,7 @@ Push 通知（APNs / FCM）は Phase 7 以降のまま。ここで作るのは�
 
 - OAuth 2.0 + PKCE（未検証の email による自動紐付けはしない）
 - 退会（email / handle の匿名化、全 family の失効、owner の場合は先に譲渡を必須にする）
-- 本番のデプロイと、本番ストレージの最終決定（ADR 0008 の見直し）
+- 本番のデプロイ（置き場所は ADR 0046 で決めた: Fly.io の 1 リージョンに Go / Next / Storybook / Postgres / Valkey、ストレージは R2。手順とドメインの取得はこのフェーズで）
 - Tauri でのデスクトップ化
 - APNs / FCM による Push 通知（`Delivery` の実装を 1 つ追加する）
 - OpenTelemetry によるトレース
