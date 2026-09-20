@@ -466,6 +466,7 @@ Phase 6.4 / 6.5 と同じく、1 つの機能を 1 つのフェーズにして�
 **全フェーズに共通すること**
 - フェーズの最初に ADR を書き、オーナーの確認を取ってから実装する。下の「ADR で決めること」はその論点。
 - 画面は既存のトークンで `/dev/preview` に描いて `docs/ui/` に足し、オーナーに見てもらってから実装する（ADR 0032 と同じ撮り方）。新しいトークンが要るときは、そこで確認する。
+  **Phase 6.7.6 で `/dev/preview` は Storybook に移る**（ADR 0047）。移行のあとは「story に描いて `docs/ui/` に足す」と読み替える。
 - 変更はすべて、再接続の同期（`after_change_seq`）で取り戻せるようにする（絶対ルール 4）。WebSocket でしか届かない状態を作らない。
 - 閲覧できるかどうかの判定は authz に集める（絶対ルール 9）。別のルームのメッセージを見せる機能（リンクのカード・ピン留め・保存・検索）は、見る人ごとに判定する。
 
@@ -475,12 +476,15 @@ Phase 6.4 / 6.5 と同じく、1 つの機能を 1 つのフェーズにして�
 - 本文の書式（6.10）は、URL・パーマリンク・メンションを本文から見つける仕組みも兼ねる。先に作っておくと、6.11 と 6.13 で解釈を作り直さずに済む。
 - 指定したメッセージへ飛ぶ仕組み（6.11）は、ピン留め・保存（6.12）と検索（6.16）の結果を押したときにも使う。
 - プロフィールのカード（6.9）は、メンションの `@名前` を押したときにも開く。
+- `/dev/preview` を Storybook に移す（6.7.6）のは機能ではなく道具の入れ替え。以後のフェーズの「デザインを描いて見てもらう」がこの上で回るので、
+  画面の少ない今のうちに済ませる。オーナーと決めた着手の順（6.7.5 のあと）もここ。
 - 添付ファイルの拡大表示と削除（6.7.5）は、あとのどのフェーズにも乗らない。オーナーの要望（2026-09-20）が先に来たので、6.8 より先に入れた。番号を振り直さないのは、既存の ADR が「6.10 の仕組みに乗せる」のようにフェーズ番号で互いを指しているため（Phase 1.5 と同じ入れ方）。
 
 ```
 Phase 6.6   チャンネルにも投稿する
 Phase 6.7   絵文字のリアクション
 Phase 6.7.5 添付ファイルの拡大表示と削除
+Phase 6.7.6 /dev/preview を Storybook に移す（機能ではなく道具）
 Phase 6.8   離席とカスタムステータス
 Phase 6.9   プロフィールのカード
 Phase 6.10  本文の書式
@@ -594,6 +598,37 @@ Phase 6.16  検索
 - [x] 削除した添付の実体が、掃除ジョブでストレージから消える（`TestDeleteMessageAttachment` で status = deleted と実体が残ることを、`TestCleanupAttachments` で deleted の実体が消えることを確かめている）
 
 オーナーによる実物での確認は未実施。
+
+---
+
+## Phase 6.7.6 — `/dev/preview` を Storybook に移す
+
+**目的**: `docs/ui/screenshots/` の PNG と対になる「実装での再現」を、自前の `/dev/preview` から Storybook に移す。
+機能を足すフェーズではなく、以後のフェーズの「デザインを描いてオーナーに見てもらう」が回る道具を入れ替える。
+
+オーナーと決めた（2026-09-20）。着手は Phase 6.7.5 のあと。`/dev/preview` は**同じ PR で消す**（二重管理を残さない）。
+静的出力を `ui.<独自ドメイン>` に配ることは ADR 0046 の決定 2・4 に入れてある。
+
+**ADR で決めること** ← 完了（ADR 0047）
+- 入れるもの → `@storybook/nextjs-vite`（Storybook 10）。`@storybook/addon-vitest` は入れない（peer が `vitest: ^3 || ^4` で web の 5 と合わない）
+- PNG との対応 → **story id をそのまま PNG のパスにする**（`chat--image-viewer` ↔ `chat/image-viewer.png`）。対応表を持たない
+- dark / mobile → story の `parameters` に持たせ、decorator が `<html data-theme>` に当てる。命名の規則は検査としてだけ残す
+- 足したフェーズの絞り込み → tag（`since:6.7`）。サイドバーの絞り込みを使い、`catalog-browser.tsx` は消す
+- 撮影 → `/index.json` と `iframe.html?id=` に向ける。大きさと出どころ（app / design）を story に持たせ、`<html data-shot-*>` 経由で撮影ツールが読む
+- 検査 → portable stories（`composeStories`）でいまの vitest + jsdom に残す
+
+**構築順**（PR を分ける）
+1. 設計（ADR 0047、ロードマップ） ← いまここ
+2. 移行: Storybook を入れ、story を足し、`/dev/preview` と `catalog*.tsx` を消し、`tools/shoot-ui.mjs` と `docs/` の案内を直す（1 つの PR）
+
+**DoD**
+- [ ] `npm run storybook` で 134 画面が出て、名前での検索とフェーズ（`since:`）の絞り込みができる
+- [ ] `web/app/dev/preview/` が消えている（`catalog.ts` / `screens.tsx` / `catalog-browser.tsx` と、それぞれのテストを含む）。`HIBARI_SCREENSHOTS` の細工も消えている
+- [ ] PNG と story が 1 対 1、`-dark` / `mobile-` の命名が parameters と合っている、すべての story が空でなく描けることを vitest が検査する
+- [ ] `make web-shots`（引数なし）で `source: "app"` の PNG を全部撮り直せて、`git diff docs/ui/screenshots/` が空
+      （`docs/ui/README.md` の「撮り直しが要るもの」の 7 枚は既知の差として PR に書き出す。撮り直しはオーナーの手元で行う）
+- [ ] `npm run build-storybook` が CI（`.github/workflows/web.yml`）で通る
+- [ ] `docs/ui/README.md` と `docs/roadmap.md` の `/dev/preview` の案内が Storybook に直っている
 
 ---
 

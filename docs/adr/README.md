@@ -53,6 +53,7 @@
 | [0044](0044-message-reactions.md) | 絵文字のリアクション（Phase 6.7。行で持ち、メッセージの `change_seq` に乗せて配る） | 採用 |
 | [0045](0045-attachment-lightbox-and-delete.md) | 添付ファイルの拡大表示と削除（Phase 6.7.5。画像はそのメッセージの中で送り、削除は `change_seq` に乗せる） | 採用 |
 | [0046](0046-production-deployment.md) | 本番のデプロイ構成（Phase 7。Fly.io の 1 リージョンに寄せ、ストレージは R2。Postgres と Valkey は自前） | 採用 |
+| [0047](0047-storybook.md) | `/dev/preview` を Storybook に移す（Phase 6.7.6。story id を PNG のパスにし、撮影と 1 対 1 の検査も移す） | 採用 |
 
 ## テンプレート
 
