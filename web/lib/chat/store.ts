@@ -33,6 +33,7 @@ import {
   mergeMessages,
   newestChannelSeq,
 } from "./messages";
+import { toggleReaction } from "./reactions";
 import { applyRootToThreads, applyThreadRead, mergeReplies, mergeRepliesIntoWindow } from "./threads";
 
 /**
@@ -861,6 +862,39 @@ export function createChatStore(
   }
 
   /**
+   * 1 件のメッセージを、置いてある場所すべて（タイムライン・スレッドの返信・スレッドの親）で書き換える。
+   * リアクションの楽観的更新（ADR 0044 決定 8）のように、change_seq が変わらない書き換えに使う
+   * （change_seq が進む変更は receiveMessage を通す）。
+   */
+  function patchMessageEverywhere(roomId: string, messageId: string, recipe: (message: Message) => Message) {
+    const timeline = state.timelines[roomId];
+    if (timeline?.messages.some((m) => m.id === messageId)) {
+      patchTimeline(roomId, { messages: timeline.messages.map((m) => (m.id === messageId ? recipe(m) : m)) });
+    }
+    for (const rootId of Object.keys(state.threads)) {
+      patchThread(rootId, (t) => {
+        const root = t.root?.id === messageId ? recipe(t.root) : t.root;
+        const replies = t.replies.some((m) => m.id === messageId)
+          ? t.replies.map((m) => (m.id === messageId ? recipe(m) : m))
+          : t.replies;
+        return root === t.root && replies === t.replies ? t : { ...t, root, replies };
+      });
+    }
+  }
+
+  /** 手元にある 1 件のメッセージ。タイムラインに無ければスレッドの返信と親からも探す。 */
+  function findMessage(roomId: string, messageId: string): Message | undefined {
+    const inTimeline = state.timelines[roomId]?.messages.find((m) => m.id === messageId);
+    if (inTimeline) return inTimeline;
+    for (const thread of Object.values(state.threads)) {
+      if (thread?.root?.id === messageId) return thread.root;
+      const reply = thread?.replies.find((m) => m.id === messageId);
+      if (reply) return reply;
+    }
+    return undefined;
+  }
+
+  /**
    * 既存のメッセージの編集・削除を、サイドバーの最後の 1 行に反映する。イベントでも差分の取得でも同じように通す。
    * 最後のメッセージが削除されたら、ひとつ前（削除されていない最後の行）をサーバーに聞く（ADR 0038）。
    */
@@ -1651,6 +1685,35 @@ export function createChatStore(
     /** 本文を編集する。失敗したら ApiError を投げる。 */
     async editMessage(roomId: string, messageId: string, body: string): Promise<void> {
       receiveMessage(await api.editMessage(roomId, messageId, { body }), false);
+    },
+
+    /**
+     * 絵文字のリアクションを付け外しする（ADR 0044）。押すたびに反転する。
+     *
+     * 手元で先に反映してから送り、応答（更新後のメッセージ）で確定させる。失敗したら元に戻す。
+     * 送信（ADR 0027）と違ってキューに並べないのは、リアクションは順番に意味がなく、
+     * 主キーで冪等だから。連打しても最後の状態に落ち着く。
+     */
+    async toggleReaction(roomId: string, messageId: string, emoji: string): Promise<void> {
+      const before = findMessage(roomId, messageId);
+      if (!before) return;
+      const add = !before.reactions.some((r) => r.emoji === emoji && r.me);
+      patchMessageEverywhere(roomId, messageId, (m) => ({
+        ...m,
+        reactions: toggleReaction(m.reactions, emoji, userId, add),
+      }));
+      try {
+        const updated = add
+          ? await api.addReaction(roomId, messageId, emoji)
+          : await api.removeReaction(roomId, messageId, emoji);
+        receiveMessage(updated, false);
+      } catch (error) {
+        // 戻すのは、その間に何も届いていないときだけ。届いていればサーバーの値の方が新しい
+        patchMessageEverywhere(roomId, messageId, (m) =>
+          m.change_seq === before.change_seq ? { ...m, reactions: before.reactions } : m,
+        );
+        throw error;
+      }
     },
 
     /**

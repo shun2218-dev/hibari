@@ -981,3 +981,62 @@ describe("toTimelineItems のメンション", () => {
     expect(first(items)).toMatchObject({ mentionsMe: false, mentionNames: { [naoki.id]: "佐藤 直樹" } });
   });
 });
+
+describe("toTimelineItems の絵文字のリアクション（ADR 0044）", () => {
+  function first(items: TimelineItem[]) {
+    const item = items.find((i) => i.type === "message");
+    if (item?.type !== "message") throw new Error("not a message");
+    return item.message;
+  }
+
+  it("users の ID をメンバーの表示名に直し、自分は「あなた」にする", () => {
+    const items = toTimelineItems(
+      [message(1, { reactions: [{ emoji: "👍", count: 3, me: true, users: [naoki.id, miyuki.id] }] })],
+      { unreadAfterSeq: null, timeZone: tz, me: naoki, memberNames: { [miyuki.id]: "高橋 みゆき" } },
+    );
+
+    expect(first(items).reactions).toEqual([
+      { emoji: "👍", count: 3, me: true, names: ["あなた", "高橋 みゆき"] },
+    ]);
+  });
+
+  it("名前を引けない ID（ルームを抜けた人）は落とす。数は count のまま", () => {
+    const items = toTimelineItems([message(1, { reactions: [{ emoji: "🎉", count: 2, me: false, users: [kei.id] }] })], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+      memberNames: {},
+    });
+
+    expect(first(items).reactions).toEqual([{ emoji: "🎉", count: 2, me: false, names: [] }]);
+  });
+
+  it("配信には me が載らないので、無ければ false にする", () => {
+    const items = toTimelineItems([message(1, { reactions: [{ emoji: "👀", count: 1, users: [] }] })], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+    });
+
+    expect(first(items).reactions).toEqual([{ emoji: "👀", count: 1, me: false, names: [] }]);
+  });
+
+  it("送信中のメッセージにはリアクションを持たせない（まだ ID がない）", () => {
+    const items = toTimelineItems([], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+      me: naoki,
+      outgoing: [
+        {
+          clientMsgId: "c-1",
+          body: "送信中",
+          status: "pending",
+          createdAt: "2026-09-13T01:00:00Z",
+          threadRootId: null,
+          alsoInChannel: false,
+          attachments: [],
+        },
+      ],
+    });
+
+    expect(first(items).reactions).toEqual([]);
+  });
+});

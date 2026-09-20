@@ -54,6 +54,11 @@ export const LINK_BATCH_SIZE = 20;
 /** メンバー・招待の一覧の 1 ページの数。API の上限（ADR 0011）にして、往復を減らす。 */
 const PAGE_SIZE = 200;
 
+/** リアクションの PUT / DELETE のパス。絵文字はパーセントエンコードして置く（ADR 0044 決定 4）。 */
+function reactionPath(roomId: string, messageId: string, emoji: string): string {
+  return `/api/v1/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(emoji)}`;
+}
+
 /**
  * チャットの REST API。パスとリクエスト・レスポンスの型の対応だけを持ち、状態は持たない。
  * 失敗は session.request が ApiError で投げる。
@@ -170,6 +175,16 @@ export function createChatApi(request: Session["request"]) {
         `/api/v1/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}`,
         body,
       ),
+
+    /**
+     * 絵文字のリアクションを付ける / 外す（ADR 0044 決定 4）。どちらも冪等で、更新後のメッセージを返す。
+     * 絵文字はパスに置く（主キーとそのまま対応し、冪等性が URL の形から読める）。
+     */
+    addReaction: (roomId: string, messageId: string, emoji: string) =>
+      request<Message>("PUT", reactionPath(roomId, messageId, emoji)),
+
+    removeReaction: (roomId: string, messageId: string, emoji: string) =>
+      request<Message>("DELETE", reactionPath(roomId, messageId, emoji)),
 
     /** 削除済みでも 204（冪等。ADR 0012）。 */
     deleteMessage: (roomId: string, messageId: string) =>

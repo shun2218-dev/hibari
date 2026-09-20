@@ -2,6 +2,7 @@ import type {
   AttachmentDraftView,
   MessageAttachmentView,
   MessageLinkCardView,
+  MessageReactionView,
   MessageView,
   RoleLabel,
   RoomKind,
@@ -18,6 +19,7 @@ import type {
   Message,
   MessageAttachment,
   MessageLink,
+  MessageReaction,
   Role,
   Room,
   RoomMember,
@@ -180,6 +182,8 @@ type Entry = {
   attachments: readonly MessageAttachment[];
   /** 本文にあるメンション（ADR 0041）。送信中のメッセージはまだ分からないので空にする。 */
   mentions: readonly Mention[];
+  /** 付いた絵文字のリアクション（ADR 0044）。送信中のメッセージには付けられないので空。 */
+  reactions: readonly MessageReaction[];
 };
 
 /**
@@ -208,6 +212,30 @@ function mentionNamesFor(entry: Entry, memberNames: Readonly<Record<string, stri
   return names;
 }
 
+/**
+ * リアクションを表示用にする（ADR 0044）。`users`（先頭 8 人までの ID）をルームのメンバーの表示名に直す。
+ * 引けない ID（ルームを抜けた人）は落とす。数は count のままなので、ホバーでは「他 N 人」に混ざる。
+ *
+ * `me` は WebSocket の配信に載らないので undefined のことがある。そのときは false として描く
+ * （手元の値を引き継ぐのはデータ層の mergeMessages の仕事。ADR 0044）。
+ */
+function toReactionViews(
+  reactions: readonly MessageReaction[],
+  memberNames: Readonly<Record<string, string>> | undefined,
+  me: UserProfile | undefined,
+): MessageReactionView[] {
+  return reactions.map((r) => ({
+    emoji: r.emoji,
+    count: r.count,
+    me: r.me ?? false,
+    names: r.users.flatMap((id) => {
+      if (me !== undefined && id === me.id) return ["あなた"];
+      const name = memberNames?.[id];
+      return name === undefined ? [] : [name];
+    }),
+  }));
+}
+
 /** 自分宛てか。`@channel` / `@here` も自分宛てに数える（ADR 0041）。 */
 function mentionsUser(mentions: readonly Mention[], userId: string): boolean {
   return mentions.some((m) => (m.kind === "user" ? m.user?.id === userId : true));
@@ -232,6 +260,7 @@ function fromMessage(message: Message, broadcast: MessageView["broadcast"]): Ent
     broadcast,
     attachments: message.attachments,
     mentions: message.mentions,
+    reactions: message.reactions,
   };
 }
 
@@ -251,6 +280,8 @@ function fromOutgoing(message: OutgoingMessage, me: UserProfile, broadcast: Mess
     attachments: message.attachments,
     // 送信中は、サーバーがまだ本文を解釈していない。名前は memberNames から引く
     mentions: [],
+    // まだ ID がないのでリアクションは付けられない（ADR 0044）
+    reactions: [],
   };
 }
 
@@ -364,6 +395,7 @@ export function toTimelineItems(
         // 自分の発言では自分に知らせない（ADR 0041）
         mentionsMe: me !== undefined && entry.sender.id !== me.id && mentionsUser(entry.mentions, me.id),
         attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
+        reactions: toReactionViews(entry.reactions, memberNames, me),
         linkCards: origin === undefined ? undefined : toLinkCardViews(entry.body, { origin, linkCards, currentWorkspaceId, avatarUrls, timeZone }),
         grouped,
       },

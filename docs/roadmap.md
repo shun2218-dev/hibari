@@ -536,13 +536,20 @@ Phase 6.16  検索
    モバイルのピッカーは、はみ出して切れたので下から出るシートにした（ADR 0044 決定 7 の追記）
 3. DB と REST: マイグレーション、`PUT` / `DELETE` の API、メッセージのレスポンスの `reactions` ← 完了
    `me` は REST だけに載せ、`message.updated` では落とす（ADR 0044 決定 3 の追記）
-4. WebSocket と Web: `message.updated` への相乗り、楽観的更新、ピッカーのつなぎ込み
+4. WebSocket と Web: `message.updated` への相乗り、楽観的更新、ピッカーのつなぎ込み ← 完了
 
 **DoD**
-- [ ] 付け外しが他の人の画面にリアルタイムに反映される
-- [ ] 切断中の付け外しも、再接続の同期で揃う
-- [ ] 50 goroutine で同じ絵文字を同時に付け外ししても、数がずれない
-- [ ] 削除されたメッセージ・システムメッセージにはリアクションできない
+- [x] 付け外しが他の人の画面にリアルタイムに反映される（サーバーは `internal/httpx/ws_test.go` の `TestWSDeliversReactions`（`message.updated` で届き、`me` だけが落ちる）。画面側は `workspace-screen.test.tsx` の「絵文字のリアクション（ADR 0044）」の「届いた message.updated で数が増え…」。押したときに手元で先に反映されるのは `store.test.ts` の `toggleReaction`）
+- [x] 切断中の付け外しも、再接続の同期で揃う（付け外しで `change_seq` が 1 つ進むので、差分（`after_change_seq`）にそのまま乗る。`TestAddAndRemoveReaction` の「change_seq が 1 つ進み、seq は進まない」と `TestWSDeliversReactions`。差分を取り直す経路そのものは ADR 0014 のまま変えていない）
+- [x] 50 goroutine で同じ絵文字を同時に付け外ししても、数がずれない（`internal/chat/reaction_test.go` の `TestConcurrentReactionsKeepCount`。数はカウンタではなく行を数えた結果なので、取り合いが起きない）
+- [x] 削除されたメッセージ・システムメッセージにはリアクションできない（`TestReactionAuthorization` の 2 件と `TestDeletingMessageHidesItsReactions`（削除で跡も残さない。ADR 0038）。HTTP では `internal/httpx/reaction_test.go`）
+
+オーナーによる実物での確認は未実施。
+
+**意図的に残したもの**
+- 誰が付けたかを**全員**見せる画面は作っていない（ホバーの「A、B 他 N 人」まで。ADR 0044 の「検討した代替案」）
+- ルームを抜けた人のリアクションは DB が消すが、そのとき `change_seq` は進まないので、
+  ほかの人の画面ではそのメッセージを読み直すまで古い数が残る（ADR 0044 の「結果」で許容した）
 
 ---
 

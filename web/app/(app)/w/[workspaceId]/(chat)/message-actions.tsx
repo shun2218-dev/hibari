@@ -1,7 +1,8 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
 
+import { EmojiPicker } from "@/components/chat/emoji-picker";
 import type { MessageEditingView } from "@/components/chat/message-item";
 import { DeleteMessageDialog } from "@/components/chat/room-dialogs";
 import type { MessageActions } from "@/components/chat/timeline";
@@ -12,6 +13,7 @@ import { buildPermalink } from "@/lib/chat/links";
 import { mentionHandles, toInputBody, toWireBody, type MentionCandidate } from "@/lib/chat/mentions";
 import { useOrigin } from "@/lib/chat/use-origin";
 import { messageActions } from "@/lib/chat/views";
+import { currentTheme, serverTheme, subscribeTheme } from "@/lib/theme";
 
 /** コピーの結果をメニューに出しておく時間。 */
 const COPIED_LABEL_MS = 2_000;
@@ -29,6 +31,7 @@ export function useMessageActions({
   myRole,
   members,
   mentionCandidates = [],
+  canReact = false,
 }: {
   workspaceId: string;
   roomId: string;
@@ -41,6 +44,11 @@ export function useMessageActions({
   members: readonly { user: { id: string }; role: Role }[] | undefined;
   /** 編集で `<@ULID>` を `@ハンドル` に戻し、保存で戻すのに使う候補（ADR 0043）。 */
   mentionCandidates?: readonly MentionCandidate[];
+  /**
+   * 絵文字のリアクションを付けられるか（ADR 0044 決定 6）。投稿できる人だけ。
+   * 参加していない public ルームは読めるだけなので false にする。
+   */
+  canReact?: boolean;
 }): {
   timelineProps: {
     actionsFor: (key: string) => MessageActions;
@@ -51,11 +59,18 @@ export function useMessageActions({
     onDelete: (key: string) => void;
     editingKey: string | undefined;
     editing: MessageEditingView | undefined;
+    onToggleReaction: ((key: string, emoji: string) => void) | undefined;
+    onTogglePicker: ((key: string) => void) | undefined;
+    openPickerKey: string | undefined;
+    reactionPicker: ReactNode;
   };
   deleteDialog: ReactNode;
 } {
   const store = useChatStore();
   const [openMenuKey, setOpenMenuKey] = useState<string>();
+  const [openPickerKey, setOpenPickerKey] = useState<string>();
+  // emoji-mart はテーマを props で受け取るので、`data-theme` を購読して渡す（ADR 0031 / 0044）
+  const theme = useSyncExternalStore(subscribeTheme, currentTheme, serverTheme);
   const [editing, setEditing] = useState<{ messageId: string; value: string; saving: boolean } | null>(null);
   const [deleting, setDeleting] = useState<{ messageId: string; body: string; pending: boolean } | null>(null);
   // コピーの結果は、メニューの項目の文言を短い間だけ変えて伝える（トーストの仕組みを新しく作らない。ADR 0040）
@@ -133,6 +148,16 @@ export function useMessageActions({
     }
   }
 
+  /**
+   * リアクションを付け外しする（ADR 0044）。楽観的更新と元に戻すのはデータ層（store）の仕事。
+   * 失敗の表示はデザインにないので、ここでは戻った結果をそのまま見せる。
+   */
+  function toggleReaction(key: string, emoji: string) {
+    void store.toggleReaction(roomId, key, emoji).catch((err: unknown) => {
+      console.error("failed to toggle a reaction", err);
+    });
+  }
+
   async function confirmDelete() {
     if (!deleting) return;
     setDeleting({ ...deleting, pending: true });
@@ -164,6 +189,23 @@ export function useMessageActions({
         // 引用にトークンをそのまま出すと読めないので、こちらも `@ハンドル` に直す
         if (message) setDeleting({ messageId: message.id, body: toInputBody(message.body, handles), pending: false });
       },
+      onToggleReaction: canReact ? toggleReaction : undefined,
+      onTogglePicker: canReact
+        ? (key) => {
+            setOpenMenuKey(undefined);
+            setOpenPickerKey((current) => (current === key ? undefined : key));
+          }
+        : undefined,
+      openPickerKey: canReact ? openPickerKey : undefined,
+      reactionPicker: openPickerKey === undefined ? null : (
+        <EmojiPicker
+          theme={theme}
+          onPick={(emoji) => {
+            toggleReaction(openPickerKey, emoji);
+            setOpenPickerKey(undefined);
+          }}
+        />
+      ),
       editingKey: activeEditing?.messageId,
       editing: activeEditing
         ? {
