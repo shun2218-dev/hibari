@@ -24,6 +24,8 @@ erDiagram
   room_members ||--o{ thread_members : "スレッドに参加"
   messages ||--o{ message_mentions : "本文のメンション"
   room_members |o--o{ message_mentions : "宛先。@channel は null"
+  messages ||--o{ message_reactions : "リアクション"
+  room_members ||--o{ message_reactions : "付けた人"
 
   rooms ||--o{ attachments : "保存先"
   users ||--o{ attachments : "アップロード"
@@ -177,6 +179,14 @@ erDiagram
     uuid room_id FK "ルームを抜けたら CASCADE で消える"
     text kind "user / channel / here。数え方には使わない（ADR 0041）"
     timestamptz created_at
+  }
+
+  message_reactions {
+    uuid message_id PK, FK "複合主キー。(room_id, これ) → messages の複合 FK（ADR 0044）"
+    uuid user_id PK, FK "複合主キー。(room_id, これ) → room_members の複合 FK。ルームを抜けたら CASCADE で消える"
+    text emoji PK "複合主キー。Unicode の絵文字そのもの。正規化しない"
+    uuid room_id FK "複合 FK に使う"
+    timestamptz created_at "集計の並び（最初に付いた順）に使う。INDEX(message_id, これ)"
   }
 
   attachments {
