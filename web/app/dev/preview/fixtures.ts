@@ -5,6 +5,7 @@
  */
 import type { DmCandidateView, RoomMemberRowView } from "@/components/chat/room-dialogs";
 import type {
+  MessageLinkCardView,
   MessageView,
   RoomMemberView,
   RoomSummaryView,
@@ -155,6 +156,52 @@ export const timeline: TimelineItem[] = [
   { type: "unread", key: "unread" },
   message("m-1105", ryo, "11:05", "ありがとうございます。こちらはメンバー一覧の presence 表示を確認しておきます。"),
 ];
+
+/**
+ * 本文に貼られたパーマリンクのカード（chat/message-link-card.png。ADR 0040）。
+ * 読めるリンクは中身を出し、読めない・存在しない・削除済みは区別せずに「表示できません」にする。
+ */
+const linkCards: MessageLinkCardView[] = [
+  {
+    key: "card-ok",
+    state: "ok",
+    href: "#",
+    room: { kind: "private", name: "リリース準備" },
+    sender: miyuki,
+    timeLabel: "昨日",
+    body:
+      "リリースの手順、いったん書き出しました。develop から release ブランチを切って、バージョンを更新して、main への PR を作ってマージ、そのあと develop にも戻す PR を作ります。タグは main のマージコミットに打って、最後に Releases でリリースノートを書く、という流れです。ここまでで詰まりそうなところがあれば教えてください。次のリリースからは手順書として使えるように、このメッセージをピン留めしておくつもりです。手順の細かいところは ADR とロードマップにも書いてあるので、あわせて見てもらえると助かります。抜けがあれば、このスレッドで指摘してください。",
+    clampedBody:
+      "リリースの手順、いったん書き出しました。develop から release ブランチを切って、バージョンを更新して、main への PR を作ってマージ、そのあと develop にも戻す PR を作ります。タグは main のマージコミットに打って、最後に Releases でリリースノートを書く、という流れです。ここまでで詰まりそうなところがあれば教えてください。次のリリースからは手順書として使えるように、このメッセージをピン留めしておくつもりです。手順の細かいところは ADR とロードマップにも書いてあるので、あわせて見てもらえると助かります。抜けがあれば、このスレッドで指摘してくださ…",
+    clamped: true,
+    attachmentCount: 1,
+    inThread: false,
+  },
+  { key: "card-unavailable", state: "unavailable" },
+];
+
+/** 本文にリンクを貼ったタイムライン（chat/message-link-card.png）。 */
+export const timelineWithLinkCards: TimelineItem[] = timeline.map((item) =>
+  item.type === "message" && item.message.key === "m-1030"
+    ? {
+        type: "message",
+        message: {
+          ...item.message,
+          body: "手順はこのメッセージにまとまっています。あとこっちも見てもらえますか。",
+          linkCards,
+        },
+      }
+    : item,
+);
+
+/** 飛んできた先の key（chat/jump-highlight.png。ADR 0042）。 */
+export const jumpTargetKey = "m-1012";
+
+/**
+ * 飛ぶ動きの画面（ADR 0042）のタイムライン。「ここから未読」の線を外してある。
+ * 未読のバーは「未読が読み込んだページより古い」ときにだけ出るので、線とは同時に出ない。
+ */
+export const timelineJumped: TimelineItem[] = timeline.filter((item) => item.type !== "unread");
 
 /**
  * 参加や名前の変更のログを挟んだタイムライン（chat/system-messages.png。ADR 0033）。

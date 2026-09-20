@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, IconButton, TextButton } from "@/components/ui/button";
+import { CloseIcon } from "@/components/ui/icons";
 
 import type { RoomKind } from "./types";
 
@@ -52,6 +53,42 @@ export function RemovedFromWorkspace({ workspaceName, onMove }: { workspaceName:
       description={`「${workspaceName}」のメンバーではなくなったため、このワークスペースのチャンネルは表示できません。`}
       action={<Button onClick={onMove}>別のワークスペースに移動</Button>}
     />
+  );
+}
+
+/**
+ * 未読が、読み込んだページより古いときに出すバー（ADR 0042）。タイムラインの上端に、接続状態のバナーと同じ形で置く。
+ *
+ * 未読が最初のページの中にあるときは「ここから未読」の線が見えているので、このバーは出さない。
+ * 件数は「いま起きていること」なので琥珀、飛ぶのは押せる操作なので緑にする（docs/ui/tokens.md）。
+ */
+export function UnreadJumpBar({ count, onJump }: { count: number; onJump?: () => void }) {
+  return (
+    <div className="flex h-9 shrink-0 items-center justify-center gap-3 border-b border-border bg-attention-subtle px-4">
+      <p className="text-xs font-semibold text-attention-text">未読 {count} 件</p>
+      <TextButton onClick={onJump} className="text-xs">
+        最初の未読へ
+      </TextButton>
+    </div>
+  );
+}
+
+/**
+ * リンクで指されたメッセージが見つからなかった（ADR 0042）。最新のページを出したうえで、控えめに 1 行だけ知らせる。
+ *
+ * ない・読めない・削除済みを区別しないので、理由は書かない（区別できると、リンクを貼るだけで実在を当てられる。ADR 0040）。
+ * 読み続けている間ずっと残ると邪魔なので、閉じられるようにする。
+ */
+export function MessageNotFoundNotice({ onClose }: { onClose?: () => void }) {
+  return (
+    <div className="relative flex h-9 shrink-0 items-center justify-center border-b border-border bg-surface-muted px-4">
+      <p role="status" className="text-xs text-text-muted">
+        そのメッセージは見つかりませんでした
+      </p>
+      <IconButton label="知らせを閉じる" muted onClick={onClose} className="absolute right-2 size-7">
+        <CloseIcon className="size-3.5" />
+      </IconButton>
+    </div>
   );
 }
 
