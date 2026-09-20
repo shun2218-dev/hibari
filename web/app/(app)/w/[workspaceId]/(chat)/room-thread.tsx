@@ -206,6 +206,8 @@ export function RoomThread({
     myRole,
     members,
     mentionCandidates,
+    // 投稿できる人だけがリアクションを付けられる。参加していない public ルームは読めるだけ（ADR 0044 決定 6）
+    canReact: room !== undefined && (room.kind !== "public" || room.is_member),
   });
   const draftViews = useMemo(() => drafts.map(toAttachmentDraftView), [drafts]);
   const typingNames = useMemo(() => (typing ?? []).map((t) => t.user.display_name), [typing]);

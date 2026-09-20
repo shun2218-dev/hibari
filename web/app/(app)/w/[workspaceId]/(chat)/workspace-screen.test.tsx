@@ -1287,4 +1287,113 @@ describe("WorkspaceScreen", () => {
       expect((click.mock.contexts[0] as HTMLAnchorElement).href).toBe("https://storage.test/file-1");
     });
   });
+  // 絵文字のリアクション（ADR 0044）。ピッカー（emoji-mart）は外のライブラリなのでテストで描かない。
+  describe("絵文字のリアクション（ADR 0044）", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    /** m-2 に 👍 が 1 件（自分は付けていない）付いた状態のタイムライン。 */
+    const reacted = [
+      message(1),
+      message(2, { reactions: [{ emoji: "👍", count: 1, me: false, users: [miyuki.id] }] }),
+      message(3),
+    ];
+    const thumbsUp = "/api/v1/rooms/r-design/messages/m-2/reactions/%F0%9F%91%8D";
+
+    const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+
+    function chip() {
+      return history().getByRole("button", { name: /を付けました$/ });
+    }
+
+    it("チップを押すと、応答を待たずに数が増えて PUT が飛ぶ", async () => {
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, reacted),
+          [`PUT ${thumbsUp}`]: () =>
+            json(200, {
+              ...message(2, { room_id: "r-design", change_seq: 4 }),
+              reactions: [{ emoji: "👍", count: 2, me: true, users: [miyuki.id, naoki.id] }],
+            }),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      expect(chip()).toHaveAttribute("aria-pressed", "false");
+      await userEvent.click(chip());
+
+      // 手元で先に反映してから送る（ADR 0044 決定 8）
+      expect(chip()).toHaveAttribute("aria-pressed", "true");
+      expect(chip()).toHaveAccessibleName("高橋 みゆき、あなたが 👍 を付けました");
+      await waitFor(() => expect(api.paths()).toContain(`PUT ${thumbsUp}`));
+    });
+
+    it("自分が付けているチップを押すと外れ、DELETE が飛ぶ", async () => {
+      const mine = [
+        message(1),
+        message(2, { reactions: [{ emoji: "👍", count: 1, me: true, users: [naoki.id] }] }),
+        message(3),
+      ];
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, mine),
+          [`DELETE ${thumbsUp}`]: () => json(200, message(2, { room_id: "r-design", change_seq: 4 })),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      await userEvent.click(chip());
+
+      await waitFor(() => expect(api.paths()).toContain(`DELETE ${thumbsUp}`));
+      expect(history().queryByRole("button", { name: /を付けました$/ })).not.toBeInTheDocument();
+    });
+
+    it("届いた message.updated で数が増え、自分が付けたことは消えない", async () => {
+      const mine = [
+        message(1),
+        message(2, { reactions: [{ emoji: "👍", count: 1, me: true, users: [naoki.id] }] }),
+        message(3),
+      ];
+      const { sockets } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, mine),
+          "GET /api/v1/rooms/r-design/messages?after_change_seq=3&limit=100": () =>
+            json(200, { messages: [], has_more: false, last_change_seq: 3 }),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+      await waitFor(() => expect(sockets.sockets).toHaveLength(1));
+      sockets.last().open();
+
+      // 配信には me が載らない（受け取る人ごとの値を入れられない。ADR 0044）
+      sockets.last().receive({
+        type: "message.updated",
+        data: {
+          ...message(2, { room_id: "r-design", change_seq: 4 }),
+          reactions: [{ emoji: "👍", count: 2, users: [naoki.id, miyuki.id] }],
+        },
+      });
+
+      await waitFor(() => expect(chip()).toHaveAccessibleName("あなた、高橋 みゆきが 👍 を付けました"));
+      expect(chip()).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("参加していない public ルームでは、付け外しできない", async () => {
+      const guest = room("r-guest", "見学", { is_member: false, last_read_seq: null, last_read_user_seq: null });
+      nav.params = { workspaceId: "ws-1", roomId: "r-guest" };
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(guest, reacted) }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      // 読めるので付いているリアクションは見えるが、「＋」は出ない（ADR 0044 決定 6）
+      expect(chip()).toBeInTheDocument();
+      expect(history().queryByRole("button", { name: "リアクションを追加", hidden: true })).not.toBeInTheDocument();
+    });
+  });
 });

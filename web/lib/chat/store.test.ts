@@ -1502,4 +1502,92 @@ describe("createChatStore workspace admin", () => {
     store.applyEvent({ type: "member.joined", data: { workspace_id: "ws-1", room_id: "r-2", user: miyuki } });
     await vi.waitFor(() => expect(loads()).toBe(2));
   });
+  // 絵文字のリアクション（ADR 0044）。
+  describe("toggleReaction", () => {
+    // room_id は開いているルームに合わせる（receiveMessage はメッセージ自身の room_id で振り分ける）
+    const reacted = (me: boolean | undefined, count: number, users: string[], changeSeq = 2) =>
+      message(1, {
+        room_id: "r1",
+        change_seq: changeSeq,
+        reactions: [{ emoji: "👍", count, ...(me === undefined ? {} : { me }), users }],
+      });
+
+    function reactionSetup(routes: Record<string, Handler>) {
+      return setup({
+        "GET /api/v1/rooms/r1": () => json(200, room("r1", "雑談", { last_message_seq: 1, last_read_seq: 1, last_user_seq: 1, last_read_user_seq: 1 })),
+        "GET /api/v1/rooms/r1/messages?limit=50": () =>
+          json(200, { messages: [message(1)], has_more: false, last_change_seq: 1 }),
+        "POST /api/v1/rooms/r1/read": () => json(200, { last_read_seq: 1, last_read_user_seq: 1, unread_count: 0 }),
+        ...routes,
+      });
+    }
+
+    const reactionsOf = (store: ReturnType<typeof setup>["store"]) =>
+      store.getSnapshot().timelines.r1?.messages[0]?.reactions;
+
+    it("shows the reaction before the server answers, then settles on the response", async () => {
+      let resolve = () => {};
+      const pending = new Promise<void>((r) => (resolve = r));
+      const { store, requests } = reactionSetup({
+        "PUT /api/v1/rooms/r1/messages/m-1/reactions/%F0%9F%91%8D": async () => {
+          await pending;
+          // サーバーは自分を含めた集計を返す（別の人がその間に押していた）
+          return json(200, reacted(true, 2, [naoki.id, miyuki.id]));
+        },
+      });
+      await store.openRoom("r1");
+
+      const done = store.toggleReaction("r1", "m-1", "👍");
+      // 応答を待たずに手元で反映されている（ADR 0044 決定 8）
+      expect(reactionsOf(store)).toEqual([{ emoji: "👍", count: 1, me: true, users: [naoki.id] }]);
+
+      resolve();
+      await done;
+
+      expect(reactionsOf(store)).toEqual([{ emoji: "👍", count: 2, me: true, users: [naoki.id, miyuki.id] }]);
+      expect(requests()).toContain("PUT /api/v1/rooms/r1/messages/m-1/reactions/%F0%9F%91%8D");
+    });
+
+    it("removes it with DELETE when it is already mine", async () => {
+      const { store, requests } = reactionSetup({
+        "GET /api/v1/rooms/r1/messages?limit=50": () =>
+          json(200, { messages: [reacted(true, 1, [naoki.id], 1)], has_more: false, last_change_seq: 1 }),
+        "DELETE /api/v1/rooms/r1/messages/m-1/reactions/%F0%9F%91%8D": () =>
+          json(200, message(1, { room_id: "r1", change_seq: 2 })),
+      });
+      await store.openRoom("r1");
+
+      await store.toggleReaction("r1", "m-1", "👍");
+
+      expect(reactionsOf(store)).toEqual([]);
+      expect(requests()).toContain("DELETE /api/v1/rooms/r1/messages/m-1/reactions/%F0%9F%91%8D");
+    });
+
+    it("puts it back when the request fails", async () => {
+      const { store } = reactionSetup({
+        "PUT /api/v1/rooms/r1/messages/m-1/reactions/%F0%9F%91%8D": () => problem(422, "validation-error"),
+      });
+      await store.openRoom("r1");
+
+      await expect(store.toggleReaction("r1", "m-1", "👍")).rejects.toThrow();
+
+      expect(reactionsOf(store)).toEqual([]);
+    });
+
+    it("keeps my own me when an update arrives without it (ADR 0044)", async () => {
+      const { store } = reactionSetup({
+        "GET /api/v1/rooms/r1/messages?limit=50": () =>
+          json(200, { messages: [reacted(true, 1, [naoki.id], 1)], has_more: false, last_change_seq: 1 }),
+      });
+      await store.openRoom("r1");
+
+      // 配信には me が載らない（受け取る人ごとの値を入れられない）
+      store.applyEvent({
+        type: "message.updated",
+        data: reacted(undefined, 2, [naoki.id, miyuki.id]),
+      });
+
+      expect(reactionsOf(store)).toEqual([{ emoji: "👍", count: 2, me: true, users: [naoki.id, miyuki.id] }]);
+    });
+  });
 });
