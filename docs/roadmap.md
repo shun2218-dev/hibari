@@ -578,7 +578,8 @@ Phase 6.16  検索
 
 **構築順**（PR を分ける）
 1. 設計（ADR 0045、ロードマップ） ← 完了
-2. デザイン: 拡大表示（1 枚 / 複数 / モバイル）、削除のメニューと確認ダイアログ。`/dev/preview` に描いて `docs/ui/` に足し、オーナーに見てもらう
+2. デザイン: 拡大表示（1 枚 / 複数 / モバイル）、削除のメニューと確認ダイアログ。`/dev/preview` に描いて `docs/ui/` に足し、オーナーに見てもらう ← 完了（`docs/ui/README.md` の「Phase 6.7.5 で足した画面」）
+   md 以上は全画面にせず大きなダイアログにした。1 つのメッセージの画像が複数あるときは横に並べて折り返す（ADR 0045 決定 3 の追記）
 3. API: `DELETE /rooms/{roomID}/messages/{messageID}/attachments/{attachmentID}`、`change_seq` の採番、本文も空なら論理削除
 4. Web: 拡大表示のつなぎ込み、削除の導線、`messageActions` の判定
 

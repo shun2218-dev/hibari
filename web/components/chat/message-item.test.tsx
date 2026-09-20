@@ -426,3 +426,64 @@ describe("MessageItem の絵文字のリアクション（ADR 0044）", () => {
     expect(onToggleReaction).toHaveBeenCalledWith("👍");
   });
 });
+
+describe("MessageItem の添付ファイル（ADR 0045）", () => {
+  const image = { kind: "image", id: "a1", fileName: "改訂 01.png", url: "https://example/a1" } as const;
+  const file = { kind: "file", id: "a2", fileName: "type-scale.pdf", sizeLabel: "248 KB" } as const;
+
+  it("インライン表示している画像は押せて、どの添付かを渡して呼ぶ", async () => {
+    const onOpenImage = vi.fn();
+    render(<MessageItem message={message({ attachments: [image] })} onOpenImage={onOpenImage} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "改訂 01.png を拡大表示" }));
+
+    expect(onOpenImage).toHaveBeenCalledWith("a1");
+  });
+
+  it("まだ GET URL の取れていない画像は押せない", () => {
+    render(<MessageItem message={message({ attachments: [{ ...image, url: undefined }] })} onOpenImage={vi.fn()} />);
+
+    expect(screen.queryByRole("button", { name: /を拡大表示/ })).not.toBeInTheDocument();
+  });
+
+  it("画像でない添付の「…」から削除する。消せない人には出さない", async () => {
+    const onDeleteAttachment = vi.fn();
+    const onToggleAttachmentMenu = vi.fn();
+    const { rerender } = render(
+      <MessageItem message={message({ attachments: [file] })} onDeleteAttachment={onDeleteAttachment} />,
+    );
+
+    // canDelete が false のうちは「…」自体を出さない（判定はメッセージの削除と同じ。ADR 0045 決定 5）
+    expect(screen.queryByRole("button", { name: "ファイルの操作" })).not.toBeInTheDocument();
+
+    rerender(
+      <MessageItem
+        message={message({ attachments: [file] })}
+        canDelete
+        onDeleteAttachment={onDeleteAttachment}
+        onToggleAttachmentMenu={onToggleAttachmentMenu}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "ファイルの操作" }));
+    expect(onToggleAttachmentMenu).toHaveBeenCalledWith("a2");
+
+    rerender(
+      <MessageItem
+        message={message({ attachments: [file] })}
+        canDelete
+        onDeleteAttachment={onDeleteAttachment}
+        onToggleAttachmentMenu={onToggleAttachmentMenu}
+        openAttachmentMenuId="a2"
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "ファイルを削除" }));
+
+    expect(onDeleteAttachment).toHaveBeenCalledWith("a2");
+  });
+
+  it("画像の行には「…」を出さない（削除は拡大表示の中にある）", () => {
+    render(<MessageItem message={message({ attachments: [image] })} canDelete onDeleteAttachment={vi.fn()} />);
+
+    expect(screen.queryByRole("button", { name: "ファイルの操作" })).not.toBeInTheDocument();
+  });
+});

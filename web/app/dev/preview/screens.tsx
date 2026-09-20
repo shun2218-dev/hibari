@@ -36,12 +36,14 @@ import { AccountMenu } from "@/components/chat/account-menu";
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
+import { ImageViewer } from "@/components/chat/image-viewer";
 import { MembersPanel } from "@/components/chat/members-panel";
 import { RoomHeader } from "@/components/chat/room-header";
 import {
   AddRoomMemberDialog,
   CreateRoomDialog,
   ConfirmMentionAllDialog,
+  DeleteAttachmentDialog,
   DeleteMessageDialog,
   LeaveRoomDialog,
   RoomSettingsDialog,
@@ -72,7 +74,9 @@ import type { WorkspaceRole } from "@/components/workspace/types";
 import { WorkspaceSettings } from "@/components/workspace/workspace-settings";
 
 import {
+  attachmentMessageKey,
   currentUser,
+  deletedAttachmentName,
   devices,
   dmCandidates,
   mockAvatars,
@@ -94,6 +98,7 @@ import {
   threadRootWithoutReplies,
   timeline,
   timelineJumped,
+  timelineWithImages,
   timelineWithLinkCards,
   timelineWithAvatars,
   timelineWithSystemMessages,
@@ -108,6 +113,8 @@ import {
   timelineWithMentions,
   timelineWithThreads,
   unreadThreadCount,
+  singleViewerImage,
+  viewerImages,
   transferCandidates,
   typingNames,
   users,
@@ -183,6 +190,12 @@ type ChatOptions = {
    */
   reactions?: "row" | "names" | "picker" | "picker-above";
   /**
+   * 添付ファイル（ADR 0045）。画像を 3 枚とファイルを 1 件付けたメッセージのあるタイムラインにする。
+   * - images: そのまま（拡大表示の画面の後ろに出す）
+   * - menu: 画像でない添付の行の「…」を開いたところ
+   */
+  messageAttachments?: "images" | "menu";
+  /**
    * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
    */
@@ -237,6 +250,7 @@ function chat({
   jump,
   linkCards,
   reactions,
+  messageAttachments,
   dark,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
@@ -306,7 +320,9 @@ function chat({
         {body === "timeline" && !threads && (
           <Timeline
             items={
-              reactions
+              messageAttachments
+                ? timelineWithImages
+                : reactions
                 ? timelineWithReactions
                 : linkCards
                 ? timelineWithLinkCards
@@ -335,7 +351,17 @@ function chat({
             reactionPicker={<EmojiPicker onPick={noop} theme={dark ? "dark" : "light"} />}
             hoveredReaction={reactions === "names" ? hoveredReaction : undefined}
             onReply={noop}
-            actionsFor={(key) => ({ canEdit: key === pendingMessageKey, canDelete: key === pendingMessageKey })}
+            onOpenImage={noop}
+            onDeleteAttachment={noop}
+            openAttachmentMenu={
+              messageAttachments === "menu" ? { key: attachmentMessageKey, attachmentId: "a-2" } : undefined
+            }
+            onToggleAttachmentMenu={noop}
+            actionsFor={(key) => ({
+              canEdit: key === pendingMessageKey,
+              // 添付だけを削除できるのは、メッセージを削除できる人と同じ（ADR 0045 決定 5）
+              canDelete: key === pendingMessageKey || (messageAttachments !== undefined && key === attachmentMessageKey),
+            })}
             openMenuKey={menuKey}
             editingKey={editingKey}
             editing={{ value: "了解です。今日の夕方までに一覧を更新して、また共有します。" }}
@@ -591,6 +617,45 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/unread-jump-bar": () => chat({ jump: "unread-bar" }),
   "chat/jump-highlight": () => chat({ jump: "highlight" }),
   "chat/message-not-found": () => chat({ jump: "not-found" }),
+  "chat/image-viewer": () =>
+    chat({
+      messageAttachments: "images",
+      dialog: <ImageViewer images={viewerImages} index={1} onMove={noop} onClose={noop} onDownload={noop} onDelete={noop} />,
+    }),
+  "chat/image-viewer-dark": () =>
+    chat({
+      dark: true,
+      messageAttachments: "images",
+      dialog: <ImageViewer images={viewerImages} index={1} onMove={noop} onClose={noop} onDownload={noop} onDelete={noop} />,
+    }),
+  // 1 枚しかないので矢印と枚数を出さない。消せない人なので、削除も出ない（ADR 0045 決定 9）
+  "chat/image-viewer-single": () =>
+    chat({
+      messageAttachments: "images",
+      dialog: <ImageViewer images={[singleViewerImage]} index={0} onMove={noop} onClose={noop} onDownload={noop} />,
+    }),
+  "chat/attachment-menu": () => chat({ messageAttachments: "menu" }),
+  "chat/attachment-delete-dialog": () =>
+    chat({
+      messageAttachments: "images",
+      dialog: (
+        <>
+          <ImageViewer images={viewerImages} index={1} onMove={noop} onClose={noop} onDownload={noop} onDelete={noop} />
+          <DeleteAttachmentDialog open fileName={deletedAttachmentName} />
+        </>
+      ),
+    }),
+  // 最後の 1 枚で、本文も空のメッセージ。消すとメッセージごと消えることを先に伝える（ADR 0045 決定 8）
+  "chat/attachment-delete-dialog-last": () =>
+    chat({
+      messageAttachments: "images",
+      dialog: (
+        <>
+          <ImageViewer images={[singleViewerImage]} index={0} onMove={noop} onClose={noop} onDownload={noop} onDelete={noop} />
+          <DeleteAttachmentDialog open alsoDeletesMessage fileName={singleViewerImage.fileName} />
+        </>
+      ),
+    }),
   "chat/threads": () => chat({ threads: "list" }),
   "chat/threads-empty": () => chat({ threads: "empty" }),
   "chat/mobile-thread": () => chat({ thread: "replies" }),
@@ -603,6 +668,11 @@ export const previewScreens: Record<string, () => ReactNode> = {
   "chat/mobile-threads": () => chat({ threads: "list" }),
   "chat/mobile-reactions": () => chat({ reactions: "row" }),
   "chat/mobile-reaction-picker": () => chat({ reactions: "picker" }),
+  "chat/mobile-image-viewer": () =>
+    chat({
+      messageAttachments: "images",
+      dialog: <ImageViewer images={viewerImages} index={1} onMove={noop} onClose={noop} onDownload={noop} onDelete={noop} />,
+    }),
   "chat/mobile-rooms": () => chat({ mobileView: "list" }),
   "chat/mobile-room": () => chat(),
   "chat/mobile-members-sheet": () => chat({ members: true }),

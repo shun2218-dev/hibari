@@ -232,3 +232,33 @@ describe("Timeline", () => {
     });
   });
 });
+
+describe("Timeline の添付ファイル（ADR 0045）", () => {
+  const image = { kind: "image", id: "a1", fileName: "改訂 01.png", url: "https://example/a1" } as const;
+  const file = { kind: "file", id: "a2", fileName: "type-scale.pdf", sizeLabel: "248 KB" } as const;
+
+  it("画像を押したら、どのメッセージのどの添付かを渡して呼ぶ", async () => {
+    const onOpenImage = vi.fn();
+    render(<Timeline items={[msg("a", "写真です", { attachments: [image] })]} onOpenImage={onOpenImage} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "改訂 01.png を拡大表示" }));
+
+    expect(onOpenImage).toHaveBeenCalledWith("a", "a1");
+  });
+
+  it("添付の「…」は、開いているメッセージの添付にだけ出す", async () => {
+    const onDeleteAttachment = vi.fn();
+    render(
+      <Timeline
+        items={[msg("a", "資料です", { attachments: [file] }), msg("b", "こちらも", { attachments: [file] })]}
+        actionsFor={() => ({ canEdit: false, canDelete: true })}
+        onDeleteAttachment={onDeleteAttachment}
+        openAttachmentMenu={{ key: "b", attachmentId: "a2" }}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "ファイルを削除" }));
+
+    expect(onDeleteAttachment).toHaveBeenCalledWith("b", "a2");
+  });
+});
