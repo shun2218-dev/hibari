@@ -126,13 +126,10 @@ export function ImageViewer({ images, index, onMove, onClose, onDownload, onDele
               <span className="font-mono text-2xs text-text-muted">{image.fileName}</span>
             )}
 
-            {/* 1 枚しかなければ、送る導線を出さない（ADR 0045 決定 2） */}
-            {images.length > 1 && (
-              <>
-                <ArrowButton side="left" disabled={!hasPrevious} onClick={() => onMove(index - 1)} />
-                <ArrowButton side="right" disabled={!hasNext} onClick={() => onMove(index + 1)} />
-              </>
-            )}
+            {/* 端では矢印を出さない（巻き戻さない。ADR 0045 決定 3 の追記）。
+                1 枚しかなければ、どちらも出ない（＝送る導線がない。決定 2） */}
+            {hasPrevious && <ArrowButton side="left" onClick={() => onMove(index - 1)} />}
+            {hasNext && <ArrowButton side="right" onClick={() => onMove(index + 1)} />}
           </div>
         </div>
       </div>
@@ -140,13 +137,12 @@ export function ImageViewer({ images, index, onMove, onClose, onDownload, onDele
   );
 }
 
-/** 左右の矢印。端では押せなくする（巻き戻さない。ADR 0045 決定 3）。 */
-function ArrowButton({ side, disabled, onClick }: { side: "left" | "right"; disabled: boolean; onClick: () => void }) {
+/** 左右の矢印。送れる向きにだけ出す（端では出さない）。 */
+function ArrowButton({ side, onClick }: { side: "left" | "right"; onClick: () => void }) {
   const Icon = side === "left" ? ChevronLeftIcon : ChevronRightIcon;
   return (
     <IconButton
       label={side === "left" ? "前の画像" : "次の画像"}
-      disabled={disabled}
       onClick={onClick}
       className={cx(
         "absolute size-10 rounded-full border border-border bg-surface shadow-overlay",

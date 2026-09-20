@@ -1445,13 +1445,13 @@ describe("WorkspaceScreen", () => {
       const viewer = await openViewer();
       expect(within(viewer).getByText("1 / 2")).toBeInTheDocument();
       expect(within(viewer).getByRole("img", { name: "01.png" })).toHaveAttribute("src", "https://storage.test/img-1");
-      // 端では戻れない（巻き戻さない）
-      expect(within(viewer).getByRole("button", { name: "前の画像" })).toBeDisabled();
+      // 端では矢印を出さない（巻き戻さない）
+      expect(within(viewer).queryByRole("button", { name: "前の画像" })).not.toBeInTheDocument();
 
       await userEvent.click(within(viewer).getByRole("button", { name: "次の画像" }));
       expect(within(viewer).getByText("2 / 2")).toBeInTheDocument();
       expect(within(viewer).getByRole("img", { name: "02.png" })).toHaveAttribute("src", "https://storage.test/img-2");
-      expect(within(viewer).getByRole("button", { name: "次の画像" })).toBeDisabled();
+      expect(within(viewer).queryByRole("button", { name: "次の画像" })).not.toBeInTheDocument();
 
       await userEvent.keyboard("{ArrowLeft}");
       expect(within(viewer).getByText("1 / 2")).toBeInTheDocument();
