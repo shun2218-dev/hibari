@@ -279,6 +279,14 @@ describe("MessageItem actions", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
+  it("opens the editor at the height of the body it holds", () => {
+    // jsdom はレイアウトを持たないので、中身の高さだけ差し替えて、入力欄に入れ直されるかを見る
+    vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(84);
+    render(<MessageItem message={message()} canEdit editing={{ value: "1 行目\n2 行目\n3 行目" }} />);
+
+    expect(screen.getByRole("textbox", { name: "メッセージを編集" })).toHaveStyle({ height: "84px" });
+  });
+
   it("saves with Enter and cancels with Escape", async () => {
     const onSave = vi.fn();
     const onCancel = vi.fn();

@@ -7,6 +7,7 @@ import { Button, IconButton, TextButton } from "@/components/ui/button";
 import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon } from "@/components/ui/icons";
 import { applyCompletion, candidateKey, filterCandidates, findMentionQuery, type MentionCandidate } from "@/lib/chat/mentions";
 import { cx } from "@/lib/cx";
+import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 
 import type { AttachmentDraftView } from "./types";
 
@@ -63,6 +64,9 @@ export function Composer({
   const [active, setActive] = useState(0);
   // 補完を確定したあとに置くキャレットの位置。置いたら null に戻す
   const pendingCaret = useRef<number | null>(null);
+
+  // 改行や折り返しで増えた分だけ伸ばす。上限は 16 行（--composer-max-lines）
+  useAutosizeTextarea(textarea, value);
 
   /**
    * 補完で入れたハンドルの後ろにキャレットを戻す。
@@ -183,7 +187,7 @@ export function Composer({
           onBlur={() => setQuery(null)}
           onKeyDown={handleKeyDown}
           placeholder={target === "thread" ? "スレッドに返信" : "メッセージを入力"}
-          className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1.5 py-1 text-lg leading-normal text-text focus-visible:outline-none"
+          className="composer-lines min-h-8 flex-1 resize-none overflow-y-auto bg-transparent px-1.5 py-1 text-lg leading-normal text-text focus-visible:outline-none"
         />
         <Button size="sm" onClick={onSend} disabled={!canSend}>
           送信
