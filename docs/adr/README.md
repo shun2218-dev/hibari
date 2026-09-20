@@ -14,7 +14,7 @@
 | [0005](0005-ulid-stored-as-uuid.md) | ULID を Postgres の uuid 型で保存する | 採用 |
 | [0006](0006-workspaces-roles-invites.md) | ワークスペース層・固定ロール・招待リンク | 採用 |
 | [0007](0007-session-revocation-and-ws-ticket.md) | セッション単位の失効と ws-ticket の置き場所 | 採用 |
-| [0008](0008-object-storage-s3-api.md) | オブジェクトストレージを S3 API で抽象化する | 採用（本番ベンダーは暫定） |
+| [0008](0008-object-storage-s3-api.md) | オブジェクトストレージを S3 API で抽象化する | 採用（本番は R2 に確定。ADR 0046） |
 | [0009](0009-diagram-rendering.md) | 図は mermaid を正本とし、SVG は mermaid-cli で生成する | 採用 |
 | [0010](0010-auth-api-details.md) | 認証 API の詳細（トークンの形式と受け渡し、ローテーション、エラー形式） | 採用 |
 | [0011](0011-chat-workspace-room-api.md) | ワークスペース / 招待 / ルーム API の詳細（Phase 3a） | 採用 |
@@ -52,6 +52,7 @@
 | [0043](0043-web-mentions.md) | メンションの Web 側（入力は `@ハンドル` で書き、送る直前に ID へ変換する） | 採用 |
 | [0044](0044-message-reactions.md) | 絵文字のリアクション（Phase 6.7。行で持ち、メッセージの `change_seq` に乗せて配る） | 採用 |
 | [0045](0045-attachment-lightbox-and-delete.md) | 添付ファイルの拡大表示と削除（Phase 6.7.5。画像はそのメッセージの中で送り、削除は `change_seq` に乗せる） | 採用 |
+| [0046](0046-production-deployment.md) | 本番のデプロイ構成（Phase 7。Fly.io の 1 リージョンに寄せ、ストレージは R2。Postgres と Valkey は自前） | 採用 |
 
 ## テンプレート
 
