@@ -106,6 +106,27 @@
      px ではなく行数で書くのは、上限の意味が「何行まで見せるか」だから（ADR 0048） */
   --composer-max-lines: 16;
 
+  /*
+   * ---- 伸縮できるエリアの大きさ（ADR 0048）----
+   *
+   * 既定・最小・最大の正本はここだけ。ユーザーが引っ張った値は lib/pane-size.ts が
+   * <html> の style で `--pane-*` を上書きし、限界は下の @utility の clamp が守る。
+   * TS 側に最小・最大の数値を持たせないのは、値の置き場所を 2 つにしないため
+   * （ResizeHandle は「極端な値を入れて描かせた結果」を測って限界を知る）。
+   *
+   * 幅の最大に vw を混ぜてあるのは、窓が狭いときにサイドバーとパネルで本文が潰れないようにするため。
+   */
+  --pane-sidebar: 288px;
+  --pane-sidebar-min: 200px;
+  --pane-sidebar-max: min(480px, 40vw);
+
+  --pane-members: 280px;
+  --pane-members-min: 220px;
+  --pane-members-max: min(480px, 40vw);
+
+  --pane-thread: 384px;
+  --pane-thread-min: 280px;
+  --pane-thread-max: min(640px, 50vw);
 
   @keyframes spin {
     to {
@@ -131,6 +152,22 @@
  */
 @utility composer-lines {
   max-height: calc(var(--composer-max-lines) * 1lh + var(--spacing) * 2);
+}
+
+/*
+ * 伸縮できるエリアの大きさを当てる（ADR 0048）。clamp があるので、覚えている値が古くても
+ * 窓が狭くても、最小と最大の外には出ない。幅の 3 つは md 以上でだけ使う（`md:pane-sidebar`）。
+ */
+@utility pane-sidebar {
+  width: clamp(var(--pane-sidebar-min), var(--pane-sidebar), var(--pane-sidebar-max));
+}
+
+@utility pane-members {
+  width: clamp(var(--pane-members-min), var(--pane-members), var(--pane-members-max));
+}
+
+@utility pane-thread {
+  width: clamp(var(--pane-thread-min), var(--pane-thread), var(--pane-thread-max));
 }
 
 [data-theme="dark"] {

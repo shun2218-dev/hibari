@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { SessionProvider } from "@/lib/auth/session-provider";
+import { paneSizeBootScript } from "@/lib/pane-size";
 import { themeBootScript } from "@/lib/theme";
 
 import { instrumentSans, jetBrainsMono, zenKakuGothicNew } from "./fonts";
@@ -21,6 +22,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         {/* 覚えているテーマを最初の描画の前に当てる（ダークの人にライトの画面を見せない。lib/theme.ts） */}
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+        {/* 覚えているエリアの大きさも同じく先に当てる（既定の幅で 1 度描いてから動くと画面がガタつく。lib/pane-size.ts） */}
+        <script dangerouslySetInnerHTML={{ __html: paneSizeBootScript }} />
       </head>
       <body>
         <SessionProvider>{children}</SessionProvider>

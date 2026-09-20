@@ -1,7 +1,10 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { type ReactNode, useRef } from "react";
 
 import { IconButton } from "@/components/ui/button";
 import { ChevronLeftIcon, CloseIcon, LockIcon } from "@/components/ui/icons";
+import { ResizeHandle } from "@/components/ui/resize-handle";
 
 import type { RoomKind } from "./types";
 
@@ -23,11 +26,15 @@ type ThreadPanelProps = {
  * 同じ要素をレイアウトだけ切り替えて使い、DOM に 2 回描かない。
  */
 export function ThreadPanel({ room, children, footer, onClose }: ThreadPanelProps) {
+  const panel = useRef<HTMLElement>(null);
+
   return (
     <aside
+      ref={panel}
       aria-label="スレッド"
-      className="fixed inset-0 z-40 flex flex-col bg-surface md:static md:z-auto md:w-96 md:shrink-0 md:border-l md:border-border"
+      className="fixed inset-0 z-40 flex flex-col bg-surface md:relative md:z-auto md:pane-thread md:shrink-0 md:border-l md:border-border"
     >
+      <ResizeHandle pane="thread" grow="left" measure={panel} />
       <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border px-2 md:pr-2 md:pl-4">
         <IconButton label="チャンネルに戻る" onClick={onClose} className="md:hidden">
           <ChevronLeftIcon className="size-5" />

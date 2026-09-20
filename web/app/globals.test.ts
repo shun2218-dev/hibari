@@ -49,8 +49,11 @@ describe("globals.css", () => {
       "leading-tight",
       "shadow-lg",
       "sm:flex",
-      // 中身に合わせて伸びる入力欄（ADR 0048）
+      // 中身に合わせて伸びる入力欄と、伸縮できるエリア（ADR 0048）
       "composer-lines",
+      "md:pane-sidebar",
+      "md:pane-members",
+      "md:pane-thread",
     ]);
   });
 
@@ -111,6 +114,28 @@ describe("globals.css", () => {
     expect(css.slice(start, css.indexOf("}", start))).toContain(
       "max-height: calc(var(--composer-max-lines) * 1lh + var(--spacing) * 2)",
     );
+  });
+
+  describe("伸縮できるエリア（ADR 0048）", () => {
+    it.each(["sidebar", "members", "thread"] as const)("clamps the width of %s between its own limits", (pane) => {
+      const start = css.indexOf(`.md\\:pane-${pane}`);
+      expect(start).toBeGreaterThan(-1);
+
+      // 既定・最小・最大はすべて変数を経由する（幅の生の値をユーティリティに書かない）
+      expect(css.slice(start, css.indexOf("}", start))).toContain(
+        `width: clamp(var(--pane-${pane}-min), var(--pane-${pane}), var(--pane-${pane}-max))`,
+      );
+    });
+
+    it("keeps every default and limit in this file", () => {
+      const root = customPropertiesIn(css, ":root, :host");
+
+      for (const pane of ["sidebar", "members", "thread"]) {
+        expect(root).toContain(`--pane-${pane}`);
+        expect(root).toContain(`--pane-${pane}-min`);
+        expect(root).toContain(`--pane-${pane}-max`);
+      }
+    });
   });
 
   it("uses raw colors only in token definitions", () => {

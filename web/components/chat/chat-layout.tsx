@@ -1,5 +1,8 @@
-import type { ReactNode } from "react";
+"use client";
 
+import { type ReactNode, useRef } from "react";
+
+import { ResizeHandle } from "@/components/ui/resize-handle";
 import { cx } from "@/lib/cx";
 
 type ChatLayoutProps = {
@@ -18,15 +21,20 @@ type ChatLayoutProps = {
 };
 
 export function ChatLayout({ sidebar, children, panel, mobileView }: ChatLayoutProps) {
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
   return (
     <div className="relative flex h-dvh overflow-hidden bg-surface">
       <div
+        ref={sidebarRef}
         className={cx(
-          "absolute inset-0 transition duration-280 ease-slide md:static md:visible md:w-72 md:shrink-0 md:border-r md:border-border",
+          // 幅は md 以上でだけユーザーが変えられる（ADR 0048）。モバイルは全画面のまま
+          "absolute inset-0 transition duration-280 ease-slide md:relative md:visible md:pane-sidebar md:shrink-0 md:border-r md:border-border",
           mobileView === "room" && "invisible",
         )}
       >
         {sidebar}
+        <ResizeHandle pane="sidebar" grow="right" measure={sidebarRef} />
       </div>
       <main
         className={cx(
