@@ -4,7 +4,7 @@ import path from "node:path";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { previewCatalog } from "./catalog";
+import { previewCatalog, previewSinceLabels, previewSinceOrder } from "./catalog";
 import { PreviewScreen, previewScreens } from "./screens";
 
 // docs/ui/screenshots/ の PNG を「グループ/名前」の形で集める
@@ -40,6 +40,14 @@ describe("/dev/preview catalog", () => {
       expect(entry.dark ?? false, entry.name).toBe(entry.name.endsWith("-dark"));
       expect(entry.mobile ?? false, entry.name).toBe(entry.name.split("/")[1].startsWith("mobile-"));
     }
+  });
+
+  it("gives every entry a phase that the filter can show", () => {
+    for (const entry of previewCatalog) {
+      expect(previewSinceOrder, entry.name).toContain(entry.since);
+    }
+    // 絞り込みのチップに出ない値を作らない
+    expect(Object.keys(previewSinceLabels).sort()).toEqual([...previewSinceOrder].sort());
   });
 
   it.each(previewCatalog.map((entry) => [entry.name, entry] as const))("renders %s", (_name, entry) => {
