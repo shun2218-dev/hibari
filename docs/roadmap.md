@@ -581,16 +581,19 @@ Phase 6.16  検索
 2. デザイン: 拡大表示（1 枚 / 複数 / モバイル）、削除のメニューと確認ダイアログ。`/dev/preview` に描いて `docs/ui/` に足し、オーナーに見てもらう ← 完了（`docs/ui/README.md` の「Phase 6.7.5 で足した画面」）
    md 以上は全画面にせず大きなダイアログにした。1 つのメッセージの画像が複数あるときは横に並べて折り返す（ADR 0045 決定 3 の追記）
 3. API: `DELETE /rooms/{roomID}/messages/{messageID}/attachments/{attachmentID}`、`change_seq` の採番、本文も空なら論理削除 ← 完了
-4. Web: 拡大表示のつなぎ込み、削除の導線、`messageActions` の判定
+4. Web: 拡大表示のつなぎ込み、削除の導線、`messageActions` の判定 ← 完了
+   判定は `messageActions` の `canDelete` をそのまま使った（規則が同じなので新しい項目を足さない。ADR 0045 決定 9 の追記）
 
 **DoD**
-- [ ] 画像を押すと拡大表示が開き、同じメッセージの画像を矢印とキーボードで送れる。1 枚なら送る導線を出さない
-- [ ] 拡大表示から閉じるとフォーカスが元の画像に戻り、ダウンロードもそこから行える
-- [ ] 添付だけを削除すると、他の人の画面からもリアルタイムに消え、切断中の削除も再接続の同期で揃う
-- [ ] 消せない人（他人のメッセージ・下位でない相手）には導線が出ず、API も 403（`internal/httpx` と authz のテスト）
-- [ ] 最後の添付を消して本文も空なら、メッセージごと消える。本文が残っていればメッセージは残る
-- [ ] 同じ添付を並行して消しても、`change_seq` が 2 回進まない（冪等。並行テスト）
-- [ ] 削除した添付の実体が、掃除ジョブでストレージから消える
+- [x] 画像を押すと拡大表示が開き、同じメッセージの画像を矢印とキーボードで送れる。1 枚なら送る導線を出さない（`image-viewer.test.tsx`、`workspace-screen.test.tsx` の「画像を押すと拡大表示が開き…」）
+- [x] 拡大表示から閉じるとフォーカスが元の画像に戻り、ダウンロードもそこから行える（同上。キーは画面ぜんぶで受ける。端まで送ると矢印が押せなくなってフォーカスが外れるため）
+- [x] 添付だけを削除すると、他の人の画面からもリアルタイムに消え、切断中の削除も再接続の同期で揃う（`store.test.ts` の `message.updated` と `after_change_seq` の 2 件。配信は `TestDeleteMessageAttachment`）
+- [x] 消せない人（他人のメッセージ・下位でない相手）には導線が出ず、API も 403（`TestDeleteMessageAttachmentPermission`、`TestDeleteMessageAttachmentAPI`、`workspace-screen.test.tsx` の「消せない人には…」）
+- [x] 最後の添付を消して本文も空なら、メッセージごと消える。本文が残っていればメッセージは残る（`TestDeleteLastAttachmentDeletesMessage`）
+- [x] 同じ添付を並行して消しても、`change_seq` が 2 回進まない（冪等。`TestDeleteMessageAttachmentConcurrent`）
+- [x] 削除した添付の実体が、掃除ジョブでストレージから消える（`TestDeleteMessageAttachment` で status = deleted と実体が残ることを、`TestCleanupAttachments` で deleted の実体が消えることを確かめている）
+
+オーナーによる実物での確認は未実施。
 
 ---
 

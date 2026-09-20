@@ -1717,6 +1717,17 @@ export function createChatStore(
     },
 
     /**
+     * 添付ファイルだけを削除する（ADR 0045）。
+     *
+     * 取り消せない操作なので、リアクションと違って**楽観的更新はしない**（手元で先に消すと、
+     * 失敗したときに「消えたのに戻ってきた」が起きる）。応答（更新後のメッセージ）で確定させる。
+     * 最後の 1 件で本文も空だったときは tombstone が返り、メッセージごと消える（決定 8）。
+     */
+    async deleteAttachment(roomId: string, messageId: string, attachmentId: string): Promise<void> {
+      receiveMessage(await api.deleteMessageAttachment(roomId, messageId, attachmentId), false);
+    },
+
+    /**
      * メッセージを削除する。応答にメッセージがないので、差分を取って反映する（WebSocket のイベントが先に届いていれば何も起きない）。
      * 失敗したら ApiError を投げる。
      */

@@ -225,6 +225,16 @@ export function createChatApi(request: Session["request"]) {
     completeAttachment: (attachmentId: string) =>
       request<Attachment>("POST", `/api/v1/attachments/${encodeURIComponent(attachmentId)}/complete`),
 
+    /**
+     * 添付ファイルだけを削除する（ADR 0045）。冪等で、更新後のメッセージを返す。
+     * 最後の 1 件で本文も空だったメッセージは、ここで tombstone になる（決定 8）。
+     */
+    deleteMessageAttachment: (roomId: string, messageId: string, attachmentId: string) =>
+      request<Message>(
+        "DELETE",
+        `/api/v1/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      ),
+
     /** メッセージに付いた添付の署名付き GET URL（TTL 5 分。ADR 0013）。 */
     getAttachmentUrl: (attachmentId: string) =>
       request<SignedURL>("GET", `/api/v1/attachments/${encodeURIComponent(attachmentId)}/url`),

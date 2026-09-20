@@ -70,17 +70,6 @@ type RoomViewProps = {
 };
 
 /**
- * ブラウザにダウンロードさせる。GET URL は Content-Disposition: attachment で署名してある（ADR 0013）ので、
- * 開いてもページは移らずに保存が始まる。
- */
-function startDownload(url: string) {
-  const link = document.createElement("a");
-  link.href = url;
-  link.rel = "noopener";
-  link.click();
-}
-
-/**
  * ルームのヘッダー・接続状態・履歴・入力欄（返信・添付）・メッセージの編集と削除・参加の導線。
  * ルームごとに key を変えて作り直すので、タイムラインのスクロール位置はルームを開くたびにいちばん下から始まる。
  */
@@ -214,7 +203,7 @@ export function RoomView({
     () => toMentionCandidates(members, { kind: room?.kind ?? "public", avatarUrls }),
     [members, room?.kind, avatarUrls],
   );
-  const { timelineProps, deleteDialog } = useMessageActions({
+  const { timelineProps, overlays } = useMessageActions({
     workspaceId,
     roomId,
     room,
@@ -303,15 +292,6 @@ export function RoomView({
     setSentCount((n) => n + 1);
   }
 
-  async function download(attachmentId: string) {
-    try {
-      startDownload(await media.attachmentDownloadUrl(attachmentId));
-    } catch (err) {
-      // 失敗の表示はデザインにない
-      console.error("failed to download an attachment", err);
-    }
-  }
-
   async function join() {
     setJoining(true);
     try {
@@ -381,7 +361,6 @@ export function RoomView({
             scrollToLatestKey={sentCount}
             onRetry={(key) => store.retryMessage(roomId, key)}
             onDiscard={(key) => store.discardMessage(roomId, key)}
-            onDownload={download}
             onImageError={(id, url) => media.attachmentImageFailed(id, url)}
             {...timelineProps}
             // スレッドは確定したメッセージにだけ作れる（送信中のものにはまだ ID がない）。システムメッセージの「返信」は出ない
@@ -414,7 +393,7 @@ export function RoomView({
           />
         )
       )}
-      {deleteDialog}
+      {overlays}
       <ConfirmMentionAllDialog
         open={confirmAll !== null}
         kind={confirmAll ?? "channel"}

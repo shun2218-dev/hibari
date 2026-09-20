@@ -1396,4 +1396,145 @@ describe("WorkspaceScreen", () => {
       expect(history().queryByRole("button", { name: "リアクションを追加", hidden: true })).not.toBeInTheDocument();
     });
   });
+  // 添付ファイルの拡大表示と削除（ADR 0045）。
+  describe("添付ファイルの拡大表示と削除（ADR 0045）", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+    const expiresAt = "2026-09-17T01:00:00Z";
+    const image = (n: number) => ({
+      id: `img-${n}`,
+      file_name: `0${n}.png`,
+      content_type: "image/png",
+      size_bytes: 10,
+      width: 260,
+      height: 160,
+    });
+    const pdf = { id: "file-1", file_name: "scale.pdf", content_type: "application/pdf", size_bytes: 10, width: null, height: null };
+
+    /** 自分（佐藤 直樹）が画像 2 枚とファイル 1 件を付けたメッセージ。 */
+    const withFiles = [
+      message(1),
+      message(2, { sender: naoki, attachments: [image(1), image(2), pdf] }),
+      message(3),
+    ];
+
+    function attachmentRoutes(overrides: Record<string, Handler> = {}) {
+      return routes({
+        ...openRoom(design, withFiles),
+        "GET /api/v1/attachments/img-1/url": () => json(200, { url: "https://storage.test/img-1", expires_at: expiresAt }),
+        "GET /api/v1/attachments/img-2/url": () => json(200, { url: "https://storage.test/img-2", expires_at: expiresAt }),
+        "GET /api/v1/attachments/file-1/url": () => json(200, { url: "https://storage.test/file-1", expires_at: expiresAt }),
+        ...overrides,
+      });
+    }
+
+    /** 拡大表示を開く。画像の URL が届くまで待ってから押す（送信中の添付は押せない）。 */
+    async function openViewer(name = "01.png") {
+      await screen.findByRole("img", { name });
+      await userEvent.click(history().getByRole("button", { name: `${name} を拡大表示` }));
+      return screen.getByRole("dialog", { name: /の拡大表示/ });
+    }
+
+    it("画像を押すと拡大表示が開き、矢印とキーボードで同じメッセージの画像を送れる", async () => {
+      renderWithChat(<WorkspaceScreen />, attachmentRoutes());
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      const viewer = await openViewer();
+      expect(within(viewer).getByText("1 / 2")).toBeInTheDocument();
+      expect(within(viewer).getByRole("img", { name: "01.png" })).toHaveAttribute("src", "https://storage.test/img-1");
+      // 端では戻れない（巻き戻さない）
+      expect(within(viewer).getByRole("button", { name: "前の画像" })).toBeDisabled();
+
+      await userEvent.click(within(viewer).getByRole("button", { name: "次の画像" }));
+      expect(within(viewer).getByText("2 / 2")).toBeInTheDocument();
+      expect(within(viewer).getByRole("img", { name: "02.png" })).toHaveAttribute("src", "https://storage.test/img-2");
+      expect(within(viewer).getByRole("button", { name: "次の画像" })).toBeDisabled();
+
+      await userEvent.keyboard("{ArrowLeft}");
+      expect(within(viewer).getByText("1 / 2")).toBeInTheDocument();
+
+      // 閉じると、押した画像にフォーカスが戻る
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /の拡大表示/ })).not.toBeInTheDocument());
+      expect(history().getByRole("button", { name: "01.png を拡大表示" })).toHaveFocus();
+    });
+
+    it("拡大表示から添付だけを削除し、次の画像に送る", async () => {
+      const deletes: string[] = [];
+      renderWithChat(
+        <WorkspaceScreen />,
+        attachmentRoutes({
+          "DELETE /api/v1/rooms/r-design/messages/m-2/attachments/img-1": () => {
+            deletes.push("img-1");
+            return json(200, { ...withFiles[1], room_id: "r-design", change_seq: 4, attachments: [image(2), pdf] });
+          },
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+      const viewer = await openViewer();
+
+      await userEvent.click(within(viewer).getByRole("button", { name: "ファイルを削除" }));
+      // 取り消せないので、消す前に確認する。本文が残るので「ファイルだけ」の文言
+      const dialog = await screen.findByRole("dialog", { name: "ファイルを削除しますか？" });
+      expect(dialog).toHaveAccessibleDescription(/このファイルだけを削除します/);
+      await userEvent.click(within(dialog).getByRole("button", { name: "削除する" }));
+
+      await waitFor(() => expect(deletes).toEqual(["img-1"]));
+      // 消した画像は消え、拡大表示は残った画像に送られる
+      const after = await screen.findByRole("dialog", { name: /の拡大表示/ });
+      expect(within(after).getByRole("img", { name: "02.png" })).toBeInTheDocument();
+      expect(within(after).queryByText("1 / 2")).not.toBeInTheDocument();
+      await waitFor(() => expect(history().queryByRole("img", { name: "01.png" })).not.toBeInTheDocument());
+    });
+
+    it("画像でない添付は行の「…」から消す", async () => {
+      const deletes: string[] = [];
+      renderWithChat(
+        <WorkspaceScreen />,
+        attachmentRoutes({
+          "DELETE /api/v1/rooms/r-design/messages/m-2/attachments/file-1": () => {
+            deletes.push("file-1");
+            return json(200, { ...withFiles[1], room_id: "r-design", change_seq: 4, attachments: [image(1), image(2)] });
+          },
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      await userEvent.click(await history().findByRole("button", { name: "ファイルの操作" }));
+      await userEvent.click(history().getByRole("button", { name: "ファイルを削除" }));
+      const dialog = await screen.findByRole("dialog", { name: "ファイルを削除しますか？" });
+      expect(within(dialog).getByText("scale.pdf")).toBeInTheDocument();
+      await userEvent.click(within(dialog).getByRole("button", { name: "削除する" }));
+
+      await waitFor(() => expect(deletes).toEqual(["file-1"]));
+      await waitFor(() => expect(history().queryByText("scale.pdf")).not.toBeInTheDocument());
+    });
+
+    it("消せない人には、削除の導線を出さない（ADR 0012 と同じ判定）", async () => {
+      // 高橋 みゆき（member）のメッセージ。自分は owner ではないので消せない
+      const others = [message(1), message(2, { sender: miyuki, attachments: [image(1), pdf] }), message(3)];
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, others),
+          "GET /api/v1/rooms/r-design/members?limit=200": () =>
+            json(200, { members: [roomMember(naoki, { role: "member" }), roomMember(miyuki, { role: "member" })], next_cursor: null }),
+          "GET /api/v1/attachments/img-1/url": () => json(200, { url: "https://storage.test/img-1", expires_at: expiresAt }),
+          "GET /api/v1/attachments/file-1/url": () => json(200, { url: "https://storage.test/file-1", expires_at: expiresAt }),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      const viewer = await openViewer();
+      expect(within(viewer).queryByRole("button", { name: "ファイルを削除" })).not.toBeInTheDocument();
+      // ダウンロードと閉じるは、読める人なら誰でも使える
+      expect(within(viewer).getByRole("button", { name: "ダウンロード" })).toBeInTheDocument();
+      await userEvent.keyboard("{Escape}");
+
+      expect(history().queryByRole("button", { name: "ファイルの操作" })).not.toBeInTheDocument();
+    });
+  });
 });
