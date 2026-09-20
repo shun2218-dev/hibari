@@ -35,7 +35,7 @@ type ComposerProps = {
    * 渡さなければ補完は開かない。入力中の文字で絞るのはこの中でやる。
    */
   mentionCandidates?: readonly MentionCandidate[];
-  /** 補完を開いた状態で出す（/dev/preview で状態を再現するため）。 */
+  /** 補完を開いた状態で出す（story で状態を再現するため）。 */
   forceMentionQuery?: string;
 };
 

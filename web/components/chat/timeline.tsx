@@ -65,9 +65,9 @@ type TimelineProps = {
   openPickerKey?: string;
   /** ピッカーの中身。emoji-mart は動的 import なので、作るのは外側に任せる（ADR 0044 決定 7）。 */
   reactionPicker?: ReactNode;
-  /** ホバーの見た目を固定で出すメッセージ（/dev/preview 用）。 */
+  /** ホバーの見た目を固定で出すメッセージ（story 用）。 */
   hoveredKey?: string;
-  /** リアクションのホバーの名前を固定で出す（/dev/preview 用）。 */
+  /** リアクションのホバーの名前を固定で出す（story 用）。 */
   hoveredReaction?: { key: string; emoji: string };
   /**
    * いちばん上の近くまでスクロールした（古いメッセージを読み込むきっかけ）。

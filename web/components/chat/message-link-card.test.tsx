@@ -104,7 +104,7 @@ describe("MessageLinkCard", () => {
     expect(screen.getByRole("button", { name: "すべて表示する" })).toBeInTheDocument();
   });
 
-  it("広げた状態から描ける（/dev/preview とスクリーンショットのため）", () => {
+  it("広げた状態から描ける（story とスクリーンショットのため）", () => {
     render(
       <MessageLinkCard
         card={okCard({ body: LONG_BODY, clampedBody: "1 行目の本文…", clamped: true })}

@@ -10,7 +10,7 @@ type MessageReactionsProps = {
   onToggle?: (emoji: string) => void;
   /** 行末の「＋」を押した（ピッカーを開く）。渡さなければ「＋」を出さない（投稿できない人）。 */
   onAdd?: () => void;
-  /** ホバーの名前を固定で出す絵文字（/dev/preview で状態を再現するため）。 */
+  /** ホバーの名前を固定で出す絵文字（story で状態を再現するため）。 */
   forceHoverEmoji?: string;
 };
 

@@ -100,9 +100,12 @@ lint: ## go vet と golangci-lint を実行する
 
 # ---- web（ホストで実行する） ----
 
+.PHONY: web-ui
+web-ui: ## ホストで Storybook を起動する（docs/ui の画面。撮影もここから撮る）
+	cd web && npm install && npm run storybook
+
 .PHONY: web-shots
-web-shots: ## /dev/preview から docs/ui のスクリーンショットを撮り直す（例: make web-shots names="chat/room-header-settings:720x120"）
-	@test -n "$(names)" || (echo 'usage: make web-shots names="group/name[:WxH] ..."' >&2; exit 1)
+web-shots: ## Storybook から docs/ui のスクリーンショットを撮り直す（名前を省くと app 由来を全部。要 make web-ui）
 	node tools/shoot-ui.mjs $(names)
 
 .PHONY: web
