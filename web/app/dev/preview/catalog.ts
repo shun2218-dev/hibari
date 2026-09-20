@@ -11,7 +11,7 @@ export type PreviewGroup = "auth" | "chat" | "invite" | "workspace" | "settings"
  * それ以降の「…で足した画面」で初めて出てくる画面はそのフェーズ。
  * "6" は、フェーズの節を持たずに Phase 6 の途中で足した画面（チャンネルの退出など）。
  */
-export type PreviewSince = "1.5" | "6-1" | "6-2" | "6" | "6.4" | "6.5" | "6.6" | "6.7" | "6.11" | "6.13";
+export type PreviewSince = "1.5" | "6-1" | "6-2" | "6" | "6.4" | "6.5" | "6.6" | "6.7" | "6.7.5" | "6.11" | "6.13";
 
 export type PreviewEntry = {
   name: string;
@@ -33,7 +33,19 @@ export const previewGroups: Record<PreviewGroup, string> = {
 };
 
 /** 絞り込みに出す順。新しいフェーズを足したら、いちばん後ろに足す。 */
-export const previewSinceOrder: PreviewSince[] = ["1.5", "6-1", "6-2", "6", "6.4", "6.5", "6.6", "6.7", "6.11", "6.13"];
+export const previewSinceOrder: PreviewSince[] = [
+  "1.5",
+  "6-1",
+  "6-2",
+  "6",
+  "6.4",
+  "6.5",
+  "6.6",
+  "6.7",
+  "6.7.5",
+  "6.11",
+  "6.13",
+];
 
 export const previewSinceLabels: Record<PreviewSince, string> = {
   "1.5": "1.5 取り込み",
@@ -44,6 +56,7 @@ export const previewSinceLabels: Record<PreviewSince, string> = {
   "6.5": "6.5 スレッド",
   "6.6": "6.6 チャンネルにも",
   "6.7": "6.7 リアクション",
+  "6.7.5": "6.7.5 添付の拡大",
   "6.11": "6.11 リンク",
   "6.13": "6.13 メンション",
 };
@@ -123,6 +136,12 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "chat/reaction-picker", title: "リアクション: 絵文字のピッカー", since: "6.7" },
   { name: "chat/reaction-picker-dark", title: "リアクション: 絵文字のピッカー（ダーク）", dark: true, since: "6.7" },
   { name: "chat/reaction-picker-above", title: "リアクション: ピッカーが上に開く", since: "6.7" },
+  { name: "chat/image-viewer", title: "画像の拡大表示", since: "6.7.5" },
+  { name: "chat/image-viewer-dark", title: "画像の拡大表示（ダーク）", dark: true, since: "6.7.5" },
+  { name: "chat/image-viewer-single", title: "画像の拡大表示: 1 枚だけ", since: "6.7.5" },
+  { name: "chat/attachment-menu", title: "添付ファイルの操作メニュー", since: "6.7.5" },
+  { name: "chat/attachment-delete-dialog", title: "添付ファイルの削除", since: "6.7.5" },
+  { name: "chat/attachment-delete-dialog-last", title: "添付ファイルの削除: メッセージごと消える", since: "6.7.5" },
   { name: "chat/threads", title: "参加しているスレッドの一覧", since: "6.5" },
   { name: "chat/threads-empty", title: "参加しているスレッドが 0 件", since: "6.5" },
   { name: "chat/mobile-thread", title: "スレッド（モバイル）", mobile: true, since: "6.5" },
@@ -135,6 +154,7 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "chat/mobile-threads", title: "参加しているスレッドの一覧（モバイル）", mobile: true, since: "6.5" },
   { name: "chat/mobile-reactions", title: "絵文字のリアクション（モバイル）", mobile: true, since: "6.7" },
   { name: "chat/mobile-reaction-picker", title: "リアクション: 絵文字のピッカー（モバイル）", mobile: true, since: "6.7" },
+  { name: "chat/mobile-image-viewer", title: "画像の拡大表示（モバイル）", mobile: true, since: "6.7.5" },
   { name: "chat/mobile-rooms", title: "チャンネル一覧（モバイル）", mobile: true, since: "1.5" },
   { name: "chat/mobile-room", title: "ルーム（モバイル）", mobile: true, since: "1.5" },
   { name: "chat/mobile-members-sheet", title: "メンバーシート（モバイル）", mobile: true, since: "1.5" },

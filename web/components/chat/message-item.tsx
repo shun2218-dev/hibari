@@ -55,6 +55,20 @@ type MessageItemProps = {
   onDownload?: (attachmentId: string) => void;
   /** 画像が読み込めなかった（署名付き URL の期限切れなど）。url は読み込みに使った URL。 */
   onImageError?: (attachmentId: string, url: string) => void;
+  /**
+   * インライン表示している画像を押した（拡大表示を開く。ADR 0045 決定 1）。
+   * 渡さなければ画像は押せない。まだ GET URL の取れない送信中の添付も押せない。
+   */
+  onOpenImage?: (attachmentId: string) => void;
+  /**
+   * 添付だけを削除する（ADR 0045 決定 9）。画像でない添付の行の「…」に出す
+   * （画像の削除は拡大表示の中にある）。出すかどうかは `canDelete` と同じ判定（ADR 0012）。
+   * 押したあとに確認のダイアログを出すのは呼ぶ側。
+   */
+  onDeleteAttachment?: (attachmentId: string) => void;
+  /** 「…」を開いている添付（1 度に 1 件）。 */
+  openAttachmentMenuId?: string;
+  onToggleAttachmentMenu?: (attachmentId: string) => void;
   /** 「…」で出せる操作。どれも無ければ「…」自体を出さない。 */
   canEdit?: boolean;
   canDelete?: boolean;
@@ -101,6 +115,10 @@ export function MessageItem({
   highlighted = false,
   onDownload,
   onImageError,
+  onOpenImage,
+  onDeleteAttachment,
+  openAttachmentMenuId,
+  onToggleAttachmentMenu,
   canEdit = false,
   canDelete = false,
   copyLink,
@@ -203,10 +221,20 @@ export function MessageItem({
         )}
 
         {!deleted && !editing && message.attachments.length > 0 && (
-          <ul className="mt-2 flex flex-col gap-2">
+          // 画像が複数あるときは横に並べて折り返す（縦に積むと 1 枚ごとにタイムラインが 1 画面ぶん流れる）。
+          // ファイルの行は幅が決まっているので、常に 1 行を使う
+          <ul className="mt-2 flex flex-wrap items-start gap-2">
             {message.attachments.map((attachment) => (
-              <li key={attachment.id}>
-                <Attachment attachment={attachment} onDownload={onDownload} onImageError={onImageError} />
+              <li key={attachment.id} className={attachment.kind === "file" ? "w-full" : undefined}>
+                <Attachment
+                  attachment={attachment}
+                  onDownload={onDownload}
+                  onImageError={onImageError}
+                  onOpen={onOpenImage}
+                  onDelete={canDelete ? onDeleteAttachment : undefined}
+                  menuOpen={openAttachmentMenuId === attachment.id}
+                  onToggleMenu={onToggleAttachmentMenu}
+                />
               </li>
             ))}
           </ul>
@@ -408,15 +436,23 @@ function Attachment({
   attachment,
   onDownload,
   onImageError,
+  onOpen,
+  onDelete,
+  menuOpen = false,
+  onToggleMenu,
 }: {
   attachment: MessageAttachmentView;
   onDownload?: (attachmentId: string) => void;
   onImageError?: (attachmentId: string, url: string) => void;
+  onOpen?: (attachmentId: string) => void;
+  onDelete?: (attachmentId: string) => void;
+  menuOpen?: boolean;
+  onToggleMenu?: (attachmentId: string) => void;
 }) {
   if (attachment.kind === "image") {
     // 寸法が分かっていれば先に枠を確保し、画像の読み込みでタイムラインがずれないようにする（ADR 0013）
     const aspectRatio = attachment.width && attachment.height ? `${attachment.width} / ${attachment.height}` : undefined;
-    return (
+    const frame = (
       <div
         // 縦に長い画像がタイムラインを占めないよう、高さを抑えて切り取る
         className="flex max-h-80 w-65 max-w-full items-center justify-center overflow-hidden rounded-md border border-border bg-surface-muted"
@@ -438,10 +474,23 @@ function Attachment({
         )}
       </div>
     );
+
+    // 押して開けるのは、実際に画像が出ているときだけ（送信中の添付はまだ GET URL がない。ADR 0045 決定 1）
+    if (!onOpen || !attachment.url) return frame;
+    return (
+      <button
+        type="button"
+        aria-label={`${attachment.fileName} を拡大表示`}
+        onClick={() => onOpen(attachment.id)}
+        className="block rounded-md"
+      >
+        {frame}
+      </button>
+    );
   }
 
   return (
-    <div className="flex w-90 max-w-full items-center gap-3 rounded-md border border-border bg-surface px-3.5 py-2.5">
+    <div className="relative flex w-90 max-w-full items-center gap-3 rounded-md border border-border bg-surface px-3.5 py-2.5">
       <FileIcon className="size-4.5 shrink-0 text-text-secondary" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-text">{attachment.fileName}</p>
@@ -450,6 +499,28 @@ function Attachment({
       <TextButton onClick={() => onDownload?.(attachment.id)} className="text-xs font-semibold">
         ダウンロード
       </TextButton>
+      {/* 画像でない添付の削除は、この行の「…」から（画像は拡大表示の中にある。ADR 0045 決定 9） */}
+      {onDelete && (
+        <IconButton
+          label="ファイルの操作"
+          aria-expanded={menuOpen}
+          onClick={() => onToggleMenu?.(attachment.id)}
+          className={cx("size-7", menuOpen && "bg-surface-muted")}
+        >
+          <MoreIcon className="size-4" />
+        </IconButton>
+      )}
+      {menuOpen && onDelete && (
+        <Popover label="ファイルの操作" className="top-11 right-0 w-44">
+          <button
+            type="button"
+            onClick={() => onDelete(attachment.id)}
+            className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base font-medium text-danger hover:bg-surface-muted"
+          >
+            ファイルを削除
+          </button>
+        </Popover>
+      )}
     </div>
   );
 }

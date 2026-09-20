@@ -31,6 +31,16 @@ type TimelineProps = {
   onClearHighlight?: () => void;
   onDownload?: (attachmentId: string) => void;
   onImageError?: (attachmentId: string, url: string) => void;
+  /** インライン表示している画像を押した（拡大表示を開く。ADR 0045）。渡さなければ画像は押せない。 */
+  onOpenImage?: (key: string, attachmentId: string) => void;
+  /**
+   * 添付だけを削除する（ADR 0045 決定 9）。画像でない添付の行の「…」に出す。
+   * 出すのは `actionsFor` の `canDelete` が true のメッセージだけ（判定はメッセージの削除と同じ。ADR 0012）。
+   */
+  onDeleteAttachment?: (key: string, attachmentId: string) => void;
+  /** 添付の「…」を開いているメッセージと添付（1 度に 1 件）。 */
+  openAttachmentMenu?: { key: string; attachmentId: string };
+  onToggleAttachmentMenu?: (key: string, attachmentId: string) => void;
   onMarkAllRead?: () => void;
   /** key ごとの操作の可否。渡さなければ「…」を出さない。 */
   actionsFor?: (key: string) => MessageActions;
@@ -124,6 +134,10 @@ export function Timeline({
   onClearHighlight,
   onDownload,
   onImageError,
+  onOpenImage,
+  onDeleteAttachment,
+  openAttachmentMenu,
+  onToggleAttachmentMenu,
   onMarkAllRead,
   actionsFor,
   copyLinkFor,
@@ -277,6 +291,20 @@ export function Timeline({
                     highlighted={highlightedKey === key}
                     onDownload={onDownload}
                     onImageError={onImageError}
+                    onOpenImage={
+                      onOpenImage === undefined ? undefined : (attachmentId) => onOpenImage(key, attachmentId)
+                    }
+                    onDeleteAttachment={
+                      onDeleteAttachment === undefined
+                        ? undefined
+                        : (attachmentId) => onDeleteAttachment(key, attachmentId)
+                    }
+                    openAttachmentMenuId={openAttachmentMenu?.key === key ? openAttachmentMenu.attachmentId : undefined}
+                    onToggleAttachmentMenu={
+                      onToggleAttachmentMenu === undefined
+                        ? undefined
+                        : (attachmentId) => onToggleAttachmentMenu(key, attachmentId)
+                    }
                     canEdit={actions?.canEdit}
                     canDelete={actions?.canDelete}
                     copyLink={copyLinkFor?.(key)}

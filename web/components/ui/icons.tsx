@@ -14,6 +14,7 @@ import {
   CircleAlert,
   CircleCheck,
   Clock,
+  Download,
   Ellipsis,
   File,
   Hash,
@@ -30,6 +31,7 @@ import {
   Settings,
   Smartphone,
   SmilePlus,
+  Trash2,
   Users,
   X,
   Eye,
@@ -52,6 +54,7 @@ export const ChevronRightIcon = withDefaults(ChevronRight);
 export const AlertIcon = withDefaults(CircleAlert);
 export const CheckCircleIcon = withDefaults(CircleCheck);
 export const ClockIcon = withDefaults(Clock);
+export const DownloadIcon = withDefaults(Download);
 export const MoreIcon = withDefaults(Ellipsis);
 export const FileIcon = withDefaults(File);
 export const HashIcon = withDefaults(Hash);
@@ -66,6 +69,7 @@ export const SearchIcon = withDefaults(Search);
 export const SettingsIcon = withDefaults(Settings);
 export const PhoneIcon = withDefaults(Smartphone);
 export const SmilePlusIcon = withDefaults(SmilePlus);
+export const TrashIcon = withDefaults(Trash2);
 export const UsersIcon = withDefaults(Users);
 export const CloseIcon = withDefaults(X);
 export const EyeIcon = withDefaults(Eye);
