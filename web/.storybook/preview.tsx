@@ -12,60 +12,78 @@ const fontVariables = `${instrumentSans.variable} ${zenKakuGothicNew.variable} $
 const defaultShotSize = "1280x800";
 
 /**
- * 撮影の情報（大きさと出どころ）と、ダークの指定を <html> に写す。
+ * 撮影の指定（ADR 0047 決定 8）。**これを持つ story だけが「画面」**で、docs/ui/screenshots/ の PNG と 1 対 1 に対応する。
+ * 部品の story（components/ 以下）は持たない。
+ */
+type ScreenshotParams = { size?: string; source?: "app" | "design" };
+
+/**
+ * story の囲い。
  *
- * - `tools/shoot-ui.mjs` は index.json から story の一覧を取るが、**parameters は index.json に載らない**ので、
- *   描画したあとに `document.documentElement.dataset` から読む（ADR 0047 決定 8）。
+ * - 撮影の情報を <html> に写す。`tools/shoot-ui.mjs` は index.json から story を選ぶが、
+ *   **parameters は index.json に載らない**ので、描画したあとに `documentElement.dataset` から読む。
  * - `data-theme` を囲いの div だけでなく <html> にも置くのは、body の直下に出るもの
  *   （絵文字のピッカー。components/ui/portal.tsx）がダークを拾えなくなるため。
  */
-function HibariScreen({
-  dark,
-  size,
-  source,
-  children,
-}: {
-  dark: boolean;
-  size: string;
-  source: string;
-  children: ReactNode;
-}) {
+function HibariFrame({ dark, shot, children }: { dark: boolean; shot?: ScreenshotParams; children: ReactNode }) {
   useLayoutEffect(() => {
     const html = document.documentElement;
     html.lang = "ja";
     html.className = fontVariables;
-    html.dataset.shotSize = size;
-    html.dataset.shotSource = source;
+    if (shot) {
+      html.dataset.shotSize = shot.size ?? defaultShotSize;
+      html.dataset.shotSource = shot.source ?? "app";
+    }
     if (dark) html.dataset.theme = "dark";
     return () => {
       delete html.dataset.theme;
+      delete html.dataset.shotSize;
+      delete html.dataset.shotSource;
     };
-  }, [dark, size, source]);
+  }, [dark, shot]);
 
+  // 画面はスクリーンショットと同じく画面いっぱいに、部品は余白のある台の上に置く。
+  const className = shot
+    ? "min-h-dvh bg-background text-text"
+    : "flex min-h-dvh items-center justify-center bg-background p-10 text-text";
   return (
-    <div data-theme={dark ? "dark" : undefined} className="min-h-dvh bg-background text-text">
+    <div data-theme={dark ? "dark" : undefined} className={className}>
       {children}
     </div>
   );
 }
 
-const withHibariScreen: Decorator = (Story, { parameters }) => (
-  <HibariScreen
-    dark={parameters.theme === "dark"}
-    size={parameters.screenshot?.size ?? defaultShotSize}
-    source={parameters.screenshot?.source ?? "app"}
-  >
-    <Story />
-  </HibariScreen>
-);
+const withHibariFrame: Decorator = (Story, { parameters, globals }) => {
+  const shot = parameters.screenshot as ScreenshotParams | undefined;
+  // 画面の story はテーマを固定する（PNG と 1 対 1 にするため）。部品の story はツールバーで切り替える。
+  const dark = shot ? parameters.theme === "dark" : globals.theme === "dark";
+  return (
+    <HibariFrame dark={dark} shot={shot}>
+      <Story />
+    </HibariFrame>
+  );
+};
 
 const preview: Preview = {
-  decorators: [withHibariScreen],
+  decorators: [withHibariFrame],
+  initialGlobals: { theme: "light" },
+  globalTypes: {
+    theme: {
+      description: "テーマ（部品の story で使う。画面の story は parameters で固定してある）",
+      toolbar: {
+        title: "テーマ",
+        icon: "contrast",
+        items: [
+          { value: "light", title: "ライト" },
+          { value: "dark", title: "ダーク" },
+        ],
+        dynamicTitle: true,
+      },
+    },
+  },
   parameters: {
-    // 画面まるごとの story なので、Storybook の余白を付けない（PNG と同じ見た目にする）。
+    // 囲いは decorator が持つので、Storybook 側の余白は付けない。
     layout: "fullscreen",
-    // 画面を見るための story で、引数をいじる想定がないので下のパネルは畳んでおく。
-    options: { showPanel: false },
     viewport: {
       options: {
         mobile: { name: "モバイル（390x844）", styles: { width: "390px", height: "844px" } },

@@ -620,6 +620,7 @@ Phase 6.16  検索
 **構築順**（PR を分ける）
 1. 設計（ADR 0047、ロードマップ） ← 完了（#80）
 2. 移行: Storybook を入れ、story を足し、`/dev/preview` と `catalog*.tsx` を消し、`tools/shoot-ui.mjs` と `docs/` の案内を直す（1 つの PR） ← 完了
+3. 部品のカタログ: `components/**/*.stories.tsx` を足す（オーナーの要望、2026-09-21。ADR 0047 決定 12 の追記） ← 完了
 
 **DoD**
 - [x] `npm run storybook` で 134 画面が出て、名前での検索とフェーズ（`since:`）の絞り込みができる
@@ -629,6 +630,8 @@ Phase 6.16  検索
       （撮り直しで 44 枚に差が出た。内訳は下の「撮り直しで出た差」。すべて**古かった PNG が直った**もので、オーナーの確認を取ってから入れる）
 - [x] `npm run build-storybook` が CI（`.github/workflows/web.yml`）で通る
 - [x] `docs/ui/README.md` と `docs/roadmap.md` の `/dev/preview` の案内が Storybook に直っている
+- [x] 部品のカタログがある（`components/ui/` の 10 個と、状態の軸がある 6 個）。controls で props を変えられ、`autodocs` で props の表が出る
+- [x] 画面と部品を `screenshot` の tag で見分けていて、部品は撮影の対象にならない。検査は glob で集めるので、story のファイルを足せば自動で入る
 
 **撮り直しで出た差**（51 枚のうち 42 枚。中身は全部確かめてある）
 
