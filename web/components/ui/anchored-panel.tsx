@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, type RefObject, useLayoutEffect, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useState } from "react";
 
 import { Portal } from "@/components/ui/portal";
 import { type PanelPlacement, placePanel } from "@/lib/anchored-position";
@@ -26,12 +26,19 @@ export function AnchoredPanel({
   label,
   className,
   children,
+  onDismiss,
 }: {
   /** 位置の基準。メッセージの行（article）を渡す。 */
   anchorRef: RefObject<HTMLElement | null>;
   label: string;
   className?: string;
   children: ReactNode;
+  /**
+   * 外を押した、または Esc を押したので閉じる。
+   * アンカー（メッセージの行）の中は「外」に数えない。開いたボタンを押し直したときに、
+   * ここで閉じてからボタンが開き直して、閉じられなくなるため。
+   */
+  onDismiss?: () => void;
 }) {
   // ref ではなく state で持つ。中身は Portal がマウントされた後に現れるので、
   // ref のままだと「まだ無い」まま effect が 1 回走って終わってしまう
@@ -66,6 +73,26 @@ export function AnchoredPanel({
       document.removeEventListener("scroll", place, true);
     };
   }, [anchorRef, panel]);
+
+  // 外を押す / Esc で閉じる。押し下げで閉じるのは、押したまま外へ動かしても閉じるようにするため
+  useEffect(() => {
+    if (!panel || !onDismiss) return;
+    function dismissIfOutside(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (panel?.contains(target) || anchorRef.current?.contains(target)) return;
+      onDismiss?.();
+    }
+    function dismissOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onDismiss?.();
+    }
+    document.addEventListener("pointerdown", dismissIfOutside);
+    document.addEventListener("keydown", dismissOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismissIfOutside);
+      document.removeEventListener("keydown", dismissOnEscape);
+    };
+  }, [anchorRef, panel, onDismiss]);
 
   return (
     <Portal>

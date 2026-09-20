@@ -298,6 +298,7 @@ export function MessageItem({
           <AnchoredPanel
             anchorRef={rowRef}
             label="リアクションを選ぶ"
+            onDismiss={onTogglePicker}
             className="w-88 overflow-hidden rounded-md border border-border bg-surface shadow-overlay"
           >
             {picker}
