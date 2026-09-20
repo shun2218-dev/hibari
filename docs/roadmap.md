@@ -635,10 +635,12 @@ Phase 6.16  検索
 - 削除済みのメッセージのリンク → 同じ「表示できないメッセージ」のカード（ADR 0038 の「跡を残さない」に合わせる）
 
 **DoD**
-- [ ] メニューの「リンクをコピー」でパーマリンクがクリップボードに入る
-- [ ] 本文にリンクを貼るとカードが出て、長い本文は畳まれ、広げる・畳むができる
-- [ ] 読めないルームのメッセージのリンクは、中身を返さない（API のテスト）
-- [ ] 読めない・存在しない・削除済みが、API でもカードでも区別できない
+- [x] メニューの「リンクをコピー」でパーマリンクがクリップボードに入る（`workspace-screen.test.tsx` の「メッセージへのリンク（ADR 0040）」。スレッドの返信には親の ID（`&t=`）が付くことも確かめている。組み立てそのものは `links.test.ts` の `buildPermalink`）
+- [x] 本文にリンクを貼るとカードが出て、長い本文は畳まれ、広げる・畳むができる（同じ節の「本文に貼ったリンクをカードにし…」で、貼った順に 1 回でまとめて取ることも確かめている。畳む・広げるは `message-link-card.test.tsx`、畳む規則は `links.test.ts` の `clampCardBody`、まとめ取りは `link-cards.test.ts`）
+- [x] 読めないルームのメッセージのリンクは、中身を返さない（`internal/chat/message_link_test.go` の `TestResolveMessageLinksVisibility`、`TestResolveMessageLinksDM`、`TestResolveMessageLinksCrossWorkspace`）
+- [x] 読めない・存在しない・削除済みが、API でもカードでも区別できない（`TestResolveMessageLinksIndistinguishable`、`TestResolveMessageLinksDeleted`、`internal/httpx/message_link_test.go` の `TestMessageLinkDeletedAndThread`。カード側は `views.test.ts` の「読めないリンクは unavailable にする」「削除済みのリンクも、読めないリンクと同じ見え方にする」）
+
+オーナーによる実物での確認は未実施。飛ぶ側（リンクを開く・カードを押す）は Phase 6.11b。
 
 ### Phase 6.11b — 指定したメッセージへ飛ぶ
 
