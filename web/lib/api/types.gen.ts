@@ -372,6 +372,8 @@ export interface Message {
   attachments: MessageAttachment[];
   /** mentions は本文にあるメンション（ADR 0041）。本文の出現順で、重複はない。 クライアントはこれを見て、本文の `<@ID>` を名前に置き換える。「自分宛てか」はクライアントが判断する （配信は 1 つのペイロードを購読者に配るので、受け取る人ごとの値は載せられない。ADR 0015 / 0016）。 */
   mentions: Mention[];
+  /** reactions は付いた絵文字のリアクション（ADR 0044）。最初に付いた順で、削除済みのメッセージでは空配列。 */
+  reactions: MessageReaction[];
   created_at: string;
   edited_at: string | null;
   deleted_at: string | null;
@@ -396,6 +398,16 @@ export interface Mention {
   kind: MentionKind;
   /** user はルームを抜けた人でも入る（名前を出せないと本文が読めないため）。存在しないユーザーの ID は、そもそも含まれない。 */
   user?: UserProfile;
+}
+
+export interface MessageReaction {
+  emoji: string;
+  /** count は付けた人の数。 */
+  count: number;
+  /** me は閲覧者が付けているか。**REST のレスポンスにだけ入る。** WebSocket の配信は 1 つのペイロードを購読者に配るので、受け取る人ごとの値は載せられない （mentions の「自分宛てか」と同じ理由。ADR 0015 / 0016）。 クライアントは、me の無い更新では手元の値をそのまま保つ（me が変わるのは自分の操作のときだけで、 そのときは PUT / DELETE の応答が me 付きで返る）。 */
+  me?: boolean;
+  /** users は付けた人の先頭 8 人（最初に付いた順）。ホバーの「A、B 他 N 人」に使う。count より少ないことがある。 */
+  users: string[];
 }
 
 export interface MessageAttachment {

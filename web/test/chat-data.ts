@@ -57,6 +57,7 @@ export function message(seq: number, overrides: Partial<Message> = {}): Message 
     thread: null,
     attachments: [],
     mentions: [],
+    reactions: [],
     created_at: "2026-09-13T01:00:00Z",
     edited_at: null,
     deleted_at: null,

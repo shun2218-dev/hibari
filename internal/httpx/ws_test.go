@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"net/http"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -972,5 +973,61 @@ func waitUntil(t *testing.T, cond func() bool) {
 		case <-timeout:
 			t.Fatal("condition not met within 15s")
 		}
+	}
+}
+
+// TestWSDeliversReactions は、リアクションの付け外しが message.updated として届き、
+// 受け取る人ごとの値（me）だけが落ちていることを確かめる（ロードマップ Phase 6.7 の DoD / ADR 0044）。
+func TestWSDeliversReactions(t *testing.T) {
+	c := newAPI(t)
+	f := newChatFixture(c)
+	bob := c.dialWS(f.bob)
+	bob.subscribe("room_id", f.public.ID)
+
+	msg := decode[messageWithReactionsBody](t, c.sendMessage(f.alice, f.public.ID, "これどうでしょう"))
+	path := reactionPath(f.public.ID, msg.ID, "👍")
+	bob.sync()
+
+	// 付ける。専用のイベントは作らず、既存の message.updated に乗る（ADR 0044 決定 2）。
+	r := c.as(f.alice, http.MethodPut, path, nil)
+	expectStatus(t, r, http.StatusOK)
+	rest := decode[messageWithReactionsBody](t, r)
+	events := eventsOfType(bob.sync(), "message.updated")
+	if len(events) != 1 {
+		t.Fatalf("message.updated = %d 件, want 1", len(events))
+	}
+	var got messageWithReactionsBody
+	if err := json.Unmarshal(events[0].Data, &got); err != nil {
+		t.Fatal(err)
+	}
+	re, ok := reactionOf(got, "👍")
+	if !ok || re.Count != 1 || !slices.Equal(re.Users, []string{f.alice.id}) {
+		t.Errorf("配信された reactions = %s", events[0].Data)
+	}
+	// me は「受け取る人ごとの値」なので配信には載せない。REST の応答には載る（ADR 0044）。
+	if re.Me != nil {
+		t.Errorf("配信の me = %v, want 省略", *re.Me)
+	}
+	if reRest, _ := reactionOf(rest, "👍"); reRest.Me == nil || !*reRest.Me {
+		t.Errorf("REST の me = %v, want true", reRest.Me)
+	}
+	// change_seq は進むが seq は進まないので、未読もサイドバーの並びも動かない。
+	if got.ChangeSeq <= msg.ChangeSeq || got.Seq != msg.Seq {
+		t.Errorf("seq / change_seq = %d / %d, want seq %d のまま", got.Seq, got.ChangeSeq, msg.Seq)
+	}
+
+	// 外すのも同じ経路。二重の PUT は行が増えないので配らない。
+	expectStatus(t, c.as(f.alice, http.MethodPut, path, nil), http.StatusOK)
+	expectStatus(t, c.as(f.alice, http.MethodDelete, path, nil), http.StatusOK)
+	events = eventsOfType(bob.sync(), "message.updated")
+	if len(events) != 1 {
+		t.Fatalf("message.updated = %d 件, want 1（二重の PUT では配らない）", len(events))
+	}
+	var after messageWithReactionsBody
+	if err := json.Unmarshal(events[0].Data, &after); err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Reactions) != 0 {
+		t.Errorf("外した後の reactions = %s", events[0].Data)
 	}
 }

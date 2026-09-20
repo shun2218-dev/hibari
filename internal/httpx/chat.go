@@ -46,6 +46,8 @@ type ChatService interface {
 	ResolveMessageLinks(ctx context.Context, actor ulid.ULID, links []chat.MessageLink) ([]chat.MessageLinkResult, error)
 	EditMessage(ctx context.Context, actor, roomID, messageID ulid.ULID, body string) (chat.Message, error)
 	DeleteMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) error
+	AddReaction(ctx context.Context, actor, roomID, messageID ulid.ULID, emoji string) (chat.Message, error)
+	RemoveReaction(ctx context.Context, actor, roomID, messageID ulid.ULID, emoji string) (chat.Message, error)
 	MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq int64) (chat.ReadState, error)
 	ListThreadMessages(ctx context.Context, actor, roomID, rootID ulid.ULID, q chat.ThreadQuery) (chat.ThreadPage, error)
 	MarkThreadRead(ctx context.Context, actor, roomID, rootID ulid.ULID, seq int64) (chat.ThreadReadState, error)
@@ -100,6 +102,10 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("POST /api/v1/messages/links", h.resolveMessageLinks)
 	handle("PATCH /api/v1/rooms/{roomID}/messages/{messageID}", h.editMessage)
 	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}", h.deleteMessage)
+	// 絵文字のリアクション（ADR 0044 決定 4）。絵文字をパスに置き、PUT / DELETE がそれぞれ
+	// 「その行があること / ないこと」を表す（どちらも冪等）。
+	handle("PUT /api/v1/rooms/{roomID}/messages/{messageID}/reactions/{emoji}", h.addReaction)
+	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}/reactions/{emoji}", h.removeReaction)
 	handle("POST /api/v1/rooms/{roomID}/read", h.markRoomRead)
 	handle("GET /api/v1/rooms/{roomID}/threads/{rootID}/messages", h.listThreadMessages)
 	handle("POST /api/v1/rooms/{roomID}/threads/{rootID}/read", h.markThreadRead)

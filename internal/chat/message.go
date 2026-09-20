@@ -86,7 +86,9 @@ type Message struct {
 	// Attachments は添付。削除済みのメッセージでは空（ADR 0013）。
 	Attachments []MessageAttachment
 	// Mentions は本文にあるメンション（ADR 0041）。本文から作るので、ルームを抜けた人も入る。件数の対象とは別（internal/chat/mention.go）。
-	Mentions  []Mention
+	Mentions []Mention
+	// Reactions は付いた絵文字のリアクション（ADR 0044）。最初に付いた順。削除済みのメッセージでは空。
+	Reactions []MessageReaction
 	CreatedAt time.Time
 	EditedAt  *time.Time
 	DeletedAt *time.Time
@@ -213,7 +215,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		switch {
 		case err == nil:
 			// 再送。本文や返信先、also_in_channel が違っても比べずに既存を返す（冪等キーの一般的な扱い。ADR 0012 / 0039）。
-			msg, err = getMessage(ctx, q, roomID, existing)
+			msg, err = getMessage(ctx, q, roomID, actor, existing)
 			return err
 		case !errors.Is(err, pgx.ErrNoRows):
 			return fmt.Errorf("find by client_msg_id: %w", err)
@@ -251,7 +253,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 			return fmt.Errorf("advance sender's last_read_seq: %w", err)
 		}
 		created = true
-		msg, err = getMessage(ctx, q, roomID, id)
+		msg, err = getMessage(ctx, q, roomID, actor, id)
 		return err
 	})
 	if err != nil {
@@ -276,7 +278,8 @@ func messageLimit(limit int) int {
 	return limit
 }
 
-func getMessage(ctx context.Context, q *store.Queries, roomID, id ulid.ULID) (Message, error) {
+// getMessage は 1 件を読み直す。viewer はリアクションの Me を決めるためだけに使う（ADR 0044）。
+func getMessage(ctx context.Context, q *store.Queries, roomID, viewer, id ulid.ULID) (Message, error) {
 	row, err := q.GetMessageView(ctx, store.GetMessageViewParams{RoomID: roomID, ID: id})
 	if err != nil {
 		return Message{}, notFoundIfNoRows(err, "get message")
@@ -286,6 +289,9 @@ func getMessage(ctx context.Context, q *store.Queries, roomID, id ulid.ULID) (Me
 		return Message{}, err
 	}
 	if err := loadMessageMentions(ctx, q, msgs); err != nil {
+		return Message{}, err
+	}
+	if err := loadMessageReactions(ctx, q, roomID, viewer, msgs); err != nil {
 		return Message{}, err
 	}
 	return msgs[0], nil
@@ -375,7 +381,7 @@ func (s *Service) ListMessages(ctx context.Context, actor, roomID ulid.ULID, mq 
 		if rows, page, err = s.messagesAround(ctx, q, roomID, *mq.AroundMessageID, limit, page); err != nil {
 			return MessagePage{}, err
 		}
-		return s.finishMessagePage(ctx, q, roomID, rows, page)
+		return s.finishMessagePage(ctx, q, roomID, actor, rows, page)
 	}
 	switch {
 	case mq.AfterChangeSeq != nil:
@@ -417,11 +423,11 @@ func (s *Service) ListMessages(ctx context.Context, actor, roomID ulid.ULID, mq 
 			rows = rows[1:] // 昇順の先頭（最も古い 1 件）を捨てる
 		}
 	}
-	return s.finishMessagePage(ctx, q, roomID, rows, page)
+	return s.finishMessagePage(ctx, q, roomID, actor, rows, page)
 }
 
 // finishMessagePage は、読んだ行を Message にして添付とメンションを載せる。カーソルの種類によらず共通。
-func (s *Service) finishMessagePage(ctx context.Context, q *store.Queries, roomID ulid.ULID, rows []messageView, page MessagePage) (MessagePage, error) {
+func (s *Service) finishMessagePage(ctx context.Context, q *store.Queries, roomID, viewer ulid.ULID, rows []messageView, page MessagePage) (MessagePage, error) {
 	page.Messages = make([]Message, len(rows))
 	for i, r := range rows {
 		page.Messages[i] = toMessage(r)
@@ -430,6 +436,9 @@ func (s *Service) finishMessagePage(ctx context.Context, q *store.Queries, roomI
 		return MessagePage{}, err
 	}
 	if err := loadMessageMentions(ctx, q, page.Messages); err != nil {
+		return MessagePage{}, err
+	}
+	if err := loadMessageReactions(ctx, q, roomID, viewer, page.Messages); err != nil {
 		return MessagePage{}, err
 	}
 	return page, nil
@@ -569,7 +578,7 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 		}
 		if m.Body == body {
 			// 変わらなければ change_seq も採番せず、配信もしない。
-			msg, err = getMessage(ctx, q, roomID, messageID)
+			msg, err = getMessage(ctx, q, roomID, actor, messageID)
 			return err
 		}
 		// メッセージの行ロックの後に rooms の行ロックを取る（ADR 0014「ロックの順序」）。
@@ -590,7 +599,7 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 			return err
 		}
 		changed = true
-		msg, err = getMessage(ctx, q, roomID, messageID)
+		msg, err = getMessage(ctx, q, roomID, actor, messageID)
 		return err
 	})
 	if err != nil {
@@ -632,7 +641,7 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, roomID, messageID ul
 			// 削除済みへの削除は冪等な成功。change_seq を採番せず、配信もしない。
 			return nil
 		}
-		if root, err = s.softDeleteMessage(ctx, q, roomID, m); err != nil {
+		if root, err = s.softDeleteMessage(ctx, q, roomID, actor, m); err != nil {
 			return err
 		}
 		// 添付は掃除ジョブに消させる。ストレージの呼び出しをこのトランザクションに入れない（ADR 0013）。
@@ -640,7 +649,7 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, roomID, messageID ul
 			return fmt.Errorf("mark attachments deleted: %w", err)
 		}
 		// tombstone（本文と添付が空）を配信する。
-		tombstone, err := getMessage(ctx, q, roomID, messageID)
+		tombstone, err := getMessage(ctx, q, roomID, actor, messageID)
 		if err != nil {
 			return err
 		}

@@ -125,11 +125,11 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 			events = append(events, threadFollowedEvent(workspaceID, roomID, rootID, userID, threadSeq-1))
 		}
 	}
-	reply, err := getMessage(ctx, q, roomID, id)
+	reply, err := getMessage(ctx, q, roomID, actor, id)
 	if err != nil {
 		return Message{}, nil, err
 	}
-	updatedRoot, err := getMessage(ctx, q, roomID, rootID)
+	updatedRoot, err := getMessage(ctx, q, roomID, actor, rootID)
 	if err != nil {
 		return Message{}, nil, err
 	}
@@ -141,7 +141,7 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 // スレッドの返信なら、親の行もロックして返信数を減らし、親の change_seq も進める（返信数の変化を同期に載せる。ADR 0036）。
 // そのときは、配信する更新後の親を返す（返信でなければ nil）。
 // ロックの順序は 返信 → 親 → rooms。返信の送信（親 → rooms）とは、親より先に取るロックが重ならないのでデッドロックしない。
-func (s *Service) softDeleteMessage(ctx context.Context, q *store.Queries, roomID ulid.ULID, m store.Message) (*Message, error) {
+func (s *Service) softDeleteMessage(ctx context.Context, q *store.Queries, roomID, actor ulid.ULID, m store.Message) (*Message, error) {
 	if m.ThreadRootID != nil {
 		if _, err := q.GetMessageForUpdate(ctx, store.GetMessageForUpdateParams{RoomID: roomID, ID: *m.ThreadRootID}); err != nil {
 			return nil, fmt.Errorf("lock thread root: %w", err)
@@ -169,7 +169,7 @@ func (s *Service) softDeleteMessage(ctx context.Context, q *store.Queries, roomI
 	if err := q.RemoveThreadReply(ctx, store.RemoveThreadReplyParams{ID: *m.ThreadRootID, ChangeSeq: last}); err != nil {
 		return nil, fmt.Errorf("remove thread reply: %w", err)
 	}
-	root, err := getMessage(ctx, q, roomID, *m.ThreadRootID)
+	root, err := getMessage(ctx, q, roomID, actor, *m.ThreadRootID)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +238,7 @@ func (s *Service) ListThreadMessages(ctx context.Context, actor, roomID, rootID 
 	if err != nil {
 		return ThreadPage{}, err
 	}
-	root, err := getMessage(ctx, q, roomID, rootID)
+	root, err := getMessage(ctx, q, roomID, actor, rootID)
 	if err != nil {
 		return ThreadPage{}, err
 	}
@@ -300,6 +300,9 @@ func (s *Service) finishThreadPage(
 		return ThreadPage{}, err
 	}
 	if err := loadMessageMentions(ctx, q, page.Replies); err != nil {
+		return ThreadPage{}, err
+	}
+	if err := loadMessageReactions(ctx, q, roomID, actor, page.Replies); err != nil {
 		return ThreadPage{}, err
 	}
 	lastRead, err := q.GetThreadMembership(ctx, store.GetThreadMembershipParams{ThreadRootID: rootID, UserID: actor})

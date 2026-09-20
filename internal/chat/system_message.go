@@ -48,7 +48,8 @@ func (s *Service) writeSystemMessage(
 	if err != nil {
 		return Event{}, fmt.Errorf("create system message: %w", err)
 	}
-	msg, err := getMessage(ctx, q, roomID, id)
+	// システムメッセージにはリアクションを付けられない（ADR 0044 決定 6）ので、閲覧者は誰でもよい。
+	msg, err := getMessage(ctx, q, roomID, ulid.ULID{}, id)
 	if err != nil {
 		return Event{}, err
 	}
