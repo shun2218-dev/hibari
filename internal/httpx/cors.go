@@ -14,7 +14,8 @@ import (
 // Route Handler にビジネスロジックを置かず（CLAUDE.md）、レート制限に使うクライアント IP をそのまま取るため。
 const (
 	// corsAllowMethods は ServeMux に登録しているメソッド。
-	corsAllowMethods = "GET, POST, PATCH, DELETE"
+	// 新しいメソッドのルートを足したら、ここにも足す（TestCORSAllowsEveryRegisteredMethod が検査する）。
+	corsAllowMethods = "GET, POST, PUT, PATCH, DELETE"
 	// corsAllowHeaders はクライアントが付けるヘッダ。X-Hibari-Client は Refresh Token を Cookie で受け渡す合図（ADR 0010）。
 	corsAllowHeaders = "Authorization, Content-Type, X-Hibari-Client"
 	// corsExposeHeaders は JS から読ませるヘッダ。どちらも CORS の既定では読めない。

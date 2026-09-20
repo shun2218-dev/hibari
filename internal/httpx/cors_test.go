@@ -3,9 +3,14 @@ package httpx_test
 import (
 	"crypto/rand"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"regexp"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,7 +76,7 @@ func TestCORSPreflight(t *testing.T) {
 				// 送られてきた表記をそのまま返す。ブラウザは Origin ヘッダとの完全一致で比べる。
 				"Access-Control-Allow-Origin":      tt.origin,
 				"Access-Control-Allow-Credentials": "true",
-				"Access-Control-Allow-Methods":     "GET, POST, PATCH, DELETE",
+				"Access-Control-Allow-Methods":     "GET, POST, PUT, PATCH, DELETE",
 				"Access-Control-Allow-Headers":     "Authorization, Content-Type, X-Hibari-Client",
 				"Access-Control-Max-Age":           "7200",
 			}
@@ -154,6 +159,50 @@ func TestOriginOf(t *testing.T) {
 		}
 		if got := httpx.OriginOf(u); got != tt.want {
 			t.Errorf("OriginOf(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+// TestCORSAllowsEveryRegisteredMethod は、ルートに登録したメソッドが
+// Access-Control-Allow-Methods から漏れていないことを、ソースを読んで確かめる。
+//
+// 漏れるとブラウザだけが壊れる（プリフライトで止まり、サーバーには何も届かない）ので、
+// Go のテストでは気づけない。実際、リアクションで初めて PUT を足したときに漏れた。
+func TestCORSAllowsEveryRegisteredMethod(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// `handle("PUT /api/v1/...")` や `mux.Handle("GET /healthz", ...)` の先頭のメソッドを拾う
+	pattern := regexp.MustCompile(`"(GET|POST|PUT|PATCH|DELETE|HEAD) /`)
+	methods := map[string]bool{}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range pattern.FindAllSubmatch(src, -1) {
+			methods[string(m[1])] = true
+		}
+	}
+	if len(methods) < 4 {
+		t.Fatalf("ルートを読めていない（見つけたメソッド: %v）", slices.Sorted(maps.Keys(methods)))
+	}
+
+	r := httptest.NewRequest(http.MethodOptions, "/api/v1/workspaces", nil)
+	r.Header.Set("Origin", webOrigin)
+	r.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	w := httptest.NewRecorder()
+	newCORSRouter().ServeHTTP(w, r)
+	allowed := strings.Split(w.Header().Get("Access-Control-Allow-Methods"), ", ")
+
+	for _, m := range slices.Sorted(maps.Keys(methods)) {
+		if !slices.Contains(allowed, m) {
+			t.Errorf("%s のルートがあるのに Access-Control-Allow-Methods（%v）に無い", m, allowed)
 		}
 	}
 }
