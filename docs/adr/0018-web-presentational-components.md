@@ -34,7 +34,7 @@ Phase 6 は Next.js クライアントを作る。ロードマップは、見た
 - アイコンは `lucide-react` を使い、`components/ui/icons.tsx` を経由して線の太さ（1.75）と `aria-hidden` をそろえる。
 
 ### /dev/preview
-- 画面の名前を `docs/ui/screenshots/` の PNG のパスと同じにする（`/dev/preview/chat/banner-syncing` ↔ `chat/banner-syncing.png`）。
+- 画面の名前を `docs/ui/screenshots/` の PNG のパスと同じにする（`/dev/preview/chat/banner-syncing` ↔ `chat/connection/banner-syncing.png`）。
 - `app/dev/preview/catalog.test.tsx` が、**スクリーンショットと一覧が 1 対 1 に対応し、全画面がエラーなく描ける**ことを検査する。スクリーンショットを足したのに再現を忘れると CI が落ちる。
 - モックデータの ID は、アバターの色がスクリーンショットと同じになるものを選ぶ。
 - 本番のビルドでは `notFound()` を返す。

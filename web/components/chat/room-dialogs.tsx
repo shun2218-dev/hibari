@@ -261,7 +261,7 @@ export type RoomMemberRowView = UserRef & { isSelf: boolean; canRemove: boolean 
  * public は参加が自由なのでメンバーの一覧は出さない。DM は設定を変えられないので、この画面自体を開かない。
  *
  * 退出はロールに関係なく参加している人なら誰でもできるので、`onLeave` を渡したときだけ下に出す
- * （参加していない public を開いたときは渡さない）。形はワークスペースの退出（`workspace/settings-as-member.png`）に合わせる。
+ * （参加していない public を開いたときは渡さない）。形はワークスペースの退出（`workspace/settings/settings-as-member.png`）に合わせる。
  */
 export function RoomSettingsDialog({
   open,

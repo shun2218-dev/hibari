@@ -27,7 +27,7 @@ API の側は ADR 0013（添付）と ADR 0020（アバター）が決めてい�
 
 ### アップロード
 - 「ファイルを添付」で選ぶと、すぐに入力欄に並べ、1 つずつ並行して **発行（`POST /rooms/{id}/attachments`）→ ストレージに PUT → complete** を進める。中身は Go サーバーも Next.js も経由しない（CLAUDE.md ルール 10）。
-- **PUT は XMLHttpRequest で送る。** fetch はアップロードの進み具合を取れず、デザイン（`chat/attachment-uploading.png`）に進み具合がある。Access Token は付けない（署名が URL に入っている）。
+- **PUT は XMLHttpRequest で送る。** fetch はアップロードの進み具合を取れず、デザイン（`chat/attachment/attachment-uploading.png`）に進み具合がある。Access Token は付けない（署名が URL に入っている）。
 - 入力欄の添付は、入力欄の本文と同じく **ルームの画面を開いている間だけ持つ**。ルームを移ったら進行中の PUT を打ち切って捨てる。
 - 取り消し（×）は PUT を打ち切り、それ以降の結果を捨てる。再試行は発行からやり直す（前の行は使わない）。サーバーに残った pending / uploaded の行は、掃除ジョブが 24 時間後に消す（ADR 0013）。
 - 1 メッセージに 10 個まで。超えて選んだ分は並べない。

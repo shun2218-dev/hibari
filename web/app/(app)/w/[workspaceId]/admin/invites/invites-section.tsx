@@ -14,7 +14,7 @@ import { useSessionState } from "@/lib/auth/session-provider";
 import { useChatState, useChatStore } from "@/lib/chat/chat-provider";
 import { canCreateInvite, inviteUrl, toInviteRowView } from "@/lib/chat/workspace-views";
 
-/** 作成のダイアログの既定。デザイン（workspace/dialog-invite-new.png）と同じ 10 回・7 日。 */
+/** 作成のダイアログの既定。デザイン（workspace/invite/dialog-invite-new.png）と同じ 10 回・7 日。 */
 const DEFAULT_MAX_USES: InviteMaxUses = 10;
 const DEFAULT_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
 

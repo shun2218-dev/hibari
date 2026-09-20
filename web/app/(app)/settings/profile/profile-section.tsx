@@ -67,7 +67,7 @@ export function ProfileSection() {
         size_bytes: file.size,
       });
       await putFileWithXhr(upload.url, upload.headers, file, {
-        onProgress: () => {}, // 進み具合のデザインはアップロード中の表示だけ（settings/profile-avatar-uploading.png）
+        onProgress: () => {}, // 進み具合のデザインはアップロード中の表示だけ（settings/profile/profile-avatar-uploading.png）
         signal: new AbortController().signal,
       });
       await session.completeAvatarUpload({ upload_id, content_type: file.type, size_bytes: file.size });

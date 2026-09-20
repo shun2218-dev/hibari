@@ -70,7 +70,7 @@ Phase 6 を通しで触ったオーナーから、「チャンネルに参加し
 
 - 配信は既存の `message.created`（`docs/events.md`）。クライアントはメッセージとして受け取り、`change_seq` の同期もそのまま効く。
 - ルーム一覧の `last_message` にも出る（サイドバーの 1 行に「参加しました」などが出る）。プレビューにも `kind` と `system` を載せる。
-- 画面はデザインにないので、**日付の区切りと同じ中央寄せの控えめな 1 行**として足す（`chat/system-messages.png`）。
+- 画面はデザインにないので、**日付の区切りと同じ中央寄せの控えめな 1 行**として足す（`chat/timeline/system-messages.png`）。
   撮り方は ADR 0032 と同じ（`/dev/preview` を headless Chrome で撮る）。
 
 ## 理由

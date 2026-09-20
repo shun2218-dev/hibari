@@ -319,7 +319,7 @@ export function RoomView({
     />
   );
 
-  // ワークスペースから外されたら、ヘッダーは残して本文を差し替える（chat/removed-from-workspace.png）
+  // ワークスペースから外されたら、ヘッダーは残して本文を差し替える（chat/workspace/removed-from-workspace.png）
   if (removedFromWorkspace) {
     return (
       <>

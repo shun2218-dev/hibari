@@ -373,7 +373,7 @@ POST   /api/v1/users/avatars             画面に出すユーザーの署名付
 
 1. **ログイン・登録**: fetch ラッパー（タブをまたいで refresh を 1 本にする）、認証状態、ログインしていないときの振り分け、ルートの骨組み ← 完了
    - パスワードの再設定とメールの確認のページ（メールのリンクの受け口） ← 完了
-2. **ワークスペースとルームの画面（REST のみ）**: サイドバー、履歴の表示、既読。ログイン後の振り分けと、ワークスペースが 0 件のときの表示（デザインは `chat/empty-workspaces.png`、コンポーネントは `NoWorkspaces`） ← 完了（ADR 0025）
+2. **ワークスペースとルームの画面（REST のみ）**: サイドバー、履歴の表示、既読。ログイン後の振り分けと、ワークスペースが 0 件のときの表示（デザインは `chat/workspace/empty-workspaces.png`、コンポーネントは `NoWorkspaces`） ← 完了（ADR 0025）
    - ワークスペースの作成と切り替え、チャンネルの作成、public ルームへの参加、古い履歴の読み込み、メンバーパネルも含めた。入力欄は 4 で出す
 3. **リアルタイム**: WS クライアント、再接続と `after_change_seq` による同期、presence、入力中の表示 ← 完了（ADR 0026）
    - キック・ルームから外されたときの表示と、サーバーに届かない画面も含めた。入力中を送るのは入力欄と一緒に 4 で行う
@@ -405,7 +405,7 @@ POST   /api/v1/users/avatars             画面に出すユーザーの署名付
 
 - `messages` に `kind`（`user` / `system`）と `system_type` / `system_data` を足し、人の発言と同じ行として seq を採番する（ADR 0033）
 - 未読数はシステムメッセージを数えない。人の発言だけを数えた番号（`user_seq`）を並走させ、引き算のまま O(1) に保つ
-- 画面は日付の区切りと同じ中央寄せの 1 行（`chat/system-messages.png`）
+- 画面は日付の区切りと同じ中央寄せの 1 行（`chat/timeline/system-messages.png`）
 
 **DoD**
 - [x] チャンネルを作る・参加する・退出する・外される・名前を変えると、その行がタイムラインに残る
@@ -611,7 +611,7 @@ Phase 6.16  検索
 
 **ADR で決めること** ← 完了（ADR 0047）
 - 入れるもの → `@storybook/nextjs-vite`（Storybook 10）。`@storybook/addon-vitest` は入れない（peer が `vitest: ^3 || ^4` で web の 5 と合わない）
-- PNG との対応 → **story id をそのまま PNG のパスにする**（`chat--image-viewer` ↔ `chat/image-viewer.png`）。対応表を持たない
+- PNG との対応 → **story id をそのまま PNG のパスにする**（`chat-attachment--image-viewer` ↔ `chat/attachment/image-viewer.png`）。対応表を持たない
 - dark / mobile → story の `parameters` に持たせ、decorator が `<html data-theme>` に当てる。命名の規則は検査としてだけ残す
 - 足したフェーズの絞り込み → tag（`since:6.7`）。サイドバーの絞り込みを使い、`catalog-browser.tsx` は消す
 - 撮影 → `/index.json` と `iframe.html?id=` に向ける。大きさと出どころ（app / design）を story に持たせ、`<html data-shot-*>` 経由で撮影ツールが読む
@@ -621,6 +621,7 @@ Phase 6.16  検索
 1. 設計（ADR 0047、ロードマップ） ← 完了（#80）
 2. 移行: Storybook を入れ、story を足し、`/dev/preview` と `catalog*.tsx` を消し、`tools/shoot-ui.mjs` と `docs/` の案内を直す（1 つの PR） ← 完了
 3. 部品のカタログ: `components/**/*.stories.tsx` を足す（オーナーの要望、2026-09-21。ADR 0047 決定 12 の追記） ← 完了
+4. 画面のディレクトリ分け: `docs/ui/screenshots/` と story を話題ごとのサブディレクトリに分ける（オーナーの要望、2026-09-21。ADR 0047 決定 2 の追記） ← 完了
 
 **DoD**
 - [x] `npm run storybook` で 134 画面が出て、名前での検索とフェーズ（`since:`）の絞り込みができる
@@ -632,6 +633,7 @@ Phase 6.16  検索
 - [x] `docs/ui/README.md` と `docs/roadmap.md` の `/dev/preview` の案内が Storybook に直っている
 - [x] 部品のカタログがある（`components/ui/` の 10 個と、状態の軸がある 6 個）。controls で props を変えられ、`autodocs` で props の表が出る
 - [x] 画面と部品を `screenshot` の tag で見分けていて、部品は撮影の対象にならない。検査は glob で集めるので、story のファイルを足せば自動で入る
+- [x] 画面が話題ごとのディレクトリに分かれている（`chat` の 79 枚が 10 個のサブディレクトリに）。PNG のパス・story の id・story のファイルの置き場所が同じ形で対応する
 
 **撮り直しで出た差**（51 枚のうち 42 枚。中身は全部確かめてある）
 

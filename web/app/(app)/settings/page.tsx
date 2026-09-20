@@ -11,7 +11,7 @@ import { settingsHrefs } from "./settings-shell";
 const DESKTOP = "(min-width: 768px)";
 
 /**
- * 設定の入口（`/settings`）。モバイルは項目の一覧（`settings/mobile-list.png`）、
+ * 設定の入口（`/settings`）。モバイルは項目の一覧（`settings/nav/mobile-list.png`）、
  * デスクトップは一覧が左のナビと重なるので、プロフィールに移る。
  */
 export default function Page() {

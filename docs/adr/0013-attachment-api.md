@@ -7,7 +7,7 @@
 
 Phase 3c の着手時点で、ADR 0008 とロードマップが決めていない点、`docs/` と画面仕様が食い違う点があった。
 
-- 画面（`chat/attachment-done.png`、`chat/messages-all-states.png`）はファイル名を表示するが、`attachments` にファイル名の列がない
+- 画面（`chat/attachment/attachment-done.png`、`chat/timeline/messages-all-states.png`）はファイル名を表示するが、`attachments` にファイル名の列がない
 - `attachments.status` は `pending / attached` の 2 つだけで、complete（HEAD による検証）が済んだかどうかを表せない
 - 画像の `width / height` を誰がどう決めるか。サーバーはファイルの中身を経由しない（CLAUDE.md ルール 10）
 - 画面には `.fig` の添付があるが、ロードマップは「MIME の許可リスト」としている

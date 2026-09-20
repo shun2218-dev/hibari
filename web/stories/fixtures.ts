@@ -160,7 +160,7 @@ export const timeline: TimelineItem[] = [
 ];
 
 /**
- * 本文に貼られたパーマリンクのカード（chat/message-link-card.png。ADR 0040）。
+ * 本文に貼られたパーマリンクのカード（chat/link/message-link-card.png。ADR 0040）。
  * 読めるリンクは中身を出し、読めない・存在しない・削除済みは区別せずに「表示できません」にする。
  */
 const linkCards: MessageLinkCardView[] = [
@@ -182,7 +182,7 @@ const linkCards: MessageLinkCardView[] = [
   { key: "card-unavailable", state: "unavailable" },
 ];
 
-/** 本文にリンクを貼ったタイムライン（chat/message-link-card.png）。 */
+/** 本文にリンクを貼ったタイムライン（chat/link/message-link-card.png）。 */
 export const timelineWithLinkCards: TimelineItem[] = timeline.map((item) =>
   item.type === "message" && item.message.key === "m-1030"
     ? {
@@ -198,19 +198,19 @@ export const timelineWithLinkCards: TimelineItem[] = timeline.map((item) =>
 
 // ---- 絵文字のリアクション（ADR 0044）----
 
-/** リアクションの付いているメッセージの key（chat/reaction-names.png のホバーに使う）。 */
+/** リアクションの付いているメッセージの key（chat/reaction/reaction-names.png のホバーに使う）。 */
 export const reactedMessageKey = "m-1030";
 
-/** ピッカーを開いているメッセージの key（chat/reaction-picker.png）。まだ何も付いていない行から開く。 */
+/** ピッカーを開いているメッセージの key（chat/reaction/reaction-picker.png）。まだ何も付いていない行から開く。 */
 export const reactionPickerKey = "m-1012";
 
 /**
- * いちばん下のメッセージの key（chat/reaction-picker-above.png）。
+ * いちばん下のメッセージの key（chat/reaction/reaction-picker-above.png）。
  * ここで開くと下に入りきらないので、ピッカーは上に開く。
  */
 export const lastMessageKey = "m-1105";
 
-/** ホバーで名前を出しているリアクション（chat/reaction-names.png）。 */
+/** ホバーで名前を出しているリアクション（chat/reaction/reaction-names.png）。 */
 export const hoveredReaction = { key: reactedMessageKey, emoji: "👍" };
 
 const reactionsByKey: Record<string, MessageReactionView[]> = {
@@ -233,7 +233,7 @@ const reactionsByKey: Record<string, MessageReactionView[]> = {
   ],
 };
 
-/** リアクションの付いたタイムライン（chat/reactions.png）。 */
+/** リアクションの付いたタイムライン（chat/reaction/reactions.png）。 */
 export const timelineWithReactions: TimelineItem[] = timeline.map((item) =>
   item.type === "message" && reactionsByKey[item.message.key] !== undefined
     ? { type: "message", message: { ...item.message, reactions: reactionsByKey[item.message.key] } }
@@ -266,7 +266,7 @@ export const singleImageAttachment: MessageAttachmentView = {
 export const attachmentMessageKey = "m-1041";
 
 /**
- * 画像 3 枚とファイル 1 件を付けたタイムライン（chat/image-viewer.png、chat/attachment-menu.png）。
+ * 画像 3 枚とファイル 1 件を付けたタイムライン（chat/attachment/image-viewer.png、chat/attachment/attachment-menu.png）。
  * 1 枚だけの画像は、上のメッセージ（m-1402）をモックの画像に差し替えて出す。
  */
 export const timelineWithImages: TimelineItem[] = timeline.map((item) => {
@@ -294,10 +294,10 @@ export const singleViewerImage = {
   url: singleImageAttachment.kind === "image" ? singleImageAttachment.url : undefined,
 };
 
-/** 拡大表示から削除するときのファイル名（chat/attachment-delete-dialog.png）。 */
+/** 拡大表示から削除するときのファイル名（chat/attachment/attachment-delete-dialog.png）。 */
 export const deletedAttachmentName = imageAttachments[1].fileName;
 
-/** 飛んできた先の key（chat/jump-highlight.png。ADR 0042）。 */
+/** 飛んできた先の key（chat/link/jump-highlight.png。ADR 0042）。 */
 export const jumpTargetKey = "m-1012";
 
 /**
@@ -307,7 +307,7 @@ export const jumpTargetKey = "m-1012";
 export const timelineJumped: TimelineItem[] = timeline.filter((item) => item.type !== "unread");
 
 /**
- * 参加や名前の変更のログを挟んだタイムライン（chat/system-messages.png。ADR 0033）。
+ * 参加や名前の変更のログを挟んだタイムライン（chat/timeline/system-messages.png。ADR 0033）。
  * ログは人の発言ではないので、アバターも名前も出さず、中央に控えめに置く。
  */
 export const timelineWithSystemMessages: TimelineItem[] = [
@@ -328,7 +328,7 @@ export const timelineWithSystemMessages: TimelineItem[] = [
 ];
 
 /**
- * 画像を設定している人と、していない人が混ざった状態（chat/avatar-images.png）。
+ * 画像を設定している人と、していない人が混ざった状態（chat/timeline/avatar-images.png）。
  * 一覧では、画像のある人だけが差し替わる。
  */
 export const timelineWithAvatars: TimelineItem[] = timeline.map((item) => {
@@ -349,7 +349,7 @@ function messageView(item: TimelineItem): MessageView {
 export const threadRootKey = "m-0941";
 
 /**
- * 返信がチャンネルから分かれたタイムライン（chat/thread-panel.png）。
+ * 返信がチャンネルから分かれたタイムライン（chat/thread/thread-panel.png）。
  * 返信はチャンネルに出ず、親の下に「N 件の返信」が出る。
  */
 export const timelineWithThreads: TimelineItem[] = [
@@ -385,10 +385,10 @@ export function threadItems(root: MessageView, replies: MessageView[]): Timeline
   ];
 }
 
-/** 返信がまだない親（「返信」から開いた直後。chat/thread-panel-empty.png）。 */
+/** 返信がまだない親（「返信」から開いた直後。chat/thread/thread-panel-empty.png）。 */
 export const threadRootWithoutReplies: MessageView = messageView(timelineWithThreads[7]);
 
-/** 親が削除されたスレッド（chat/thread-root-deleted.png）。返信は残る。 */
+/** 親が削除されたスレッド（chat/thread/thread-root-deleted.png）。返信は残る。 */
 export const deletedThreadRoot: MessageView = {
   ...messageView(message("m-0930", naoki, "09:30", "", { deleted: true })),
   thread: { replyCount: 2, lastReplyLabel: "09:48" },
@@ -400,7 +400,7 @@ export const deletedThreadReplies: MessageView[] = [
 ];
 
 /**
- * 「チャンネルにも投稿する」を付けた返信（chat/thread-broadcast.png。ADR 0039）。
+ * 「チャンネルにも投稿する」を付けた返信（chat/thread/thread-broadcast.png。ADR 0039）。
  * スレッドでは最後の返信に控えめな注記が付き、チャンネルではルームの seq の位置（10:12 と 10:30 の間）に「スレッドに返信しました」付きで並ぶ。
  */
 const broadcastReplyKey = "r-1018";
@@ -415,7 +415,7 @@ export const timelineWithBroadcast: TimelineItem[] = timelineWithThreads.flatMap
   return [item, { type: "message", message: { ...reply, grouped: false, broadcast: { in: "channel" } } }];
 });
 
-/** 参加しているスレッドの一覧（chat/threads.png）。最後の返信が新しい順。 */
+/** 参加しているスレッドの一覧（chat/thread/threads.png）。最後の返信が新しい順。 */
 export const threadList: ThreadListItemView[] = [
   {
     key: threadRootKey,

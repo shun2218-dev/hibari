@@ -7,7 +7,7 @@ import { useAvatarUrls, useChatState } from "@/lib/chat/chat-provider";
 import { toThreadListItemView } from "@/lib/chat/views";
 
 /**
- * 参加しているスレッドの一覧（`/w/{id}/threads`。chat/threads.png）。押すと、そのルームをスレッドのパネルを開いた状態で出す。
+ * 参加しているスレッドの一覧（`/w/{id}/threads`。chat/thread/threads.png）。押すと、そのルームをスレッドのパネルを開いた状態で出す。
  * 一覧はサイドバーのバッジにも使うので、WorkspaceScreen がワークスペースを開いたときに取ってある。
  */
 export function WorkspaceThreads({ workspaceId, onBack }: { workspaceId: string; onBack: () => void }) {

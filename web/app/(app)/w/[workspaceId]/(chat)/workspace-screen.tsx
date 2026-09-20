@@ -151,7 +151,7 @@ export function WorkspaceScreen() {
     router.replace("/");
   }
 
-  // 接続できていたサーバーに、続けて届かない（chat/server-error.png）。端末がオフラインのときは再接続中のバナーで待つ
+  // 接続できていたサーバーに、続けて届かない（chat/connection/server-error.png）。端末がオフラインのときは再接続中のバナーで待つ
   if (unavailable) {
     return (
       <ServerUnavailable

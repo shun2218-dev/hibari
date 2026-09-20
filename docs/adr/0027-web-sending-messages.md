@@ -14,7 +14,7 @@
 - 送信中にリロードしたときに二重投稿しないこと（ロードマップの DoD）
 - 入力中を送る間隔
 
-範囲はオーナーと確認して、返信・編集・削除（`chat/composer-reply.png`、`chat/message-menu.png`、`chat/message-editing.png`、`chat/message-delete-dialog.png`）も含めた。添付は構築順 5 に残す。
+範囲はオーナーと確認して、返信・編集・削除（`chat/composer-reply.png`、`chat/message/message-menu.png`、`chat/message/message-editing.png`、`chat/message/message-delete-dialog.png`）も含めた。添付は構築順 5 に残す。
 
 ## 決定
 

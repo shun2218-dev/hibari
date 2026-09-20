@@ -9,7 +9,7 @@ import { useAvatarUrls, useChatState, useChatStore } from "@/lib/chat/chat-provi
 import { toDmCandidates } from "@/lib/chat/views";
 
 /**
- * ダイレクトメッセージを開く（`chat/dm-dialog.png`）。
+ * ダイレクトメッセージを開く（`chat/room/dm-dialog.png`）。
  * 相手はワークスペースのメンバーから選ぶ。同じ相手の DM は 1 つにまとまる（ADR 0011）ので、すでにあればそれを開く。
  */
 export function StartDm({ workspaceId, open, onClose }: { workspaceId: string; open: boolean; onClose: () => void }) {
