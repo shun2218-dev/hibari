@@ -628,6 +628,21 @@ export const previewScreens: Record<string, () => ReactNode> = {
       messageAttachments: "images",
       dialog: <ImageViewer images={viewerImages} index={1} onMove={noop} onClose={noop} onDownload={noop} onDelete={noop} />,
     }),
+  // 最後の画像。送れる向きにだけ矢印を出す（端では出さない）
+  "chat/image-viewer-last": () =>
+    chat({
+      messageAttachments: "images",
+      dialog: (
+        <ImageViewer
+          images={viewerImages}
+          index={viewerImages.length - 1}
+          onMove={noop}
+          onClose={noop}
+          onDownload={noop}
+          onDelete={noop}
+        />
+      ),
+    }),
   // 1 枚しかないので矢印と枚数を出さない。消せない人なので、削除も出ない（ADR 0045 決定 9）
   "chat/image-viewer-single": () =>
     chat({

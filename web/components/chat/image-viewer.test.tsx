@@ -39,16 +39,19 @@ describe("ImageViewer（ADR 0045）", () => {
     expect(onMove).toHaveBeenLastCalledWith(0);
   });
 
-  it("端では止める（巻き戻さない）", async () => {
+  it("端では矢印を出さず、キーでも動かない（巻き戻さない）", async () => {
     const onMove = vi.fn();
     const { rerender } = render(viewer({ index: 0, onMove }));
 
-    expect(screen.getByRole("button", { name: "前の画像" })).toBeDisabled();
+    // 先頭では「前の画像」を出さない。押せないボタンを残すと、押せるものと見分けがつかない
+    expect(screen.queryByRole("button", { name: "前の画像" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "次の画像" })).toBeInTheDocument();
     await userEvent.keyboard("{ArrowLeft}");
     expect(onMove).not.toHaveBeenCalled();
 
     rerender(viewer({ index: images.length - 1, onMove }));
-    expect(screen.getByRole("button", { name: "次の画像" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "次の画像" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "前の画像" })).toBeInTheDocument();
     await userEvent.keyboard("{ArrowRight}");
     expect(onMove).not.toHaveBeenCalled();
   });

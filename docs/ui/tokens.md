@@ -138,3 +138,12 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 ## フォーカス
 
 キーボード操作時のフォーカスリングは globals.css の `:focus-visible` で一律に `2px solid var(--color-primary)` を付ける。入力欄は枠の内側（`outline-offset: -2px`）にリングを出すデザインなので、入力欄のコンポーネントで offset だけ上書きする。
+
+## カーソル
+
+押せるものにはポインタを出す。Tailwind v4 の preflight は `button` に `cursor: pointer` を当てない（v3 から変わった）ので、
+globals.css の `@layer base` で `button:not(:disabled)` / `[role="button"]` / `summary` に戻している（オーナーの判断、2026-09-20）。
+
+- 無効なボタンは `disabled:cursor-not-allowed`（押せないことを先に伝える）。ユーティリティはレイヤの順で base より後に当たる。
+- **画像の添付だけは `cursor-zoom-in`**。ボタンに見えないので、押すと拡大表示が開くことをカーソルで示す（ADR 0045）。
+  拡大表示を開けない画像（送信中の添付）にはカーソルも出さない。

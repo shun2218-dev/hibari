@@ -93,7 +93,7 @@ export function IconButton({
       type={type}
       aria-label={label}
       className={cx(
-        "inline-flex size-8 shrink-0 items-center justify-center rounded-sm hover:bg-surface-muted disabled:text-text-muted disabled:hover:bg-transparent",
+        "inline-flex size-8 shrink-0 items-center justify-center rounded-sm hover:bg-surface-muted disabled:cursor-not-allowed disabled:text-text-muted disabled:hover:bg-transparent",
         muted ? "text-text-muted" : "text-text-secondary",
         className,
       )}

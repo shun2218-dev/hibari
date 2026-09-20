@@ -482,7 +482,8 @@ function Attachment({
         type="button"
         aria-label={`${attachment.fileName} を拡大表示`}
         onClick={() => onOpen(attachment.id)}
-        className="block rounded-md"
+        // 画像はボタンに見えないので、ポインタで「押すと開く」ことを示す（Tailwind v4 の button は cursor: default）
+        className="block cursor-zoom-in rounded-md"
       >
         {frame}
       </button>

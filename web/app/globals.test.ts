@@ -93,6 +93,13 @@ describe("globals.css", () => {
     },
   );
 
+  it("makes clickable elements show a pointer (Tailwind v4 does not)", () => {
+    // v4 の preflight は button に cursor: pointer を当てない。押せるものが矢印のままだと、
+    // 押せることが見た目から分からない（画像の拡大表示で気づいた。ADR 0045）
+    expect(css).toContain("button:not(:disabled)");
+    expect(css).toMatch(/button:not\(:disabled\),\s*\[role="button"\],\s*summary\s*\{\s*cursor: pointer;/);
+  });
+
   it("uses raw colors only in token definitions", () => {
     // トークンの定義行（--name: value;）以外に色の生の値が書かれていないこと
     const rawColors = source

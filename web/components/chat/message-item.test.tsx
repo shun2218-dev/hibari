@@ -435,7 +435,11 @@ describe("MessageItem の添付ファイル（ADR 0045）", () => {
     const onOpenImage = vi.fn();
     render(<MessageItem message={message({ attachments: [image] })} onOpenImage={onOpenImage} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "改訂 01.png を拡大表示" }));
+    const button = screen.getByRole("button", { name: "改訂 01.png を拡大表示" });
+    // 画像はボタンに見えないので、押せることをカーソルで示す
+    expect(button).toHaveClass("cursor-zoom-in");
+
+    await userEvent.click(button);
 
     expect(onOpenImage).toHaveBeenCalledWith("a1");
   });

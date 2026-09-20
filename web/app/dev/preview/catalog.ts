@@ -138,6 +138,7 @@ export const previewCatalog: PreviewEntry[] = [
   { name: "chat/reaction-picker-above", title: "リアクション: ピッカーが上に開く", since: "6.7" },
   { name: "chat/image-viewer", title: "画像の拡大表示", since: "6.7.5" },
   { name: "chat/image-viewer-dark", title: "画像の拡大表示（ダーク）", dark: true, since: "6.7.5" },
+  { name: "chat/image-viewer-last", title: "画像の拡大表示: 最後の 1 枚", since: "6.7.5" },
   { name: "chat/image-viewer-single", title: "画像の拡大表示: 1 枚だけ", since: "6.7.5" },
   { name: "chat/attachment-menu", title: "添付ファイルの操作メニュー", since: "6.7.5" },
   { name: "chat/attachment-delete-dialog", title: "添付ファイルの削除", since: "6.7.5" },
