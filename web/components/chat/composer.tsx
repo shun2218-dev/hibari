@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent, useRef, useState } from "react";
+import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { Button, IconButton, TextButton } from "@/components/ui/button";
@@ -61,6 +61,22 @@ export function Composer({
     forceMentionQuery === undefined ? null : { start: 0, query: forceMentionQuery, caret: forceMentionQuery.length + 1 },
   );
   const [active, setActive] = useState(0);
+  // 補完を確定したあとに置くキャレットの位置。置いたら null に戻す
+  const pendingCaret = useRef<number | null>(null);
+
+  /**
+   * 補完で入れたハンドルの後ろにキャレットを戻す。
+   *
+   * 描き直しのあと（値が入れ替わったあと）でないと置けないが、次のフレームまで待つと、その前に打った文字の
+   * 後ろでキャレットが戻り、続きの文字がハンドルの直後に割り込む。描き直しと同じ同期のタイミングで置く。
+   */
+  useLayoutEffect(() => {
+    const caret = pendingCaret.current;
+    if (caret === null) return;
+    pendingCaret.current = null;
+    textarea.current?.focus();
+    textarea.current?.setSelectionRange(caret, caret);
+  });
 
   const matches = query && mentionCandidates ? filterCandidates(mentionCandidates, query.query) : [];
   const open = matches.length > 0;
@@ -80,11 +96,8 @@ export function Composer({
     const next = applyCompletion(value, query.start, query.caret, candidate);
     onChange?.(next.value);
     setQuery(null);
-    // 値は親が持つので、キャレットは描き直しのあとに置き直す
-    requestAnimationFrame(() => {
-      textarea.current?.focus();
-      textarea.current?.setSelectionRange(next.caret, next.caret);
-    });
+    // 値は親が持つので、キャレットは描き直しのあとに置き直す（下の useLayoutEffect）
+    pendingCaret.current = next.caret;
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {

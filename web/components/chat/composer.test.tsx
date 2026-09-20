@@ -126,6 +126,24 @@ describe("Composer の @ 補完（ADR 0043）", () => {
     expect(screen.queryByRole("list", { name: "メンションの候補" })).not.toBeInTheDocument();
   });
 
+  it("確定したあとに打った文字は、ハンドルの後ろに続く（遅れて来るフレームで戻らない）", async () => {
+    // キャレットを「描き直しの次のフレーム」で置き直していたころは、フレームが来る前に打ち続けると
+    // そこでキャレットがハンドルの直後に戻り、続きの文字が割り込んだ。フレームを手で進めて確かめる
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await userEvent.type(input, "@ali");
+    await userEvent.click(within(screen.getByRole("list", { name: "メンションの候補" })).getByText("田中 あおい"));
+    // 打ち続けるだけ（type は押す前に click するので、キャレットが末尾に戻ってしまう）
+    await userEvent.keyboard("おはよ");
+    for (const frame of frames.splice(0)) frame(0);
+    await userEvent.keyboard("う");
+
+    expect(input).toHaveValue("@alice おはよう");
+  });
+
   it("↑↓ で選び、Enter で確定する（送信しない）", async () => {
     const onSend = vi.fn();
     render(<Harness onSend={onSend} />);
