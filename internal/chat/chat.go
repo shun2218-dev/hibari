@@ -51,6 +51,8 @@ const (
 	ReasonInvalidValue = "invalid_value"
 	// ReasonOutOfRange は数値が許される範囲の外にあることを表す。
 	ReasonOutOfRange = "out_of_range"
+	// ReasonTooMany は、1 つ 1 つは正しいが数が多すぎることを表す（リアクションの種類の上限。ADR 0044）。
+	ReasonTooMany = "too_many"
 )
 
 func (e *ValidationError) Error() string {

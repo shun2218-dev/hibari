@@ -534,7 +534,8 @@ Phase 6.16  検索
 1. 設計（ADR 0044、ERD） ← 完了
 2. デザイン: リアクションの行・ピッカー・ホバーの名前・モバイル。`/dev/preview` に描いて `docs/ui/` に足し、オーナーに見てもらう ← 完了（`docs/ui/README.md` の「Phase 6.7 で足した画面」）
    モバイルのピッカーは、はみ出して切れたので下から出るシートにした（ADR 0044 決定 7 の追記）
-3. DB と REST: マイグレーション、`PUT` / `DELETE` の API、メッセージのレスポンスの `reactions`
+3. DB と REST: マイグレーション、`PUT` / `DELETE` の API、メッセージのレスポンスの `reactions` ← 完了
+   `me` は REST だけに載せ、`message.updated` では落とす（ADR 0044 決定 3 の追記）
 4. WebSocket と Web: `message.updated` への相乗り、楽観的更新、ピッカーのつなぎ込み
 
 **DoD**

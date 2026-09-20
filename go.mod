@@ -11,6 +11,7 @@ require (
 	github.com/lestrrat-go/jwx/v3 v3.3.0
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/redis/go-redis/v9 v9.22.0
+	github.com/rivo/uniseg v0.4.7
 	golang.org/x/crypto v0.57.0
 )
 

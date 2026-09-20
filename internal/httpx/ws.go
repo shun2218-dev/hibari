@@ -571,11 +571,12 @@ func encodeEvent(ev chat.Event) ([]byte, error) {
 	return marshalJSON(serverEvent{Type: ev.Type, Data: data})
 }
 
-// eventData は chat のイベントのデータを JSON の形に変換する。メッセージは REST と同じ形（newMessageResponse）を使う。
+// eventData は chat のイベントのデータを JSON の形に変換する。
+// メッセージは REST とほぼ同じ形だが、受け取る人ごとの値（リアクションの me）は落とす（ADR 0044）。
 func eventData(d any) (any, error) {
 	switch d := d.(type) {
 	case chat.Message:
-		return newMessageResponse(d), nil
+		return newBroadcastMessageResponse(d), nil
 	case chat.MemberJoined:
 		return memberJoinedData{d.WorkspaceID.String(), d.RoomID.String(), newUserProfileResponse(d.User)}, nil
 	case chat.MemberLeft:

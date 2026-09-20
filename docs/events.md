@@ -73,7 +73,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | type | 宛先 | いつ |
 |---|---|---|
 | `message.created` | room | メッセージが送信された |
-| `message.updated` | room | 本文が編集された。スレッドの親の `thread`（返信数・最終返信）が変わった（ADR 0036） |
+| `message.updated` | room | 本文が編集された。スレッドの親の `thread`（返信数・最終返信）が変わった（ADR 0036）。絵文字のリアクションが付け外しされた（ADR 0044） |
 | `message.deleted` | room | 削除された（`data` は tombstone） |
 | `member.joined` | room、参加した本人 | ルームの作成・参加・追加・DM の作成・招待の受け入れでルームのメンバーになった |
 | `member.left` | room | 退出した、または外された |
@@ -101,6 +101,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
   "client_msg_id": "01J8...", "body": "こんにちは",
   "thread_root_id": null, "thread_seq": null, "also_in_channel": false, "thread": null, "attachments": [],
   "mentions": [{ "kind": "user", "user": { "id": "01J8...", "handle": "kohaku", "display_name": "kohaku" } }],
+  "reactions": [{ "emoji": "👍", "count": 3, "users": ["01J8...", "01J8...", "01J8..."] }],
   "created_at": "2026-09-14T12:00:00Z", "edited_at": null, "deleted_at": null
 }
 ```
@@ -113,6 +114,23 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 クライアントは `mentions` を見て自分で判断し、手元のバッジを増やす。`kind` が `channel` / `here` なら「自分も対象かもしれない」として増やすが、
 **スレッドだけの返信（`thread_root_id` があって `also_in_channel` が false）では増やさない**（サーバーが数えないため。Slack と同じ）。
 正しい値はルームの `mention_count`（REST）で、ルームを開くか一覧を取り直せば揃う。
+
+#### 絵文字のリアクション（`reactions`。ADR 0044）
+
+リアクションの付け外しには**専用のイベントを作らない**。付け外しでそのメッセージの `change_seq` が 1 つ進み、
+`message.updated` として届く（再接続の差分（`after_change_seq`）にもそのまま乗る）。
+クライアントから見れば「メッセージが 1 回編集された」のと同じで、`change_seq` の大きい方を残す規則（ADR 0014）のまま追従できる。
+
+`reactions` は絵文字ごとの集計で、並びは**最初に付いた順**（数が増減しても入れ替わらない）。
+`users` は付けた人の**先頭 8 人まで**の `user_id` で、`count` より少ないことがある（ホバーの「A、B 他 N 人」に使う）。
+
+**`me`（自分が付けたか）はイベントに載らない。** `mentions` の「自分宛てか」と同じ理由で、受け取る人ごとの値を入れられない。
+REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）にだけ `me` が入る。
+クライアントは、`me` の無い更新では手元の `me` をそのまま保てばよい。`me` が変わるのは自分が押したときだけで、
+そのときは `PUT` / `DELETE` の応答が `me` 付きで返るため。
+
+`seq` / `user_seq` / ルームの `last_message_at` は**進まない**ので、未読数にもサイドバーの並びにも影響しない。
+同じリアクションを 2 回付けた（再送・二重クリック）ときは行が増えないので、`change_seq` も進まず、イベントも届かない。
 
 スレッドの返信（ADR 0036）も `message.created` として同じルームの購読者に届く。`thread_root_id` に親の ID、`thread_seq` にスレッドの中の番号が入る。
 返信はチャンネルのタイムラインに出さない。`seq` と `change_seq` はルームのものを使うので、同期（下記）はチャンネルと同じ 1 本で済む。
