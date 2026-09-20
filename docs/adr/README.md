@@ -51,6 +51,7 @@
 | [0042](0042-jump-to-message.md) | 指定したメッセージへ飛ぶ（Phase 6.11b。前後を取る API、見つからないときの扱い、未読へ飛ぶ） | 採用 |
 | [0043](0043-web-mentions.md) | メンションの Web 側（入力は `@ハンドル` で書き、送る直前に ID へ変換する） | 採用 |
 | [0044](0044-message-reactions.md) | 絵文字のリアクション（Phase 6.7。行で持ち、メッセージの `change_seq` に乗せて配る） | 採用 |
+| [0045](0045-attachment-lightbox-and-delete.md) | 添付ファイルの拡大表示と削除（Phase 6.7.5。画像はそのメッセージの中で送り、削除は `change_seq` に乗せる） | 採用 |
 
 ## テンプレート
 
