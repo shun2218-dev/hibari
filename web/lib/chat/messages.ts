@@ -30,19 +30,27 @@ export function mergeMessages(current: readonly Message[], incoming: readonly Me
 }
 
 /**
- * 読み込んである範囲（いちばん古い seq から最新まで）にだけ合わせる。
+ * 読み込んである範囲にだけ合わせる。
  *
- * 差分の取得とイベントには、読み込んでいない古いメッセージの編集・削除も含まれる。それを足すと、手元の並びの途中に
- * 抜けができ、古いページの読み込み（before_seq = いちばん古い seq）がその抜けを飛ばしてしまう。
- * もっと古いメッセージがない（hasOlder が false）なら、全部が範囲に入る。
+ * 差分の取得とイベントには、読み込んでいない範囲のメッセージの編集・削除も含まれる。それを足すと、手元の並びの途中に
+ * 抜けができ、続きの読み込み（before_seq / after_seq = 端の seq）がその抜けを飛ばしてしまう。
+ * 範囲の外がない側（hasOlder / hasNewer が false）は、そちらの端までが範囲に入る。
+ *
+ * 新しい側が開いている（hasNewer）のは、指定したメッセージへ飛んだ後だけ（ADR 0042）。その間に届いたメッセージは
+ * 手元のいちばん新しいものとつながらないので、末尾に足さずに捨てる。いちばん下まで読み進めるとつながる。
  */
 export function mergeIntoWindow(
   current: readonly Message[],
-  hasOlder: boolean,
+  window: { hasOlder: boolean; hasNewer: boolean },
   incoming: readonly Message[],
 ): Message[] {
   const oldest = current[0]?.seq;
-  const inWindow = hasOlder && oldest !== undefined ? incoming.filter((m) => m.seq >= oldest) : incoming;
+  const newest = current.at(-1)?.seq;
+  const inWindow = incoming.filter(
+    (m) =>
+      (!window.hasOlder || oldest === undefined || m.seq >= oldest) &&
+      (!window.hasNewer || newest === undefined || m.seq <= newest),
+  );
   return inWindow.length === 0 ? (current as Message[]) : mergeMessages(current, inWindow);
 }
 

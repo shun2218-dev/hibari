@@ -27,6 +27,8 @@ type TimelineProps = {
   openThreadKey?: string;
   /** 飛んできた先の key（ADR 0042）。その行に琥珀の地を敷く。消すのは呼ぶ側。 */
   highlightedKey?: string;
+  /** 強調しているときに押された。時間で消えるのを待たずに消す（ADR 0042）。 */
+  onClearHighlight?: () => void;
   onDownload?: (attachmentId: string) => void;
   onImageError?: (attachmentId: string, url: string) => void;
   onMarkAllRead?: () => void;
@@ -53,6 +55,21 @@ type TimelineProps = {
    */
   onReachStart?: () => void;
   /**
+   * いちばん下の近くまでスクロールした（新しいメッセージを読み込むきっかけ。ADR 0042）。
+   * 飛んだ先から下に読み進めるときだけ意味がある。もうないか、取得中かの判断は呼ぶ側が行う。
+   */
+  onReachEnd?: () => void;
+  /**
+   * この key の行を見せる（ADR 0042 の「飛ぶ」）。値が変わったときだけ動かし、いちばん下へ寄せる既定の動きより優先する。
+   * メッセージの key のほか、「ここから未読」の区切り（`"unread"`）も指せる。
+   */
+  scrollToKey?: string;
+  /**
+   * 飛び先をどこに置くか。既定は画面の中ほど（前後が見えていないと、どこに飛んだのか分からないため）。
+   * 「ここから未読」の線は、そこから下が全部未読なので上端に置く。
+   */
+  scrollToAlign?: "center" | "start";
+  /**
    * いちばん下（最新）が見えているかが変わった。データ層は、見ている間に届いたメッセージを既読にする。
    * 最初に描いたときにも 1 回呼ぶ。
    */
@@ -66,8 +83,18 @@ type TimelineProps = {
 /** いちばん上からこの距離より近づいたら、古いメッセージを読み込む。1 ページを読み終える前に次を用意しておく。 */
 const REACH_START_PX = 400;
 
+/** いちばん下からこの距離より近づいたら、新しいメッセージを読み込む（飛んだ先から下に読み進めるとき）。 */
+const REACH_END_PX = 400;
+
 /** いちばん下からこの距離の内側にいれば、最新を見ているとみなす。 */
 const AT_BOTTOM_PX = 4;
+
+/** 並びの中の 1 件を data-key で引く。 */
+function childByKey(list: HTMLOListElement | null, key: string): HTMLElement | undefined {
+  return Array.from(list?.children ?? []).find(
+    (child): child is HTMLElement => child instanceof HTMLElement && child.dataset.key === key,
+  );
+}
 
 /** 描き直す前のスクロール位置の手がかり。 */
 type ScrollAnchor = { key: string; offsetTop: number; atBottom: boolean };
@@ -84,6 +111,7 @@ export function Timeline({
   onOpenThread,
   openThreadKey,
   highlightedKey,
+  onClearHighlight,
   onDownload,
   onImageError,
   onMarkAllRead,
@@ -97,6 +125,9 @@ export function Timeline({
   editing,
   hoveredKey,
   onReachStart,
+  onReachEnd,
+  scrollToKey,
+  scrollToAlign = "center",
   onAtBottomChange,
   scrollToLatestKey,
 }: TimelineProps) {
@@ -107,6 +138,7 @@ export function Timeline({
   const reachStartAfterRender = useEffectEvent(() => onReachStart?.());
   const atBottomRef = useRef<boolean | null>(null);
   const scrollToLatestKeyRef = useRef(scrollToLatestKey);
+  const scrollToKeyRef = useRef(scrollToKey);
   // スクロールのハンドラからも呼ぶので useEffectEvent は使えない。最新の関数を ref に置き、合わせ直しの effect より先に更新する
   const onAtBottomChangeRef = useRef(onAtBottomChange);
   useLayoutEffect(() => {
@@ -134,25 +166,34 @@ export function Timeline({
     const anchor = anchorRef.current;
     const jumpToLatest = scrollToLatestKeyRef.current !== scrollToLatestKey;
     scrollToLatestKeyRef.current = scrollToLatestKey;
-    if (!anchor || anchor.atBottom || jumpToLatest) {
+    const jumpTo = scrollToKeyRef.current !== scrollToKey ? scrollToKey : undefined;
+    scrollToKeyRef.current = scrollToKey;
+    const target = jumpTo === undefined ? undefined : childByKey(listRef.current, jumpTo);
+    if (target) {
+      const margin = scrollToAlign === "start" ? 0 : Math.max(0, (el.clientHeight - target.offsetHeight) / 2);
+      el.scrollTop = target.offsetTop - margin;
+    } else if (!anchor || anchor.atBottom || jumpToLatest) {
       el.scrollTop = el.scrollHeight;
     } else {
-      const previousFirst = Array.from(listRef.current?.children ?? []).find(
-        (child): child is HTMLElement => child instanceof HTMLElement && child.dataset.key === anchor.key,
-      );
+      const previousFirst = childByKey(listRef.current, anchor.key);
       if (previousFirst) el.scrollTop += previousFirst.offsetTop - anchor.offsetTop;
     }
     captureAnchor();
     if (el.scrollHeight <= el.clientHeight) reachStartAfterRender();
-  }, [items, scrollToLatestKey]);
+  }, [items, scrollToLatestKey, scrollToKey, scrollToAlign]);
 
   return (
     <div
       ref={scrollRef}
       className="min-h-0 flex-1 overflow-y-auto pb-4"
+      onPointerDown={() => {
+        if (highlightedKey !== undefined) onClearHighlight?.();
+      }}
       onScroll={(e) => {
         captureAnchor();
         if (e.currentTarget.scrollTop < REACH_START_PX) onReachStart?.();
+        const fromEnd = e.currentTarget.scrollHeight - e.currentTarget.scrollTop - e.currentTarget.clientHeight;
+        if (fromEnd < REACH_END_PX) onReachEnd?.();
       }}
     >
       <ol ref={listRef} aria-label={label} className="flex flex-col">

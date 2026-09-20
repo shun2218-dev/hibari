@@ -9,6 +9,7 @@ import {
   findPermalinks,
   linkKey,
   parsePermalink,
+  permalinkPath,
 } from "./links";
 
 const ORIGIN = "https://hibari.example";
@@ -32,6 +33,20 @@ describe("buildPermalink", () => {
   it("組み立てた URL は、そのまま読み戻せる", () => {
     const link = { workspaceId: WS, roomId: ROOM, messageId: MSG, threadRootId: ROOT };
     expect(parsePermalink(buildPermalink(ORIGIN, link), ORIGIN)).toEqual(link);
+  });
+});
+
+describe("permalinkPath", () => {
+  it("同じ行き先を、アプリの中のパスで返す（カードの遷移先。ADR 0042）", () => {
+    expect(permalinkPath({ workspaceId: WS, roomId: ROOM, messageId: MSG })).toBe(`/w/${WS}/r/${ROOM}?m=${MSG}`);
+    expect(permalinkPath({ workspaceId: WS, roomId: ROOM, messageId: MSG, threadRootId: ROOT })).toBe(
+      `/w/${WS}/r/${ROOM}?m=${MSG}&t=${ROOT}`,
+    );
+  });
+
+  it("コピーする URL と同じ所を指す", () => {
+    const link = { workspaceId: WS, roomId: ROOM, messageId: MSG, threadRootId: ROOT };
+    expect(new URL(permalinkPath(link), ORIGIN).toString()).toBe(buildPermalink(ORIGIN, link));
   });
 });
 

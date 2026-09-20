@@ -19,16 +19,21 @@ export function mergeReplies(current: readonly Message[], incoming: readonly Mes
 }
 
 /**
- * 読み込んである範囲（いちばん古い返信から最新まで）にだけ合わせる（mergeIntoWindow と同じ理由）。
- * 古い返信を読み込んでいないのに、その編集や削除が届いたら足さない。
+ * 読み込んである範囲にだけ合わせる（mergeIntoWindow と同じ理由）。
+ * 読み込んでいない範囲の返信の編集や削除が届いても足さない。新しい側が開くのは、返信へ飛んだ後だけ（ADR 0042）。
  */
 export function mergeRepliesIntoWindow(
   current: readonly Message[],
-  hasOlder: boolean,
+  window: { hasOlder: boolean; hasNewer: boolean },
   incoming: readonly Message[],
 ): Message[] {
   const oldest = current[0]?.seq;
-  const inWindow = hasOlder && oldest !== undefined ? incoming.filter((m) => m.seq >= oldest) : incoming;
+  const newest = current.at(-1)?.seq;
+  const inWindow = incoming.filter(
+    (m) =>
+      (!window.hasOlder || oldest === undefined || m.seq >= oldest) &&
+      (!window.hasNewer || newest === undefined || m.seq <= newest),
+  );
   return inWindow.length === 0 ? (current as Message[]) : mergeReplies(current, inWindow);
 }
 

@@ -13,7 +13,7 @@ import { WorkspaceScreen } from "./workspace-screen";
 const nav = vi.hoisted(() => ({
   router: { replace: vi.fn(), push: vi.fn() },
   params: {} as { workspaceId: string; roomId?: string },
-  // 開いているスレッド（?thread=）と、パス（/w/{id}/threads の判定）
+  // 開いているスレッド（?t=）と、パス（/w/{id}/threads の判定）
   search: "",
   pathname: "",
 }));
@@ -677,14 +677,14 @@ describe("WorkspaceScreen", () => {
           const article = history().getAllByRole("article")[1]!;
           expect(within(article).getByRole("button", { name: /2 件の返信/ })).toBeInTheDocument();
           await userEvent.click(within(article).getByRole("button", { name: /2 件の返信/ }));
-          expect(nav.router.push).toHaveBeenLastCalledWith("/w/ws-1/r/r-design?thread=m-2");
+          expect(nav.router.push).toHaveBeenLastCalledWith("/w/ws-1/r/r-design?t=m-2");
 
           await userEvent.click(within(article).getByRole("button", { name: "返信", hidden: true }));
           expect(nav.router.push).toHaveBeenCalledTimes(2);
         });
 
         it("shows the root and the replies in the panel, and reads them while open", async () => {
-          nav.search = "thread=m-2";
+          nav.search = "t=m-2";
           const { api } = await connected({
             ...openRoom(design, [message(1), root, message(3)]),
             ...threadRoute(0),
@@ -706,7 +706,7 @@ describe("WorkspaceScreen", () => {
         });
 
         it("sends a reply to the thread, not to the channel", async () => {
-          nav.search = "thread=m-2";
+          nav.search = "t=m-2";
           const sent: unknown[] = [];
           await connected({
             ...openRoom(design, [message(1), root, message(3)]),
@@ -741,7 +741,7 @@ describe("WorkspaceScreen", () => {
           }
 
           it("sends the reply to the channel too when the box is checked, and shows it in both", async () => {
-            nav.search = "thread=m-2";
+            nav.search = "t=m-2";
             const sent: unknown[] = [];
             await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute(), ...sendRouteWithFlag(sent) });
             await panel().findByText("返信 2");
@@ -758,7 +758,7 @@ describe("WorkspaceScreen", () => {
           });
 
           it("leaves the reply in the thread when the box is not checked", async () => {
-            nav.search = "thread=m-2";
+            nav.search = "t=m-2";
             const sent: unknown[] = [];
             await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute(), ...sendRouteWithFlag(sent) });
             await panel().findByText("返信 2");
@@ -771,7 +771,7 @@ describe("WorkspaceScreen", () => {
           });
 
           it("asks before @channel only when the reply also goes to the channel (ADR 0041 / 0043)", async () => {
-            nav.search = "thread=m-2";
+            nav.search = "t=m-2";
             const sent: unknown[] = [];
             await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute(), ...sendRouteWithFlag(sent) });
             await panel().findByText("返信 2");
@@ -800,12 +800,12 @@ describe("WorkspaceScreen", () => {
             expect(history().getByText("流した返信")).toBeInTheDocument();
             await userEvent.click(history().getByRole("button", { name: "スレッドに返信しました" }));
 
-            expect(nav.router.push).toHaveBeenLastCalledWith("/w/ws-1/r/r-design?thread=m-2");
+            expect(nav.router.push).toHaveBeenLastCalledWith("/w/ws-1/r/r-design?t=m-2");
           });
         });
 
         it("shows typing in the thread only in the panel", async () => {
-          nav.search = "thread=m-2";
+          nav.search = "t=m-2";
           const { sockets } = await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute() });
           await panel().findByText("返信 2");
 
@@ -858,7 +858,7 @@ describe("WorkspaceScreen", () => {
 
           const list = await screen.findByRole("list", { name: "参加しているスレッド" });
           const link = within(list).getByRole("link");
-          expect(link).toHaveAttribute("href", "/w/ws-1/r/r-design?thread=m-2");
+          expect(link).toHaveAttribute("href", "/w/ws-1/r/r-design?t=m-2");
           expect(link).toHaveTextContent("親のメッセージ");
           expect(within(link).getByLabelText("未読 1 件")).toBeInTheDocument();
           expect(sidebar().getByRole("link", { name: /スレッド/ })).toHaveAttribute("aria-current", "page");
@@ -999,7 +999,11 @@ describe("WorkspaceScreen", () => {
           const card = await history().findByRole("article", { name: "高橋 みゆき のメッセージ" });
           expect(within(card).getByText("つなぎの議事録")).toBeInTheDocument();
           // 別のワークスペースなので、ルーム名にワークスペース名を添える
-          expect(within(card).getByRole("link", { name: "山と印刷 / 雑談" })).toHaveAttribute("href", readable);
+          // カードの遷移先はアプリの中のパス（ADR 0042 で飛べるようにする先）
+          expect(within(card).getByRole("link", { name: "山と印刷 / 雑談" })).toHaveAttribute(
+            "href",
+            `/w/${LINK_WS}/r/${LINK_ROOM}?m=${LINK_MSG}`,
+          );
           expect(history().getByText("このメッセージは表示できません")).toBeInTheDocument();
           // 貼られた順に、1 回のリクエストでまとめて取る
           expect(JSON.parse(api.calls.find((c) => c.path === "/api/v1/messages/links")!.init.body as string)).toEqual({
@@ -1009,6 +1013,101 @@ describe("WorkspaceScreen", () => {
             ],
           });
         });
+      });
+    });
+
+    describe("指定したメッセージへ飛ぶ（ADR 0042）", () => {
+      const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+
+      /** 前後のページ。seq が null なら「見つからなかった」（サーバーは最新のページを返す）。 */
+      function around(messages: ReturnType<typeof message>[], seq: number | null, threadRootId: string | null = null) {
+        return json(200, {
+          messages: messages.map((m) => ({ ...m, room_id: "r-design" })),
+          has_more: true,
+          has_more_after: false,
+          around: seq === null ? null : { seq, thread_root_id: threadRootId },
+          last_change_seq: 3,
+        });
+      }
+
+      it("リンクで開いたメッセージまで飛んで、そこを強調する", async () => {
+        nav.search = "m=m-2";
+        await connected({
+          "GET /api/v1/rooms/r-design/messages?limit=50&around_message_id=m-2": () => around([message(1), message(2)], 2),
+        });
+
+        await waitFor(() => expect(history().getAllByRole("article")).toHaveLength(2));
+        expect(history().getByText("本文 2").closest("article")).toHaveClass("bg-attention-subtle");
+        expect(screen.queryByText("そのメッセージは見つかりませんでした")).not.toBeInTheDocument();
+      });
+
+      it("見つからないリンクは、理由を言わずに 1 行知らせて閉じられる", async () => {
+        nav.search = "m=m-404";
+        await connected({
+          // ない・読めない・削除済みを区別しない（ADR 0040）。サーバーは最新のページを around: null で返す
+          "GET /api/v1/rooms/r-design/messages?limit=50&around_message_id=m-404": () =>
+            around([message(1), message(2), message(3)], null),
+        });
+
+        expect(await screen.findByText("そのメッセージは見つかりませんでした")).toBeInTheDocument();
+        // 知らせを出したうえで、最新のページはそのまま読める
+        expect(history().getByText("本文 3")).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole("button", { name: "知らせを閉じる" }));
+        expect(screen.queryByText("そのメッセージは見つかりませんでした")).not.toBeInTheDocument();
+      });
+
+      it("スレッドの返信へのリンクなら、パネルも開く", async () => {
+        nav.search = "m=m-3";
+        await connected({
+          "GET /api/v1/rooms/r-design/messages?limit=50&around_message_id=m-3": () =>
+            around([message(3, { thread_root_id: "m-1", thread_seq: 1 })], 3, "m-1"),
+        });
+
+        // 飛び先（?m=）は残したままスレッドを開く。パネルの中でも同じ返信に合わせるため
+        await waitFor(() => expect(nav.router.push).toHaveBeenCalledWith("/w/ws-1/r/r-design?m=m-3&t=m-1"));
+      });
+
+      it("未読が読み込んだページより古いときだけバーを出し、押すと最初の未読から読み直す", async () => {
+        const behind = room("r-design", "デザインレビュー", {
+          last_message_seq: 10,
+          last_read_seq: 2,
+          last_user_seq: 10,
+          last_read_user_seq: 2,
+          unread_count: 8,
+        });
+        await connected({
+          "GET /api/v1/rooms/r-design": () => json(200, { ...behind, member_count: 4 }),
+          "GET /api/v1/rooms/r-design/messages?limit=50": () =>
+            json(200, {
+              messages: [message(8), message(9), message(10)].map((m) => ({ ...m, room_id: "r-design" })),
+              has_more: true,
+              last_change_seq: 10,
+            }),
+          "GET /api/v1/rooms/r-design/messages?after_change_seq=10&limit=100": () =>
+            json(200, { messages: [], has_more: false, last_change_seq: 10 }),
+          "GET /api/v1/rooms/r-design/messages?limit=50&after_seq=2": () =>
+            json(200, {
+              messages: [message(3), message(4)].map((m) => ({ ...m, room_id: "r-design" })),
+              has_more: true,
+              has_more_after: false,
+              around: null,
+              last_change_seq: 10,
+            }),
+        });
+
+        expect(await screen.findByText("未読 8 件")).toBeInTheDocument();
+        await userEvent.click(screen.getByRole("button", { name: "最初の未読へ" }));
+
+        expect(await history().findByText("本文 3")).toBeInTheDocument();
+        expect(history().queryByText("本文 10")).not.toBeInTheDocument();
+      });
+
+      it("未読がページの中にあるなら、線だけでバーは出さない", async () => {
+        await connected();
+
+        expect(await history().findByText("ここから未読")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "最初の未読へ" })).not.toBeInTheDocument();
       });
     });
 

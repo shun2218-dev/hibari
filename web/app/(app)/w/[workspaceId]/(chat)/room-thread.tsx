@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { JoinRoomBar } from "@/components/chat/chat-states";
 import { Composer } from "@/components/chat/composer";
@@ -40,6 +40,9 @@ import { useMessageActions } from "./message-actions";
 /** 本文の上限（rune。ADR 0012）。チャンネルの入力欄と同じ。 */
 const MAX_BODY_LENGTH = 4000;
 
+/** 飛んだ先を強調しておく時間（ADR 0042）。チャンネルと同じ。 */
+const HIGHLIGHT_MS = 4000;
+
 function startDownload(url: string) {
   const link = document.createElement("a");
   link.href = url;
@@ -59,11 +62,14 @@ export function RoomThread({
   workspaceId,
   roomId,
   rootId,
+  jumpMessageId,
   onClose,
 }: {
   workspaceId: string;
   roomId: string;
   rootId: string;
+  /** リンク（`?m=`）で指された返信。パネルの中でもそこまで飛んで強調する（ADR 0042）。 */
+  jumpMessageId?: string;
   onClose: () => void;
 }) {
   const store = useChatStore();
@@ -86,6 +92,8 @@ export function RoomThread({
   const [joining, setJoining] = useState(false);
   // 送る前に確認している `@channel` / `@here`（ADR 0043）。スレッドでは「チャンネルにも投稿する」を付けたときだけ使う
   const [confirmAll, setConfirmAll] = useState<"channel" | "here" | null>(null);
+  // リンクで飛んできた返信（ADR 0042）。数秒だけ強調する
+  const [highlightedKey, setHighlightedKey] = useState<string>();
   const { uploader, drafts } = useAttachmentUploader(roomId);
 
   // `@` の補完にはルームのメンバーが要る（ADR 0043）。スレッドだけを開いた URL でも引いておく
@@ -99,6 +107,30 @@ export function RoomThread({
     store.setThreadFocus({ roomId, rootId });
     return () => store.setThreadFocus(null);
   }, [store, roomId, rootId]);
+
+  /**
+   * リンクで指された返信まで、パネルの中でも飛ぶ（ADR 0042）。同じ ID で 2 度は飛ばない。
+   * 親そのものを指すリンクでは、親はいつもパネルの先頭にいるので、飛ばずに強調だけする。
+   */
+  const jumpedRef = useRef<string>(undefined);
+  useEffect(() => {
+    if (jumpMessageId === undefined || jumpedRef.current === jumpMessageId) return;
+    jumpedRef.current = jumpMessageId;
+    // 親はいつもパネルの先頭にいるので、取り直さずに強調だけする
+    const jumping =
+      jumpMessageId === rootId
+        ? Promise.resolve({ found: true })
+        : store.jumpToThreadMessage(roomId, rootId, jumpMessageId);
+    void jumping.then(({ found }) => {
+      if (found) setHighlightedKey(jumpMessageId);
+    });
+  }, [store, roomId, rootId, jumpMessageId]);
+
+  useEffect(() => {
+    if (highlightedKey === undefined) return;
+    const timer = setTimeout(() => setHighlightedKey(undefined), HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [highlightedKey]);
 
   const status = thread?.status;
   const root = thread?.root ?? null;
@@ -266,6 +298,11 @@ export function RoomThread({
             items={items}
             label="スレッドのメッセージ"
             onReachStart={() => store.loadOlderThread(rootId)}
+            onReachEnd={() => store.loadNewerThread(rootId)}
+            scrollToKey={highlightedKey}
+
+            highlightedKey={highlightedKey}
+            onClearHighlight={() => setHighlightedKey(undefined)}
             scrollToLatestKey={sentCount}
             onRetry={(key) => store.retryMessage(roomId, key)}
             onDiscard={(key) => store.discardMessage(roomId, key)}

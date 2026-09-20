@@ -23,9 +23,17 @@ describe("mergeRepliesIntoWindow", () => {
   it("keeps seq order and ignores changes to replies older than the loaded window", () => {
     const current = [message(5, { thread_root_id: "m-1" }), message(7, { thread_root_id: "m-1" })];
 
-    expect(mergeRepliesIntoWindow(current, true, [message(3, { thread_root_id: "m-1" })])).toBe(current);
-    expect(mergeRepliesIntoWindow(current, true, [message(6, { thread_root_id: "m-1" })]).map((m) => m.seq)).toEqual([5, 6, 7]);
-    expect(mergeRepliesIntoWindow(current, false, [message(3, { thread_root_id: "m-1" })]).map((m) => m.seq)).toEqual([3, 5, 7]);
+    const older = { hasOlder: true, hasNewer: false };
+    const whole = { hasOlder: false, hasNewer: false };
+    expect(mergeRepliesIntoWindow(current, older, [message(3, { thread_root_id: "m-1" })])).toBe(current);
+    expect(mergeRepliesIntoWindow(current, older, [message(6, { thread_root_id: "m-1" })]).map((m) => m.seq)).toEqual([5, 6, 7]);
+    expect(mergeRepliesIntoWindow(current, whole, [message(3, { thread_root_id: "m-1" })]).map((m) => m.seq)).toEqual([3, 5, 7]);
+  });
+
+  it("返信へ飛んだ後は、その先の返信を足さない（ADR 0042）", () => {
+    const current = [message(5, { thread_root_id: "m-1" }), message(7, { thread_root_id: "m-1" })];
+
+    expect(mergeRepliesIntoWindow(current, { hasOlder: true, hasNewer: true }, [message(9, { thread_root_id: "m-1" })])).toBe(current);
   });
 });
 

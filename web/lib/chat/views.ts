@@ -28,7 +28,7 @@ import type { OutgoingMessage, ThreadState } from "./store";
 import type { AttachmentDraft } from "./uploads";
 
 import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./format";
-import { type Permalink, buildPermalink, clampCardBody, findPermalinks, linkKey } from "./links";
+import { type Permalink, clampCardBody, findPermalinks, linkKey, permalinkPath } from "./links";
 import { type MentionCandidate } from "./mentions";
 import { inChannel } from "./messages";
 
@@ -487,7 +487,7 @@ function toLinkCardViews(
     return {
       key,
       state: "ok",
-      href: buildPermalink(origin, {
+      href: permalinkPath({
         workspaceId: workspace?.id ?? link.workspaceId,
         roomId: room.id,
         messageId: message.id,

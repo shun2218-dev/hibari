@@ -1,9 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { EmptyMessages, JoinRoomBar, RemovedFromWorkspace, RoomUnavailable } from "@/components/chat/chat-states";
+import {
+  EmptyMessages,
+  JoinRoomBar,
+  MessageNotFoundNotice,
+  RemovedFromWorkspace,
+  RoomUnavailable,
+  UnreadJumpBar,
+} from "@/components/chat/chat-states";
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
@@ -41,6 +48,12 @@ import { useDocumentVisible } from "@/lib/use-document-visible";
 /** 本文の上限（rune。ADR 0012）。超えたら送信できないようにする（送っても 422 で失敗にしかならない）。 */
 const MAX_BODY_LENGTH = 4000;
 
+/** 飛んだ先を強調しておく時間（ADR 0042）。 */
+const HIGHLIGHT_MS = 4000;
+
+/** 「ここから未読」の区切りの key（toTimelineItems が付ける）。未読へ飛んだときのスクロールの合わせ先。 */
+const UNREAD_DIVIDER_KEY = "unread";
+
 type RoomViewProps = {
   workspaceId: string;
   roomId: string;
@@ -52,6 +65,8 @@ type RoomViewProps = {
   openThreadId?: string;
   /** 「返信」か「N 件の返信」、チャンネルに流した返信の「スレッドに返信しました」を押した。親の ID を渡す。 */
   onOpenThread: (rootId: string) => void;
+  /** リンク（`?m=`）で指されたメッセージ。そこまで飛んで強調する（ADR 0042）。 */
+  jumpMessageId?: string;
 };
 
 /**
@@ -78,6 +93,7 @@ export function RoomView({
   onLeaveRemovedWorkspace,
   openThreadId,
   onOpenThread,
+  jumpMessageId,
 }: RoomViewProps) {
   const router = useRouter();
   const store = useChatStore();
@@ -103,6 +119,10 @@ export function RoomView({
   const [settingsOpen, setSettingsOpen] = useState(false);
   // 送る前に確認している `@channel` / `@here`（ADR 0043）。null なら確認していない
   const [confirmAll, setConfirmAll] = useState<"channel" | "here" | null>(null);
+  // 飛んできた先（ADR 0042）。強調する key、スクロールの合わせ先、見つからなかったときの知らせ
+  const [highlightedKey, setHighlightedKey] = useState<string>();
+  const [scrollTo, setScrollTo] = useState<{ key: string; align: "center" | "start" }>();
+  const [notFound, setNotFound] = useState(false);
   const visible = useDocumentVisible();
 
   useEffect(() => {
@@ -115,11 +135,41 @@ export function RoomView({
     if (!membersLoaded) void store.loadRoomMembers(roomId);
   }, [store, roomId, membersLoaded]);
 
-  // 最新を見ているか（タブが見えていて、いちばん下が見えている）をデータ層に知らせる。見ている間に届いたメッセージは既読になる
-  const ready = timeline?.status === "ready";
+  /**
+   * リンク（`?m=`）で指されたメッセージまで飛ぶ（ADR 0042）。
+   *
+   * 同じ ID で 2 度は飛ばない（スレッドを開くとクエリが増えるだけで、飛び先は変わらないため）。
+   * 見つからなければサーバーは最新のページを返すので、知らせを 1 行出す。スレッドの返信ならパネルも開く。
+   */
+  const jumpedRef = useRef<string>(undefined);
   useEffect(() => {
-    store.setFocus({ roomId, caughtUp: ready && visible && atBottom });
-  }, [store, roomId, ready, visible, atBottom]);
+    if (jumpMessageId === undefined || jumpedRef.current === jumpMessageId) return;
+    jumpedRef.current = jumpMessageId;
+    setNotFound(false);
+    void store.jumpToMessage(roomId, jumpMessageId).then(({ found, threadRootId }) => {
+      setNotFound(!found);
+      if (found) {
+        setHighlightedKey(jumpMessageId);
+        setScrollTo({ key: jumpMessageId, align: "center" });
+      }
+      if (threadRootId !== null) onOpenThread(threadRootId);
+    });
+  }, [store, roomId, jumpMessageId, onOpenThread]);
+
+  // 強調は数秒で消す（ADR 0042）。押しても消える（Timeline の onClearHighlight）
+  useEffect(() => {
+    if (highlightedKey === undefined) return;
+    const timer = setTimeout(() => setHighlightedKey(undefined), HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [highlightedKey]);
+
+  // 最新を見ているか（タブが見えていて、いちばん下が見えている）をデータ層に知らせる。見ている間に届いたメッセージは既読になる。
+  // 飛んだ先で新しい側が開いている間（hasNewer）は、いちばん下でも最新ではない
+  const ready = timeline?.status === "ready";
+  const hasNewer = timeline?.hasNewer ?? false;
+  useEffect(() => {
+    store.setFocus({ roomId, caughtUp: ready && visible && atBottom && !hasNewer });
+  }, [store, roomId, ready, visible, atBottom, hasNewer]);
   useEffect(() => () => store.setFocus(null), [store]);
 
   // 読めないルーム（存在しない、private のメンバーではない）と、開いている間に外された非公開ルームは、
@@ -190,6 +240,19 @@ export function RoomView({
       }),
     [messages, unreadAfterSeq, outgoing, me, avatarUrls, attachmentUrls, linkCards, origin, workspaceId, memberNames],
   );
+  /**
+   * 未読が、読み込んだページより古いところにある（ADR 0042）。そのときだけ「未読 N 件 / 最初の未読へ」を出す。
+   * ページの中にあるときは「ここから未読」の線が見えているので、押しても何も起きないボタンになる。
+   */
+  const unreadBarCount =
+    timeline?.status === "ready" &&
+    timeline.unreadAfterSeq !== null &&
+    timeline.hasOlder &&
+    timeline.unreadAtOpen > 0 &&
+    (timeline.messages[0]?.seq ?? 0) > timeline.unreadAfterSeq
+      ? timeline.unreadAtOpen
+      : 0;
+
   const draftViews = useMemo(() => drafts.map(toAttachmentDraftView), [drafts]);
   const typingNames = useMemo(() => (typing ?? []).map((t) => t.user.display_name), [typing]);
 
@@ -288,6 +351,16 @@ export function RoomView({
     <>
       {header}
       <ConnectionBanner status={banner} />
+      {unreadBarCount > 0 && (
+        <UnreadJumpBar
+          count={unreadBarCount}
+          onJump={() => {
+            // 読み直したら「ここから未読」の線を上端に出す（そこから下が全部未読。ADR 0042）
+            void store.jumpToUnread(roomId).then(() => setScrollTo({ key: UNREAD_DIVIDER_KEY, align: "start" }));
+          }}
+        />
+      )}
+      {notFound && <MessageNotFoundNotice onClose={() => setNotFound(false)} />}
       {/* 取得中と、取得できなかったとき（その画面はデザインにない）は、ヘッダーだけを出す */}
       {ready &&
         (items.length === 0 ? (
@@ -296,6 +369,11 @@ export function RoomView({
           <Timeline
             items={items}
             onReachStart={() => store.loadOlder(roomId)}
+            onReachEnd={() => store.loadNewer(roomId)}
+            scrollToKey={scrollTo?.key}
+            scrollToAlign={scrollTo?.align}
+            highlightedKey={highlightedKey}
+            onClearHighlight={() => setHighlightedKey(undefined)}
             onMarkAllRead={() => store.dismissUnread(roomId)}
             onAtBottomChange={setAtBottom}
             scrollToLatestKey={sentCount}
