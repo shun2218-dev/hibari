@@ -26,7 +26,7 @@ export function WorkspaceThreads({ workspaceId, onBack }: { workspaceId: string;
   return (
     <ThreadList
       threads={views}
-      threadHref={(key) => `/w/${workspaceId}/r/${roomOf.get(key)}?thread=${key}`}
+      threadHref={(key) => `/w/${workspaceId}/r/${roomOf.get(key)}?t=${key}`}
       onBack={onBack}
     />
   );

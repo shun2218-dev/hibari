@@ -25,8 +25,11 @@ import { WorkspaceThreads } from "./workspace-threads";
 
 export function WorkspaceScreen() {
   const { workspaceId, roomId } = useParams<{ workspaceId: string; roomId?: string }>();
-  // 開いているスレッドは URL のクエリに持つ（ADR 0037）。一覧から開いたスレッドも、リロードしても同じ画面になる
-  const threadId = useSearchParams().get("thread") ?? undefined;
+  // 開いているスレッドと、飛び先のメッセージは URL のクエリに持つ（ADR 0037 / 0040 / 0042）。
+  // 一覧やリンクから開いた画面も、リロードすると同じ所に戻る
+  const searchParams = useSearchParams();
+  const threadId = searchParams.get("t") ?? undefined;
+  const jumpMessageId = searchParams.get("m") ?? undefined;
   const threadsView = usePathname() === `/w/${workspaceId}/threads`;
   const router = useRouter();
   const session = useSession();
@@ -123,11 +126,17 @@ export function WorkspaceScreen() {
 
   function openThread(rootId: string) {
     setMembersOpen(false);
-    router.push(`/w/${workspaceId}/r/${roomId}?thread=${rootId}`);
+    // 飛び先（?m=）は残す。リンクで開いた返信のスレッドを、パネルの中でも同じ所に合わせるため（ADR 0042）
+    const params = new URLSearchParams(searchParams);
+    params.set("t", rootId);
+    router.push(`/w/${workspaceId}/r/${roomId}?${params}`);
   }
 
   function closeThread() {
-    router.replace(`/w/${workspaceId}/r/${roomId}`);
+    const params = new URLSearchParams(searchParams);
+    params.delete("t");
+    const query = params.toString();
+    router.replace(`/w/${workspaceId}/r/${roomId}${query === "" ? "" : `?${query}`}`);
   }
 
   function toggleMembers() {
@@ -220,7 +229,14 @@ export function WorkspaceScreen() {
         }
         panel={
           roomId && threadId && !roomRemoved ? (
-            <RoomThread key={threadId} workspaceId={workspaceId} roomId={roomId} rootId={threadId} onClose={closeThread} />
+            <RoomThread
+              key={threadId}
+              workspaceId={workspaceId}
+              roomId={roomId}
+              rootId={threadId}
+              jumpMessageId={jumpMessageId}
+              onClose={closeThread}
+            />
           ) : roomId && membersOpen && !roomRemoved ? (
             <RoomMembers roomId={roomId} onClose={() => setMembersOpen(false)} />
           ) : undefined
@@ -235,6 +251,7 @@ export function WorkspaceScreen() {
             onToggleMembers={toggleMembers}
             openThreadId={threadId}
             onOpenThread={openThread}
+            jumpMessageId={jumpMessageId}
             onBack={() => setListShownFor(roomId)}
             onLeaveRemovedWorkspace={leaveRemovedWorkspace}
           />

@@ -9,6 +9,7 @@ import type {
   Member,
   Message,
   MessageAttachment,
+  MessageList,
   RemovalReason,
   Role,
   Room,
@@ -50,11 +51,22 @@ export type TimelineState = {
   hasOlder: boolean;
   loadingOlder: boolean;
   /**
+   * もっと新しいメッセージがある（ADR 0042）。指定したメッセージへ飛んだ後だけ true になる。
+   * true の間は、届いたメッセージを末尾に足さない（手元の並びとつながらないため）。
+   */
+  hasNewer: boolean;
+  loadingNewer: boolean;
+  /**
    * 「ここから未読」の位置。これより大きい seq の最初のメッセージの前に出す。null なら出さない。
    * 開いてすぐ既読にするので、ルームの last_read_seq を見ると区切りが消えてしまう。開いた時点の値で固定し、
    * 見ていない間に届いたメッセージの分だけ動かす（ADR 0026）。
    */
   unreadAfterSeq: number | null;
+  /**
+   * 開いた時点の未読数（ADR 0042 の「未読へ飛ぶ」バーに出す）。開いている間は増やさない。
+   * 開いてすぐ既読にするので、ルームの unread_count は 0 になってしまう。
+   */
+  unreadAtOpen: number;
   /** 同期のカーソル（ADR 0014）。この番号までの変更は手元に反映してある。 */
   changeSeq: number;
 };
@@ -94,6 +106,9 @@ export type ThreadState = {
   replies: Message[];
   hasOlder: boolean;
   loadingOlder: boolean;
+  /** もっと新しい返信がある（ADR 0042）。返信へ飛んだ後だけ true になる。 */
+  hasNewer: boolean;
+  loadingNewer: boolean;
   /** 自分の既読位置。スレッドに参加していなければ null（未読を持たない）。 */
   lastReadThreadSeq: number | null;
 };
@@ -431,7 +446,7 @@ export function createChatStore(
       const rootId = message.thread_root_id;
       if (rootId !== null) {
         patchThread(rootId, (t) => {
-          const replies = mergeRepliesIntoWindow(t.replies, t.hasOlder, [message]);
+          const replies = mergeRepliesIntoWindow(t.replies, t, [message]);
           return replies === t.replies ? t : { ...t, replies };
         });
         if (created && message.sender.id === userId && message.thread_seq !== null) {
@@ -503,6 +518,13 @@ export function createChatStore(
     });
   }
 
+  /** スレッドのパネルを開いた。まだ取っていなければ最新のページを取る（飛ぶ処理の中からも呼ぶ）。 */
+  function loadThreadIfNeeded(roomId: string, rootId: string): Promise<void> {
+    const current = state.threads[rootId];
+    if (current?.status === "ready" && current.roomId === roomId) return Promise.resolve();
+    return loadThread(roomId, rootId);
+  }
+
   /** 取得中のものがあれば、それが終わってからもう 1 回取る（reloadRooms と同じ理由）。 */
   async function reloadThreads(workspaceId: string): Promise<void> {
     await inflight.get(`threads:${workspaceId}`);
@@ -525,6 +547,8 @@ export function createChatStore(
           replies: [],
           hasOlder: false,
           loadingOlder: false,
+          hasNewer: false,
+          loadingNewer: false,
           lastReadThreadSeq: null,
         };
         return { ...s, threads: { ...s.threads, [rootId]: thread } };
@@ -534,7 +558,11 @@ export function createChatStore(
         update((s) => {
           const current = s.threads[rootId];
           const arrived = (current?.replies ?? []).filter((m) => m.change_seq > page.last_change_seq);
-          const replies = mergeRepliesIntoWindow(mergeReplies([], page.messages), page.has_more, arrived);
+          const replies = mergeRepliesIntoWindow(
+            mergeReplies([], page.messages),
+            { hasOlder: page.has_more, hasNewer: false },
+            arrived,
+          );
           const root = current?.root && current.root.change_seq > page.root.change_seq ? current.root : page.root;
           const lastRead =
             page.last_read_thread_seq === null
@@ -551,6 +579,8 @@ export function createChatStore(
                 replies,
                 hasOlder: page.has_more,
                 loadingOlder: false,
+                hasNewer: false,
+                loadingNewer: false,
                 lastReadThreadSeq: lastRead,
               },
             },
@@ -645,7 +675,7 @@ export function createChatStore(
       update((s) => {
         const current = s.timelines[roomId];
         if (!current) return s;
-        const messages = mergeIntoWindow(current.messages, current.hasOlder, page.messages);
+        const messages = mergeIntoWindow(current.messages, current, page.messages);
         // last_change_seq はメッセージを読む前の値なので、最後のページのときだけカーソルに使ってよい（ADR 0014）
         const changeSeq = advanceCursor(Math.max(current.changeSeq, page.last_change_seq), messages);
         return { ...s, timelines: { ...s.timelines, [roomId]: { ...current, messages, changeSeq } } };
@@ -662,7 +692,7 @@ export function createChatStore(
       if (!current) return s;
       const base = mergeMessages([], latest.messages);
       const arrived = current.messages.filter((m) => m.change_seq > latest.last_change_seq);
-      const messages = mergeIntoWindow(base, latest.has_more, arrived);
+      const messages = mergeIntoWindow(base, { hasOlder: latest.has_more, hasNewer: false }, arrived);
       return {
         ...s,
         timelines: {
@@ -671,6 +701,8 @@ export function createChatStore(
             ...current,
             messages,
             hasOlder: latest.has_more,
+            // 最新のページで置き換えたので、新しい側はつながっている
+            hasNewer: false,
             changeSeq: advanceCursor(latest.last_change_seq, messages),
           },
         },
@@ -818,7 +850,7 @@ export function createChatStore(
     if (timeline.status !== "ready" || message.change_seq <= timeline.changeSeq) return;
 
     const previousNewest = newestChannelSeq(timeline.messages);
-    const messages = mergeIntoWindow(timeline.messages, timeline.hasOlder, [message]);
+    const messages = mergeIntoWindow(timeline.messages, timeline, [message]);
     // 読み込んでいない範囲の変更は足さないが、番号が続いていれば反映したことにしてよい（表示するものがない）
     const next = message.change_seq === timeline.changeSeq + 1 ? message.change_seq : timeline.changeSeq;
     const changeSeq = advanceCursor(next, messages);
@@ -1140,6 +1172,117 @@ export function createChatStore(
     });
   }
 
+  /**
+   * タイムラインの窓を、取ってきたページで置き換える（ADR 0042 の「飛ぶ」）。
+   * 前後のどちら側が開いているかはページが持っているので、手元の並びは捨ててよい。
+   */
+  function replaceWindow(roomId: string, page: MessageList) {
+    update((s) => {
+      const current = s.timelines[roomId];
+      if (!current) return s;
+      const messages = mergeMessages([], page.messages);
+      return {
+        ...s,
+        timelines: {
+          ...s.timelines,
+          [roomId]: {
+            ...current,
+            status: "ready" as const,
+            messages,
+            hasOlder: page.has_more,
+            loadingOlder: false,
+            hasNewer: page.has_more_after,
+            loadingNewer: false,
+            changeSeq: advanceCursor(Math.max(current.changeSeq, page.last_change_seq), messages),
+          },
+        },
+      };
+    });
+  }
+
+  /**
+   * ルームを開く。ルームの情報（メンバー数・既読位置）を取り直し、表示したいちばん新しいメッセージまで読んだことにする。
+   *
+   * 前に開いて手元に残っているなら、差分（after_change_seq）だけを取る。なければ最新のページを取る（ADR 0026）。
+   * 飛ぶ（jumpToMessage）よりも先に終わらせたいので、返すオブジェクトの外に置いて中からも呼べるようにしてある。
+   */
+  function openRoom(roomId: string): Promise<void> {
+    return once(`room:${roomId}`, async () => {
+      const cached = state.timelines[roomId];
+      let room: Room;
+      if (cached?.status === "ready") {
+        try {
+          room = await api.getRoom(roomId);
+        } catch (err) {
+          patchTimeline(roomId, { status: statusOf(err) });
+          if (statusOf(err) === "error") console.error("failed to open room", err);
+          return;
+        }
+        putRoom(room);
+        patchTimeline(roomId, { unreadAfterSeq: room.last_read_seq, unreadAtOpen: room.unread_count });
+        await syncTimeline(roomId);
+      } else {
+        update((s) => ({
+          ...s,
+          timelines: {
+            ...s.timelines,
+            [roomId]: {
+              status: "loading",
+              // 開いている途中に届いたイベントは、ここに溜まっている
+              messages: s.timelines[roomId]?.status === "loading" ? s.timelines[roomId].messages : [],
+              hasOlder: false,
+              loadingOlder: false,
+              hasNewer: false,
+              loadingNewer: false,
+              unreadAfterSeq: null,
+              unreadAtOpen: 0,
+              changeSeq: 0,
+            },
+          },
+        }));
+        try {
+          const [fetchedRoom, page] = await Promise.all([api.getRoom(roomId), api.listMessages(roomId)]);
+          room = fetchedRoom;
+          putRoom(room);
+          update((s) => {
+            const arrived = (s.timelines[roomId]?.messages ?? []).filter((m) => m.change_seq > page.last_change_seq);
+            const messages = mergeIntoWindow(
+              mergeMessages([], page.messages),
+              { hasOlder: page.has_more, hasNewer: false },
+              arrived,
+            );
+            return {
+              ...s,
+              timelines: {
+                ...s.timelines,
+                [roomId]: {
+                  status: "ready",
+                  messages,
+                  hasOlder: page.has_more,
+                  loadingOlder: false,
+                  hasNewer: false,
+                  loadingNewer: false,
+                  unreadAfterSeq: room.last_read_seq,
+                  unreadAtOpen: room.unread_count,
+                  changeSeq: advanceCursor(page.last_change_seq, messages),
+                },
+              },
+            };
+          });
+        } catch (err) {
+          patchTimeline(roomId, { status: statusOf(err) });
+          if (statusOf(err) === "error") console.error("failed to open room", err);
+          return;
+        }
+      }
+
+      // 画面に出したいちばん新しいメッセージまで読んだことにする。ルームの last_message_seq を使わないのは、
+      // 取得の間に届いたメッセージを、見せる前に既読にしないため。メンバーでなければ既読位置はない
+      const latestSeq = newestChannelSeq(state.timelines[roomId]?.messages ?? []);
+      if (latestSeq !== undefined) await requestMarkRead(roomId, latestSeq);
+    });
+  }
+
   return {
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
@@ -1329,76 +1472,84 @@ export function createChatStore(
       if (workspaceId) removedFromRoom(workspaceId, roomId, "left");
     },
 
+    openRoom,
+
+
     /**
-     * ルームを開く。ルームの情報（メンバー数・既読位置）を取り直し、表示したいちばん新しいメッセージまで読んだことにする。
+     * 指定したメッセージの前後を読み込む（ADR 0042）。パーマリンクを開いたとき、カードや一覧を押したときに使う。
      *
-     * 前に開いて手元に残っているなら、差分（after_change_seq）だけを取る。なければ最新のページを取る（ADR 0026）。
+     * 見つかったかどうかを返す。見つからないときサーバーは最新のページを `around: null` で返すので、
+     * 「ない・読めない・削除済み」を区別しない（ADR 0040 と同じ方針）。呼ぶ側は知らせを 1 行出すだけにする。
+     * `threadRootId` が入っていれば、対象はスレッドの返信なので、呼ぶ側はパネルを開く。
      */
-    openRoom(roomId: string): Promise<void> {
-      return once(`room:${roomId}`, async () => {
-        const cached = state.timelines[roomId];
-        let room: Room;
-        if (cached?.status === "ready") {
-          try {
-            room = await api.getRoom(roomId);
-          } catch (err) {
-            patchTimeline(roomId, { status: statusOf(err) });
-            if (statusOf(err) === "error") console.error("failed to open room", err);
-            return;
-          }
-          putRoom(room);
-          patchTimeline(roomId, { unreadAfterSeq: room.last_read_seq });
-          await syncTimeline(roomId);
-        } else {
-          update((s) => ({
+    async jumpToMessage(roomId: string, messageId: string): Promise<{ found: boolean; threadRootId: string | null }> {
+      // 開く処理と競争させない（どちらも同じ窓を置き換えるため）。まだ開いていなければ、先に開く
+      await inflight.get(`room:${roomId}`);
+      if (state.timelines[roomId]?.status !== "ready") await openRoom(roomId);
+      if (state.timelines[roomId]?.status !== "ready") return { found: false, threadRootId: null };
+      try {
+        const page = await api.listMessages(roomId, { aroundMessageId: messageId });
+        replaceWindow(roomId, page);
+        return { found: page.around !== null, threadRootId: page.around?.thread_root_id ?? null };
+      } catch (err) {
+        console.error("failed to jump to a message", err);
+        return { found: false, threadRootId: null };
+      }
+    },
+
+    /**
+     * 最初の未読から読み直す（ADR 0042）。専用の API は作らず、`after_seq = 開いた時点の last_read_seq` を使う。
+     * 未読の位置がもう画面にあるとき（バーを出していないとき）は呼ばれない。
+     */
+    async jumpToUnread(roomId: string): Promise<void> {
+      const timeline = state.timelines[roomId];
+      const afterSeq = timeline?.unreadAfterSeq;
+      if (!timeline || timeline.status !== "ready" || afterSeq === null || afterSeq === undefined) return;
+      try {
+        const page = await api.listMessages(roomId, { afterSeq });
+        replaceWindow(roomId, { ...page, has_more: afterSeq > 0, has_more_after: page.has_more });
+      } catch (err) {
+        console.error("failed to jump to the first unread message", err);
+      }
+    },
+
+    /**
+     * 飛んだ先から新しい方へ読み足す（ADR 0042）。読み切ると hasNewer が false になり、
+     * 届いたメッセージがまた末尾に並ぶようになる。
+     */
+    async loadNewer(roomId: string): Promise<void> {
+      const timeline = state.timelines[roomId];
+      if (!timeline || timeline.status !== "ready" || !timeline.hasNewer || timeline.loadingNewer) return;
+      const newest = timeline.messages.at(-1);
+      if (!newest) return;
+
+      patchTimeline(roomId, { loadingNewer: true });
+      try {
+        const page = await api.listMessages(roomId, { afterSeq: newest.seq });
+        update((s) => {
+          const current = s.timelines[roomId];
+          if (!current) return s;
+          const messages = mergeMessages(current.messages, page.messages);
+          return {
             ...s,
             timelines: {
               ...s.timelines,
               [roomId]: {
-                status: "loading",
-                // 開いている途中に届いたイベントは、ここに溜まっている
-                messages: s.timelines[roomId]?.status === "loading" ? s.timelines[roomId].messages : [],
-                hasOlder: false,
-                loadingOlder: false,
-                unreadAfterSeq: null,
-                changeSeq: 0,
+                ...current,
+                messages,
+                hasNewer: page.has_more,
+                loadingNewer: false,
+                changeSeq: advanceCursor(current.changeSeq, messages),
               },
             },
-          }));
-          try {
-            const [fetchedRoom, page] = await Promise.all([api.getRoom(roomId), api.listMessages(roomId)]);
-            room = fetchedRoom;
-            putRoom(room);
-            update((s) => {
-              const arrived = (s.timelines[roomId]?.messages ?? []).filter((m) => m.change_seq > page.last_change_seq);
-              const messages = mergeIntoWindow(mergeMessages([], page.messages), page.has_more, arrived);
-              return {
-                ...s,
-                timelines: {
-                  ...s.timelines,
-                  [roomId]: {
-                    status: "ready",
-                    messages,
-                    hasOlder: page.has_more,
-                    loadingOlder: false,
-                    unreadAfterSeq: room.last_read_seq,
-                    changeSeq: advanceCursor(page.last_change_seq, messages),
-                  },
-                },
-              };
-            });
-          } catch (err) {
-            patchTimeline(roomId, { status: statusOf(err) });
-            if (statusOf(err) === "error") console.error("failed to open room", err);
-            return;
-          }
-        }
-
-        // 画面に出したいちばん新しいメッセージまで読んだことにする。ルームの last_message_seq を使わないのは、
-        // 取得の間に届いたメッセージを、見せる前に既読にしないため。メンバーでなければ既読位置はない
-        const latestSeq = newestChannelSeq(state.timelines[roomId]?.messages ?? []);
-        if (latestSeq !== undefined) await requestMarkRead(roomId, latestSeq);
-      });
+          };
+        });
+        // 最新につながったら、その間に落ちた変更を取り直す
+        if (!page.has_more) void syncTimeline(roomId);
+      } catch (err) {
+        patchTimeline(roomId, { loadingNewer: false });
+        console.error("failed to load newer messages", err);
+      }
     },
 
     /** いちばん古いメッセージより前のページを取る。取得中やもうないときは何もしない。 */
@@ -1517,17 +1668,58 @@ export function createChatStore(
 
     reloadThreads,
 
-    /** スレッドのパネルを開いた。まだ取っていなければ最新のページを取る。 */
-    openThread(roomId: string, rootId: string): Promise<void> {
-      const current = state.threads[rootId];
-      if (current?.status === "ready" && current.roomId === roomId) return Promise.resolve();
-      return loadThread(roomId, rootId);
-    },
+    openThread: loadThreadIfNeeded,
 
     /** 再接続の後に取り直す。取得の間に届いた返信は残す。 */
     async reloadThread(roomId: string, rootId: string): Promise<void> {
       await inflight.get(`thread:${rootId}`);
       return loadThread(roomId, rootId);
+    },
+
+    /**
+     * スレッドのパネルを開いて、指定した返信の前後を読み込む（ADR 0042）。
+     * 見つからなければ最新のページのままにする（チャンネル側と同じで、理由は区別しない）。
+     */
+    async jumpToThreadMessage(roomId: string, rootId: string, messageId: string): Promise<{ found: boolean }> {
+      await loadThreadIfNeeded(roomId, rootId);
+      const thread = state.threads[rootId];
+      if (!thread || thread.status !== "ready") return { found: false };
+      try {
+        const page = await api.listThreadMessages(roomId, rootId, { aroundMessageId: messageId });
+        patchThread(rootId, (t) => ({
+          ...t,
+          replies: mergeReplies([], page.messages),
+          hasOlder: page.has_more,
+          loadingOlder: false,
+          hasNewer: page.has_more_after,
+          loadingNewer: false,
+        }));
+        return { found: page.around !== null };
+      } catch (err) {
+        console.error("failed to jump to a reply", err);
+        return { found: false };
+      }
+    },
+
+    /** 飛んだ先から新しい方へ読み足す（ADR 0042）。読み切ると、届いた返信がまた末尾に並ぶようになる。 */
+    async loadNewerThread(rootId: string): Promise<void> {
+      const thread = state.threads[rootId];
+      if (!thread || thread.status !== "ready" || !thread.hasNewer || thread.loadingNewer) return;
+      const newest = thread.replies.at(-1);
+      if (!newest) return;
+      patchThread(rootId, (t) => ({ ...t, loadingNewer: true }));
+      try {
+        const page = await api.listThreadMessages(thread.roomId, rootId, { afterSeq: newest.seq });
+        patchThread(rootId, (t) => ({
+          ...t,
+          replies: mergeReplies(t.replies, page.messages),
+          hasNewer: page.has_more,
+          loadingNewer: false,
+        }));
+      } catch (err) {
+        patchThread(rootId, (t) => ({ ...t, loadingNewer: false }));
+        console.error("failed to load newer replies", err);
+      }
     },
 
     /** いちばん古い返信より前のページを取る。取得中やもうないときは何もしない。 */

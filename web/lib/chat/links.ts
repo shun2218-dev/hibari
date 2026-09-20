@@ -28,12 +28,19 @@ function isUlid(s: string | null | undefined): s is string {
   return typeof s === "string" && ULID.test(s);
 }
 
-/** パーマリンクの URL を組み立てる。「リンクをコピー」が使う。 */
+/** パーマリンクの URL を組み立てる。「リンクをコピー」が使う（貼る先はこのアプリの外なので、オリジンから作る）。 */
 export function buildPermalink(origin: string, link: Permalink): string {
-  const url = new URL(`/w/${link.workspaceId}/r/${link.roomId}`, origin);
-  url.searchParams.set("m", link.messageId);
-  if (link.threadRootId) url.searchParams.set("t", link.threadRootId);
-  return url.toString();
+  return new URL(permalinkPath(link), origin).toString();
+}
+
+/**
+ * 同じパーマリンクの、アプリの中での行き先（`/w/…/r/…?m=…`）。カードの遷移先に使う。
+ * オリジンから始まる URL を `next/link` に渡すとページごと読み込み直しになるので、パスで渡す。
+ */
+export function permalinkPath(link: Permalink): string {
+  const params = new URLSearchParams({ m: link.messageId });
+  if (link.threadRootId) params.set("t", link.threadRootId);
+  return `/w/${link.workspaceId}/r/${link.roomId}?${params}`;
 }
 
 /**

@@ -736,7 +736,8 @@ describe("toTimelineItems のリンクのカード", () => {
     const root = "01J9ZQZQZQZQZQZQZQZQZQZQZD";
     const result = linkResult({ message: { ...linkMessage(), thread_root_id: root } });
     const [card] = cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: result }) ?? [];
-    expect(card).toMatchObject({ inThread: true, href: `${PERMALINK}&t=${root}` });
+    // 遷移先はアプリの中のパス（オリジンから始まる URL だとページごと読み込み直しになる）
+    expect(card).toMatchObject({ inThread: true, href: `/w/${WS}/r/${LINK_ROOM}?m=${LINK_MSG}&t=${root}` });
   });
 
   it("添付の件数を渡す", () => {

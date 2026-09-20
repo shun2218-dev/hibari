@@ -46,13 +46,16 @@ describe("mergeIntoWindow", () => {
   it("drops changes to messages older than the loaded range while older pages remain", () => {
     const current = [message(50), message(51)];
 
-    const merged = mergeIntoWindow(current, true, [message(10, { change_seq: 60 }), message(52, { change_seq: 61 })]);
+    const merged = mergeIntoWindow(current, { hasOlder: true, hasNewer: false }, [
+      message(10, { change_seq: 60 }),
+      message(52, { change_seq: 61 }),
+    ]);
 
     expect(merged.map((m) => m.seq)).toEqual([50, 51, 52]);
   });
 
   it("takes everything when the whole history is loaded", () => {
-    const merged = mergeIntoWindow([message(2)], false, [message(1, { change_seq: 5 })]);
+    const merged = mergeIntoWindow([message(2)], { hasOlder: false, hasNewer: false }, [message(1, { change_seq: 5 })]);
 
     expect(merged.map((m) => m.seq)).toEqual([1, 2]);
   });
@@ -60,7 +63,17 @@ describe("mergeIntoWindow", () => {
   it("returns the same array when nothing applies", () => {
     const current = [message(50)];
 
-    expect(mergeIntoWindow(current, true, [message(3)])).toBe(current);
+    expect(mergeIntoWindow(current, { hasOlder: true, hasNewer: false }, [message(3)])).toBe(current);
+  });
+
+  it("飛んだ先で新しい側が開いている間は、その先のメッセージを足さない（ADR 0042）", () => {
+    const current = [message(50), message(51)];
+    const window = { hasOlder: true, hasNewer: true };
+
+    // 手元のいちばん新しいものとつながらないので、末尾には足さない
+    expect(mergeIntoWindow(current, window, [message(80, { change_seq: 61 })])).toBe(current);
+    // 範囲の中の編集・削除はそのまま反映する
+    expect(mergeIntoWindow(current, window, [message(51, { change_seq: 62 })]).map((m) => m.change_seq)).toEqual([50, 62]);
   });
 });
 

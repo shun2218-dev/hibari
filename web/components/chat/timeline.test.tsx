@@ -144,6 +144,39 @@ describe("Timeline", () => {
       expect(scroller().scrollTop).toBe(4 * ROW);
     });
 
+    it("飛び先を画面の中ほどに置く（ADR 0042）", () => {
+      const scroller = fakeLayout();
+      const items = [msg("a", "1"), msg("b", "2"), msg("c", "3"), msg("d", "4")];
+      const { rerender } = render(<Timeline items={items} />);
+      expect(scroller().scrollTop).toBe(4 * ROW);
+
+      rerender(<Timeline items={items} scrollToKey="c" />);
+
+      // c の上端（200）から、画面の半分ぶん上に戻したところ
+      expect(scroller().scrollTop).toBe(2 * ROW - VIEWPORT / 2);
+
+      // 「ここから未読」の線は、そこから下が全部未読なので上端に合わせる
+      rerender(
+        <Timeline items={[...items, { type: "unread", key: "unread" }]} scrollToKey="unread" scrollToAlign="start" />,
+      );
+      expect(scroller().scrollTop).toBe(4 * ROW);
+    });
+
+    it("いちばん下の近くまで来たら、新しい方の読み足しを頼む（ADR 0042）", () => {
+      const scroller = fakeLayout();
+      const onReachEnd = vi.fn();
+      render(<Timeline items={Array.from({ length: 10 }, (_, i) => msg(`m${i}`, String(i)))} onReachEnd={onReachEnd} />);
+      onReachEnd.mockClear();
+
+      scroller().scrollTop = 0;
+      fireEvent.scroll(scroller());
+      expect(onReachEnd).not.toHaveBeenCalled();
+
+      scroller().scrollTop = 10 * ROW - VIEWPORT;
+      fireEvent.scroll(scroller());
+      expect(onReachEnd).toHaveBeenCalled();
+    });
+
     it("reports when the newest message comes into or goes out of view", () => {
       const scroller = fakeLayout();
       const onAtBottomChange = vi.fn();
@@ -178,6 +211,24 @@ describe("Timeline", () => {
       scroller().scrollTop = 300;
       fireEvent.scroll(scroller());
       expect(onReachStart).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("飛び先の強調（ADR 0042）", () => {
+    it("強調しているときに押したら知らせる（時間を待たずに消せるように）", async () => {
+      const onClearHighlight = vi.fn();
+      const { rerender } = render(
+        <Timeline items={[msg("a", "1")]} highlightedKey="a" onClearHighlight={onClearHighlight} />,
+      );
+
+      await userEvent.click(screen.getByRole("article"));
+      expect(onClearHighlight).toHaveBeenCalled();
+
+      // 強調していないときは知らせない
+      onClearHighlight.mockClear();
+      rerender(<Timeline items={[msg("a", "1")]} onClearHighlight={onClearHighlight} />);
+      await userEvent.click(screen.getByRole("article"));
+      expect(onClearHighlight).not.toHaveBeenCalled();
     });
   });
 });

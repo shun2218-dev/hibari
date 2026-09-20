@@ -126,10 +126,22 @@ export function createChatApi(request: Session["request"]) {
     removeRoomMember: (roomId: string, userId: string) =>
       request<void>("DELETE", `/api/v1/rooms/${encodeURIComponent(roomId)}/members/${encodeURIComponent(userId)}`),
 
-    /** before_seq を省くと最新のページ。messages は常に seq の昇順（ADR 0012）。 */
-    listMessages: (roomId: string, { beforeSeq }: { beforeSeq?: number } = {}) => {
+    /**
+     * カーソルを省くと最新のページ。messages は常に seq の昇順（ADR 0012）。
+     *
+     * カーソルは 1 つだけ指定できる（2 つ以上はサーバーが 422 にする。ADR 0042）。
+     * - beforeSeq: その seq より古い方へ
+     * - afterSeq: その seq より新しい方へ（最初の未読から読み直すのに使う）
+     * - aroundMessageId: そのメッセージを真ん中に置いて前後。見つからなければ最新のページが around: null で返る
+     */
+    listMessages: (
+      roomId: string,
+      { beforeSeq, afterSeq, aroundMessageId }: { beforeSeq?: number; afterSeq?: number; aroundMessageId?: string } = {},
+    ) => {
       const params = new URLSearchParams({ limit: String(MESSAGE_PAGE_SIZE) });
       if (beforeSeq !== undefined) params.set("before_seq", String(beforeSeq));
+      if (afterSeq !== undefined) params.set("after_seq", String(afterSeq));
+      if (aroundMessageId !== undefined) params.set("around_message_id", aroundMessageId);
       return request<MessageList>("GET", `/api/v1/rooms/${encodeURIComponent(roomId)}/messages?${params}`);
     },
 
@@ -166,10 +178,16 @@ export function createChatApi(request: Session["request"]) {
     markRead: (roomId: string, body: MarkRoomReadRequest) =>
       request<ReadState>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/read`, body),
 
-    /** スレッドの親と返信。before_seq を省くと最新のページ。messages は seq の昇順（ADR 0036）。 */
-    listThreadMessages: (roomId: string, rootId: string, { beforeSeq }: { beforeSeq?: number } = {}) => {
+    /** スレッドの親と返信。カーソルの決まりは listMessages と同じ（ADR 0036 / 0042）。 */
+    listThreadMessages: (
+      roomId: string,
+      rootId: string,
+      { beforeSeq, afterSeq, aroundMessageId }: { beforeSeq?: number; afterSeq?: number; aroundMessageId?: string } = {},
+    ) => {
       const params = new URLSearchParams({ limit: String(MESSAGE_PAGE_SIZE) });
       if (beforeSeq !== undefined) params.set("before_seq", String(beforeSeq));
+      if (afterSeq !== undefined) params.set("after_seq", String(afterSeq));
+      if (aroundMessageId !== undefined) params.set("around_message_id", aroundMessageId);
       return request<ThreadMessageList>(
         "GET",
         `/api/v1/rooms/${encodeURIComponent(roomId)}/threads/${encodeURIComponent(rootId)}/messages?${params}`,
