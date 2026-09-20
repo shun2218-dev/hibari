@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-// docs/ui/screenshots/ の PNG を /dev/preview から撮り直す（Claude Design から取り込んだ画面ではなく、実装から足した画面のためのもの）。
+// docs/ui/screenshots/ の PNG を Storybook から撮り直す（ADR 0047）。
 //
-//   HIBARI_SCREENSHOTS=1 npm --prefix web run dev            # 開発インジケータを消して起動する
-//   make web-shots names="chat/room-header-settings:900x120"
+//   npm --prefix web run storybook          # 撮影のもとになる Storybook を起動する
+//   make web-shots                          # source: "app" の PNG を全部撮り直す
+//   make web-shots names="chat/room-header-settings chat/mobile-room"
 //
-// - 名前は /dev/preview のカタログ（web/app/dev/preview/catalog.ts）と同じ「グループ/名前」。
-// - 大きさは既定で 1280x800、`mobile-` で始まる名前は 390x844。`名前:WxH` で変えられる（部分を切り出したフレーム用）。
+// - 名前は story の id の `--` を `/` にしたもの、つまり PNG のパスそのもの（ADR 0047 決定 2）。
+// - 撮る大きさと出どころは story の `parameters.screenshot` にある。index.json には parameters が載らないので、
+//   描画したページの `<html data-shot-size / data-shot-source>`（.storybook/preview.tsx の decorator が書く）から読む。
 // - headless Chrome の `--window-size --screenshot` は、幅が狭いときにレイアウトが崩れた（横に伸びる要素が縮まない）ので、
 //   DevTools Protocol で Emulation.setDeviceMetricsOverride を使って撮る。
 import { spawn } from "node:child_process";
@@ -14,31 +16,41 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.BASE_URL ?? "http://localhost:6006";
 const PORT = Number(process.env.CDP_PORT ?? 9333);
 const OUT_DIR = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "docs/ui/screenshots");
 /** 画面の描画とフォントの読み込みを待つ時間。 */
 const SETTLE_MS = 2_000;
-
-const targets = process.argv.slice(2).map((arg) => {
-  const [name, size] = arg.split(":");
-  const fallback = path.basename(name).startsWith("mobile-") ? "390x844" : "1280x800";
-  const [width, height] = (size ?? fallback).split("x").map(Number);
-  if (!name.includes("/") || !width || !height) throw new Error(`使い方: <group/name[:WxH]> （受け取った値: ${arg}）`);
-  return { name, width, height };
-});
-if (targets.length === 0) {
-  console.error("usage: tools/shoot-ui.mjs <group/name[:WxH]>...");
-  process.exit(2);
-}
+/** 大きさを読むまでの待ち方（decorator が <html> に書くのを待つ）。 */
+const POLL_MS = 100;
+const POLL_MAX = 100;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const res = await fetch(`${BASE_URL}/dev/preview`).catch(() => null);
-if (!res?.ok) {
-  console.error(`開発サーバーが ${BASE_URL} にいない（HIBARI_SCREENSHOTS=1 npm --prefix web run dev で起動する）`);
+const index = await fetch(`${BASE_URL}/index.json`)
+  .then((r) => (r.ok ? r.json() : null))
+  .catch(() => null);
+if (!index) {
+  console.error(`Storybook が ${BASE_URL} にいない（npm --prefix web run storybook で起動する）`);
   process.exit(1);
 }
+
+/** PNG のパス（`chat/image-viewer`）→ story の id。 */
+const stories = new Map(
+  Object.values(index.entries)
+    .filter((entry) => entry.type === "story")
+    .map((entry) => [entry.id.replace("--", "/"), entry.id]),
+);
+
+const asked = process.argv.slice(2);
+for (const name of asked) {
+  if (!stories.has(name)) {
+    console.error(`story がない: ${name}（名前は docs/ui/screenshots/ のパスと同じ）`);
+    process.exit(2);
+  }
+}
+// 名前を渡さなければ全部撮る（実際に撮るかは source が app かどうかで決める。下の shoot）
+const targets = asked.length > 0 ? asked : [...stories.keys()].sort();
 
 const chrome = spawn(
   CHROME,
@@ -59,8 +71,8 @@ chrome.on("error", (err) => {
 
 try {
   const socket = await connect();
-  for (const target of targets) {
-    await shoot(socket, target);
+  for (const name of targets) {
+    await shoot(socket, name);
   }
 } finally {
   chrome.kill();
@@ -98,17 +110,85 @@ function openSocket(url) {
   return new Promise((resolve) => ws.addEventListener("open", () => resolve({ send })));
 }
 
-async function shoot({ send }, { name, width, height }) {
+/**
+ * 動くものを止める。入力中の「…」のように動き続けるものは、撮るたびに違う瞬間が写ってしまう。
+ * 途中で止めると「いつ止めたか」で結果が変わるので、最初から動かさない（読み込みの前に仕込む）。
+ */
+async function stopAnimations(send, sessionId) {
+  const css = "*, *::before, *::after { animation: none !important; transition: none !important; }";
+  await send(
+    "Page.addScriptToEvaluateOnNewDocument",
+    {
+      source: `document.addEventListener("DOMContentLoaded", () => {
+        const style = document.createElement("style");
+        style.textContent = ${JSON.stringify(css)};
+        document.head.append(style);
+      });`,
+    },
+    sessionId,
+  );
+}
+
+/**
+ * 画像と書体の読み込みが終わるまで待つ。終わる前に撮ると、タイムラインの高さが変わって
+ * スクロールの位置（＝スクロールバーの位置）が撮るたびに変わる。
+ */
+async function settle(send, sessionId) {
+  const ready = `document.readyState === "complete"
+    && document.fonts.status === "loaded"
+    && [...document.images].every((img) => img.complete)`;
+  for (let attempt = 0; attempt < POLL_MAX; attempt++) {
+    const { result } = await send("Runtime.evaluate", { expression: ready, returnByValue: true }, sessionId);
+    if (result.value) break;
+    await wait(POLL_MS);
+  }
+  // 読み込みのあとの再描画（スクロールの当て直しなど）を待つ。
+  await wait(SETTLE_MS);
+}
+
+/** 描画された story から、撮影の指定（大きさと出どころ）を読む。 */
+async function readShotParams(send, sessionId) {
+  for (let attempt = 0; attempt < POLL_MAX; attempt++) {
+    const { result } = await send(
+      "Runtime.evaluate",
+      { expression: "JSON.stringify(document.documentElement.dataset)", returnByValue: true },
+      sessionId,
+    );
+    const data = JSON.parse(result.value ?? "{}");
+    if (data.shotSize) return { size: data.shotSize, source: data.shotSource ?? "app" };
+    await wait(POLL_MS);
+  }
+  throw new Error("story が描画されない（data-shot-size が付かない）");
+}
+
+async function shoot({ send }, name) {
   const { targetId } = await send("Target.createTarget", { url: "about:blank" });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
-  await send("Page.enable", {}, sessionId);
-  await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }, sessionId);
-  await send("Page.navigate", { url: `${BASE_URL}/dev/preview/${name}` }, sessionId);
-  await wait(SETTLE_MS);
-  const { data } = await send("Page.captureScreenshot", { format: "png" }, sessionId);
-  const file = path.join(OUT_DIR, `${name}.png`);
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, Buffer.from(data, "base64"));
-  await send("Target.closeTarget", { targetId });
-  console.log(`${name} -> ${path.relative(process.cwd(), file)} (${width}x${height})`);
+  try {
+    await send("Page.enable", {}, sessionId);
+    await stopAnimations(send, sessionId);
+    // 読みに行くだけの 1 回目。大きさが分かってから当て直す。
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, sessionId);
+    const url = `${BASE_URL}/iframe.html?id=${stories.get(name)}&viewMode=story`;
+    await send("Page.navigate", { url }, sessionId);
+    const { size, source } = await readShotParams(send, sessionId);
+    if (source !== "app") {
+      console.log(`${name} -> 撮らない（source: ${source}。Claude Design から取り込んだ PNG）`);
+      return;
+    }
+    const [width, height] = size.split("x").map(Number);
+    if (!width || !height) throw new Error(`大きさの形が違う: ${size}`);
+    // 大きさを当ててから読み込み直す。あとから広さを変えるだけだと、
+    // 初回の描画のときのスクロール位置（タイムラインの末尾）がずれたまま残る。
+    await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }, sessionId);
+    await send("Page.navigate", { url }, sessionId);
+    await settle(send, sessionId);
+    const { data } = await send("Page.captureScreenshot", { format: "png" }, sessionId);
+    const file = path.join(OUT_DIR, `${name}.png`);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, Buffer.from(data, "base64"));
+    console.log(`${name} -> ${path.relative(process.cwd(), file)} (${size})`);
+  } finally {
+    await send("Target.closeTarget", { targetId });
+  }
 }

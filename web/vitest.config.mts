@@ -3,8 +3,12 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [react()],
-  // tsconfig.json の paths（@/*）をテストでも解決する。
-  resolve: { tsconfigPaths: true },
+  resolve: {
+    // tsconfig.json の paths（@/*）をテストでも解決する。
+    tsconfigPaths: true,
+    // next/font はビルド時の変換なので、テストでは差し替える（Storybook と本番では本物が動く）。
+    alias: { "next/font/google": new URL("./test/next-font.ts", import.meta.url).pathname },
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],

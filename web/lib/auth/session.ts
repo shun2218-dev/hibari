@@ -184,7 +184,7 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
 
     /**
      * 起動時に 1 回だけ、Cookie の Refresh Token からログイン状態を戻す。何度呼んでも同じ Promise を返す。
-     * /dev/preview のように認証の要らない画面では呼ばない（ルートのレイアウトではなく、認証を使うページが呼ぶ）。
+     * ログインのように認証の要らない画面では呼ばない（ルートのレイアウトではなく、認証を使うページが呼ぶ）。
      *
      * サーバーに届かないときは loading のまま投げる。ログアウトしたと誤って扱わない。
      */

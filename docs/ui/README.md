@@ -58,7 +58,7 @@ Claude Design で作った画面を取り込んだもの。**Phase 6 で画面�
 
 ## 解決済み
 
-- **確認待ちの画面の「別のアドレスに変更する」**: email を変える API がないので出さない（`VerifyEmailPending` は `onChangeEmail` を渡したときだけ出す。`/dev/preview` ではスクリーンショットと同じく出している）。
+- **確認待ちの画面の「別のアドレスに変更する」**: email を変える API がないので出さない（`VerifyEmailPending` は `onChangeEmail` を渡したときだけ出す。story ではスクリーンショットと同じく出している）。
 - **パスワード再設定リンクの有効期限**: デザインの文言（1 時間）に合わせた（ADR 0010 追記）。
 - **招待リンク一覧の閲覧・取り消しの権限**: 閲覧はメンバー全員、取り消しは admin 以上か、自分が作成した招待でいまも作成できる人（ADR 0011）。
 - **招待プレビューの項目**: 要ログイン。有効な招待だけワークスペース名・メンバー数・public ルームの数・招待者・参加済みかを返し、無効 / 期限切れ / 使用上限ではワークスペースの情報を返さない（ADR 0011）。
@@ -66,15 +66,33 @@ Claude Design で作った画面を取り込んだもの。**Phase 6 で画面�
 - **書体の読み込み**: `next/font` で読み込む（`web/app/fonts.ts`、ADR 0018）。
 - **招待リンクの長さ**: コードは 22 文字（ADR 0011）。作成直後のダイアログでは折り返さずに横へスクロールさせる（`InviteCreatedDialog`）。
 
-## 画面の再現（Phase 6-1）
+## 画面の再現（Storybook。Phase 6.7.6 まで `/dev/preview`）
 
-`make web` で起動し、`http://localhost:3000/dev/preview` を開く。スクリーンショットと同じ名前で全画面を並べてある（`/dev/preview/chat/banner-syncing` ↔ `screenshots/chat/banner-syncing.png`）。
+`make web-ui` で Storybook（`http://localhost:6006`）を起動する。**story の id がそのままスクリーンショットのパス**で、
+`chat--banner-syncing` ↔ `screenshots/chat/banner-syncing.png` のように 1 対 1 に対応する（ADR 0047）。
+サイドバーの検索で名前から探せて、`since:6.7` のような tag でフェーズごとに絞り込める。
 
-- モバイルの画面（`mobile-*`）は、ブラウザの幅を 768px 未満にして見る。
-- ダークの画面（`*-dark`）は、その画面だけ `data-theme="dark"` で描く。
+- story は `web/stories/<グループ>.stories.tsx`、画面の組み立ては `web/stories/screens.tsx`、モックは `web/stories/fixtures.ts`。
+- モバイルの画面（`mobile-*`）は 390x844 の viewport で描く。ダークの画面（`*-dark`）は `parameters.theme: "dark"` を付ける。
 - 画像の添付のストライプの模様は、モックの画像の中身なので再現していない（寸法の枠だけを出す）。
   拡大表示の画面（Phase 6.7.5）だけは中身が要るので、モックの画像を `web/public/dev/photo-*.png` に置いてある（アバターの画像と同じ扱い）。
-- スクリーンショットを足したら、`web/app/dev/preview/catalog.ts` と `screens.tsx` にも足す（足さないと `catalog.test.tsx` が落ちる）。
+- スクリーンショットを足したら story も足す（足さないと `web/stories/stories.test.tsx` の 1 対 1 の検査が落ちる）。
+  export 名がそのままファイル名になるので、`ImageViewerDark` → `chat/image-viewer-dark.png`。
+
+### 撮り直し
+
+`make web-ui` を動かしたまま、別の端末で:
+
+```
+make web-shots                                   # source: "app" の PNG を全部
+make web-shots names="chat/room-header-settings" # 名前を指定して 1 枚だけ
+```
+
+- 撮る大きさは story の `parameters.screenshot.size`（既定は 1280x800、モバイルは 390x844）。
+- Claude Design から取り込んだ PNG には `source: "design"` を付けてあり、撮り直しの対象にしない
+  （実装から撮ったものではないので、撮り直すと必ず差が出る）。
+- 入力中の「…」のような動くものは、読み込みの前に `animation: none` を入れて最初から動かさない
+  （途中で止めると「いつ止めたか」で結果が変わるため）。画像と書体の読み込みも待つ。同じ story を 2 回撮れば同じ PNG になる。
 
 ## 未解決（実装の前に決める）
 
@@ -135,7 +153,7 @@ Phase 6-1 で「API はあるのに操作の入口や状態の画面がない」
 ### Phase 6-2 の構築順 6 で足した画面
 
 管理画面・設定・チャンネルの設定をつなぐときに見つかった「入口がない」ものを、既存の部品とトークンのまま足した。
-**この 6 枚は Claude Design ではなく、実装（`/dev/preview`）を headless Chrome で撮ったもの**（`tools/shoot-ui.mjs`、`make web-shots`）。
+**この 6 枚は Claude Design ではなく、実装を headless Chrome で撮ったもの**（`tools/shoot-ui.mjs`、`make web-shots`）。
 Claude Design 側に取り込むときは、ほかの追加画面と同じキャンバスに移す。
 
 | 画面 | スクリーンショット | 関連する API |
@@ -153,7 +171,7 @@ Claude Design 側に取り込むときは、ほかの追加画面と同じキャ
 ### Phase 6.4 で足した画面
 
 参加・退出・作成・名前の変更のログ（ADR 0033）は Phase 6 のデザインになかったので、既存の部品とトークンのまま足した。
-実装（`/dev/preview`）を headless Chrome で撮ったもの。
+実装を headless Chrome で撮ったもの。
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
@@ -166,7 +184,7 @@ Claude Design 側に取り込むときは、ほかの追加画面と同じキャ
 ### チャンネルの退出で足した画面
 
 チャンネルを自分で退出する入口がなかった（API はあった）ので、既存の部品とトークンのまま足した（ADR 0034）。
-実装（`/dev/preview`）を headless Chrome で撮ったもの。
+実装を headless Chrome で撮ったもの。
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
@@ -183,7 +201,7 @@ Claude Design 側に取り込むときは、ほかの追加画面と同じキャ
 
 オーナーの判断（2026-09-19、Slack に合わせる）で、Claude Design の `chat/removed-from-channel.png`
 （ヘッダーとサイドバーに名前を残し、「このチャンネルから外されました」と「『{名前}』のメンバーではなくなった」を出す）を置き換えた（ADR 0035）。
-**このスクリーンショットは、実装（`/dev/preview`）を headless Chrome で撮り直したもの**。Claude Design 側も合わせて直す。
+**このスクリーンショットは、実装を headless Chrome で撮り直したもの**。Claude Design 側も合わせて直す。
 
 - 見出しは「このチャンネルにはアクセスできません」、説明は「チャンネルが存在しないか、閲覧する権限がありません。」。操作は「チャンネル一覧に戻る」のまま。
 - チャンネルの名前はどこにも出さない。ヘッダー（名前・人数・設定・メンバー）ごと出さず、サイドバーからもすぐに消し、メンバーのパネルも閉じる。
@@ -194,7 +212,7 @@ Claude Design 側に取り込むときは、ほかの追加画面と同じキャ
 ### Phase 6.5 で足した画面（スレッド）
 
 スレッド（ADR 0036）は Phase 6 のデザインになかったので、既存の部品とトークンのまま足した（オーナーと確認）。
-実装（`/dev/preview`）を headless Chrome で撮ったもの。
+実装を headless Chrome で撮ったもの。
 
 | 画面 | スクリーンショット | 関連する API |
 |---|---|---|
@@ -265,14 +283,14 @@ ADR 0043 のメンションを、既存の部品とトークンのまま足し�
   キャレットの位置には付けない（`textarea` では文字の座標を測れない）。
 - **送る前の確認**: `@channel` / `@here` のときだけ出す。人数を文言に入れる。ボタンは「キャンセル」と「送信する」（primary。消す操作ではないので danger にしない）。
 
-#### 撮り直しが要るもの
+#### 撮り直しが要るもの ← Phase 6.7.6 で済んだ
 
 サイドバーのバッジの出し方を変えた（未読のチャンネルのバッジが消えて名前が太字になった）ので、
-**サイドバーの写っているスクリーンショットは全部古い**。`make web-shots` で撮り直す。
+**サイドバーの写っているスクリーンショットが全部古く**なっていた。
+またこの 7 枚は Linux の Chromium で撮っていた（`tools/shoot-ui.mjs` が既定にしている macOS の Chrome ではない）。
 
-またこの 7 枚は Linux の Chromium で撮っている（`tools/shoot-ui.mjs` が既定にしている macOS の Chrome ではない）。
-レイアウトと色は同じだが、文字のラスタライズが違い、同じ画面を撮り比べると画素の 11.7% が変わる。
-他の PNG と並べると字面の印象が変わるので、こちらもオーナーの手元で撮り直す。
+Storybook への移行（Phase 6.7.6、ADR 0047）で `make web-shots` を全部に通したので、
+どちらも解消した（実装から撮っている PNG は、いまはすべてオーナーの手元の macOS の Chrome で撮ったもの）。
 
 ### Phase 6.11 で足した画面（メッセージへのリンクと、指定したメッセージへ飛ぶ）
 

@@ -39,3 +39,6 @@ jobs:
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
         run: npm run build
+      - name: Storybook のビルド
+        # ADR 0046 でこの出力を配ると決めているので、壊れたら PR で止める（ADR 0047 決定 11）。
+        run: npm run build-storybook

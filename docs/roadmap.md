@@ -618,17 +618,29 @@ Phase 6.16  検索
 - 検査 → portable stories（`composeStories`）でいまの vitest + jsdom に残す
 
 **構築順**（PR を分ける）
-1. 設計（ADR 0047、ロードマップ） ← いまここ
-2. 移行: Storybook を入れ、story を足し、`/dev/preview` と `catalog*.tsx` を消し、`tools/shoot-ui.mjs` と `docs/` の案内を直す（1 つの PR）
+1. 設計（ADR 0047、ロードマップ） ← 完了（#80）
+2. 移行: Storybook を入れ、story を足し、`/dev/preview` と `catalog*.tsx` を消し、`tools/shoot-ui.mjs` と `docs/` の案内を直す（1 つの PR） ← 完了
 
 **DoD**
-- [ ] `npm run storybook` で 134 画面が出て、名前での検索とフェーズ（`since:`）の絞り込みができる
-- [ ] `web/app/dev/preview/` が消えている（`catalog.ts` / `screens.tsx` / `catalog-browser.tsx` と、それぞれのテストを含む）。`HIBARI_SCREENSHOTS` の細工も消えている
-- [ ] PNG と story が 1 対 1、`-dark` / `mobile-` の命名が parameters と合っている、すべての story が空でなく描けることを vitest が検査する
-- [ ] `make web-shots`（引数なし）で `source: "app"` の PNG を全部撮り直せて、`git diff docs/ui/screenshots/` が空
-      （`docs/ui/README.md` の「撮り直しが要るもの」の 7 枚は既知の差として PR に書き出す。撮り直しはオーナーの手元で行う）
-- [ ] `npm run build-storybook` が CI（`.github/workflows/web.yml`）で通る
-- [ ] `docs/ui/README.md` と `docs/roadmap.md` の `/dev/preview` の案内が Storybook に直っている
+- [x] `npm run storybook` で 134 画面が出て、名前での検索とフェーズ（`since:`）の絞り込みができる
+- [x] `web/app/dev/preview/` が消えている（`catalog.ts` / `screens.tsx` / `catalog-browser.tsx` と、それぞれのテストを含む）。`HIBARI_SCREENSHOTS` の細工も消えている
+- [x] PNG と story が 1 対 1、`-dark` / `mobile-` の命名が parameters と合っている、すべての story が空でなく描けることを vitest が検査する（`web/stories/stories.test.tsx`）
+- [x] `make web-shots`（引数なし）で `source: "app"` の PNG（51 枚）を全部撮り直せる。同じ story を 2 回撮れば同じ PNG になる
+      （撮り直しで 44 枚に差が出た。内訳は下の「撮り直しで出た差」。すべて**古かった PNG が直った**もので、オーナーの確認を取ってから入れる）
+- [x] `npm run build-storybook` が CI（`.github/workflows/web.yml`）で通る
+- [x] `docs/ui/README.md` と `docs/roadmap.md` の `/dev/preview` の案内が Storybook に直っている
+
+**撮り直しで出た差**（51 枚のうち 42 枚。中身は全部確かめてある）
+
+| 何 | 枚数 | なぜ |
+|---|---|---|
+| 中身が古かった | 14 | 未読のチャンネルにバッジを出さなくした変更（ADR 0043）と、管理画面の「チャットに戻る」（Phase 6-2）が写っていなかった。`docs/ui/README.md` の「撮り直しが要るもの」に挙がっていた分 |
+| メンションの 7 枚 | 7 | 上に加えて、Linux の Chromium で撮ってあった（文字のラスタライズが違う）。オーナーの手元の macOS の Chrome で撮り直した |
+| Next.js の開発インジケータ | 4 | `HIBARI_SCREENSHOTS=1` を付けずに撮ってあり、左下に「N」のバッジが写っていた。Storybook には出ない |
+| 動きと、数 px のスクロール位置 | 17 | 入力中の「…」が動いている最中のどこかで写っていた。いまは読み込みの前に動きを止め、画像と書体を待ってから撮る |
+
+同じ story を 2 回撮れば同じ PNG になることを、全 51 枚で 2 回通して確かめてある（md5 が一致）。
+Claude Design で描いた 83 枚（`source: "design"`）は撮り直しの対象にしていない（実装から撮ったものではないため）。
 
 ---
 
@@ -750,7 +762,7 @@ Phase 6.16  検索
 
 **構築順**（PR を分ける）
 1. サーバー: `around_message_id`、`has_more_after`、`around` ← 完了（#60）
-2. デザイン: 未読のバー、飛んできた先の強調、見つからなかったときの知らせ。`/dev/preview` に描いて `docs/ui/` に足し、オーナーに見てもらう
+2. デザイン: 未読のバー、飛んできた先の強調、見つからなかったときの知らせ。story に描いて `docs/ui/` に足し、オーナーに見てもらう
    （あわせて、実装が先になっていた 6.11a のカードの画面も足した）
 3. Web: 飛ぶ動き（`?m=` を開く・カードを押す）、未読のバー、`?thread=` → `?t=` の改名 ← 完了（ADR 0042 の追記）
 

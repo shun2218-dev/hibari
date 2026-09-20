@@ -98,9 +98,9 @@ type MessageItemProps = {
    * （データ（1 MB 超）を読むのも、選んだ絵文字を送るのも、外側の責務）。
    */
   picker?: ReactNode;
-  /** ホバーの名前を固定で出すリアクションの絵文字（/dev/preview で状態を再現するため）。 */
+  /** ホバーの名前を固定で出すリアクションの絵文字（story で状態を再現するため）。 */
   forceHoverReaction?: string;
-  /** ホバーしたときの見た目を固定で出す（/dev/preview で状態を再現するため）。 */
+  /** ホバーしたときの見た目を固定で出す（story で状態を再現するため）。 */
   forceHover?: boolean;
 };
 

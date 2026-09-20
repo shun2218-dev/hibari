@@ -1,5 +1,5 @@
 /**
- * /dev/preview のモックデータ。docs/ui/screenshots/ の画面と同じ内容にする。
+ * story のモックデータ。docs/ui/screenshots/ の画面と同じ内容にする。
  *
  * ID はアバターの色（ID のハッシュで決まる。lib/avatar.ts）がスクリーンショットと同じになるものを選んである。
  */
@@ -22,7 +22,7 @@ import type { DeviceView } from "@/components/settings/settings-sections";
 import type { MentionCandidate } from "@/lib/chat/mentions";
 
 /**
- * /dev/preview のモックのアバター画像（public/dev/）。
+ * story のモックのアバター画像（public/dev/。Storybook は staticDirs で配る）。
  * 本物は署名付き URL（ADR 0020）で、ここでは静的なファイルで代用する。
  */
 export const mockAvatars = {
