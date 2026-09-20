@@ -488,3 +488,114 @@ func (s *Service) RunAttachmentCleanup(ctx context.Context, interval time.Durati
 		}
 	}
 }
+
+// DeleteMessageAttachment は、メッセージを残したまま添付ファイル 1 件だけを削除する（ADR 0045）。
+// 更新後のメッセージを返す（メッセージごと消えたときは tombstone）。
+//
+// 消せるのはメッセージを削除できる人と同じ（送信者本人か、送信者を管理できる admin 以上。ADR 0012 / 0045 決定 5）。
+// 専用の判定は足さない。規則を 2 つに分けても admin はメッセージごと消せるので、「消せない」ことの保証にならない。
+//
+// 実体は消さない。status を deleted にするだけで、ストレージのオブジェクトは既存の掃除ジョブが消す（ADR 0013）。
+// 同期は change_seq を 1 つ進めて message.updated に乗せる（ADR 0044 と同じ。seq / user_seq は進めない）。
+// これが最後の添付で本文も空なら、同じトランザクションでメッセージごと論理削除して message.deleted を配る（決定 8）。
+func (s *Service) DeleteMessageAttachment(ctx context.Context, actor, roomID, messageID, attachmentID ulid.ULID) (Message, error) {
+	var (
+		msg Message
+		// 何も変わらなかった（冪等な DELETE）ときは空のまま。配信もしない。
+		event EventType
+		// 返信を消したときの、返信数が減った親（ADR 0036）。
+		root *Message
+	)
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		q := store.New(tx)
+		// 判定に送信者のロールが要るので、先に送信者を読む（DeleteMessage と同じ流れ）。
+		senderID, err := q.GetMessageSenderID(ctx, store.GetMessageSenderIDParams{RoomID: roomID, ID: messageID})
+		if err != nil {
+			return notFoundIfNoRows(err, "get message sender")
+		}
+		a, err := loadRoomAccess(ctx, q, shareLock, roomID, actor, senderID)
+		if err != nil {
+			return err
+		}
+		// ロックの順序は メッセージ → 添付 → rooms（ADR 0014）。メッセージの行を先に押さえるので、
+		// 同じメッセージの添付を 2 つ同時に消しても、残りの数を数え違えない。
+		m, err := q.GetMessageForUpdate(ctx, store.GetMessageForUpdateParams{RoomID: roomID, ID: messageID})
+		if err != nil {
+			return notFoundIfNoRows(err, "lock message")
+		}
+		// システムメッセージには添付が付かない（ADR 0033）。削除済みのメッセージの添付は跡を残さない（ADR 0038 / 0045 決定 5）。
+		// どちらも「そのメッセージの添付ではない」ので 404 にそろえる。
+		if MessageKind(m.Kind) == MessageKindSystem || m.DeletedAt != nil {
+			return ErrNotFound
+		}
+		if !authz.CanDeleteMessage(a.kind(), a.actor(actor), m.SenderID == actor, a.roles[m.SenderID]) {
+			return ErrForbidden
+		}
+
+		n, err := q.DeleteMessageAttachment(ctx, store.DeleteMessageAttachmentParams{ID: attachmentID, RoomID: roomID, MessageID: &messageID})
+		if err != nil {
+			return fmt.Errorf("delete message attachment: %w", err)
+		}
+		if n == 0 {
+			// 行が変わらなかった。すでに消えているなら冪等な成功、そうでなければ 404（ADR 0045 決定 7）。
+			if err := checkAlreadyDeleted(ctx, q, roomID, messageID, attachmentID); err != nil {
+				return err
+			}
+			msg, err = getMessage(ctx, q, roomID, actor, messageID)
+			return err
+		}
+
+		left, err := q.CountMessageAttachments(ctx, store.CountMessageAttachmentsParams{RoomID: roomID, MessageID: &messageID})
+		if err != nil {
+			return fmt.Errorf("count message attachments: %w", err)
+		}
+		// 本文は空白だけでも「空」とみなす。添付があるメッセージは本文の検証が緩いので（validateBody）、
+		// 空白だけの本文が残ることがあり、それを残すと中身のない行がタイムラインに残る。
+		if left == 0 && strings.TrimSpace(m.Body) == "" {
+			// 中身のないメッセージは残さない（ADR 0045 決定 8）。DeleteMessage と同じ論理削除を行う。
+			// 残っている添付はないので、MarkMessageAttachmentsDeleted は要らない。
+			if root, err = s.softDeleteMessage(ctx, q, roomID, actor, m); err != nil {
+				return err
+			}
+			event = EventMessageDeleted
+		} else {
+			changeSeq, err := q.AllocateChangeSeq(ctx, store.AllocateChangeSeqParams{RoomID: roomID, N: 1})
+			if err != nil {
+				return fmt.Errorf("allocate change_seq: %w", err)
+			}
+			// 添付が 1 件減るのは「このメッセージの見え方が変わった」こと。編集ではないので edited_at は触らない。
+			if err := q.UpdateMessageChangeSeq(ctx, store.UpdateMessageChangeSeqParams{ID: messageID, ChangeSeq: changeSeq}); err != nil {
+				return fmt.Errorf("update change_seq: %w", err)
+			}
+			event = EventMessageUpdated
+		}
+		msg, err = getMessage(ctx, q, roomID, actor, messageID)
+		return err
+	})
+	if err != nil {
+		return Message{}, err
+	}
+	if event != "" {
+		s.deliver(ctx, messageEvent(event, msg))
+	}
+	// 返信がメッセージごと消えたときは、親の返信数の変化も届ける（ADR 0036）。
+	if root != nil {
+		s.deliver(ctx, messageEvent(EventMessageUpdated, *root))
+	}
+	return msg, nil
+}
+
+// checkAlreadyDeleted は、行を変えられなかった DELETE が冪等な成功か 404 かを見分ける（ADR 0045 決定 7）。
+//
+// そのメッセージの添付で、すでに deleted になっているときだけ冪等な成功にする。
+// 掃除ジョブが行を消した後（24 時間後）の再送は、行がないので 404 になる。
+func checkAlreadyDeleted(ctx context.Context, q *store.Queries, roomID, messageID, attachmentID ulid.ULID) error {
+	row, err := q.GetAttachment(ctx, attachmentID)
+	if err != nil {
+		return notFoundIfNoRows(err, "get attachment")
+	}
+	if row.RoomID != roomID || row.MessageID == nil || *row.MessageID != messageID || AttachmentStatus(row.Status) != AttachmentDeleted {
+		return ErrNotFound
+	}
+	return nil
+}

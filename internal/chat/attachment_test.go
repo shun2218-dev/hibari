@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -717,5 +718,293 @@ func TestCleanupAttachmentsConcurrentInstances(t *testing.T) {
 		if status := attachmentStatus(t, env, id); status != "" {
 			t.Fatalf("attachment %s still exists with status %q", id, status)
 		}
+	}
+}
+
+// 添付ファイルだけの削除（ADR 0045）。
+
+// attachedMessage は、本文 body と n 件の添付を付けたメッセージを作る。
+func attachedMessage(t *testing.T, env *chattest.Env, actor, roomID ulid.ULID, body string, n int) (chat.Message, []chat.Attachment) {
+	t.Helper()
+	atts := make([]chat.Attachment, n)
+	ids := make([]ulid.ULID, n)
+	for i := range atts {
+		content := []byte(strings.Repeat("x", i+1))
+		atts[i] = uploadAttachment(t, env, actor, roomID, textInput("a.txt", content), content)
+		ids[i] = atts[i].ID
+	}
+	msg, created, err := env.Service.SendMessage(t.Context(), actor, roomID, chat.SendMessageInput{
+		ClientMsgID: env.IDs.New(), Body: body, AttachmentIDs: ids,
+	})
+	if err != nil || !created {
+		t.Fatalf("SendMessage() = created %v, error %v", created, err)
+	}
+	return msg, atts
+}
+
+func TestDeleteMessageAttachment(t *testing.T) {
+	env := chattest.New(t)
+	r := setupRoles(t, env)
+	room := createRoom(t, env, r.member, r.ws.ID, "public", "files")
+	msg, atts := attachedMessage(t, env, r.member, room.ID, "資料です", 2)
+	env.Deliveries.Take()
+
+	got, err := env.Service.DeleteMessageAttachment(t.Context(), r.member, room.ID, msg.ID, atts[0].ID)
+	if err != nil {
+		t.Fatalf("DeleteMessageAttachment() error = %v", err)
+	}
+
+	t.Run("消した添付だけがメッセージから消える", func(t *testing.T) {
+		if len(got.Attachments) != 1 || got.Attachments[0].ID != atts[1].ID {
+			t.Errorf("attachments = %+v, want [%s]", got.Attachments, atts[1].ID)
+		}
+		if got.DeletedAt != nil || got.Body != "資料です" {
+			t.Errorf("message = %+v, want 本文の残ったメッセージ", got)
+		}
+	})
+
+	t.Run("change_seq だけが進む", func(t *testing.T) {
+		if got.ChangeSeq <= msg.ChangeSeq {
+			t.Errorf("change_seq = %d, want > %d", got.ChangeSeq, msg.ChangeSeq)
+		}
+		// 添付が減るのは発言ではないので、順序も未読もサイドバーの並びも動かさない（ADR 0045 決定 7）
+		if got.Seq != msg.Seq || got.UserSeq != msg.UserSeq {
+			t.Errorf("seq, user_seq = %d, %d; want %d, %d", got.Seq, got.UserSeq, msg.Seq, msg.UserSeq)
+		}
+		// 編集ではないので「（編集済み）」を付けない
+		if got.EditedAt != nil {
+			t.Errorf("edited_at = %v, want nil", got.EditedAt)
+		}
+	})
+
+	t.Run("message.updated を配る", func(t *testing.T) {
+		evs := env.Deliveries.Take()
+		if len(evs) != 1 || evs[0].Type != chat.EventMessageUpdated {
+			t.Fatalf("events = %+v, want 1 件の message.updated", evs)
+		}
+		if !slices.Contains(evs[0].To.Rooms, room.ID) {
+			t.Errorf("宛先 = %+v, want ルーム %s", evs[0].To, room.ID)
+		}
+	})
+
+	t.Run("実体は掃除ジョブに任せる（ADR 0013）", func(t *testing.T) {
+		if status := attachmentStatus(t, env, atts[0].ID); status != "deleted" {
+			t.Errorf("status = %q, want deleted", status)
+		}
+		if !objectExists(t, env, objectKey(t, env, atts[0].ID)) {
+			t.Error("オブジェクトがトランザクションの中で消された。掃除ジョブに任せる")
+		}
+	})
+
+	t.Run("消した添付の GET URL はもう取れない", func(t *testing.T) {
+		if _, err := env.Service.GetAttachmentURL(t.Context(), r.member, atts[0].ID); !errors.Is(err, chat.ErrNotFound) {
+			t.Errorf("GetAttachmentURL() error = %v, want ErrNotFound", err)
+		}
+		if _, err := env.Service.GetAttachmentURL(t.Context(), r.member, atts[1].ID); err != nil {
+			t.Errorf("残っている添付の GET URL が取れない: %v", err)
+		}
+	})
+
+	t.Run("もう一度消しても成功し、番号を進めない（冪等）", func(t *testing.T) {
+		again, err := env.Service.DeleteMessageAttachment(t.Context(), r.member, room.ID, msg.ID, atts[0].ID)
+		if err != nil {
+			t.Fatalf("DeleteMessageAttachment() error = %v", err)
+		}
+		if again.ChangeSeq != got.ChangeSeq {
+			t.Errorf("change_seq = %d, want %d のまま", again.ChangeSeq, got.ChangeSeq)
+		}
+		if evs := env.Deliveries.Take(); len(evs) != 0 {
+			t.Errorf("events = %+v, want 0 件", evs)
+		}
+	})
+}
+
+func TestDeleteMessageAttachmentPermission(t *testing.T) {
+	env := chattest.New(t)
+	r := setupRoles(t, env)
+	room := createRoom(t, env, r.member, r.ws.ID, "public", "files")
+	for _, u := range []ulid.ULID{r.member2, r.admin} {
+		if _, err := env.Service.JoinRoom(t.Context(), u, room.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	msg, atts := attachedMessage(t, env, r.member, room.ID, "資料です", 2)
+
+	t.Run("他人のメッセージの添付は消せない", func(t *testing.T) {
+		_, err := env.Service.DeleteMessageAttachment(t.Context(), r.member2, room.ID, msg.ID, atts[0].ID)
+		if !errors.Is(err, chat.ErrForbidden) {
+			t.Errorf("error = %v, want ErrForbidden", err)
+		}
+		if status := attachmentStatus(t, env, atts[0].ID); status != "attached" {
+			t.Errorf("status = %q, want attached のまま", status)
+		}
+	})
+
+	t.Run("admin は member の添付を消せる（ADR 0012 と同じ判定）", func(t *testing.T) {
+		if _, err := env.Service.DeleteMessageAttachment(t.Context(), r.admin, room.ID, msg.ID, atts[0].ID); err != nil {
+			t.Errorf("DeleteMessageAttachment() error = %v", err)
+		}
+	})
+
+	t.Run("admin でも、自分より上の人の添付は消せない", func(t *testing.T) {
+		if _, err := env.Service.JoinRoom(t.Context(), r.owner, room.ID); err != nil {
+			t.Fatal(err)
+		}
+		ownerMsg, ownerAtts := attachedMessage(t, env, r.owner, room.ID, "オーナーの資料", 1)
+		_, err := env.Service.DeleteMessageAttachment(t.Context(), r.admin, room.ID, ownerMsg.ID, ownerAtts[0].ID)
+		if !errors.Is(err, chat.ErrForbidden) {
+			t.Errorf("error = %v, want ErrForbidden", err)
+		}
+	})
+
+	t.Run("ルームを読めない人には存在も明かさない", func(t *testing.T) {
+		_, err := env.Service.DeleteMessageAttachment(t.Context(), r.outsider, room.ID, msg.ID, atts[1].ID)
+		if !errors.Is(err, chat.ErrNotFound) {
+			t.Errorf("error = %v, want ErrNotFound", err)
+		}
+	})
+}
+
+func TestDeleteMessageAttachmentNotFound(t *testing.T) {
+	env := chattest.New(t)
+	r := setupRoles(t, env)
+	room := createRoom(t, env, r.member, r.ws.ID, "public", "files")
+	msg, atts := attachedMessage(t, env, r.member, room.ID, "資料です", 1)
+	other, otherAtts := attachedMessage(t, env, r.member, room.ID, "こちらも", 1)
+	content := []byte("y")
+	uploaded := uploadAttachment(t, env, r.member, room.ID, textInput("b.txt", content), content)
+
+	for _, tt := range []struct {
+		name         string
+		messageID    ulid.ULID
+		attachmentID ulid.ULID
+	}{
+		{"存在しない添付", msg.ID, env.IDs.New()},
+		{"別のメッセージの添付", msg.ID, otherAtts[0].ID},
+		{"まだメッセージに付いていない添付", msg.ID, uploaded.ID},
+		{"存在しないメッセージ", env.IDs.New(), atts[0].ID},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := env.Service.DeleteMessageAttachment(t.Context(), r.member, room.ID, tt.messageID, tt.attachmentID)
+			if !errors.Is(err, chat.ErrNotFound) {
+				t.Errorf("error = %v, want ErrNotFound", err)
+			}
+		})
+	}
+
+	t.Run("削除済みのメッセージの添付は 404（跡を残さない。ADR 0038）", func(t *testing.T) {
+		if err := env.Service.DeleteMessage(t.Context(), r.member, room.ID, other.ID); err != nil {
+			t.Fatal(err)
+		}
+		_, err := env.Service.DeleteMessageAttachment(t.Context(), r.member, room.ID, other.ID, otherAtts[0].ID)
+		if !errors.Is(err, chat.ErrNotFound) {
+			t.Errorf("error = %v, want ErrNotFound", err)
+		}
+	})
+}
+
+// 最後の 1 件を消して本文も空なら、メッセージごと消える（ADR 0045 決定 8）。
+func TestDeleteLastAttachmentDeletesMessage(t *testing.T) {
+	env := chattest.New(t)
+	r := setupRoles(t, env)
+	room := createRoom(t, env, r.member, r.ws.ID, "public", "files")
+
+	t.Run("本文が残っていればメッセージは残る", func(t *testing.T) {
+		msg, atts := attachedMessage(t, env, r.member, room.ID, "こちらです", 1)
+		env.Deliveries.Take()
+
+		got, err := env.Service.DeleteMessageAttachment(t.Context(), r.member, room.ID, msg.ID, atts[0].ID)
+		if err != nil {
+			t.Fatalf("DeleteMessageAttachment() error = %v", err)
+		}
+		if got.DeletedAt != nil || got.Body != "こちらです" || len(got.Attachments) != 0 {
+			t.Errorf("message = %+v, want 本文だけが残ったメッセージ", got)
+		}
+		if evs := env.Deliveries.Take(); len(evs) != 1 || evs[0].Type != chat.EventMessageUpdated {
+			t.Errorf("events = %+v, want 1 件の message.updated", evs)
+		}
+	})
+
+	t.Run("本文も空ならメッセージごと消える", func(t *testing.T) {
+		msg, atts := attachedMessage(t, env, r.member, room.ID, "", 1)
+		env.Deliveries.Take()
+
+		got, err := env.Service.DeleteMessageAttachment(t.Context(), r.member, room.ID, msg.ID, atts[0].ID)
+		if err != nil {
+			t.Fatalf("DeleteMessageAttachment() error = %v", err)
+		}
+		if got.DeletedAt == nil || len(got.Attachments) != 0 {
+			t.Errorf("message = %+v, want tombstone", got)
+		}
+		if evs := env.Deliveries.Take(); len(evs) != 1 || evs[0].Type != chat.EventMessageDeleted {
+			t.Errorf("events = %+v, want 1 件の message.deleted", evs)
+		}
+		// 一覧には tombstone として返る（跡を出さないのはクライアントの仕事。ADR 0038）
+		page, err := env.Service.ListMessages(t.Context(), r.member, room.ID, chat.MessageQuery{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := slices.IndexFunc(page.Messages, func(m chat.Message) bool { return m.ID == msg.ID })
+		if i < 0 || page.Messages[i].DeletedAt == nil || len(page.Messages[i].Attachments) != 0 {
+			t.Errorf("一覧のメッセージ = %+v, want tombstone", page.Messages)
+		}
+	})
+
+	t.Run("スレッドの返信なら、親の返信数の変化も配る（ADR 0036）", func(t *testing.T) {
+		root := send(t, env, r.member, room.ID, "スレッドの親")
+		content := []byte("z")
+		att := uploadAttachment(t, env, r.member, room.ID, textInput("c.txt", content), content)
+		reply, _, err := env.Service.SendMessage(t.Context(), r.member, room.ID, chat.SendMessageInput{
+			ClientMsgID: env.IDs.New(), ThreadRootID: &root.ID, AttachmentIDs: []ulid.ULID{att.ID},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		env.Deliveries.Take()
+
+		if _, err := env.Service.DeleteMessageAttachment(t.Context(), r.member, room.ID, reply.ID, att.ID); err != nil {
+			t.Fatalf("DeleteMessageAttachment() error = %v", err)
+		}
+		evs := env.Deliveries.Take()
+		if len(evs) != 2 || evs[0].Type != chat.EventMessageDeleted || evs[1].Type != chat.EventMessageUpdated {
+			t.Fatalf("events = %+v, want message.deleted と親の message.updated", evs)
+		}
+		got := getMessage(t, env, r.member, room.ID, root.ID)
+		if got.Thread == nil || got.Thread.ReplyCount != 0 {
+			t.Errorf("親の thread = %+v, want 返信 0 件", got.Thread)
+		}
+	})
+}
+
+// 同じ添付を同時に消しても、番号を使うのも配信も 1 回だけ（ADR 0045 決定 7）。
+func TestDeleteMessageAttachmentConcurrent(t *testing.T) {
+	env := chattest.New(t)
+	r := setupRoles(t, env)
+	room := createRoom(t, env, r.member, r.ws.ID, "public", "files")
+	msg, atts := attachedMessage(t, env, r.member, room.ID, "資料です", 1)
+	env.Deliveries.Take()
+
+	const n = 8
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = env.Service.DeleteMessageAttachment(t.Context(), r.member, room.ID, msg.ID, atts[0].ID)
+		}()
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("DeleteMessageAttachment(%d) error = %v", i, err)
+		}
+	}
+	if evs := env.Deliveries.Take(); len(evs) != 1 {
+		t.Errorf("events = %d 件, want 1 件", len(evs))
+	}
+	if status := attachmentStatus(t, env, atts[0].ID); status != "deleted" {
+		t.Errorf("status = %q, want deleted", status)
 	}
 }

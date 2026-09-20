@@ -189,3 +189,95 @@ func TestAttachmentAPIFlow(t *testing.T) {
 		t.Errorf("history after delete = %s", r.body)
 	}
 }
+
+// uploadFile は 発行 → 直接 PUT → complete を済ませた添付の ID を返す。
+func (c *apiClient) uploadFile(t *testing.T, u apiUser, roomID, name string, content []byte) string {
+	t.Helper()
+	r := c.as(u, http.MethodPost, "/api/v1/rooms/"+roomID+"/attachments",
+		map[string]any{"file_name": name, "content_type": "text/plain", "size_bytes": len(content)})
+	expectStatus(t, r, http.StatusCreated)
+	created := decode[createdAttachmentBody](t, r)
+	if status, _, _ := storageRequest(t, created.Upload.Method, created.Upload.URL, created.Upload.Headers, content); status != http.StatusOK {
+		t.Fatalf("PUT object = %d", status)
+	}
+	expectStatus(t, c.as(u, http.MethodPost, "/api/v1/attachments/"+created.Attachment.ID+"/complete", nil), http.StatusOK)
+	return created.Attachment.ID
+}
+
+// 添付ファイルだけの削除（ロードマップ Phase 6.7.5 / ADR 0045）。
+func TestDeleteMessageAttachmentAPI(t *testing.T) {
+	c := newAPI(t)
+	owner, alice, bob := c.registerUser(), c.registerUser(), c.registerUser()
+	r := c.as(owner, http.MethodPost, "/api/v1/workspaces", map[string]string{"name": "山と印刷"})
+	expectStatus(t, r, http.StatusCreated)
+	ws := decode[workspaceBody](t, r)
+	c.joinViaInvite(owner, ws.ID, alice)
+	c.joinViaInvite(owner, ws.ID, bob)
+	r = c.as(owner, http.MethodPost, "/api/v1/workspaces/"+ws.ID+"/rooms", map[string]string{"kind": "public", "name": "資料"})
+	expectStatus(t, r, http.StatusCreated)
+	room := decode[roomBody](t, r)
+	for _, u := range []apiUser{alice, bob} {
+		expectStatus(t, c.as(u, http.MethodPost, "/api/v1/rooms/"+room.ID+"/join", nil), http.StatusOK)
+	}
+	messages := "/api/v1/rooms/" + room.ID + "/messages"
+	content := []byte("hibari")
+
+	first := c.uploadFile(t, alice, room.ID, "a.txt", content)
+	second := c.uploadFile(t, alice, room.ID, "b.txt", content)
+	r = c.as(alice, http.MethodPost, messages,
+		map[string]any{"client_msg_id": ulid.Make().String(), "body": "資料です", "attachment_ids": []string{first, second}})
+	expectStatus(t, r, http.StatusCreated)
+	msg := decode[messageWithAttachmentsBody](t, r)
+	path := messages + "/" + msg.ID + "/attachments/"
+
+	t.Run("消せない人には 403（メッセージの削除と同じ判定）", func(t *testing.T) {
+		expectProblem(t, c.as(bob, http.MethodDelete, path+first, nil), http.StatusForbidden, "forbidden")
+	})
+
+	t.Run("そのメッセージの添付でなければ 404", func(t *testing.T) {
+		expectProblem(t, c.as(alice, http.MethodDelete, path+ulid.Make().String(), nil), http.StatusNotFound, "not-found")
+		expectProblem(t, c.as(alice, http.MethodDelete, path+"not-a-ulid", nil), http.StatusNotFound, "not-found")
+		// まだメッセージに付いていない添付も、そのメッセージのものではない
+		pending := c.uploadFile(t, alice, room.ID, "c.txt", content)
+		expectProblem(t, c.as(alice, http.MethodDelete, path+pending, nil), http.StatusNotFound, "not-found")
+	})
+
+	t.Run("消すと更新後のメッセージが返り、GET URL も取れなくなる", func(t *testing.T) {
+		r := c.as(alice, http.MethodDelete, path+first, nil)
+		expectStatus(t, r, http.StatusOK)
+		got := decode[messageWithAttachmentsBody](t, r)
+		if len(got.Attachments) != 1 || got.Attachments[0].ID != second || got.Body != "資料です" {
+			t.Fatalf("message = %s", r.body)
+		}
+		expectProblem(t, c.as(alice, http.MethodGet, "/api/v1/attachments/"+first+"/url", nil), http.StatusNotFound, "not-found")
+	})
+
+	t.Run("もう一度消しても 200（冪等）", func(t *testing.T) {
+		r := c.as(alice, http.MethodDelete, path+first, nil)
+		expectStatus(t, r, http.StatusOK)
+		if got := decode[messageWithAttachmentsBody](t, r); len(got.Attachments) != 1 {
+			t.Errorf("message = %s", r.body)
+		}
+	})
+
+	t.Run("admin は他人の添付も消せる", func(t *testing.T) {
+		expectStatus(t, c.as(owner, http.MethodDelete, path+second, nil), http.StatusOK)
+	})
+
+	t.Run("最後の添付で本文も空なら、メッセージごと消える", func(t *testing.T) {
+		only := c.uploadFile(t, alice, room.ID, "d.txt", content)
+		r := c.as(alice, http.MethodPost, messages, map[string]any{"client_msg_id": ulid.Make().String(), "attachment_ids": []string{only}})
+		expectStatus(t, r, http.StatusCreated)
+		empty := decode[messageWithAttachmentsBody](t, r)
+
+		r = c.as(alice, http.MethodDelete, messages+"/"+empty.ID+"/attachments/"+only, nil)
+		expectStatus(t, r, http.StatusOK)
+		tombstone := decode[struct {
+			messageWithAttachmentsBody
+			DeletedAt *string `json:"deleted_at"`
+		}](t, r)
+		if tombstone.DeletedAt == nil || len(tombstone.Attachments) != 0 {
+			t.Fatalf("message = %s, want tombstone", r.body)
+		}
+	})
+}

@@ -124,6 +124,35 @@ func (h *chatHandlers) getAttachmentURL(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, signedURLResponse{URL: dl.URL, ExpiresAt: dl.ExpiresAt})
 }
 
+// deleteMessageAttachment は、メッセージを残したまま添付ファイルだけを削除する（ADR 0045）。
+//
+// 応答は更新後のメッセージ（message.updated と同じ形）。最後の 1 件を消して本文も空なら、
+// メッセージごと消えるので tombstone を返す（ADR 0045 決定 8）。
+// すでに消えている添付への DELETE も 200 で現在のメッセージを返す（冪等。決定 7）。
+func (h *chatHandlers) deleteMessageAttachment(w http.ResponseWriter, r *http.Request) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	messageID, err := pathID(r, "messageID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	attachmentID, err := pathID(r, "attachmentID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	msg, err := h.svc.DeleteMessageAttachment(r.Context(), actorOf(r), roomID, messageID, attachmentID)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newMessageResponse(msg))
+}
+
 // signedURLResponse は閲覧用の署名付き GET URL。添付とアバターで同じ形にする。
 type signedURLResponse struct {
 	URL       string    `json:"url"`
