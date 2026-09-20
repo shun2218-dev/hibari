@@ -29,6 +29,16 @@ describe("Composer", () => {
     expect(onSend).toHaveBeenCalledOnce();
   });
 
+  it("grows with the text it holds", () => {
+    // jsdom はレイアウトを持たないので、中身の高さだけ差し替えて、入力欄に入れ直されるかを見る
+    vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(72);
+    const { rerender } = render(<Composer value="1 行目" canSend />);
+
+    rerender(<Composer value={"1 行目\n2 行目\n3 行目"} canSend />);
+
+    expect(screen.getByRole("textbox", { name: "メッセージ" })).toHaveStyle({ height: "72px" });
+  });
+
   it("does not send on Shift+Enter", async () => {
     const onSend = vi.fn();
     render(<Composer value="こんにちは" canSend onSend={onSend} />);

@@ -25,6 +25,18 @@ export const Empty: Story = { name: "空（送れない）" };
 
 export const Typing: Story = { name: "入力した（送れる）", args: { value: "金曜の件、あとで画面で見ます。", canSend: true } };
 
+/** 改行や折り返しで増えた分だけ縦に伸びる。上限（16 行）まで来たら、そこから先は中でスクロールする。 */
+export const MultiLine: Story = {
+  name: "複数行（伸びる）",
+  args: {
+    value:
+      "行送りは 1.75 で確定にしましょう。\n" +
+      "半日開きっぱなしにしてみましたが、目が疲れませんでした。\n" +
+      "未読バッジの色だけ、まだ迷っています。明日の画面で見てから決めます。",
+    canSend: true,
+  },
+};
+
 /** 入力中の表示は琥珀（「いま起きていること」）。 */
 export const TypingNames: Story = {
   name: "相手が入力中",

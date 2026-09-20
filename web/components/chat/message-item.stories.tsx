@@ -56,6 +56,21 @@ export const Failed: Story = {
 
 export const Edited: Story = { name: "編集済み", args: { message: view({ edited: true }) } };
 
+/** 編集中。開いた時点で本文ぶんの高さになり、書き足せばさらに伸びる（上限 16 行）。 */
+export const Editing: Story = {
+  name: "編集中（本文ぶんの高さで開く）",
+  args: {
+    message: view({ sender: you }),
+    canEdit: true,
+    editing: {
+      value:
+        "行送りは 1.75 で確定にしましょう。\n" +
+        "半日開きっぱなしにしてみましたが、目が疲れませんでした。\n" +
+        "未読バッジの色だけ、まだ迷っています。",
+    },
+  },
+};
+
 /** 削除されたメッセージは画面から消すので（ADR 0038）、跡を残すのは返信の残るスレッドの親だけ。 */
 export const Deleted: Story = {
   name: "削除された（スレッドの親だけ跡を残す）",

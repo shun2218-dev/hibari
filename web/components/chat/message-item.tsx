@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/icons";
 import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
+import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 
 import { MessageBody } from "./message-body";
@@ -400,9 +401,14 @@ function ThreadSummary({ thread, onOpen }: { thread: NonNullable<MessageView["th
 
 /** 本文をその場で書き換える。Enter で保存、Esc で取りやめ（改行は Shift + Enter）。 */
 function MessageEditor({ editing }: { editing: MessageEditingView }) {
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  // 編集を開いた時点で複数行のことが多いので、開いた直後から中身のぶんだけ広げる（上限は 16 行）
+  useAutosizeTextarea(textarea, editing.value);
+
   return (
     <div className="flex flex-col gap-1.5 pt-0.5">
       <textarea
+        ref={textarea}
         aria-label="メッセージを編集"
         autoFocus
         rows={1}
@@ -415,7 +421,7 @@ function MessageEditor({ editing }: { editing: MessageEditingView }) {
             if (editing.value.trim() !== "") editing.onSave?.();
           }
         }}
-        className="max-h-60 min-h-11 w-full resize-none rounded-md border border-border bg-surface px-3 py-2 text-lg leading-relaxed text-text focus-visible:-outline-offset-2"
+        className="composer-lines min-h-11 w-full resize-none overflow-y-auto rounded-md border border-border bg-surface px-3 py-2 text-lg leading-relaxed text-text focus-visible:-outline-offset-2"
       />
       <div className="flex items-center justify-between gap-3">
         <span className="text-2xs text-text-muted">Enter で保存 / Esc でキャンセル</span>

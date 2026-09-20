@@ -49,6 +49,8 @@ describe("globals.css", () => {
       "leading-tight",
       "shadow-lg",
       "sm:flex",
+      // 中身に合わせて伸びる入力欄（ADR 0048）
+      "composer-lines",
     ]);
   });
 
@@ -98,6 +100,17 @@ describe("globals.css", () => {
     // 押せることが見た目から分からない（画像の拡大表示で気づいた。ADR 0045）
     expect(css).toContain("button:not(:disabled)");
     expect(css).toMatch(/button:not\(:disabled\),\s*\[role="button"\],\s*summary\s*\{\s*cursor: pointer;/);
+  });
+
+  it("caps the composer at a number of lines, not a number of pixels (ADR 0048)", () => {
+    const start = css.indexOf(".composer-lines {");
+    expect(start).toBeGreaterThan(-1);
+    expect(customPropertiesIn(css, ":root, :host")).toContain("--composer-max-lines");
+
+    // 行送りや文字サイズを変えても「16 行ぶん」の意味が保たれるように lh で書く
+    expect(css.slice(start, css.indexOf("}", start))).toContain(
+      "max-height: calc(var(--composer-max-lines) * 1lh + var(--spacing) * 2)",
+    );
   });
 
   it("uses raw colors only in token definitions", () => {
