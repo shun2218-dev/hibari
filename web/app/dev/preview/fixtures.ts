@@ -203,6 +203,12 @@ export const reactedMessageKey = "m-1030";
 /** ピッカーを開いているメッセージの key（chat/reaction-picker.png）。まだ何も付いていない行から開く。 */
 export const reactionPickerKey = "m-1012";
 
+/**
+ * いちばん下のメッセージの key（chat/reaction-picker-above.png）。
+ * ここで開くと下に入りきらないので、ピッカーは上に開く。
+ */
+export const lastMessageKey = "m-1105";
+
 /** ホバーで名前を出しているリアクション（chat/reaction-names.png）。 */
 export const hoveredReaction = { key: reactedMessageKey, emoji: "👍" };
 
