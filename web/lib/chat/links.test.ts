@@ -115,6 +115,14 @@ describe("findPermalinks", () => {
     expect(found.map((l) => l.messageId)).toEqual(ids.slice(0, MAX_LINK_CARDS));
   });
 
+  it("コードの中のリンクはカードにしない（ADR 0051 決定 4）", () => {
+    expect(findPermalinks(`\`${permalink}\` と\n\`\`\`\n${permalink}\n\`\`\``, ORIGIN)).toEqual([]);
+  });
+
+  it("日本語の文字の直前で URL を切る（ADR 0051 決定 4）", () => {
+    expect(findPermalinks(`${permalink}を見て`, ORIGIN)).toEqual([{ workspaceId: WS, roomId: ROOM, messageId: MSG }]);
+  });
+
   it("リンクのない本文では空", () => {
     expect(findPermalinks("ただの本文です https://example.com も混ざる", ORIGIN)).toEqual([]);
   });
@@ -168,6 +176,19 @@ describe("clampCardBody", () => {
 
   it("畳んだ末尾に空白を残さない", () => {
     const body = `${Array.from({ length: CARD_CLAMP_LINES }, (_, i) => `${i + 1} 行目`).join("\n")}\n\n続き`;
+    expect(clampCardBody(body).text.endsWith("行目…")).toBe(true);
+  });
+
+  it("コードブロックの途中で切ったら、閉じるフェンスを足す（ADR 0051 決定 3）", () => {
+    const code = Array.from({ length: CARD_CLAMP_LINES + 2 }, (_, i) => `line ${i + 1}`).join("\n");
+    const got = clampCardBody(`設定です\n\`\`\`\n${code}\n\`\`\``);
+    expect(got.clamped).toBe(true);
+    expect(got.text.endsWith("…\n```")).toBe(true);
+    expect(got.text.split("```")).toHaveLength(3);
+  });
+
+  it("コードブロックの外で切ったら、フェンスを足さない", () => {
+    const body = `\`\`\`a\`\`\`\n${Array.from({ length: CARD_CLAMP_LINES + 2 }, (_, i) => `${i + 1} 行目`).join("\n")}`;
     expect(clampCardBody(body).text.endsWith("行目…")).toBe(true);
   });
 });

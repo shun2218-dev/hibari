@@ -40,6 +40,14 @@ describe("MessageLinkCard", () => {
     expect(within(card).getByRole("link", { name: "雑談" })).toHaveAttribute("href", okCard().href);
   });
 
+  it("本文は書式を解釈し、メンションを名前のチップにする（ADR 0051）", () => {
+    const id = "01J8ZH5K000000000000000009";
+    render(<MessageLinkCard card={okCard({ body: `*大事* <@${id}>`, mentionNames: { [id]: "高橋 みゆき" } })} />);
+
+    expect(screen.getByText("大事").tagName).toBe("STRONG");
+    expect(screen.getByRole("button", { name: "@高橋 みゆき" })).toBeInTheDocument();
+  });
+
   it("読めないメッセージは、ルーム名も送信者も出さない（ADR 0040）", () => {
     render(<MessageLinkCard card={{ key: "k", state: "unavailable" }} />);
 

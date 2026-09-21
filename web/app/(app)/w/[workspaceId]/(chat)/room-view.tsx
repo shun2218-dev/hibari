@@ -211,6 +211,8 @@ export function RoomView({
   const linkCards = useLinkCards(permalinks);
 
   const memberNames = useMemo(() => toMemberNames(members), [members]);
+  // リンクのカードは別のルームのメッセージのことが多いので、本文のメンションはワークスペースのメンバーから引く（ADR 0051）
+  const workspaceMemberNames = useMemo(() => toMemberNames(workspaceMembers?.list), [workspaceMembers]);
   // 名前の横に出すカスタムステータスは、ワークスペースのメンバー一覧から引く（ADR 0049 決定 7 の追記）
   const statuses = useMemo(() => memberSettings(workspaceMembers?.list), [workspaceMembers]);
   const statusEmojis = useMemo(
@@ -246,6 +248,7 @@ export function RoomView({
         origin,
         currentWorkspaceId: workspaceId,
         memberNames,
+        workspaceMemberNames,
         statuses: statusEmojis,
       }),
     [
@@ -259,6 +262,7 @@ export function RoomView({
       origin,
       workspaceId,
       memberNames,
+      workspaceMemberNames,
       statusEmojis,
     ],
   );

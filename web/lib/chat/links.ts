@@ -4,10 +4,10 @@
  * 形は `{オリジン}/w/{workspaceId}/r/{roomId}?m={messageId}`。スレッドの返信には `&t={threadRootId}` が付く。
  * 既存のルームの画面の URL（ADR 0025）にクエリを足しただけなので、押しても新しいページを作らない。
  *
- * 本文からリンクを見つける仕組みは、Phase 6.10（本文の書式）で作る「本文の解釈」がそのまま使えるように、
- * 「1 つの URL 文字列を判定する関数」と「本文を走査する関数」に分けてある。
- * 6.10 が入ったら、本文の解釈が parsePermalink を呼ぶ形になり、ここは変えずに済む。
+ * 本文から URL を見つけるのは本文の書式の解釈（body-format.ts。ADR 0051）で、ここは 1 つの URL がパーマリンクかを判定する。
  */
+
+import { findUrls } from "./body-format";
 
 /** パーマリンクが指すメッセージ。 */
 export type Permalink = {
@@ -76,17 +76,13 @@ export function parsePermalink(href: string, origin: string): Permalink | null {
  * 本文に貼られたパーマリンクを、出てきた順に返す。
  *
  * 同じメッセージを指すリンクは 1 つにまとめ、MAX_LINK_CARDS 件で打ち切る。
- * 本文中の URL をリンクにするのは Phase 6.10（本文の書式）の仕事で、ここではしない。
+ * URL を見つけるのは本文の書式の解釈（ADR 0051 決定 4）。コードの中の URL はリンクにならないので、カードも出さない。
  */
 export function findPermalinks(body: string, origin: string): Permalink[] {
   const found: Permalink[] = [];
   const seen = new Set<string>();
-  // 空白で区切らず、URL の始まりから走査する。日本語の本文は URL の前後に空白を置かないことが多く
-  // （「これ（https://…）を見て」）、空白で切ると前の文字がくっついて読めなくなる。
-  for (const match of body.matchAll(/https?:\/\/[^\s]+/gu)) {
-    // 末尾の句読点や閉じ括弧は URL に含めない（「…?m=01J…）。」のような書き方のため）。
-    const trimmed = match[0].replace(/[.,;:!?)\]}、。）」』]+$/u, "");
-    const link = parsePermalink(trimmed, origin);
+  for (const url of findUrls(body)) {
+    const link = parsePermalink(url, origin);
     if (!link) continue;
     const key = linkKey(link);
     if (seen.has(key)) continue;
@@ -141,5 +137,10 @@ export function clampCardBody(body: string): ClampedBody {
   let text = tooManyLines ? lines.slice(0, CARD_CLAMP_LINES).join("\n") : body;
   if (text.length > CARD_CLAMP_CHARS) text = text.slice(0, CARD_CLAMP_CHARS);
   // 末尾の空白を落としてから「…」を付ける（改行の直後に「…」が浮かないように）。
-  return { text: `${text.replace(/\s+$/u, "")}…`, clamped: true };
+  text = `${text.replace(/\s+$/u, "")}…`;
+  // コードブロックの途中で切ったら閉じる。閉じないと ``` がただの文字になり、コードの中身が書式として解釈される（ADR 0051 決定 3）。
+  // 太字などは行をまたがないので、切っても閉じていない記号がただの文字になるだけで済む
+  // ``` は前から順に対にするので、数が奇数なら最後の 1 つが閉じていない
+  if ((text.split("```").length - 1) % 2 === 1) text = `${text}\n\`\`\``;
+  return { text, clamped: true };
 }

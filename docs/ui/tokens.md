@@ -154,6 +154,16 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 | `--radius-lg` | 16px | `rounded-lg` | 認証カード、ダイアログ、モバイルのボトムシート |
 | `--radius-full` | 9999px | `rounded-full` | アバター、バッジ、presence のドット、トグル |
 
+## リストの記号（ADR 0051）
+
+本文の箇条書きは、段ごとに記号を変える（Slack と同じ。オーナーの確認: 2026-09-21）。1 段目は Tailwind の既定の `list-disc`。
+
+| トークン | 値 | Tailwind | 用途 |
+|---|---|---|---|
+| — | disc | `list-disc` | 箇条書きの 1 段目（•） |
+| `--list-style-type-circle` | circle | `list-circle` | 箇条書きの 2 段目（◦） |
+| `--list-style-type-square` | square | `list-square` | 箇条書きの 3 段目（▪） |
+
 ## 影・動き・ブレークポイント
 
 | トークン | 値 | Tailwind | 用途 |

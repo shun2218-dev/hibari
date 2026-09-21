@@ -488,7 +488,7 @@ export const timelineWithFormatting: TimelineItem[] = [
     "m-f01",
     naoki,
     "10:02",
-    "金曜のリリースの手順です。*本番の前に必ずステージングで確認*してください。\n1. `make migrate` を流す\n2. ステージングで確認する\n  - ログイン・送信・_再接続_\n  - 添付のアップロード\n3. 本番に出す",
+    "金曜のリリースの手順です。*本番の前に必ずステージングで確認*してください。\n1. `make migrate` を流す\n2. ステージングで確認する\n  - ログイン・送信・_再接続_\n  - 添付のアップロード\n    - 画像とファイルの両方\n3. 本番に出す",
   ),
   message("m-f02", naoki, "10:03", "手順書は https://example.com/runbook/release にまとめてあります。~木曜~ 金曜の 17 時からです。", {
     grouped: true,

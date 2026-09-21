@@ -7,6 +7,7 @@ import { TextButton } from "@/components/ui/button";
 import { HashIcon, LockIcon, PaperclipIcon, ThreadIcon } from "@/components/ui/icons";
 import { TextLink } from "@/components/ui/link";
 
+import { MessageBody } from "./message-body";
 import type { MessageLinkCardView } from "./types";
 
 /**
@@ -75,9 +76,11 @@ function AvailableCard({
         <time className="font-mono text-2xs text-text-muted">{card.timeLabel}</time>
       </header>
 
-      <p className="mt-0.5 text-base leading-relaxed break-words whitespace-pre-wrap text-text">
-        {expanded || !card.clamped ? card.body : card.clampedBody}
-      </p>
+      <MessageBody
+        body={expanded || !card.clamped ? card.body : card.clampedBody}
+        mentionNames={card.mentionNames}
+        className="mt-0.5 text-base leading-relaxed break-words text-text"
+      />
 
       {card.clamped && (
         <TextButton className="mt-1 text-xs font-semibold" onClick={() => setExpanded((v) => !v)}>

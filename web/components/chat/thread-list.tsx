@@ -6,6 +6,7 @@ import { IconButton } from "@/components/ui/button";
 import { ChevronLeftIcon, LockIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
 
+import { MessageBody } from "./message-body";
 import type { ThreadListItemView } from "./types";
 
 type ThreadListProps = {
@@ -70,9 +71,10 @@ function ThreadRow({ thread, href }: { thread: ThreadListItemView; href: string 
         </span>
         <UnreadBadge count={thread.unreadCount} />
       </span>
-      <span className="flex gap-2.5">
+      {/* 本文はブロック（段落・リスト・コード）を含むので、ここから下は span ではなく div で囲む（ADR 0051） */}
+      <div className="flex gap-2.5">
         <Avatar id={root.sender.id} name={root.sender.name} imageUrl={root.sender.avatarUrl} size="sm" />
-        <span className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
             <span className="truncate text-sm font-semibold text-text">{root.sender.name}</span>
             <time className="shrink-0 font-mono text-2xs text-text-muted">{root.timeLabel}</time>
@@ -80,10 +82,16 @@ function ThreadRow({ thread, href }: { thread: ThreadListItemView; href: string 
           {root.deleted ? (
             <span className="block text-base text-text-muted italic">このメッセージは削除されました</span>
           ) : (
-            <span className="line-clamp-2 text-base leading-relaxed text-text">{root.body}</span>
+            // 行全体が 1 つのリンクなので、本文のリンクとチップは押せない見た目で描く
+            <MessageBody
+              body={root.body}
+              mentionNames={root.mentionNames}
+              interactive={false}
+              className="line-clamp-2 text-base leading-relaxed break-words text-text"
+            />
           )}
-        </span>
-      </span>
+        </div>
+      </div>
       <span className="flex items-center gap-2 pl-10.5 text-xs">
         <span className={cx("font-semibold", unread ? "text-text" : "text-text-secondary")}>
           {thread.replyCount} 件の返信

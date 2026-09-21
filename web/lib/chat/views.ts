@@ -174,6 +174,11 @@ type TimelineOptions = {
    * ルームを抜けた人はここにいないが、メッセージ自身の `mentions` が補う。送信中の本文はこちらだけで引く。
    */
   memberNames?: Readonly<Record<string, string>>;
+  /**
+   * user_id → 表示名。リンクのカードの本文の `<@ID>` に使う（ADR 0051）。ワークスペースのメンバー一覧から作る。
+   * カードの API はメンションの名前を返さず、リンク先は別のルームのことが多いので、ルームのメンバーでは足りない。
+   */
+  workspaceMemberNames?: Readonly<Record<string, string>>;
   timeZone?: string;
   /** 「最終返信」の相対的な時刻（「昨日」など）の基準。省けば今。 */
   now?: Date;
@@ -327,6 +332,7 @@ export function toTimelineItems(
     origin,
     currentWorkspaceId,
     memberNames,
+    workspaceMemberNames,
     statuses = {},
     timeZone,
     now = new Date(),
@@ -424,7 +430,7 @@ export function toTimelineItems(
         mentionsMe: me !== undefined && entry.sender.id !== me.id && mentionsUser(entry.mentions, me.id),
         attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
         reactions: toReactionViews(entry.reactions, memberNames, me),
-        linkCards: origin === undefined ? undefined : toLinkCardViews(entry.body, { origin, linkCards, currentWorkspaceId, avatarUrls, timeZone }),
+        linkCards: origin === undefined ? undefined : toLinkCardViews(entry.body, { origin, linkCards, currentWorkspaceId, avatarUrls, timeZone, mentionNames: workspaceMemberNames }),
         grouped,
       },
     });
@@ -468,7 +474,16 @@ export function toThreadTimelineItems(
 export function toThreadListItemView(
   thread: FollowedThread,
   now: Date,
-  { timeZone, avatarUrls = {} }: { timeZone?: string; avatarUrls?: UrlTable } = {},
+  {
+    timeZone,
+    avatarUrls = {},
+    memberNames,
+  }: {
+    timeZone?: string;
+    avatarUrls?: UrlTable;
+    /** 親の本文の `<@ID>` に使う表示名（ワークスペースのメンバー一覧から。一覧の API はメンションの名前を返さない）。 */
+    memberNames?: Readonly<Record<string, string>>;
+  } = {},
 ): ThreadListItemView {
   const { room, root } = thread;
   return {
@@ -479,6 +494,7 @@ export function toThreadListItemView(
       timeLabel: formatListTime(new Date(root.created_at), now, timeZone),
       body: root.body,
       deleted: root.deleted,
+      mentionNames: memberNames,
     },
     replyCount: thread.reply_count,
     lastReplyLabel: formatListTime(new Date(thread.last_reply_at), now, timeZone),
@@ -523,12 +539,14 @@ function toLinkCardViews(
     currentWorkspaceId,
     avatarUrls,
     timeZone,
+    mentionNames,
   }: {
     origin: string;
     linkCards: Record<string, MessageLink | undefined>;
     currentWorkspaceId?: string;
     avatarUrls: UrlTable;
     timeZone?: string;
+    mentionNames?: Readonly<Record<string, string>>;
   },
 ): MessageLinkCardView[] | undefined {
   const links = findPermalinks(body, origin);
@@ -564,6 +582,7 @@ function toLinkCardViews(
       },
       timeLabel: formatTime(new Date(message.created_at), timeZone),
       body: message.body,
+      mentionNames,
       clampedBody: clamped.text,
       clamped: clamped.clamped,
       attachmentCount: message.attachment_count,
@@ -695,7 +714,9 @@ export function toMentionCandidates(
 }
 
 /** user_id → 表示名。本文の `<@ID>` をチップにするのに使う（ADR 0043）。 */
-export function toMemberNames(members: readonly RoomMember[] | undefined): Record<string, string> {
+export function toMemberNames(
+  members: readonly Pick<RoomMember, "user">[] | undefined,
+): Record<string, string> {
   const names: Record<string, string> = {};
   for (const m of members ?? []) names[m.user.id] = m.user.display_name;
   return names;

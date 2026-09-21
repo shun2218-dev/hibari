@@ -122,6 +122,8 @@ export type MessageLinkCardView =
       sender: UserRef;
       timeLabel: string;
       body: string;
+      /** 本文の `<@ID>` を名前にする表。引けない ID は書かれたまま出る。 */
+      mentionNames?: Readonly<Record<string, string>>;
       /** 畳んだときに出す本文。clamped が false なら body と同じ。 */
       clampedBody: string;
       /** 畳める（「すべて表示する」を出す）か。 */
@@ -141,7 +143,7 @@ export type ThreadSummaryLabel = { replyCount: number; lastReplyLabel: string };
 export type ThreadListItemView = {
   key: string;
   room: { kind: RoomKind; name: string };
-  root: Pick<MessageView, "sender" | "timeLabel" | "body" | "deleted">;
+  root: Pick<MessageView, "sender" | "timeLabel" | "body" | "deleted" | "mentionNames">;
   replyCount: number;
   lastReplyLabel: string;
   unreadCount: number;

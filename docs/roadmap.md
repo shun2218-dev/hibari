@@ -774,13 +774,20 @@ DoD の 3 項目は表示だけで満たせる。
    （見た目を実物の解釈で確かめるため、解釈もここで作る。日時の整形の `lib/chat/format.ts` がすでにあるので、名前を ADR の仮の名前から変えた）
 3. サーバー: `internal/chat/mention` でコードの範囲のトークンを除外する（共通の JSON のテスト）← 完了
    Go と TypeScript は `testdata/format/mentions.json`（「どのトークンがメンションになるか」の組）を読む。ADR の仮の名前（`code-spans.json`）から、守る約束に合わせて変えた
-4. Web: スレッドの一覧とリンクのカードを同じ解釈にする、パーマリンクを同じタブで開く、`findPermalinks` の置き換え、`toWireBody` / `toInputBody` のコードの除外
+4. Web: スレッドの一覧とリンクのカードを同じ解釈にする、パーマリンクを同じタブで開く、`findPermalinks` の置き換え、`toWireBody` / `toInputBody` のコードの除外 ← 完了
+   スレッドの一覧とカードの API はメンションの名前を返さないので、ワークスペースのメンバー一覧から名前を引く（一覧にいない人はトークンのまま）。
+   カードを畳むのは今までどおり行数と文字数で、コードブロックの途中で切ったときだけ閉じるフェンスを足す（ADR の「木を作ってから畳む」より単純で、``` の対が壊れない点は同じ）。
+   リストの記号を段で変えるトークン（`--list-style-type-circle` / `--list-style-type-square`）もここで足した
 
 **DoD**
-- [ ] 各書式が表示され、既存のメッセージの表示が壊れない
-- [ ] `<script>` などを書いても、HTML として解釈されない（コンポーネントのテスト）
-- [ ] URL がリンクになり、別のタブで開く
-- [ ] コードの中のメンションはチップにならず、件数にも数えられない（Web と API のテスト。コードの範囲は Go と TypeScript が同じ JSON を読む）
+- [x] 各書式が表示され、既存のメッセージの表示が壊れない
+      （記法は `body-format.test.ts`、描画は `message-body.test.tsx` の「MessageBody の書式」。書式のない本文が改行を保った段落 1 つになることも同じ節。アプリ由来のスクリーンショットを撮り直して既存の画面が変わらないことも確かめた）
+- [x] `<script>` などを書いても、HTML として解釈されない（`message-body.test.tsx` の「<script> や HTML を書いても…」。`design-rules.test.ts` が `components/chat` の `dangerouslySetInnerHTML` を禁じる）
+- [x] URL がリンクになり、別のタブで開く（`message-body.test.tsx` の「URL は別のタブで開くリンクにする」。パーマリンクだけは同じタブ）
+- [x] コードの中のメンションはチップにならず、件数にも数えられない
+      （Web は `message-body.test.tsx`、API は `internal/chat/mention_test.go` の `TestMentionInCodeIsNotCounted`。コードの範囲は `testdata/format/mentions.json` を Go と TypeScript の両方が読む。入力欄の変換は `mentions.test.ts`）
+
+オーナーによる実物での確認は未実施。
 
 ### Phase 6.10b — リッチテキストの入力欄
 

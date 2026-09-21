@@ -234,3 +234,64 @@ function findCloser(text: string, i: number): number {
 function isWordChar(c: string | undefined): boolean {
   return c !== undefined && /[A-Za-z0-9]/u.test(c);
 }
+
+/**
+ * 本文の中のコードの範囲（記号を含む、[始まり, 終わり)）を前から順に返す。
+ *
+ * 入力欄の変換（mentions.ts）のように、木ではなく本文の文字列のままコードを避けたいところで使う。
+ * 規則は parseBody と同じで、サーバーの internal/chat/mention の codeRanges とも同じ（ADR 0051 決定 5）。
+ */
+export function codeRanges(body: string): [number, number][] {
+  const ranges: [number, number][] = [];
+  let pos = 0;
+  for (;;) {
+    const open = body.indexOf(FENCE, pos);
+    const close = open < 0 ? -1 : body.indexOf(FENCE, open + FENCE.length);
+    if (close < 0) break;
+    inlineCodeRanges(body, pos, open, ranges);
+    ranges.push([open, close + FENCE.length]);
+    pos = close + FENCE.length;
+  }
+  inlineCodeRanges(body, pos, body.length, ranges);
+  return ranges;
+}
+
+/** body[from, to) の中のインラインコードの範囲を足す。コードブロックで区切られた両側のバッククォートは対にしない。 */
+function inlineCodeRanges(body: string, from: number, to: number, ranges: [number, number][]) {
+  for (let i = from; i < to; i++) {
+    if (body[i] !== "`") continue;
+    const end = body.indexOf("`", i + 1);
+    const newline = body.indexOf("\n", i + 1);
+    if (end > i + 1 && end < to && (newline < 0 || end < newline)) {
+      ranges.push([i, end + 1]);
+      i = end;
+    }
+  }
+}
+
+/** pos がコードの範囲の中にあるか。 */
+export function inCode(ranges: readonly [number, number][], pos: number): boolean {
+  return ranges.some(([start, end]) => start <= pos && pos < end);
+}
+
+/** 本文の中の URL を、出てきた順に返す（コードの中は含めない）。パーマリンクのカードを探すのに使う（ADR 0051 決定 4）。 */
+export function findUrls(body: string): string[] {
+  const urls: string[] = [];
+  const inline = (nodes: Inline[]) => {
+    for (const node of nodes) {
+      if (node.type === "link") urls.push(node.url);
+      else if (node.type === "bold" || node.type === "italic" || node.type === "strike") inline(node.children);
+    }
+  };
+  const block = (b: Block) => {
+    if (b.type === "paragraph") inline(b.children);
+    else if (b.type === "quote") b.children.forEach(block);
+    else if (b.type === "list")
+      for (const item of b.items) {
+        inline(item.children);
+        item.sublists.forEach(block);
+      }
+  };
+  parseBody(body).forEach(block);
+  return urls;
+}
