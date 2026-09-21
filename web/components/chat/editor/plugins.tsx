@@ -33,6 +33,7 @@ import {
 import { type RefObject, useEffect, useEffectEvent, useLayoutEffect, useMemo, useState } from "react";
 
 import { Avatar } from "@/components/ui/avatar";
+import { MegaphoneIcon } from "@/components/ui/icons";
 import { Portal } from "@/components/ui/portal";
 import { placeAboveCaret, type PanelPlacement } from "@/lib/anchored-position";
 import { type Inline, parseInline } from "@/lib/chat/body-format";
@@ -506,7 +507,7 @@ function MentionMenu({
   onHighlight: (index: number) => void;
   editor: LexicalEditor;
 }) {
-  const [menu, setMenu] = useState<HTMLUListElement | null>(null);
+  const [menu, setMenu] = useState<HTMLDivElement | null>(null);
   const [placement, setPlacement] = useState<PanelPlacement | null>(null);
 
   useLayoutEffect(() => {
@@ -533,48 +534,55 @@ function MentionMenu({
 
   return (
     <Portal>
-      <ul
+      <div
         ref={setMenu}
-        aria-label="メンションの候補"
-        role="listbox"
         style={placement === null ? { top: 0, left: 0, opacity: 0 } : { top: placement.top, left: placement.left }}
-        className="fixed z-50 max-h-64 w-72 overflow-y-auto rounded-md border border-border bg-surface py-1 shadow-overlay"
+        className="fixed z-50 w-80 overflow-hidden rounded-md border border-border bg-surface shadow-overlay"
       >
-        {options.map((option, i) => {
-          const candidate = option.candidate;
-          return (
-            <li key={option.key} role="option" aria-selected={i === active}>
-              <button
-                type="button"
-                tabIndex={-1}
-                // 押し下げでフォーカスを奪うと、入力欄のキャレットが消えて差し込む先がなくなる
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onChoose(option);
-                }}
-                onMouseEnter={() => onHighlight(i)}
-                className={cx("flex w-full items-center gap-2 px-3 py-1.5 text-left", i === active && "bg-surface-muted")}
-              >
-                {candidate.kind === "user" ? (
-                  <>
-                    <Avatar id={candidate.id} name={candidate.name} imageUrl={candidate.avatarUrl} size="sm" />
-                    <span className="truncate text-base font-semibold text-text">{candidate.name}</span>
-                    <span className="truncate text-xs text-text-muted">@{candidate.handle}</span>
-                  </>
-                ) : (
-                  <>
-                    <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-base font-semibold text-text-secondary">
-                      @
-                    </span>
-                    <span className="text-base font-semibold text-text">@{candidate.kind}</span>
-                    <span className="truncate text-xs text-text-muted">{candidate.description}</span>
-                  </>
-                )}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+        <ul aria-label="メンションの候補" role="listbox" className="max-h-64 overflow-y-auto py-1">
+          {options.map((option, i) => {
+            const candidate = option.candidate;
+            return (
+              <li key={option.key} role="option" aria-selected={i === active}>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  // 押し下げでフォーカスを奪うと、入力欄のキャレットが消えて差し込む先がなくなる
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onChoose(option);
+                  }}
+                  onMouseEnter={() => onHighlight(i)}
+                  className={cx("flex w-full items-center gap-2 px-3 py-1.5 text-left", i === active && "bg-surface-muted")}
+                >
+                  {candidate.kind === "user" ? (
+                    <>
+                      <Avatar id={candidate.id} name={candidate.name} imageUrl={candidate.avatarUrl} size="sm" />
+                      <span className="truncate text-base font-semibold text-text">{candidate.name}</span>
+                      <span className="truncate text-xs text-text-muted">@{candidate.handle}</span>
+                    </>
+                  ) : (
+                    <>
+                      {/* 全員宛ては個人の写真の代わりにメガホン（Slack と同じ。オーナーの要望、2026-09-21） */}
+                      <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-text-secondary">
+                        <MegaphoneIcon className="size-4" />
+                      </span>
+                      <span className="text-base font-semibold text-text">@{candidate.kind}</span>
+                      <span className="truncate text-xs text-text-muted">{candidate.description}</span>
+                    </>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {/* 操作の案内（Slack と同じ） */}
+        <p className="flex gap-3 border-t border-border px-3 py-1.5 text-2xs text-text-muted">
+          <span>↑↓ で移動</span>
+          <span>↵ で選択</span>
+          <span>esc：キャンセル</span>
+        </p>
+      </div>
     </Portal>
   );
 }

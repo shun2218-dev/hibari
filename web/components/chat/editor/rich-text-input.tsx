@@ -45,9 +45,8 @@ export type RichTextInputProps = {
   label: string;
   placeholder?: string;
   autoFocus?: boolean;
-  /** 入力欄の左（添付のボタン）と右（ツールバーの切り替え・送信）に並べるもの。 */
-  leading?: ReactNode;
-  trailing?: ReactNode;
+  /** 入力欄の下の段（添付・ツールバーの切り替え・送信）。Slack と同じく、ツールバー・入力・操作の 3 段にする。 */
+  footer?: ReactNode;
   /** story で補完を開いた状態を出す。 */
   forceMentionQuery?: string;
   /** story でリンクの画面を開いた状態を出す。 */
@@ -75,7 +74,7 @@ const theme: InitialConfigType["theme"] = {
     underline: "underline",
     strikethrough: "line-through",
     underlineStrikethrough: "underline-strike",
-    code: "rounded-sm border border-border bg-surface-muted px-1 font-mono text-base text-text",
+    code: "rounded-sm border border-border bg-surface-muted px-1 font-mono text-base text-code-text",
   },
 };
 
@@ -114,8 +113,7 @@ function Editor({
   label,
   placeholder,
   autoFocus,
-  leading,
-  trailing,
+  footer,
   forceMentionQuery,
   forceLinkDialog,
 }: RichTextInputProps) {
@@ -158,9 +156,7 @@ function Editor({
   return (
     <div className="flex flex-col">
       {toolbar && <Toolbar onOpenLink={openLink} />}
-      <div className="flex items-end gap-1">
-        {leading}
-        <div className="relative min-w-0 flex-1">
+      <div className="relative min-w-0">
           <RichTextPlugin
             contentEditable={
               <ContentEditable
@@ -176,9 +172,8 @@ function Editor({
             }
             ErrorBoundary={LexicalErrorBoundary}
           />
-        </div>
-        {trailing}
       </div>
+      {footer}
       <HistoryPlugin />
       <ListPlugin />
       <LinkPlugin />

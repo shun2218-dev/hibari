@@ -6,7 +6,6 @@
  * アイコンだけのボタンは、ボタン側に aria-label を付ける（アイコン自体は読み上げない）。
  */
 import {
-  ALargeSmall,
   AppWindow,
   Bold,
   Check,
@@ -29,12 +28,14 @@ import {
   type LucideIcon,
   type LucideProps,
   Mail,
+  Megaphone,
   MessagesSquare,
   Monitor,
   Paperclip,
   Plus,
   Reply,
   Search,
+  SendHorizontal,
   Settings,
   Smartphone,
   SmilePlus,
@@ -97,5 +98,7 @@ export const CodeBlockIcon = withDefaults(SquareCode);
 export const QuoteIcon = withDefaults(TextQuote);
 export const OrderedListIcon = withDefaults(ListOrdered);
 export const BulletListIcon = withDefaults(List);
-/** ツールバーの表示・非表示の切り替え（Slack の書式設定アイコン）。 */
-export const FormattingIcon = withDefaults(ALargeSmall);
+/** `@channel` / `@here` の補完の印（Slack と同じメガホン）。 */
+export const MegaphoneIcon = withDefaults(Megaphone);
+/** 送信のボタン。 */
+export const SendIcon = withDefaults(SendHorizontal);

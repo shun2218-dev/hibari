@@ -13,12 +13,12 @@ const candidates: MentionCandidate[] = [
 ];
 
 describe("filterCandidates", () => {
-  it("空の入力では全員とチャンネル宛てを出す", () => {
+  it("空の入力では、全員宛てを先に、続けて個人を出す（Slack と同じ並び）", () => {
     expect(filterCandidates(candidates, "").map((c) => (c.kind === "user" ? c.handle : c.kind))).toEqual([
-      "alice",
-      "bob_2",
       "channel",
       "here",
+      "alice",
+      "bob_2",
     ]);
   });
 

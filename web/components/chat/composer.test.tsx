@@ -157,7 +157,8 @@ describe("Composer の @ 補完（ADR 0043 / 0052 決定 4）", () => {
     const input = screen.getByRole("textbox", { name: "メッセージ" });
 
     await typeInEditor(input, "@");
-    await userEvent.keyboard("{ArrowDown}{Enter}");
+    // 並びは @channel・@here・田中・佐藤（全員宛てが先）。↓ を 3 回で佐藤
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
 
     expect(valueOf(input)).toBe("<@01J8ZZZZZZZZZZZZZZZZZZZZZB> ");
     expect(onSend).not.toHaveBeenCalled();
@@ -174,6 +175,24 @@ describe("Composer の @ 補完（ADR 0043 / 0052 決定 4）", () => {
 
     await userEvent.keyboard("{Enter}");
     expect(onSend).toHaveBeenCalledOnce();
+  });
+
+  it("全員宛ては先に、メガホンの印で出し、操作の案内を添える（Slack と同じ）", async () => {
+    render(<Harness />);
+
+    await typeInEditor(screen.getByRole("textbox", { name: "メッセージ" }), "@");
+
+    const options = within(candidatesList()).getAllByRole("option");
+    expect(options).toHaveLength(4);
+    expect(options[0]).toHaveTextContent("@channel");
+    expect(options[1]).toHaveTextContent("@here");
+    expect(options[2]).toHaveTextContent("田中 あおい");
+    expect(options[3]).toHaveTextContent("佐藤 直樹");
+    // 全員宛ては写真の代わりにメガホン（svg）、個人は写真（頭文字）
+    expect(options[0].querySelector("svg")).not.toBeNull();
+    expect(options[2].querySelector("svg")).toBeNull();
+    expect(screen.getByText("↑↓ で移動")).toBeInTheDocument();
+    expect(screen.getByText("esc：キャンセル")).toBeInTheDocument();
   });
 
   it("@channel と @here も候補に出る", async () => {
@@ -294,6 +313,25 @@ describe("Composer の書式（ADR 0052 決定 5）", () => {
     ]);
     // サーバーでの描画に合わせて、最初は Ctrl で描く（jsdom は Mac ではない）
     expect(within(toolbar).getByRole("button", { name: "取り消し線（Ctrl Shift X）" })).toBeInTheDocument();
+  });
+
+  it("送信はアイコンのボタン。送れる内容がなければ押せない", () => {
+    const { rerender } = render(<Composer value="" canSend={false} />);
+
+    expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "送信" })).not.toHaveTextContent("送信");
+
+    rerender(<Composer value="こんにちは" canSend />);
+    expect(screen.getByRole("button", { name: "送信" })).toBeEnabled();
+  });
+
+  it("ツールバーの切り替えは下線付きの「Aa」", () => {
+    render(<Harness />);
+
+    const toggle = screen.getByRole("button", { name: "書式のツールバーを隠す" });
+    expect(toggle).toHaveTextContent("Aa");
+    expect(toggle).toHaveClass("underline");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
   });
 
   it("ツールバーを隠せる。隠しても記号の入力は効く", async () => {

@@ -37,6 +37,9 @@
   --color-attention-text: #7a5410;
   --color-on-attention: #16201d;
 
+  /* ---- 色: インラインコードの文字（ADR 0052。Slack と同じ橙の系統。押せるもの・いま起きていること・危険とは別の意味の色） ---- */
+  --color-code-text: #a84e17;
+
   /* ---- 色: 状態 ---- */
   --color-danger: #b23a2e;
   --color-danger-subtle: #f8e7e4;
@@ -203,6 +206,7 @@
   --color-attention-text: #d9a441;
   --color-on-attention: #101614;
 
+  --color-code-text: #e8912d;
   --color-danger: #d9705f;
   --color-danger-subtle: #33201d;
   --color-online: #4fb08f;

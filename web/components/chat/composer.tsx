@@ -2,8 +2,8 @@
 
 import { useMemo, useRef } from "react";
 
-import { Button, IconButton, TextButton } from "@/components/ui/button";
-import { CheckCircleIcon, CloseIcon, FileIcon, FormattingIcon, PaperclipIcon } from "@/components/ui/icons";
+import { IconButton, TextButton } from "@/components/ui/button";
+import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon, SendIcon } from "@/components/ui/icons";
 import type { MentionCandidate } from "@/lib/chat/mentions";
 import { cx } from "@/lib/cx";
 
@@ -108,8 +108,8 @@ export function Composer({
           placeholder={target === "thread" ? "スレッドに返信" : "メッセージを入力"}
           forceMentionQuery={forceMentionQuery}
           forceLinkDialog={forceLinkDialog}
-          leading={
-            <>
+          footer={
+            <div className="flex items-center gap-1 pt-1">
               <IconButton label="ファイルを添付" onClick={() => fileInput.current?.click()}>
                 <PaperclipIcon className="size-4" />
               </IconButton>
@@ -126,23 +126,27 @@ export function Composer({
                   if (files.length > 0) onSelectFiles?.(files);
                 }}
               />
-            </>
-          }
-          trailing={
-            <>
-              {/* Slack の書式設定アイコンと同じ切り替え。隠しても記号の入力とショートカットは効く（ADR 0052 の追記） */}
+              {/* Slack の書式設定アイコンと同じ、下線付きの「Aa」。隠しても記号の入力とショートカットは効く（ADR 0052 の追記） */}
               <IconButton
                 label={toolbarVisible ? "書式のツールバーを隠す" : "書式のツールバーを出す"}
                 aria-pressed={toolbarVisible}
                 onClick={() => onToggleToolbar?.(!toolbarVisible)}
-                className={cx(toolbarVisible && "bg-surface-muted text-text")}
+                className={cx("text-base font-semibold underline", toolbarVisible && "bg-surface-muted text-text")}
               >
-                <FormattingIcon className="size-4" />
+                <span aria-hidden>Aa</span>
               </IconButton>
-              <Button size="sm" onClick={() => onSend?.()} disabled={!canSend}>
-                送信
-              </Button>
-            </>
+              {/* 送信はアイコンのボタン（Slack と同じ。オーナーの要望、2026-09-21）。押せるものなので primary */}
+              <button
+                type="button"
+                aria-label="送信"
+                title="送信（Enter）"
+                onClick={() => onSend?.()}
+                disabled={!canSend}
+                className="ml-auto inline-flex size-8 shrink-0 items-center justify-center rounded-sm bg-primary text-on-primary hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-text-muted"
+              >
+                <SendIcon className="size-4" />
+              </button>
+            </div>
           }
         />
       </div>

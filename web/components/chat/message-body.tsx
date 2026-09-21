@@ -147,7 +147,7 @@ function InlineView({ node, ctx }: { node: Inline; ctx: RenderContext }) {
       );
     case "code":
       return (
-        <code className="rounded-sm border border-border bg-surface-muted px-1 font-mono text-base text-text">{node.text}</code>
+        <code className="rounded-sm border border-border bg-surface-muted px-1 font-mono text-base text-code-text">{node.text}</code>
       );
     case "link": {
       // 文字付きのリンク（ADR 0051 決定 4 の追記）は文字を出し、行き先の URL をホバーで見せる。

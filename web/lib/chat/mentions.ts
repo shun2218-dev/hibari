@@ -26,8 +26,8 @@ export type MentionCandidate =
 const TOKEN = /<@([0-9A-Za-z]{26})>|<!(channel|here)>/g;
 
 /**
- * 候補を絞る。ハンドルの前方一致を先に、表示名の前方一致を後に並べ、それぞれ元の順を保つ。
- * `@channel` / `@here` は前方一致したときだけ、個人の後ろに出す。
+ * 候補を絞る。`@channel` / `@here` は前方一致したときだけ、**個人より先に**出す（Slack と同じ並び。オーナーの確認: 2026-09-21）。
+ * 個人はハンドルの前方一致を先に、表示名の前方一致を後に並べ、それぞれ元の順を保つ。
  */
 export function filterCandidates(
   candidates: readonly MentionCandidate[],
@@ -44,7 +44,7 @@ export function filterCandidates(
   const all = candidates.filter(
     (c) => c.kind !== "user" && c.kind.startsWith(q),
   );
-  return [...byHandle, ...byName, ...all].slice(0, limit);
+  return [...all, ...byHandle, ...byName].slice(0, limit);
 }
 
 /** 候補の表示に使う文字列。個人はハンドル、全員宛ては `channel` / `here`。 */
