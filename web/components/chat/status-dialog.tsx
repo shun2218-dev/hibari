@@ -117,29 +117,29 @@ export function StatusDialog({
       }
     >
       <div className="flex flex-col gap-4">
-        <div className="flex items-end gap-2">
-          <button
-            ref={emojiButtonRef}
-            type="button"
-            aria-label="絵文字を選ぶ"
-            aria-expanded={pickerOpen}
-            onClick={onTogglePicker}
-            className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-surface text-lg hover:bg-surface-muted"
-          >
-            <span role="img" aria-hidden>
-              {emoji}
-            </span>
-          </button>
-          <TextField
-            label="ステータス"
-            className="flex-1"
-            value={text}
-            maxLength={STATUS_TEXT_MAX}
-            placeholder="いま何をしていますか？"
-            onChange={(e) => onChangeText?.(e.target.value)}
-            hint={`${[...text].length} / ${STATUS_TEXT_MAX}`}
-          />
-        </div>
+        {/* 絵文字のボタンは入力欄と同じ行に入れる（leading）。ラベルと補足の外に置くと、補足のぶん下にずれる */}
+        <TextField
+          label="ステータス"
+          value={text}
+          maxLength={STATUS_TEXT_MAX}
+          placeholder="いま何をしていますか？"
+          onChange={(e) => onChangeText?.(e.target.value)}
+          hint={`${[...text].length} / ${STATUS_TEXT_MAX}`}
+          leading={
+            <button
+              ref={emojiButtonRef}
+              type="button"
+              aria-label="絵文字を選ぶ"
+              aria-expanded={pickerOpen}
+              onClick={onTogglePicker}
+              className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-surface text-lg hover:bg-surface-muted"
+            >
+              <span role="img" aria-hidden>
+                {emoji}
+              </span>
+            </button>
+          }
+        />
 
         {pickerOpen &&
           (desktopPicker ? (

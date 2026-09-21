@@ -41,14 +41,19 @@ export type TextFieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, "id"> &
   hint?: ReactNode;
   /** 入力欄の左に固定で出す文字（ハンドルの「@」）。 */
   prefix?: string;
+  /**
+   * 入力欄の左に並べる操作（カスタムステータスの絵文字のボタン）。
+   * ラベルと補足の外ではなく**入力欄と同じ行**に置くので、高さがそろう（外に置くと補足のぶん下にずれる）。
+   */
+  leading?: ReactNode;
   mono?: boolean;
 };
 
-export function TextField({ label, hint, prefix, mono, className, ...props }: TextFieldProps) {
+export function TextField({ label, hint, prefix, leading, mono, className, ...props }: TextFieldProps) {
   return (
     <Field label={label} hint={hint} className={className}>
-      {(id, hintId) =>
-        prefix ? (
+      {(id, hintId) => {
+        const input = prefix ? (
           <div className="relative">
             <span
               aria-hidden
@@ -60,8 +65,15 @@ export function TextField({ label, hint, prefix, mono, className, ...props }: Te
           </div>
         ) : (
           <input id={id} aria-describedby={hintId} className={cx(inputClass, mono && "font-mono")} {...props} />
-        )
-      }
+        );
+        if (!leading) return input;
+        return (
+          <div className="flex items-center gap-2">
+            {leading}
+            <div className="min-w-0 flex-1">{input}</div>
+          </div>
+        );
+      }}
     </Field>
   );
 }
