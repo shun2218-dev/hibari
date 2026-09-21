@@ -57,11 +57,11 @@ ADR 0051 決定 7 で、**6.10b は ADR 0051 の記法を書き出し、保存�
 
 ### 1. Lexical を使い、1 か所に閉じ込める
 
-- `lexical` と `@lexical/react`・`@lexical/rich-text`・`@lexical/list`・`@lexical/history` を使う。
+- `lexical` と `@lexical/react`・`@lexical/rich-text`・`@lexical/list`・`@lexical/link`・`@lexical/code`・`@lexical/html`・`@lexical/history` を使う。
   **版は固定する**（`^` を付けない）。1.0 の前で、マイナー版でも破壊的変更がある（0.51 で ESM のみになった、など）。
 - Lexical を import するのは `web/components/chat/editor/` の中だけにする。入力欄とメッセージの編集欄は、ここの `RichTextInput`（仮）を使う。
   版を上げるときに直す範囲をこのディレクトリに限るため。
-- `@lexical/markdown` の読み書きは使わない（決定 2）。記号の入力（決定 5）にだけ使うかは、構築順 3 で実物を試して決める。
+- `@lexical/markdown` の読み書きは使わない（決定 2）。記号の入力（決定 5）にだけ使うかは、構築順 4（エディタの芯）で実物を試して決める。
 
 ### 2. 読み込みは ADR 0051 の解釈、書き出しは自前の関数で行う
 
