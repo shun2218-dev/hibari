@@ -37,6 +37,16 @@ export const VerifyPending: Story = {
   render: () => auth(<VerifyEmailPending email="naoki@example.com" onChangeEmail={noop} />),
 };
 
+/**
+ * 確認するまで chat を使えない間（ADR 0053 決定 3）。登録の直後と同じ画面に、別のアカウントに移るためのログアウトを足した。
+ * Claude Design にはないので、実装から撮る。
+ */
+export const VerifyPendingBlocked: Story = {
+  name: "メール確認待ち（チャットを使えない）",
+  tags: ["since:6.10.5"],
+  render: () => auth(<VerifyEmailPending email="naoki@example.com" onResend={noop} onLogout={noop} />),
+};
+
 export const VerifyChecking: Story = {
   name: "メールを確認中",
   tags: ["since:1.5"],

@@ -1,6 +1,7 @@
 import { ApiError, apiErrorFrom } from "@/lib/api/error";
 import type {
   AvatarUpload,
+  EmailVerificationRequest,
   AvatarUploadRequest,
   CompleteAvatarUploadRequest,
   LoginRequest,
@@ -21,12 +22,12 @@ import { type LockManagerLike, singleFlight } from "./single-flight";
  * 画面から見える認証の状態。Access Token は含めない（コンポーネントやログに渡らないように）。
  * - loading: 起動直後で、refresh の結果を待っている
  * - signed_out: Refresh Token がない、または使えない
- * - signed_in: Access Token を持っている
+ * - signed_in: Access Token を持っている。`emailUnverified` が true なら、email を検証するまで chat を使えない（ADR 0053）
  */
 export type SessionState =
   | { status: "loading" }
   | { status: "signed_out" }
-  | { status: "signed_in"; user: User };
+  | { status: "signed_in"; user: User; emailUnverified?: boolean };
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -68,6 +69,17 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
   function signOutLocally() {
     accessToken = undefined;
     setState({ status: "signed_out" });
+  }
+
+  /**
+   * chat の API が email-unverified で止められたことを覚える（ADR 0053 決定 3）。
+   *
+   * `user.email_verified` からは決めない。検証を外した開発環境（AUTH_REQUIRE_VERIFIED_EMAIL=false）では、
+   * 未検証でも chat を使えるので、止めるかどうかはサーバーの応答だけを根拠にする。
+   */
+  function markEmailUnverified() {
+    if (state.status !== "signed_in" || state.emailUnverified) return;
+    setState({ ...state, emailUnverified: true });
   }
 
   function acceptTokens(res: TokenResponse) {
@@ -129,6 +141,9 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
   /**
    * Access Token を付けて API を呼ぶ。401 なら 1 回だけ refresh して呼び直す。
    * 期限の前に失効したとき（別の端末でログアウトした、パスワードを再設定した）に 401 になる。
+   *
+   * 403 email-unverified のときも 1 回だけ refresh して呼び直す。別のタブで検証を済ませていれば、
+   * 手元のトークンが検証の前のものなだけなので、取り直せば通る（ADR 0053 決定 2）。それでも止められたら確認待ちにする。
    */
   async function authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
     const send = (token: string) => {
@@ -138,15 +153,30 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
       return fetchImpl(`${baseUrl}${path}`, { ...init, headers });
     };
 
-    const token = await validAccessToken();
+    let token = await validAccessToken();
     let res = await send(token);
     if (res.status === 401) {
       // 401 が時間差で返ったとき、別のリクエストがすでに取り直した新しいトークンまで捨てない。
       if (accessToken?.value === token) accessToken = undefined;
-      res = await send(await validAccessToken());
+      token = await validAccessToken();
+      res = await send(token);
       if (res.status === 401) signOutLocally();
     }
+    if (await isEmailUnverified(res)) {
+      // すでに確認待ちなら取り直さない（止められた画面から出ていく残りのリクエストで refresh を繰り返さない）。
+      if (state.status === "signed_in" && state.emailUnverified) return res;
+      // 401 と同じく、別のリクエストが取り直したトークンは捨てずに使う。
+      if (accessToken?.value === token) accessToken = undefined;
+      res = await send(await validAccessToken());
+      if (await isEmailUnverified(res)) markEmailUnverified();
+    }
     return res;
+  }
+
+  /** ボディは呼び出し側がもう一度読むので、複製して覗く。 */
+  async function isEmailUnverified(res: Response): Promise<boolean> {
+    if (res.status !== 403) return false;
+    return (await apiErrorFrom(res.clone())).type === "email-unverified";
   }
 
   /**
@@ -161,6 +191,19 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
     if (!res.ok) throw await apiErrorFrom(res);
     const text = await res.text();
     return (text === "" ? undefined : JSON.parse(text)) as T;
+  }
+
+  /**
+   * refresh して検証の状態を載せた Access Token を取り直し、user を読み直す。
+   * 検証済みなら確認待ちを解く。未検証のままなら、確認待ちかどうかは変えない（止めるのはサーバーの応答だけ）。
+   */
+  async function reloadVerification(): Promise<void> {
+    accessToken = undefined;
+    await refresh();
+    const user = await request<User>("GET", "/api/v1/users/me");
+    if (state.status !== "signed_in") return;
+    const emailUnverified = state.emailUnverified && !user.email_verified;
+    setState({ status: "signed_in", user, ...(emailUnverified ? { emailUnverified } : {}) });
   }
 
   async function signIn(path: "login" | "register", body: LoginRequest | RegisterRequest) {
@@ -211,7 +254,7 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
       return signIn("login", input);
     },
 
-    /** 登録すると同時にログインする（ADR 0010）。 */
+    /** 登録すると同時にログインする（ADR 0010）。`next` は確認メールのリンクに載る戻り先（ADR 0053 決定 3）。 */
     register(input: RegisterRequest): Promise<void> {
       return signIn("register", input);
     },
@@ -246,16 +289,33 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
 
     /**
      * リンクのトークンでメールアドレスを確認する。
-     * ログイン中なら user を取り直す（トークンの持ち主がいまのユーザーとは限らないので、email_verified を決め打ちで書き換えない）。
+     * ログイン中なら refresh して user を取り直す。手元の Access Token は検証の前のもので、chat の API に止められるため（ADR 0053 決定 2）。
+     * トークンの持ち主がいまのユーザーとは限らないので、email_verified を決め打ちで書き換えない。
      */
     async verifyEmail(input: OneTimeTokenRequest): Promise<void> {
       await publicRequest("verify-email/confirm", input);
       if (state.status !== "signed_in") return;
       try {
-        setState({ status: "signed_in", user: await request<User>("GET", "/api/v1/users/me") });
+        await reloadVerification();
       } catch {
-        // 確認そのものは済んでいる。表示が古いだけなので、次に user を取ったときに直る。
+        // 確認そのものは済んでいる。表示が古いだけなので、次に user を取ったときか 403 を受けたときに直る。
       }
+    },
+
+    /**
+     * 確認メールを送り直す。`next` は検証のあとに進む先で、リンクに載る（ADR 0053 決定 3）。
+     * 失敗は ApiError（429 rate-limited、ログインしていなければ 401）。
+     */
+    requestEmailVerification(input: EmailVerificationRequest = {}): Promise<void> {
+      return request<void>("POST", "/api/v1/auth/verify-email/request", input.next ? input : undefined);
+    },
+
+    /**
+     * 確認待ちのまま、別のタブや端末で検証を済ませたかを確かめる。済んでいれば確認待ちを解く。
+     * 確認待ちの画面が、タブに戻ってきたときに呼ぶ。通信の失敗は投げる。
+     */
+    recheckEmailVerification(): Promise<void> {
+      return reloadVerification();
     },
 
     // ---- 設定（ADR 0019 / 0020 / 0031） ----

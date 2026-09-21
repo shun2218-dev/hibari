@@ -6,6 +6,8 @@ import { type ReactNode, useEffect } from "react";
 import { useSessionState } from "@/lib/auth/session-provider";
 import { ChatProvider } from "@/lib/chat/chat-provider";
 
+import { UnverifiedEmail } from "./unverified-email";
+
 /**
  * ログインが必要な画面の振り分け。
  *
@@ -26,6 +28,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   // サーバーに届かないときの画面はデザインにない（chat/connection/server-error.png は接続後の切断用）。いまは何も出さない。
   if (state.status !== "signed_in") return null;
+  // chat の API に email-unverified で止められたら、チャットの画面ごと外して確認待ちにする（ADR 0053 決定 3）。
+  // ChatProvider を外すので WebSocket も閉じる。検証が済むと作り直す。
+  if (state.emailUnverified) return <UnverifiedEmail email={state.user.email} />;
   // user の id を key にして、別の人がログインし直したらチャットの状態を作り直す（前の人のデータを見せない）
   return (
     <ChatProvider key={state.user.id} userId={state.user.id}>

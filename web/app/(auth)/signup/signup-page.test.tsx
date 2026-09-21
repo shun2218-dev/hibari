@@ -51,6 +51,38 @@ describe("SignupPage", () => {
     await waitFor(() => expect(api.paths()).toContain("POST /api/v1/auth/verify-email/request"));
   });
 
+  it("puts the invite page into the verification link so the new member comes back to it (ADR 0053)", async () => {
+    const { api } = renderWithSession(<SignupPage next="/j/abc" />, {
+      ...signedOut,
+      "POST /api/v1/auth/register": () => tokens("at-1", testUser),
+      "POST /api/v1/auth/verify-email/request": () => new Response(null, { status: 202 }),
+    });
+
+    await fillAndSubmit();
+    await screen.findByRole("heading", { name: "確認メールを送りました" });
+    const body = (path: string) => JSON.parse(String(api.calls.find((c) => c.path === path)?.init.body));
+    expect(body("/api/v1/auth/register")).toMatchObject({ next: "/j/abc" });
+
+    await userEvent.click(screen.getByRole("button", { name: "確認メールを再送する" }));
+    await waitFor(() => expect(api.paths()).toContain("POST /api/v1/auth/verify-email/request"));
+    expect(body("/api/v1/auth/verify-email/request")).toEqual({ next: "/j/abc" });
+  });
+
+  it("logs out from the waiting screen back to the form", async () => {
+    const { api } = renderWithSession(<SignupPage />, {
+      ...signedOut,
+      "POST /api/v1/auth/register": () => tokens("at-1", testUser),
+      "POST /api/v1/auth/logout": () => new Response(null, { status: 204 }),
+    });
+
+    await fillAndSubmit();
+    await userEvent.click(await screen.findByRole("button", { name: "ログアウト" }));
+
+    expect(await screen.findByRole("button", { name: "アカウントを作成" })).toBeInTheDocument();
+    expect(api.paths()).toContain("POST /api/v1/auth/logout");
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
   it("shows why the server rejected the input", async () => {
     renderWithSession(<SignupPage />, { ...signedOut, "POST /api/v1/auth/register": () => problem(409, "handle-taken") });
 

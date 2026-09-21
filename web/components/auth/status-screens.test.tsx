@@ -75,6 +75,16 @@ describe("email verification screens", () => {
     expect(onChangeEmail).toHaveBeenCalledOnce();
   });
 
+  it("offers logging out only when it is given (ADR 0053)", async () => {
+    const { rerender } = render(<VerifyEmailPending email="naoki@example.com" />);
+    expect(screen.queryByRole("button", { name: "ログアウト" })).not.toBeInTheDocument();
+
+    const onLogout = vi.fn();
+    rerender(<VerifyEmailPending email="naoki@example.com" onLogout={onLogout} />);
+    await userEvent.click(screen.getByRole("button", { name: "ログアウト" }));
+    expect(onLogout).toHaveBeenCalledOnce();
+  });
+
   it("disables resending while a resend is in flight", () => {
     render(<VerifyEmailPending email="naoki@example.com" resending />);
 

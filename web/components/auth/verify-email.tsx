@@ -4,18 +4,26 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { StatusContent } from "./auth-shell";
 
-/** 登録直後。メールの確認は「いま待っていること」なので琥珀にする。 */
+/**
+ * 登録直後と、確認するまで chat を使えない間（ADR 0053 決定 3）。メールの確認は「いま待っていること」なので琥珀にする。
+ */
 export function VerifyEmailPending({
   email,
   resending,
   onResend,
   onChangeEmail,
+  onLogout,
 }: {
   email: string;
   resending?: boolean;
   onResend?: () => void;
   /** email を変える API がまだないので、渡さなければ「別のアドレスに変更する」を出さない。 */
   onChangeEmail?: () => void;
+  /**
+   * 確認するまで chat を使えないので、この画面から別のアカウントに移れるようにする（ADR 0053 決定 3）。
+   * 「別のアドレスに変更する」と同じ補助のリンクの形にする。
+   */
+  onLogout?: () => void;
 }) {
   return (
     <StatusContent
@@ -35,6 +43,11 @@ export function VerifyEmailPending({
         {onChangeEmail && (
           <button type="button" onClick={onChangeEmail} className="text-xs font-medium text-primary hover:underline">
             別のアドレスに変更する
+          </button>
+        )}
+        {onLogout && (
+          <button type="button" onClick={onLogout} className="text-xs font-medium text-primary hover:underline">
+            ログアウト
           </button>
         )}
       </div>
