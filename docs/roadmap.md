@@ -817,14 +817,17 @@ DoD の 3 項目は表示だけで満たせる。
    書けない書式は、書き出した本文を `parseInline` で読み直して意図と違えば、書式を 1 つずつ外して試す。斜体と下線が隣り合うと `_` が 3 つ続いて読めないので、下線が落ちる
 4. デザインとつなぎ込み: ツールバー（デスクトップとモバイル、表示・非表示の切り替え）とリンクを入れる画面、入力欄の中の書式とメンションのチップ、キャレットの位置の補完、編集欄。
    story に描いて `docs/ui/` に足し、オーナーに見てもらう。入力欄と編集欄を置き換え、ショートカット・記号の入力・貼り付けを入れ、`toWireBody` / `toInputBody` を消す
-   （入力欄は presentational な `Composer` の中を差し替えるので、画面を描くとアプリにもつながる。分けると同じ部品を 2 回触ることになる）
+   （入力欄は presentational な `Composer` の中を差し替えるので、画面を描くとアプリにもつながる。分けると同じ部品を 2 回触ることになる） ← 完了
+   手で打った `@ハンドル` もメンションにする（ADR 0043 を引き継ぐ。ADR 0052 の「追記: 実装でわかったこと」）
 
 **DoD**
-- [ ] 入力欄で付けた書式が、6.10a の記法のテキストとして送られ、同じ見た目で表示される（往復のテスト）
-- [ ] 送ったメッセージを編集で開くと、同じ書式とメンションのチップが入力欄に戻る
-- [ ] ほかのページ（Web ページ・Google ドキュメント・VS Code）から貼ると、記法で書ける書式が残る（読み込みのテストと、オーナーによる実物での確認）
-- [ ] 文字付きのリンクが表示され、ホバーで URL が見える。文字に `<` `>` `` ` `` があると文字付きのリンクにならない（Web と共通の例）
-- [ ] Enter で送信・Shift + Enter で改行・16 行でスクロール・`@channel` の確認が今までどおり動く
+- [x] 入力欄で付けた書式が、6.10a の記法のテキストとして送られ、同じ見た目で表示される
+      （往復は `components/chat/editor/editor.test.ts`、入力欄での書式は `composer.test.tsx` の「Composer の書式」、送る本文は `workspace-screen.test.tsx`）
+- [x] 送ったメッセージを編集で開くと、同じ書式とメンションのチップが入力欄に戻る（`message-item.test.tsx` の「opens the editor with the formatting and mention chips」、`workspace-screen.test.tsx` の「edits with the chips and saves ids」）
+- [x] ほかのページ（Web ページ・Google ドキュメント・VS Code）から貼ると、記法で書ける書式が残る
+      （Lexical の読み込みは ADR 0052 の「貼り付けの検証」、入力欄では `composer.test.tsx` の「ほかのページから貼ると…」。オーナーによる実物での確認は未実施）
+- [x] 文字付きのリンクが表示され、ホバーで URL が見える。文字に `<` `>` `` ` `` があると文字付きのリンクにならない（`message-body.test.tsx`、`body-format.test.ts`、`testdata/format/mentions.json`）
+- [x] Enter で送信・Shift + Enter で改行・16 行でスクロール・`@channel` の確認が今までどおり動く（`composer.test.tsx`、`workspace-screen.test.tsx`）
 - [ ] 日本語の IME で変換している間に、書式やメンションの補完が壊れない（オーナーによる実物での確認。jsdom では確かめられない）
 
 ---

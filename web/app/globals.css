@@ -37,6 +37,9 @@
   --color-attention-text: #7a5410;
   --color-on-attention: #16201d;
 
+  /* ---- 色: インラインコードの文字（ADR 0052。Slack と同じ橙の系統。押せるもの・いま起きていること・危険とは別の意味の色） ---- */
+  --color-code-text: #a84e17;
+
   /* ---- 色: 状態 ---- */
   --color-danger: #b23a2e;
   --color-danger-subtle: #f8e7e4;
@@ -158,6 +161,11 @@
  * 中身に合わせて伸びる入力欄の上限（ADR 0048）。`1lh` はその要素の 1 行ぶんなので、
  * 文字サイズや行送りを変えても「16 行ぶん」の意味が保たれる。上下の padding（py-1）を足す。
  */
+/* 下線と取り消し線を同じ文字に当てる（入力欄。Lexical は両方のときに別のクラスを 1 つ当てるので、2 つのユーティリティでは打ち消し合う） */
+@utility underline-strike {
+  text-decoration-line: underline line-through;
+}
+
 @utility composer-lines {
   max-height: calc(var(--composer-max-lines) * 1lh + var(--spacing) * 2);
 }
@@ -198,6 +206,7 @@
   --color-attention-text: #d9a441;
   --color-on-attention: #101614;
 
+  --color-code-text: #e8912d;
   --color-danger: #d9705f;
   --color-danger-subtle: #33201d;
   --color-online: #4fb08f;

@@ -11,7 +11,7 @@ import { ApiError } from "@/lib/api/error";
 import type { Message, Role, Room, UserProfile } from "@/lib/api/types.gen";
 import { useChatStore, useMedia, useMediaState } from "@/lib/chat/chat-provider";
 import { buildPermalink } from "@/lib/chat/links";
-import { mentionHandles, toInputBody, toWireBody, type MentionCandidate } from "@/lib/chat/mentions";
+import type { MentionCandidate } from "@/lib/chat/mentions";
 import { useOrigin } from "@/lib/chat/use-origin";
 import { isPreviewImage, messageActions } from "@/lib/chat/views";
 import { currentTheme, serverTheme, subscribeTheme } from "@/lib/theme";
@@ -93,7 +93,12 @@ export function useMessageActions({
   // emoji-mart はテーマを props で受け取るので、`data-theme` を購読して渡す（ADR 0031 / 0044）
   const theme = useSyncExternalStore(subscribeTheme, currentTheme, serverTheme);
   const [editing, setEditing] = useState<{ messageId: string; value: string; saving: boolean } | null>(null);
-  const [deleting, setDeleting] = useState<{ messageId: string; body: string; pending: boolean } | null>(null);
+  const [deleting, setDeleting] = useState<{
+    messageId: string;
+    body: string;
+    mentionNames: Record<string, string>;
+    pending: boolean;
+  } | null>(null);
   // 拡大表示で開いている画像（ADR 0045）。null なら開いていない
   const [viewing, setViewing] = useState<{ messageId: string; attachmentId: string } | null>(null);
   const [openAttachmentMenu, setOpenAttachmentMenu] = useState<{ key: string; attachmentId: string }>();
@@ -109,7 +114,6 @@ export function useMessageActions({
   const [copied, setCopied] = useState<{ messageId: string; ok: boolean } | null>(null);
   const origin = useOrigin();
   // 編集のときは入力欄と同じ `@ハンドル` の形で見せ、保存するときに保存の形へ戻す（ADR 0043）
-  const handles = mentionHandles(mentionCandidates);
 
   useEffect(() => {
     if (!copied) return;
@@ -177,7 +181,8 @@ export function useMessageActions({
 
   async function saveEdit() {
     if (!activeEditing || !editingMessage) return;
-    const body = toWireBody(activeEditing.value, mentionCandidates);
+    // 編集欄の値は送る形のテキスト（ADR 0052 決定 3）
+    const body = activeEditing.value;
     if (body === editingMessage.body) {
       setEditing(null);
       return;
@@ -277,13 +282,19 @@ export function useMessageActions({
       onEdit: (key) => {
         setOpenMenuKey(undefined);
         const message = findMessage(key);
-        if (message) setEditing({ messageId: message.id, value: toInputBody(message.body, handles), saving: false });
+        if (message) setEditing({ messageId: message.id, value: message.body, saving: false });
       },
       onDelete: (key) => {
         setOpenMenuKey(undefined);
         const message = findMessage(key);
-        // 引用にトークンをそのまま出すと読めないので、こちらも `@ハンドル` に直す
-        if (message) setDeleting({ messageId: message.id, body: toInputBody(message.body, handles), pending: false });
+        // 引用は本文と同じ解釈で出す（書式とメンションのチップ。ADR 0051）
+        if (message)
+          setDeleting({
+            messageId: message.id,
+            body: message.body,
+            mentionNames: Object.fromEntries(message.mentions.flatMap((m) => (m.user ? [[m.user.id, m.user.display_name]] : []))),
+            pending: false,
+          });
       },
       onDownload: (attachmentId) => void download(attachmentId),
       onOpenImage: (key, attachmentId) => {
@@ -318,6 +329,7 @@ export function useMessageActions({
       editing: activeEditing
         ? {
             value: activeEditing.value,
+            mentionCandidates,
             saving: activeEditing.saving,
             onChange: (value) => setEditing({ ...activeEditing, value }),
             onSave: saveEdit,
@@ -330,6 +342,7 @@ export function useMessageActions({
         <DeleteMessageDialog
           open={deleting !== null}
           body={deleting?.body ?? ""}
+          mentionNames={deleting?.mentionNames}
           pending={deleting?.pending}
           onCancel={() => setDeleting(null)}
           onConfirm={confirmDelete}

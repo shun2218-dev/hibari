@@ -7,6 +7,7 @@
  */
 import {
   AppWindow,
+  Bold,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -14,24 +15,35 @@ import {
   CircleAlert,
   CircleCheck,
   Clock,
+  Code,
   Download,
   Ellipsis,
   File,
   Hash,
+  Italic,
+  Link,
+  List,
+  ListOrdered,
   Lock,
   type LucideIcon,
   type LucideProps,
   Mail,
+  Megaphone,
   MessagesSquare,
   Monitor,
   Paperclip,
   Plus,
   Reply,
   Search,
+  SendHorizontal,
   Settings,
   Smartphone,
   SmilePlus,
+  SquareCode,
+  Strikethrough,
+  TextQuote,
   Trash2,
+  Underline,
   Users,
   X,
   Eye,
@@ -74,3 +86,19 @@ export const UsersIcon = withDefaults(Users);
 export const CloseIcon = withDefaults(X);
 export const EyeIcon = withDefaults(Eye);
 export const EyeOffIcon = withDefaults(EyeOff);
+
+// ---- 入力欄の書式のツールバー（ADR 0052） ----
+export const BoldIcon = withDefaults(Bold);
+export const ItalicIcon = withDefaults(Italic);
+export const UnderlineIcon = withDefaults(Underline);
+export const StrikethroughIcon = withDefaults(Strikethrough);
+export const LinkIcon = withDefaults(Link);
+export const CodeIcon = withDefaults(Code);
+export const CodeBlockIcon = withDefaults(SquareCode);
+export const QuoteIcon = withDefaults(TextQuote);
+export const OrderedListIcon = withDefaults(ListOrdered);
+export const BulletListIcon = withDefaults(List);
+/** `@channel` / `@here` の補完の印（Slack と同じメガホン）。 */
+export const MegaphoneIcon = withDefaults(Megaphone);
+/** 送信のボタン。 */
+export const SendIcon = withDefaults(SendHorizontal);

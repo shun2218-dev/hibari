@@ -18,7 +18,8 @@ import {
   useMediaState,
   useRealtime,
 } from "@/lib/chat/chat-provider";
-import { mentionAll, toWireBody } from "@/lib/chat/mentions";
+import { mentionAll } from "@/lib/chat/mentions";
+import { useComposerToolbar } from "@/lib/composer-toolbar";
 import { draftsReady } from "@/lib/chat/uploads";
 import { useOrigin } from "@/lib/chat/use-origin";
 import {
@@ -83,6 +84,8 @@ export function RoomThread({
   const members = useChatState((s) => s.roomMembers[roomId]?.members);
   const visible = useDocumentVisible();
   const [draft, setDraft] = useState("");
+  // 書式のツールバーを出すか。見る人ごとの好みとしてブラウザに覚える（ADR 0052 の追記）
+  const [toolbarVisible, setToolbarVisible] = useComposerToolbar();
   // 「チャンネルにも投稿する」（ADR 0039）。送信後は決まった値を変えられないので、送るたびに外す（続けて返信するときに、
   // 付けたつもりのないものが流れないように）
   const [alsoInChannel, setAlsoInChannel] = useState(false);
@@ -221,25 +224,22 @@ export function RoomThread({
   const canSend =
     (draft.trim() !== "" || drafts.length > 0) && draftsReady(drafts) && [...draft].length <= MAX_BODY_LENGTH;
 
-  /** 入力欄の `@ハンドル` を保存する形に直す（ADR 0043）。解決できないハンドルはそのまま残る */
-  function wireBody() {
-    return toWireBody(draft, mentionCandidates);
-  }
 
-  function send() {
+  /** body は入力欄が Enter で渡す本文（送る直前に手で打った `@ハンドル` をメンションにしたもの）。ボタンなら draft。 */
+  function send(body: string = draft) {
     if (!canSend) return;
     // スレッドだけの返信では `@channel` / `@here` は誰にも飛ばない（ADR 0041）ので、確認も出さない。
     // 「チャンネルにも投稿する」を付けた返信はルームの全員に飛ぶので、チャンネルの投稿と同じように確認する
-    const all = alsoInChannel ? mentionAll(wireBody()) : null;
+    const all = alsoInChannel ? mentionAll(body) : null;
     if (all !== null) {
       setConfirmAll(all);
       return;
     }
-    sendNow();
+    sendNow(body);
   }
 
-  function sendNow() {
-    store.sendMessage(roomId, { body: wireBody(), attachments: uploader.take(), threadRootId: rootId, alsoInChannel });
+  function sendNow(body: string = draft) {
+    store.sendMessage(roomId, { body, attachments: uploader.take(), threadRootId: rootId, alsoInChannel });
     setDraft("");
     setAlsoInChannel(false);
     setConfirmAll(null);
@@ -282,6 +282,8 @@ export function RoomThread({
               onRemoveAttachment={(key) => uploader.remove(key)}
               typingNames={typingNames}
               mentionCandidates={mentionCandidates}
+            toolbarVisible={toolbarVisible}
+            onToggleToolbar={setToolbarVisible}
               alsoInChannel={{
                 label: alsoInChannelLabel(room.kind),
                 checked: alsoInChannel,
@@ -317,7 +319,7 @@ export function RoomThread({
         kind={confirmAll ?? "channel"}
         memberCount={mentionAllRecipients(members, confirmAll ?? "channel", me?.id)}
         onCancel={() => setConfirmAll(null)}
-        onConfirm={sendNow}
+        onConfirm={() => sendNow()}
       />
     </>
   );

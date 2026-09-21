@@ -37,6 +37,7 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 | `--color-primary-hover` | `#245a4f` | `#6fbba8` | `hover:bg-primary-hover` | primary のホバー | `--brand-hover` |
 | `--color-primary-subtle` | `#e3efea` | `#1b302b` | `bg-primary-subtle` | 選択中の行、選択中のラジオカード、「このデバイス」「管理者」バッジ、復帰バナー | `--brand-tint` |
 | `--color-on-primary` | `#ffffff` | `#101614` | `text-on-primary` | primary の上の文字 | `--on-brand` |
+| `--color-code-text` | `#a84e17` | `#e8912d` | `text-code-text` | インラインコードの文字（入力欄と本文。ADR 0052。オーナーの確認: 2026-09-21）。コードの地に対してライト 4.7 / ダーク 6.0 のコントラスト | —（Slack の橙に合わせて足した） |
 | `--color-attention` | `#c08519` | `#d9a441` | `bg-attention` | 未読バッジの地、未読の区切り線 | `--live` |
 | `--color-attention-subtle` | `#fbf1dc` | `#2e2415` | `bg-attention-subtle` | 再接続中 / 同期中バナー、「オーナー」バッジ、注意書きの地 | `--live-tint` |
 | `--color-attention-text` | `#7a5410` | `#d9a441` | `text-attention-text` | 琥珀系の文字（入力中、バナー、「ここから未読」） | `--live-fg` |

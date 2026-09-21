@@ -1,20 +1,24 @@
 "use client";
 
-import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 
-import { Avatar } from "@/components/ui/avatar";
-import { Button, IconButton, TextButton } from "@/components/ui/button";
-import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon } from "@/components/ui/icons";
-import { applyCompletion, candidateKey, filterCandidates, findMentionQuery, type MentionCandidate } from "@/lib/chat/mentions";
+import { IconButton, TextButton } from "@/components/ui/button";
+import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon, SendIcon } from "@/components/ui/icons";
+import type { MentionCandidate } from "@/lib/chat/mentions";
 import { cx } from "@/lib/cx";
-import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 
+import { RichTextInput } from "./editor/rich-text-input";
 import type { AttachmentDraftView } from "./types";
 
 type ComposerProps = {
+  /** 送る形の本文（ADR 0051 の記法。メンションはトークン。ADR 0052 決定 3）。 */
   value: string;
   onChange?: (value: string) => void;
-  onSend?: () => void;
+  /**
+   * 送信。Enter のときは送る本文を渡す（入力欄が送信の直前に手で打った `@ハンドル` をメンションにするので、value より新しい）。
+   * 送信ボタンのときは value がそのまま送る本文。
+   */
+  onSend?: (body?: string) => void;
   /** 「ファイルを添付」で選んだファイル。 */
   onSelectFiles?: (files: File[]) => void;
   /** 入力中のほかのメンバーの表示名。 */
@@ -33,11 +37,19 @@ type ComposerProps = {
   alsoInChannel?: { label: string; checked: boolean; onChange?: (checked: boolean) => void };
   /**
    * `@` の補完に出す候補（ADR 0043）。ルームのメンバーと `@channel` / `@here`。
-   * 渡さなければ補完は開かない。入力中の文字で絞るのはこの中でやる。
+   * 渡さなければ補完は開かない。入力中の文字で絞るのは入力欄の中でやる。
    */
   mentionCandidates?: readonly MentionCandidate[];
+  /**
+   * 書式のツールバーを出すか（ADR 0052 の追記）。覚えておくのは呼ぶ側（lib/composer-toolbar.ts）。
+   * 見た目の部品は localStorage を読まない（story の見た目が、ブラウザに残った値で変わらないように）。
+   */
+  toolbarVisible?: boolean;
+  onToggleToolbar?: (visible: boolean) => void;
   /** 補完を開いた状態で出す（story で状態を再現するため）。 */
   forceMentionQuery?: string;
+  /** リンクの画面を開いた状態で出す（story で状態を再現するため）。 */
+  forceLinkDialog?: { text: string; url: string };
 };
 
 export function Composer({
@@ -53,87 +65,17 @@ export function Composer({
   target = "room",
   alsoInChannel,
   mentionCandidates,
+  toolbarVisible = true,
+  onToggleToolbar,
   forceMentionQuery,
+  forceLinkDialog,
 }: ComposerProps) {
   const fileInput = useRef<HTMLInputElement>(null);
-  const textarea = useRef<HTMLTextAreaElement>(null);
-  // 補完の対象。null なら閉じている。start は `@` の位置、caret は確定のときに置き換える終わり
-  const [query, setQuery] = useState<MentionQuery | null>(
-    forceMentionQuery === undefined ? null : { start: 0, query: forceMentionQuery, caret: forceMentionQuery.length + 1 },
+  // 下書きにトークンが入っていたら名前のチップで描く（候補はルームのメンバーなので、その名前で足りる）
+  const mentionNames = useMemo(
+    () => Object.fromEntries((mentionCandidates ?? []).flatMap((c) => (c.kind === "user" ? [[c.id, c.name]] : []))),
+    [mentionCandidates],
   );
-  const [active, setActive] = useState(0);
-  // 補完を確定したあとに置くキャレットの位置。置いたら null に戻す
-  const pendingCaret = useRef<number | null>(null);
-
-  // 改行や折り返しで増えた分だけ伸ばす。上限は 16 行（--composer-max-lines）
-  useAutosizeTextarea(textarea, value);
-
-  /**
-   * 補完で入れたハンドルの後ろにキャレットを戻す。
-   *
-   * 描き直しのあと（値が入れ替わったあと）でないと置けないが、次のフレームまで待つと、その前に打った文字の
-   * 後ろでキャレットが戻り、続きの文字がハンドルの直後に割り込む。描き直しと同じ同期のタイミングで置く。
-   */
-  useLayoutEffect(() => {
-    const caret = pendingCaret.current;
-    if (caret === null) return;
-    pendingCaret.current = null;
-    textarea.current?.focus();
-    textarea.current?.setSelectionRange(caret, caret);
-  });
-
-  const matches = query && mentionCandidates ? filterCandidates(mentionCandidates, query.query) : [];
-  const open = matches.length > 0;
-  // 候補が減って選択が範囲の外に出ることがあるので、使うときに丸める
-  const activeIndex = Math.min(active, matches.length - 1);
-
-  /** 入力とキャレットの移動のたびに、直前が `@…` かどうかを見直す。 */
-  function syncQuery(value: string, caret: number) {
-    const found = mentionCandidates ? findMentionQuery(value, caret) : null;
-    setQuery(found && { ...found, caret });
-    // 打ち直したら候補の中身が変わるので、選択は先頭に戻す
-    if (found?.query !== query?.query) setActive(0);
-  }
-
-  function choose(candidate: MentionCandidate) {
-    if (!query) return;
-    const next = applyCompletion(value, query.start, query.caret, candidate);
-    onChange?.(next.value);
-    setQuery(null);
-    // 値は親が持つので、キャレットは描き直しのあとに置き直す（下の useLayoutEffect）
-    pendingCaret.current = next.caret;
-  }
-
-  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    // IME の変換中はどのキーも拾わない（変換を確定する Enter で送らないため）
-    if (e.nativeEvent.isComposing) return;
-    // 補完が開いている間は、Enter は確定に使う（送信しない）
-    if (open) {
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          setActive((i) => (i + 1) % matches.length);
-          return;
-        case "ArrowUp":
-          e.preventDefault();
-          setActive((i) => (i - 1 + matches.length) % matches.length);
-          return;
-        case "Enter":
-        case "Tab":
-          e.preventDefault();
-          choose(matches[activeIndex]);
-          return;
-        case "Escape":
-          e.preventDefault();
-          setQuery(null);
-          return;
-      }
-    }
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (canSend) onSend?.();
-    }
-  }
 
   return (
     <div className="border-t border-border px-3 pt-2 pb-2 md:px-4">
@@ -151,48 +93,62 @@ export function Composer({
           ))}
         </ul>
       )}
-      {/* 補完は入力欄の上に重ねるので、位置の基準になる箱で包む */}
-      <div className="relative">
-        {open && <MentionList candidates={matches} active={activeIndex} onChoose={choose} />}
-        <div
-          className="flex items-end gap-1 rounded-md border border-border bg-surface p-2 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-primary"
-        >
-        <IconButton label="ファイルを添付" onClick={() => fileInput.current?.click()}>
-          <PaperclipIcon className="size-4" />
-        </IconButton>
-        {/* 見た目はボタンで出し、ファイルの選択はブラウザの標準の画面に任せる */}
-        <input
-          ref={fileInput}
-          type="file"
-          multiple
-          hidden
-          onChange={(e) => {
-            const files = Array.from(e.target.files ?? []);
-            // 同じファイルをもう一度選んでも change が起きるように空にする
-            e.target.value = "";
-            if (files.length > 0) onSelectFiles?.(files);
-          }}
-        />
-        <textarea
-          ref={textarea}
-          aria-label={target === "thread" ? "スレッドに返信" : "メッセージ"}
-          rows={1}
+      <div className="rounded-md border border-border bg-surface p-2 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-primary">
+        <RichTextInput
           value={value}
-          onChange={(e) => {
-            onChange?.(e.target.value);
-            syncQuery(e.target.value, e.target.selectionStart);
+          onChange={onChange}
+          // IME の変換中の Enter と、補完を確定する Enter は入力欄が拾わない（ADR 0052 決定 6）
+          onSubmit={(body) => {
+            if (canSend) onSend?.(body);
           }}
-          // クリックや矢印でキャレットだけ動いたときも開閉を見直す
-          onSelect={(e) => syncQuery(e.currentTarget.value, e.currentTarget.selectionStart)}
-          onBlur={() => setQuery(null)}
-          onKeyDown={handleKeyDown}
+          mentionCandidates={mentionCandidates}
+          mentionNames={mentionNames}
+          toolbar={toolbarVisible}
+          label={target === "thread" ? "スレッドに返信" : "メッセージ"}
           placeholder={target === "thread" ? "スレッドに返信" : "メッセージを入力"}
-          className="composer-lines min-h-8 flex-1 resize-none overflow-y-auto bg-transparent px-1.5 py-1 text-lg leading-normal text-text focus-visible:outline-none"
+          forceMentionQuery={forceMentionQuery}
+          forceLinkDialog={forceLinkDialog}
+          footer={
+            <div className="flex items-center gap-1 pt-1">
+              <IconButton label="ファイルを添付" onClick={() => fileInput.current?.click()}>
+                <PaperclipIcon className="size-4" />
+              </IconButton>
+              {/* 見た目はボタンで出し、ファイルの選択はブラウザの標準の画面に任せる */}
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                hidden
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  // 同じファイルをもう一度選んでも change が起きるように空にする
+                  e.target.value = "";
+                  if (files.length > 0) onSelectFiles?.(files);
+                }}
+              />
+              {/* Slack の書式設定アイコンと同じ、下線付きの「Aa」。隠しても記号の入力とショートカットは効く（ADR 0052 の追記） */}
+              <IconButton
+                label={toolbarVisible ? "書式のツールバーを隠す" : "書式のツールバーを出す"}
+                aria-pressed={toolbarVisible}
+                onClick={() => onToggleToolbar?.(!toolbarVisible)}
+                className={cx("text-base font-semibold underline", toolbarVisible && "bg-surface-muted text-text")}
+              >
+                <span aria-hidden>Aa</span>
+              </IconButton>
+              {/* 送信はアイコンのボタン（Slack と同じ。オーナーの要望、2026-09-21）。押せるものなので primary */}
+              <button
+                type="button"
+                aria-label="送信"
+                title="送信（Enter）"
+                onClick={() => onSend?.()}
+                disabled={!canSend}
+                className="ml-auto inline-flex size-8 shrink-0 items-center justify-center rounded-sm bg-primary text-on-primary hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-text-muted"
+              >
+                <SendIcon className="size-4" />
+              </button>
+            </div>
+          }
         />
-        <Button size="sm" onClick={onSend} disabled={!canSend}>
-          送信
-        </Button>
-        </div>
       </div>
       <div className="flex items-center justify-between gap-3 pt-1.5">
         {alsoInChannel && (
@@ -210,62 +166,6 @@ export function Composer({
         <p className="ml-auto text-2xs text-text-muted">Enter で送信 / Shift + Enter で改行</p>
       </div>
     </div>
-  );
-}
-
-/** 補完の対象。start は `@` の位置、query は `@` の後ろに打った文字、caret は確定のときに置き換える終わり。 */
-type MentionQuery = { start: number; query: string; caret: number };
-
-/**
- * `@` の補完（ADR 0043）。入力欄の上に重ねて出す。
- *
- * キャレットの位置には付けない。textarea では文字の座標を測れないので、入力欄の左上に固定で出す。
- * マウスで選ぶときに `onMouseDown` で確定するのは、textarea の blur で閉じてしまう前に拾うため。
- */
-function MentionList({
-  candidates,
-  active,
-  onChoose,
-}: {
-  candidates: MentionCandidate[];
-  active: number;
-  onChoose: (candidate: MentionCandidate) => void;
-}) {
-  return (
-    <ul
-      aria-label="メンションの候補"
-      className="absolute bottom-full left-0 z-10 mb-1 max-h-64 w-72 overflow-y-auto rounded-md border border-border bg-surface py-1 shadow-lg"
-    >
-      {candidates.map((candidate, i) => (
-        <li key={candidateKey(candidate)}>
-          <button
-            type="button"
-            aria-current={i === active ? "true" : undefined}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              onChoose(candidate);
-            }}
-            className={cx("flex w-full items-center gap-2 px-3 py-1.5 text-left", i === active && "bg-surface-muted")}
-          >
-            {candidate.kind === "user" ? (
-              <>
-                <Avatar id={candidate.id} name={candidate.name} imageUrl={candidate.avatarUrl} size="sm" />
-                <span className="truncate text-base font-semibold text-text">{candidate.name}</span>
-                <span className="truncate text-xs text-text-muted">@{candidate.handle}</span>
-              </>
-            ) : (
-              <>
-                <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-base font-semibold text-text-secondary">
-                  @
-                </span>
-                <span className="text-base font-semibold text-text">@{candidate.kind}</span>
-                <span className="truncate text-xs text-text-muted">{candidate.description}</span>
-              </>
-            )}
-          </button>
-        </li>
-      ))}
-    </ul>
   );
 }
 

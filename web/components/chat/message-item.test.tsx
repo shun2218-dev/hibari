@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { HOVER_OPEN_DELAY_MS } from "@/lib/use-hover-intent";
 
+import { typeInEditor, valueOf } from "./editor/test-utils";
 import { MessageItem } from "./message-item";
 import type { MessageView } from "./types";
 
@@ -280,12 +281,12 @@ describe("MessageItem actions", () => {
     );
 
     const editor = screen.getByRole("textbox", { name: "メッセージを編集" });
-    expect(editor).toHaveValue("賛成です。");
+    expect(valueOf(editor)).toBe("賛成です。");
     // 編集中は本文・添付・ホバーの操作を出さない
     expect(screen.queryByText("x.pdf")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
 
-    await userEvent.type(editor, "！");
+    await typeInEditor(editor, "！");
     expect(onChange).toHaveBeenLastCalledWith("賛成です。！");
 
     await userEvent.click(screen.getByRole("button", { name: "保存" }));
@@ -294,12 +295,23 @@ describe("MessageItem actions", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("opens the editor at the height of the body it holds", () => {
-    // jsdom はレイアウトを持たないので、中身の高さだけ差し替えて、入力欄に入れ直されるかを見る
-    vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(84);
-    render(<MessageItem message={message()} canEdit editing={{ value: "1 行目\n2 行目\n3 行目" }} />);
+  it("opens the editor with the formatting and mention chips of the body（ADR 0052 決定 2）", () => {
+    const id = "01J8ZZZZZZZZZZZZZZZZZZZZZA";
+    render(
+      <MessageItem
+        message={message({ mentionNames: { [id]: "田中 あおい" } })}
+        canEdit
+        editing={{ value: `*太字* と <@${id}>\n- 項目` }}
+      />,
+    );
 
-    expect(screen.getByRole("textbox", { name: "メッセージを編集" })).toHaveStyle({ height: "84px" });
+    const editor = screen.getByRole("textbox", { name: "メッセージを編集" });
+    expect(within(editor).getByText("太字").tagName).toBe("STRONG");
+    expect(within(editor).getByText("@田中 あおい")).toHaveClass("text-primary");
+    expect(within(editor).getByRole("listitem")).toHaveTextContent("項目");
+    // 編集ではツールバーを出さない（記号の入力とショートカットで書式を付ける）
+    expect(screen.queryByRole("toolbar", { name: "書式" })).not.toBeInTheDocument();
+    expect(editor).toHaveClass("composer-lines");
   });
 
   it("saves with Enter and cancels with Escape", async () => {

@@ -57,6 +57,8 @@ describe("MessageBody の書式（ADR 0051）", () => {
     expect(screen.getByText("取り消し").tagName).toBe("S");
     expect(screen.getByText("code").tagName).toBe("CODE");
     expect(screen.getByText("code")).toHaveClass("font-mono");
+    // インラインコードの文字は橙（ADR 0052。オーナーの確認: 2026-09-21）
+    expect(screen.getByText("code")).toHaveClass("text-code-text");
   });
 
   it("コードブロックは書いたとおりに等幅で出し、中を解釈しない", () => {

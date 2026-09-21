@@ -32,7 +32,8 @@ import {
 } from "@/lib/chat/chat-provider";
 import { forgetLocation } from "@/lib/chat/last-location";
 import { draftsReady } from "@/lib/chat/uploads";
-import { mentionAll, toWireBody } from "@/lib/chat/mentions";
+import { mentionAll } from "@/lib/chat/mentions";
+import { useComposerToolbar } from "@/lib/composer-toolbar";
 import { useOrigin } from "@/lib/chat/use-origin";
 import {
   mentionAllRecipients,
@@ -112,6 +113,8 @@ export function RoomView({
   const [atBottom, setAtBottom] = useState(true);
   // 入力欄の本文。ルームごとに作り直すので、別のルームに移ると消える
   const [draft, setDraft] = useState("");
+  // 書式のツールバーを出すか。見る人ごとの好みとしてブラウザに覚える（ADR 0052 の追記）
+  const [toolbarVisible, setToolbarVisible] = useComposerToolbar();
   const { uploader, drafts } = useAttachmentUploader(roomId);
   const [sentCount, setSentCount] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -304,24 +307,21 @@ export function RoomView({
     if (value.trim() !== "") realtime.sendTyping(roomId);
   }
 
-  /** 入力欄の `@ハンドル` を保存する形に直す（ADR 0043）。解決できないハンドルはそのまま残る */
-  function wireBody() {
-    return toWireBody(draft, mentionCandidates);
-  }
 
-  function send() {
+  /** body は入力欄が Enter で渡す本文（送る直前に手で打った `@ハンドル` をメンションにしたもの）。ボタンなら draft。 */
+  function send(body: string = draft) {
     if (!canSend) return;
     // 全員に飛ぶメンションは、送る前に確認する（ADR 0043）
-    const all = mentionAll(wireBody());
+    const all = mentionAll(body);
     if (all !== null) {
       setConfirmAll(all);
       return;
     }
-    sendNow();
+    sendNow(body);
   }
 
-  function sendNow() {
-    store.sendMessage(roomId, { body: wireBody(), attachments: uploader.take() });
+  function sendNow(body: string = draft) {
+    store.sendMessage(roomId, { body, attachments: uploader.take() });
     setDraft("");
     setConfirmAll(null);
     setSentCount((n) => n + 1);
@@ -427,6 +427,8 @@ export function RoomView({
             onRemoveAttachment={(key) => uploader.remove(key)}
             typingNames={typingNames}
             mentionCandidates={mentionCandidates}
+            toolbarVisible={toolbarVisible}
+            onToggleToolbar={setToolbarVisible}
           />
         )
       )}
@@ -436,7 +438,7 @@ export function RoomView({
         kind={confirmAll ?? "channel"}
         memberCount={mentionAllRecipients(members, confirmAll ?? "channel", me?.id)}
         onCancel={() => setConfirmAll(null)}
-        onConfirm={sendNow}
+        onConfirm={() => sendNow()}
       />
       <RoomSettings
         workspaceId={workspaceId}
