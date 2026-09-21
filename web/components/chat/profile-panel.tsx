@@ -117,7 +117,7 @@ export function ProfilePanel({
                   >
                     <MoreIcon className="size-4" />
                   </button>
-                  {menuOpen && <ProfileMenu profile={member} {...{ onCopyHandle, onCopyEmail, onChangeRole, onRemove }} />}
+                  {menuOpen && <ProfileMenu profile={member} onDismiss={onToggleMenu} {...{ onCopyHandle, onCopyEmail, onChangeRole, onRemove }} />}
                 </>
               )}
             </div>
@@ -149,8 +149,11 @@ function ProfileMenu({
   onCopyEmail,
   onChangeRole,
   onRemove,
+  onDismiss,
 }: {
   profile: Extract<ProfileView, { kind: "member" }>;
+  /** 外を押す・Esc で閉じる。 */
+  onDismiss?: () => void;
   onCopyHandle?: () => void;
   onCopyEmail?: () => void;
   onChangeRole?: (role: WorkspaceRole) => void;
@@ -158,7 +161,7 @@ function ProfileMenu({
 }) {
   return (
     // 操作の行は大きな写真の下にあり、下に開くと画面の下で切れる。上（写真の側）に開く
-    <Popover label="その他の操作" className="right-5 bottom-full w-58">
+    <Popover label="その他の操作" className="right-5 bottom-full w-58" onDismiss={onDismiss}>
       <MenuItem icon={CopyIcon} onClick={onCopyHandle}>
         ハンドルをコピー
       </MenuItem>

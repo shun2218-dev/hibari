@@ -240,6 +240,7 @@ export function WorkspaceScreen() {
                   setSwitcherOpen(false);
                   setCreatingWorkspace(true);
                 }}
+                onDismiss={() => setSwitcherOpen(false)}
               />
             }
             accountMenuOpen={accountMenuOpen}
@@ -268,6 +269,7 @@ export function WorkspaceScreen() {
                   router.push("/settings");
                 }}
                 onLogout={() => session.logout()}
+                onDismiss={() => setAccountMenuOpen(false)}
               />
             }
             onCreateRoom={() => setCreatingRoom(true)}

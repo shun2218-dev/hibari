@@ -1,10 +1,11 @@
 "use client";
 
-import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useState } from "react";
+import { type ReactNode, type RefObject, useLayoutEffect, useState } from "react";
 
 import { Portal } from "@/components/ui/portal";
 import { type PanelAlign, type PanelPlacement, placeBeside, placePanel } from "@/lib/anchored-position";
 import { cx } from "@/lib/cx";
+import { useDismiss } from "@/lib/use-dismiss";
 
 /**
  * アンカー（メッセージの行）に合わせて画面に浮かせるパネル。
@@ -76,25 +77,8 @@ export function AnchoredPanel({
     };
   }, [align, anchorRef, beside, panel]);
 
-  // 外を押す / Esc で閉じる。押し下げで閉じるのは、押したまま外へ動かしても閉じるようにするため
-  useEffect(() => {
-    if (!panel || !onDismiss) return;
-    function dismissIfOutside(event: PointerEvent) {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (panel?.contains(target) || anchorRef.current?.contains(target)) return;
-      onDismiss?.();
-    }
-    function dismissOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") onDismiss?.();
-    }
-    document.addEventListener("pointerdown", dismissIfOutside);
-    document.addEventListener("keydown", dismissOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", dismissIfOutside);
-      document.removeEventListener("keydown", dismissOnEscape);
-    };
-  }, [anchorRef, panel, onDismiss]);
+  // 外を押す / Esc で閉じる（Popover と共通。lib/use-dismiss.ts）。アンカー（メッセージの行）の中は「外」に数えない
+  useDismiss(panel, onDismiss, anchorRef);
 
   return (
     <Portal>

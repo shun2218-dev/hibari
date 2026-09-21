@@ -257,6 +257,22 @@ describe("MessageItem actions", () => {
     expect(onToggleMenu).toHaveBeenCalledOnce();
   });
 
+  it("closes the message menu when clicking outside or pressing Escape", async () => {
+    const onToggleMenu = vi.fn();
+    render(
+      <div>
+        <p>outside</p>
+        <MessageItem message={message()} canEdit menuOpen onToggleMenu={onToggleMenu} />
+      </div>,
+    );
+
+    await userEvent.click(screen.getByText("outside"));
+    expect(onToggleMenu).toHaveBeenCalledOnce();
+
+    await userEvent.keyboard("{Escape}");
+    expect(onToggleMenu).toHaveBeenCalledTimes(2);
+  });
+
   it("shows only the permitted menu items", async () => {
     const onDelete = vi.fn();
     const { rerender } = render(<MessageItem message={message()} canEdit canDelete menuOpen />);

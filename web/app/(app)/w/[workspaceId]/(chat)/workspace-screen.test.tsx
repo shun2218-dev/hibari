@@ -968,6 +968,26 @@ describe("WorkspaceScreen", () => {
         expect(screen.queryByRole("textbox", { name: "メッセージを編集" })).not.toBeInTheDocument();
       });
 
+      it("closes the message menu on an outside click, and moves it to another message in one click", async () => {
+        const mine = message(3, { sender: naoki, body: "自分のメッセージ" });
+        await connected(openRoom(design, [message(1), message(2), mine]));
+        const [, second, third] = history().getAllByRole("article");
+
+        await userEvent.click(within(third!).getByRole("button", { name: "その他の操作" }));
+        expect(screen.getByRole("dialog", { name: "メッセージの操作" })).toBeInTheDocument();
+
+        // 外（タイムラインの見出し）を押すと閉じる
+        await userEvent.click(screen.getByRole("heading", { level: 1 }));
+        expect(screen.queryByRole("dialog", { name: "メッセージの操作" })).not.toBeInTheDocument();
+
+        // 開いたまま別のメッセージの「…」を押すと、1 回でそちらのメニューに移る
+        await userEvent.click(within(third!).getByRole("button", { name: "その他の操作" }));
+        await userEvent.click(within(second!).getByRole("button", { name: "その他の操作" }));
+        const menus = screen.getAllByRole("dialog", { name: "メッセージの操作" });
+        expect(menus).toHaveLength(1);
+        expect(second).toContainElement(menus[0]!);
+      });
+
       it("deletes a message after confirming", async () => {
         const mine = message(3, { sender: naoki, body: "消すメッセージ" });
         const { api } = await connected({

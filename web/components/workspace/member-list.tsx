@@ -76,7 +76,7 @@ export function MemberList({ members, openMenu = null, onOpenMenu, onCloseMenu, 
               )}
 
               {menu === "roles" && member.manage.kind === "menu" && (
-                <Popover label="付与できるロール" className="top-13 right-3 w-58">
+                <Popover label="付与できるロール" className="top-13 right-3 w-58" onDismiss={onCloseMenu}>
                   <p className="px-2.5 pt-1.5 pb-1 text-2xs text-text-muted">付与できるロール</p>
                   <ul>
                     {member.manage.grantableRoles.map((role) => {
@@ -118,7 +118,7 @@ export function MemberList({ members, openMenu = null, onOpenMenu, onCloseMenu, 
               )}
 
               {menu === "locked" && member.manage.kind === "locked" && (
-                <Popover label="管理できない理由" className="top-13 right-3 w-62 p-3.5">
+                <Popover label="管理できない理由" className="top-13 right-3 w-62 p-3.5" onDismiss={onCloseMenu}>
                   <p className="text-sm leading-relaxed text-text-secondary">{member.manage.reason}</p>
                   <TextButton onClick={onCloseMenu} className="mt-2 text-sm font-semibold">
                     閉じる
