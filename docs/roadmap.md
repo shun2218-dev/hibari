@@ -488,6 +488,7 @@ Phase 6.7.6 /dev/preview を Storybook に移す（機能ではなく道具）
 Phase 6.8   離席とカスタムステータス
 Phase 6.9   プロフィールのカード
 Phase 6.10  本文の書式
+Phase 6.10.5 未検証の email ではチャットを使えないようにする
 Phase 6.11  メッセージへのリンク（コピー・飛ぶ・カード・新着の線）
 Phase 6.12  ピン留めと保存
 Phase 6.13  メンション
@@ -830,6 +831,41 @@ DoD の 3 項目は表示だけで満たせる。
 - [x] 文字付きのリンクが表示され、ホバーで URL が見える。文字に `<` `>` `` ` `` があると文字付きのリンクにならない（`message-body.test.tsx`、`body-format.test.ts`、`testdata/format/mentions.json`）
 - [x] Enter で送信・Shift + Enter で改行・16 行でスクロール・`@channel` の確認が今までどおり動く（`composer.test.tsx`、`workspace-screen.test.tsx`）
 - [ ] 日本語の IME で変換している間に、書式やメンションの補完が壊れない（オーナーによる実物での確認。jsdom では確かめられない）
+
+---
+
+## Phase 6.10.5 — 未検証の email ではチャットを使えないようにする
+
+**目的**: email を検証するまでチャットを使えないようにする。本番で本物の確認メールを送れるようにする。
+
+ADR 0050 の宿題（オーナーの指摘。2026-09-21）。6.10 の後に回した（ADR 0051）。番号を振り直さないのは 6.7.5 と同じ理由。
+
+**オーナーと確定した内容**（2026-09-21）
+- 検証するまで chat を全部塞ぐ（読むのも含めて）
+- chat は検証の状態をアクセストークンのクレームから知る
+- 本番のメール送信も同じ ADR で決める
+- ローカルの開発環境だけは、検証なしでも使えるようにする
+
+**ADR で決めること** ← ADR 0053（提案）
+- 塞ぐ範囲 → chat の API と ws-ticket を 403（`email-unverified`）。auth の API は使える。判定は `platform/authn` のミドルウェアの 1 か所
+- 検証の状態の渡し方 → アクセストークンの `email_verified` と `Identity.EmailVerified`。検証の直後に refresh する
+- 招待から来た人 → 確認メールのリンクに戻り先（`next`）を載せ、検証のあとに招待の画面へ戻す（ADR 0030 の行き止まりも解消）
+- 開発環境 → `AUTH_REQUIRE_VERIFIED_EMAIL=false`。本物のメールを送る設定（`smtp`）のときは外せない（起動しない）
+- メール → SMTP で送り、業者は Resend から始める。`MAIL_TRANSPORT` は必須。プロセスの中のキューで非同期に送る（時間差を出さない）
+
+**構築順**（PR を分ける）
+1. 設計（ADR 0053） ← このフェーズの最初の PR
+2. メール: SMTP の Mailer・非同期のキュー・設定（`MAIL_TRANSPORT` など）と `docs/deploy.md`（DNS のレコード）
+3. 塞ぐ: トークンのクレーム・`Identity`・`RequireVerifiedEmail`・`AUTH_REQUIRE_VERIFIED_EMAIL`・確認メールのリンクの戻り先。CLAUDE.md ルール 1 を直す
+4. Web: 未検証のときの画面、検証の直後の refresh、403 のときの refresh、招待への戻り
+
+**DoD**
+- [ ] 未検証のアクセストークンでは chat の API と ws-ticket が 403 になり、auth の API は使える（API のテスト）
+- [ ] 検証すると、refresh した後のトークンで chat を使える（API のテスト）
+- [ ] `smtp` のときに `AUTH_REQUIRE_VERIFIED_EMAIL=false` にすると起動しない（設定のテスト）
+- [ ] パスワードの再設定の応答の時間が、登録のある人とない人で変わらない（メールを非同期で送る。テスト）
+- [ ] 招待から登録した人が、確認メールを開くと招待の画面に戻る（Web のテスト）
+- [ ] 本番の設定で、確認メールが実際に届く（オーナーによる確認）
 
 ---
 
