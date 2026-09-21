@@ -31,19 +31,13 @@ describe("MembersPanel", () => {
   });
 });
 
-describe("MembersPanel のプロフィールのカード（ADR 0050）", () => {
-  it("行を押すとカードを開き、開いている行に印を付ける", async () => {
+describe("MembersPanel からプロフィールを開く（ADR 0050）", () => {
+  it("行を押すと、そのメンバーのプロフィールを開く", async () => {
     const onOpenProfile = vi.fn();
-    const { rerender } = render(<MembersPanel members={members} onOpenProfile={onOpenProfile} />);
+    render(<MembersPanel members={members} onOpenProfile={onOpenProfile} />);
 
     await userEvent.click(screen.getByRole("button", { name: /高橋 みゆき/ }));
     expect(onOpenProfile).toHaveBeenCalledWith("u2");
-
-    rerender(
-      <MembersPanel members={members} onOpenProfile={onOpenProfile} openProfileId="u2" profileCard={<p>カードの中身</p>} />,
-    );
-    expect(screen.getByRole("button", { name: /高橋 みゆき/ })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("dialog", { name: "プロフィール" })).toHaveTextContent("カードの中身");
   });
 
   it("開く先を渡さなければ、行は押せない", () => {

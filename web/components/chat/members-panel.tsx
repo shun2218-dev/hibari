@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, type Ref, useRef } from "react";
+import { type ReactNode, useRef } from "react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { IconButton } from "@/components/ui/button";
@@ -8,7 +8,6 @@ import { CloseIcon } from "@/components/ui/icons";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { cx } from "@/lib/cx";
 
-import { ProfileCardPopup } from "./profile-card";
 import type { RoomMemberView } from "./types";
 import { StatusEmoji } from "./user-status";
 
@@ -20,21 +19,16 @@ export function MembersPanel({
   members,
   onClose,
   onOpenProfile,
-  openProfileId,
-  profileCard,
-  onCloseProfile,
 }: {
   members: RoomMemberView[];
   onClose?: () => void;
-  /** 行を押した（プロフィールのカード。ADR 0050）。渡さなければ行は押せない。 */
+  /**
+   * 行を押した（ADR 0050 決定 6 の追記）。右の枠がこのパネルからプロフィールのパネルに入れ替わり、
+   * プロフィールの「メンバーに戻る」でここに戻る。渡さなければ行は押せない。
+   */
   onOpenProfile?: (userId: string) => void;
-  /** カードを開いているメンバー。カードはその行の横（パネルの左）に出す。 */
-  openProfileId?: string;
-  profileCard?: ReactNode;
-  onCloseProfile?: () => void;
 }) {
   const panel = useRef<HTMLElement>(null);
-  const openRow = useRef<HTMLButtonElement>(null);
 
   return (
     <>
@@ -55,8 +49,6 @@ export function MembersPanel({
           {members.map((member) => (
             <li key={member.id}>
               <MemberRow
-                ref={member.id === openProfileId ? openRow : undefined}
-                expanded={member.id === openProfileId}
                 onClick={onOpenProfile === undefined ? undefined : () => onOpenProfile(member.id)}
               >
                 <Avatar id={member.id} name={member.name} imageUrl={member.avatarUrl} size="sm" presence={member.presence} />
@@ -75,37 +67,16 @@ export function MembersPanel({
           ))}
         </ul>
       </aside>
-      {openProfileId !== undefined && profileCard && (
-        <ProfileCardPopup anchorRef={openRow} label="プロフィール" onDismiss={onCloseProfile}>
-          {profileCard}
-        </ProfileCardPopup>
-      )}
     </>
   );
 }
 
 /** メンバーの行。押せるときはボタンにする（押せないときに押せる見た目を出さない）。 */
-function MemberRow({
-  ref,
-  expanded,
-  onClick,
-  children,
-}: {
-  ref?: Ref<HTMLButtonElement>;
-  expanded: boolean;
-  onClick?: () => void;
-  children: ReactNode;
-}) {
+function MemberRow({ onClick, children }: { onClick?: () => void; children: ReactNode }) {
   const className = "flex w-full items-center gap-2.5 px-4 py-2 text-left";
   if (!onClick) return <div className={className}>{children}</div>;
   return (
-    <button
-      ref={ref}
-      type="button"
-      aria-expanded={expanded}
-      onClick={onClick}
-      className={cx(className, "cursor-pointer", expanded ? "bg-surface-muted" : "hover:bg-surface-muted")}
-    >
+    <button type="button" onClick={onClick} className={cx(className, "cursor-pointer hover:bg-surface-muted")}>
       {children}
     </button>
   );

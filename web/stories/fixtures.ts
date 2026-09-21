@@ -8,7 +8,7 @@ import type {
   MessageAttachmentView,
   MessageLinkCardView,
   MessageReactionView,
-  ProfileCardView,
+  ProfileView,
   MessageView,
   RoomMemberView,
   RoomSummaryView,
@@ -638,7 +638,7 @@ export const devices: DeviceView[] = [
 
 // ---- プロフィールのカード（Phase 6.9。ADR 0050） ----
 
-/** カードを開くメッセージ。どれもアバターと名前のある先頭の行。 */
+/** ホバーのカードを出すメッセージ。どれもアバターと名前のある先頭の行。 */
 export const profileKeys = { naoki: "m-1012", ryo: "m-1030", miyuki: "m-0955", you: "m-0941", former: "m-1420" } as const;
 
 /** 外された人（森田 圭）の過去のメッセージがあるタイムライン。ステータスの表と合わせる。 */
@@ -655,8 +655,8 @@ const cardUser = (user: { id: string; name: string; handle: string }) => ({
   status: statuses[user.id],
 });
 
-/** カードの中身。名前・ロール・presence・ステータスはメンバーパネル（roomMembersWithPresence）とそろえる。 */
-export const profileCards = {
+/** カードとパネルの中身。名前・ロール・presence・ステータスはメンバーパネル（roomMembersWithPresence）とそろえる。 */
+export const profiles = {
   /** 他人（オーナー）。member の自分からは管理の入口が出ない。 */
   naoki: {
     kind: "member",
@@ -704,4 +704,4 @@ export const profileCards = {
   },
   /** 外された人。メッセージが持っている名前・handle・アバターだけ（決定 5）。 */
   former: { kind: "former", user: { id: users.kei.id, name: users.kei.name, handle: users.kei.handle } },
-} satisfies Record<string, ProfileCardView>;
+} satisfies Record<string, ProfileView>;

@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useRef, useState } from "react";
 
 import { AnchoredPanel } from "@/components/ui/anchored-panel";
 import { Avatar } from "@/components/ui/avatar";
@@ -18,12 +18,13 @@ import {
 import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
 import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
+import { useHoverIntent } from "@/lib/use-hover-intent";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 
 import { MessageBody } from "./message-body";
 import { MessageLinkCard } from "./message-link-card";
 import { MessageReactions } from "./message-reactions";
-import { ProfileCardPopup } from "./profile-card";
+import { ProfileHoverPopup } from "./profile-card";
 import type { MessageAttachmentView, MessageView } from "./types";
 import { StatusEmoji } from "./user-status";
 
@@ -87,16 +88,17 @@ type MessageItemProps = {
   onDelete?: () => void;
   editing?: MessageEditingView | null;
   /**
-   * 送信者のアバターか名前、または本文のメンションのチップを押した（プロフィールのカード。ADR 0043 / 0050）。
+   * 送信者のアバターか名前、または本文のメンションのチップを押した（右のプロフィールのパネルを開く。ADR 0043 / 0050）。
    * 渡さなければアバターと名前は押せない。
    */
   onOpenProfile?: (userId: string) => void;
-  /** プロフィールのカードをこの行から開いている。カードは送信者のアバターの横に出す（ADR 0050 決定 6）。 */
-  profileOpen?: boolean;
-  /** 開いたときに出すカードの中身（中身のデータを持つのは外側。ピッカーと同じ形）。 */
-  profileCard?: ReactNode;
-  /** カードの外を押した・Esc を押した。 */
-  onCloseProfile?: () => void;
+  /**
+   * 送信者のアバターか名前にポインタを乗せたときに出すカードの中身（ADR 0050 決定 6 の追記）。
+   * md 以上のマウスでだけ出す。作るのは開くときだけにしたいので、関数で受け取る。
+   */
+  profileHoverCard?: () => ReactNode;
+  /** ホバーのカードを固定で出す（story で状態を再現するため）。 */
+  forceProfileHover?: boolean;
   /**
    * リアクションの付け外し（ADR 0044）。渡さなければ、付いているリアクションを読むだけになる
    * （参加していない public ルームは投稿できないので付けられない。ADR 0044 決定 6）。
@@ -140,9 +142,8 @@ export function MessageItem({
   onDelete,
   editing = null,
   onOpenProfile,
-  profileOpen = false,
-  profileCard,
-  onCloseProfile,
+  profileHoverCard,
+  forceProfileHover = false,
   onToggleReaction,
   onTogglePicker,
   pickerOpen = false,
@@ -153,10 +154,29 @@ export function MessageItem({
   const { sender, status, deleted } = message;
   // ピッカーの置き場所の基準。行そのものを測って、画面に浮かせる位置を決める（ADR 0044）
   const rowRef = useRef<HTMLElement>(null);
-  // プロフィールのカードの基準。まとめて表示している行（アバターなし）では行そのものにする
+  // ホバーのカードの基準。乗せた方（アバターか名前）の横に出す
   const avatarRef = useRef<HTMLButtonElement>(null);
+  const nameRef = useRef<HTMLButtonElement>(null);
+  const [hoverAnchor, setHoverAnchor] = useState<"avatar" | "name">("avatar");
+  const hover = useHoverIntent();
+  function hoverBind(anchor: "avatar" | "name") {
+    return {
+      onPointerEnter: (event: { pointerType: string }) => {
+        setHoverAnchor(anchor);
+        hover.bind.onPointerEnter(event);
+      },
+      onPointerLeave: hover.bind.onPointerLeave,
+    };
+  }
+  function openProfile() {
+    // 押したら右のパネルが開くので、ホバーのカードは残さない
+    hover.close();
+    onOpenProfile?.(sender.id);
+  }
   // md 以上は画面に浮かせ、モバイルは下から出るシートにする。置き方が違うのでクラスでは書き分けられない
   const desktopPicker = useMediaQuery(DESKTOP_QUERY);
+  // ホバーのカードはポインタのある md 以上でだけ出す（モバイルは押せば全画面のパネルが開く）
+  const hoverCardShown = profileHoverCard !== undefined && desktopPicker && (hover.open || forceProfileHover);
   // 削除済みには操作の対象がなく、送信失敗には専用の操作（再送・削除）があるので、ホバーの操作を出さない
   const hasMenu = canEdit || canDelete || copyLink !== undefined;
   // リアクションは行が増減するだけで本文が変わらない（ADR 0044）。送信中・失敗・削除済みには付けられない
@@ -197,9 +217,9 @@ export function MessageItem({
             ref={avatarRef}
             type="button"
             aria-label={`${sender.name} のプロフィール`}
-            aria-expanded={profileOpen}
-            onClick={() => onOpenProfile(sender.id)}
-            className="mt-0.5 self-start rounded-full"
+            onClick={openProfile}
+            {...hoverBind("avatar")}
+            className="mt-0.5 cursor-pointer self-start rounded-full"
           >
             <Avatar id={sender.id} name={sender.name} imageUrl={sender.avatarUrl} size="message" />
           </button>
@@ -217,9 +237,11 @@ export function MessageItem({
               {onOpenProfile ? (
                 // 読み上げではアバターのボタンと同じ操作になるので、名前の方は Tab で止めない
                 <button
+                  ref={nameRef}
                   type="button"
                   tabIndex={-1}
-                  onClick={() => onOpenProfile(sender.id)}
+                  onClick={openProfile}
+                  {...hoverBind("name")}
                   className="cursor-pointer text-sm font-semibold text-text hover:underline"
                 >
                   {sender.name}
@@ -364,14 +386,14 @@ export function MessageItem({
         </div>
       )}
 
-      {profileOpen && profileCard && (
-        <ProfileCardPopup
-          anchorRef={message.grouped ? rowRef : avatarRef}
-          label="プロフィール"
-          onDismiss={onCloseProfile}
+      {hoverCardShown && (
+        <ProfileHoverPopup
+          anchorRef={hoverAnchor === "name" ? nameRef : avatarRef}
+          label={`${sender.name} のプロフィール`}
+          bind={hover.bind}
         >
-          {profileCard}
-        </ProfileCardPopup>
+          {profileHoverCard()}
+        </ProfileHoverPopup>
       )}
 
       {pickerOpen &&

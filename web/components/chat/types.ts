@@ -172,11 +172,12 @@ export type RoleLabel = "オーナー" | "管理者" | "メンバー";
 export type RoomMemberView = UserRef & { presence: PresenceView; roleLabel: RoleLabel };
 
 /**
- * プロフィールのカード（ADR 0050）。
+ * プロフィール（ADR 0050）。ホバーのカードと右のパネルが同じ値を受け取る（カードは email と管理の入口を使わない）。
  * - member: ワークスペースのメンバー。名前・ロール・presence・ステータスは手元の一覧から、email だけは 1 人分の API から埋める
  * - former: 一覧にいない人（外された人の過去のメッセージ）。メッセージが持っている名前・handle・アバターだけを出す（決定 5）
+ * - unknown: 一覧にもメッセージにも手がかりがない（外された人のパネルを URL から開き直した）。名前も出せない
  */
-export type ProfileCardView =
+export type ProfileView =
   | {
       kind: "member";
       user: UserRef & { handle: string };
@@ -191,4 +192,5 @@ export type ProfileCardView =
       /** ロールの変更とキックの入口。操作できる相手のときだけ（ADR 0029 の写し。決定 3）。 */
       manage?: { grantableRoles: WorkspaceRole[]; canRemove: boolean };
     }
-  | { kind: "former"; user: UserRef & { handle: string } };
+  | { kind: "former"; user: UserRef & { handle: string } }
+  | { kind: "unknown" };

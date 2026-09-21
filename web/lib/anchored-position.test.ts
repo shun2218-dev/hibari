@@ -68,7 +68,7 @@ describe("placeBeside", () => {
     expect(got).toEqual({ top: 200, left: 348, below: true });
   });
 
-  it("右に入らなければ、アンカーの左に開く（右端のメンバーパネル）", () => {
+  it("右に入らなければ、アンカーの左に開く", () => {
     const got = placeBeside({ top: 200, bottom: 240, left: 1000, right: 1260 }, card, viewport);
 
     expect(got.left).toBe(1000 - 8 - 320);
