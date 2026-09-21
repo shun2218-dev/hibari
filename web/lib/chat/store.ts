@@ -1476,6 +1476,15 @@ export function createChatStore(
       }
     },
 
+    /**
+     * プロフィールのパネルの email を取る（ADR 0050 決定 1）。**ストアには入れない。**
+     * email には変更のイベントが無いので、置いておくと WebSocket でも再接続の同期でも更新されない値が残る。
+     * パネルを開くたびに取り直す。失敗したら ApiError を投げる（外された人は 404）。
+     */
+    async getMemberEmail(workspaceId: string, targetUserId: string): Promise<string | null> {
+      return (await api.getMemberProfile(workspaceId, targetUserId)).email;
+    },
+
     async changeMemberRole(workspaceId: string, targetUserId: string, role: Role): Promise<void> {
       const member = await api.changeMemberRole(workspaceId, targetUserId, role);
       patchWorkspaceMembers(workspaceId, (list) => list.map((m) => (m.user.id === targetUserId ? member : m)));

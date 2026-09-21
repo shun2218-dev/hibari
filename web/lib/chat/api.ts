@@ -18,6 +18,7 @@ import type {
   MarkRoomReadRequest,
   Member,
   MemberList,
+  MemberProfile,
   Message,
   MessageLinks,
   MessageList,
@@ -76,6 +77,16 @@ export function createChatApi(request: Session["request"]) {
     /** 名前と招待ポリシーを変える（admin 以上。ADR 0006）。 */
     updateWorkspace: (workspaceId: string, body: UpdateWorkspaceRequest) =>
       request<Workspace>("PATCH", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`, body),
+
+    /**
+     * プロフィールのパネルの 1 人分（ADR 0050 決定 1）。email を返すのはこれだけ（検証済みのときだけ）。
+     * メンバーでない・外された人は 404。
+     */
+    getMemberProfile: (workspaceId: string, userId: string) =>
+      request<MemberProfile>(
+        "GET",
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
+      ),
 
     changeMemberRole: (workspaceId: string, userId: string, role: Role) =>
       request<Member>(

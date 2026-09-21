@@ -10,7 +10,16 @@ import { toRoomMemberView } from "@/lib/chat/views";
  * ルームのメンバーのパネル。開くたびに取り直す。
  * 開いている間の presence とメンバーの増減はイベントで反映する（参加・ワークスペースに入った人の情報はイベントにないので、増えたときは取り直す）。
  */
-export function RoomMembers({ roomId, onClose }: { roomId: string; onClose: () => void }) {
+export function RoomMembers({
+  roomId,
+  onClose,
+  onOpenProfile,
+}: {
+  roomId: string;
+  onClose: () => void;
+  /** 行を押した。右の枠がプロフィールのパネルに入れ替わる（「メンバーに戻る」で戻る。ADR 0050）。 */
+  onOpenProfile: (userId: string) => void;
+}) {
   const store = useChatStore();
   const members = useChatState((s) => s.roomMembers[roomId]);
 
@@ -24,5 +33,5 @@ export function RoomMembers({ roomId, onClose }: { roomId: string; onClose: () =
     () => (members?.members ?? []).map((member) => toRoomMemberView(member, avatarUrls)),
     [members, avatarUrls],
   );
-  return <MembersPanel members={views} onClose={onClose} />;
+  return <MembersPanel members={views} onClose={onClose} onOpenProfile={onOpenProfile} />;
 }

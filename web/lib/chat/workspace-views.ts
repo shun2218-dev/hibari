@@ -1,9 +1,10 @@
+import type { ProfileView } from "@/components/chat/types";
 import type { TransferCandidate } from "@/components/workspace/member-dialogs";
 import type { InviteRowView, MemberRowView, WorkspaceRole } from "@/components/workspace/types";
 import type { Invite, InvitePolicy, Member, Role } from "@/lib/api/types.gen";
 
 import { formatDayTime } from "./format";
-import { type UrlTable, memberPresence } from "./views";
+import { type UrlTable, memberPresence, statusView } from "./views";
 
 /**
  * ワークスペースの管理画面の表示用の変換（ADR 0018 / 0029）。
@@ -54,6 +55,71 @@ export function toMemberRowView(
       ? { kind: "menu", grantableRoles: grantableRoles(myRole), canRemove: true }
       : { kind: "locked", reason: MANAGE_LOCKED_REASON },
   };
+}
+
+/** プロフィールの email の状態（ADR 0050 決定 1 / 2）。 */
+export type ProfileEmail = Extract<ProfileView, { kind: "member" }>["email"];
+
+/**
+ * プロフィールのカードとパネルの表示（ADR 0050）。
+ *
+ * - 手元のメンバー一覧にいれば member。名前・ロール・presence・ステータスは一覧の値（イベントで最新になっている）、
+ *   email だけは 1 人分の API の結果を `email` で受け取る
+ * - 一覧にいなければ former。名前と handle はメッセージの送信者の値（`fallback`）を使う（決定 5）
+ * - どちらも無ければ unknown（外された人のパネルを URL から開き直した）
+ *
+ * ロールの変更と削除の入口は、管理画面と同じ写し（`toMemberRowView` の `manage`）で決める（決定 3。新しく書き写さない）。
+ */
+export function toProfileView(
+  member: Member | undefined,
+  {
+    userId,
+    myRole,
+    email = { state: "loading" },
+    fallback,
+    avatarUrls = {},
+    now = new Date(),
+    timeZone,
+  }: {
+    userId: string;
+    myRole: Role | undefined;
+    email?: ProfileEmail;
+    fallback?: { id: string; display_name: string; handle: string };
+    avatarUrls?: UrlTable;
+    now?: Date;
+    timeZone?: string;
+  },
+): ProfileView {
+  if (member) {
+    const manage = myRole ? toMemberRowView(member, { userId, myRole }).manage : undefined;
+    return {
+      kind: "member",
+      user: {
+        id: member.user.id,
+        name: member.user.display_name,
+        handle: member.user.handle,
+        avatarUrl: avatarUrls[member.user.id] ?? undefined,
+        status: statusView(member.status, now, timeZone),
+      },
+      presence: memberPresence(member),
+      role: member.role,
+      email,
+      isSelf: member.user.id === userId,
+      manage: manage?.kind === "menu" ? { grantableRoles: manage.grantableRoles, canRemove: manage.canRemove } : undefined,
+    };
+  }
+  if (fallback) {
+    return {
+      kind: "former",
+      user: {
+        id: fallback.id,
+        name: fallback.display_name,
+        handle: fallback.handle,
+        avatarUrl: avatarUrls[fallback.id] ?? undefined,
+      },
+    };
+  }
+  return { kind: "unknown" };
 }
 
 /** 譲渡先の候補。自分以外の全員（owner は 1 人しかいないので、残りは admin と member）。 */
