@@ -55,9 +55,19 @@ type messageResponse struct {
 	Mentions []mentionResponse `json:"mentions"`
 	// Reactions は付いた絵文字のリアクション（ADR 0044）。最初に付いた順で、削除済みのメッセージでは空配列。
 	Reactions []messageReactionResponse `json:"reactions"`
-	CreatedAt time.Time                 `json:"created_at"`
-	EditedAt  *time.Time        `json:"edited_at"`
-	DeletedAt *time.Time        `json:"deleted_at"`
+	// Pinned はピン留めされているときだけ入る。されていなければ null（ADR 0054 決定 2）。
+	// 見る人によらない値なので、WebSocket の配信でもそのまま載せる。
+	Pinned    *messagePinResponse `json:"pinned"`
+	CreatedAt time.Time           `json:"created_at"`
+	EditedAt  *time.Time          `json:"edited_at"`
+	DeletedAt *time.Time          `json:"deleted_at"`
+}
+
+// messagePinResponse はメッセージのピン留め（ADR 0054 決定 2）。
+type messagePinResponse struct {
+	// By はピン留めした人。ID だけにしないのは sender と同じ理由（抜けた人の名前も出せるように）。
+	By userProfileResponse `json:"by"`
+	At time.Time           `json:"at"`
 }
 
 // messageReactionResponse は 1 つの絵文字ぶんの集計（ADR 0044 決定 3）。
@@ -114,13 +124,20 @@ type systemEventResponse struct {
 	// OldName と NewName は room_renamed だけで入る。
 	OldName string `json:"old_name,omitzero"`
 	NewName string `json:"new_name,omitzero"`
+	// MessageID は message_pinned だけで入る。ピン留めした対象（ADR 0054 決定 3）。
+	// 対象が読めるか・削除されていないかは、クライアントが手元のメッセージで判断する（ここでは判定しない）。
+	MessageID string `json:"message_id,omitzero"`
 }
 
 func newSystemEventResponse(e *chat.SystemEvent) *systemEventResponse {
 	if e == nil {
 		return nil
 	}
-	return &systemEventResponse{Type: e.Type, OldName: e.OldName, NewName: e.NewName}
+	resp := &systemEventResponse{Type: e.Type, OldName: e.OldName, NewName: e.NewName}
+	if e.MessageID != nil {
+		resp.MessageID = e.MessageID.String()
+	}
+	return resp
 }
 
 func newMessageResponse(m chat.Message) messageResponse {
@@ -150,6 +167,9 @@ func newMessageResponse(m chat.Message) messageResponse {
 	}
 	if t := m.Thread; t != nil {
 		resp.Thread = &threadSummaryResponse{ReplyCount: t.ReplyCount, LastThreadSeq: t.LastThreadSeq, LastReplyAt: t.LastReplyAt}
+	}
+	if p := m.Pinned; p != nil {
+		resp.Pinned = &messagePinResponse{By: newUserProfileResponse(p.By), At: p.At}
 	}
 	return resp
 }
@@ -475,4 +495,63 @@ func (h *chatHandlers) addReaction(w http.ResponseWriter, r *http.Request) {
 // removeReaction は絵文字のリアクションを外す。付いていなくても 200（ADR 0044）。
 func (h *chatHandlers) removeReaction(w http.ResponseWriter, r *http.Request) {
 	h.changeReaction(w, r, false)
+}
+
+// pinMessage はメッセージをピン留めする。すでにピン留め済みでも 200（ADR 0054 決定 5）。
+func (h *chatHandlers) pinMessage(w http.ResponseWriter, r *http.Request) {
+	h.changePin(w, r, true)
+}
+
+// unpinMessage はピンを外す。ピン留めされていなくても 200（ADR 0054 決定 5）。
+func (h *chatHandlers) unpinMessage(w http.ResponseWriter, r *http.Request) {
+	h.changePin(w, r, false)
+}
+
+// changePin は PUT / DELETE の共通部分。リアクションと同じく、URL の形が「ピンがあること / ないこと」を表す（どちらも冪等）。
+func (h *chatHandlers) changePin(w http.ResponseWriter, r *http.Request, pin bool) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	messageID, err := pathID(r, "messageID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	act := h.svc.PinMessage
+	if !pin {
+		act = h.svc.UnpinMessage
+	}
+	msg, err := act(r.Context(), actorOf(r), roomID, messageID)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newMessageResponse(msg))
+}
+
+// pinListResponse はルームのピン留めの一覧（ADR 0054 決定 5）。上限が 100 件なのでカーソルを持たない。
+type pinListResponse struct {
+	// Messages はピン留めした時刻の新しい順。
+	Messages []messageResponse `json:"messages"`
+}
+
+// listPins はルームのピン留めを返す。読める人なら誰でも（参加していない public も）。
+func (h *chatHandlers) listPins(w http.ResponseWriter, r *http.Request) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	msgs, err := h.svc.ListPins(r.Context(), actorOf(r), roomID)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	resp := pinListResponse{Messages: make([]messageResponse, len(msgs))}
+	for i, m := range msgs {
+		resp.Messages[i] = newMessageResponse(m)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

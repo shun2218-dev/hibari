@@ -31,7 +31,7 @@ func (s *Service) writeSystemMessage(
 		return Event{}, fmt.Errorf("allocate system message seq: %w", err)
 	}
 	var data []byte
-	if event.OldName != "" || event.NewName != "" {
+	if event.OldName != "" || event.NewName != "" || event.MessageID != nil {
 		if data, err = json.Marshal(event); err != nil {
 			return Event{}, fmt.Errorf("marshal system data: %w", err)
 		}

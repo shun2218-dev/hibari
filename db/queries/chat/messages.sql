@@ -87,10 +87,13 @@ UPDATE messages
 
 -- name: SoftDeleteMessage :exec
 -- 論理削除。行と seq は残し、本文だけを消す（ADR 0002 / 0004）。
+-- ピンも一緒に外す（ADR 0054 決定 4）。削除済みが 100 件の枠を使い続けないように、同じ UPDATE（同じ change_seq）で済ませる。
 UPDATE messages
    SET body       = '',
        deleted_at = sqlc.arg(now)::timestamptz,
-       change_seq = sqlc.arg(change_seq)
+       change_seq = sqlc.arg(change_seq),
+       pinned_at  = NULL,
+       pinned_by  = NULL
  WHERE id = sqlc.arg(id);
 
 -- name: GetMessageView :one
@@ -98,9 +101,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.room_id = sqlc.arg(room_id)
    AND m.id = sqlc.arg(id);
 
@@ -114,9 +119,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.room_id = sqlc.arg(room_id)
    AND m.in_channel
    AND m.seq < sqlc.arg(before_seq)
@@ -130,9 +137,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.room_id = sqlc.arg(room_id)
    AND m.in_channel
    AND m.seq > sqlc.arg(after_seq)
@@ -147,9 +156,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.room_id = sqlc.arg(room_id)
    AND m.change_seq > sqlc.arg(after_change_seq)
  ORDER BY m.change_seq
@@ -162,9 +173,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.thread_root_id = sqlc.arg(thread_root_id)
    AND m.seq < sqlc.arg(before_seq)
  ORDER BY m.seq DESC
@@ -176,9 +189,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.thread_root_id = sqlc.arg(thread_root_id)
    AND m.seq > sqlc.arg(after_seq)
  ORDER BY m.seq

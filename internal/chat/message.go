@@ -47,6 +47,8 @@ const (
 	SystemMemberLeft    SystemEventType = "member_left"
 	SystemMemberRemoved SystemEventType = "member_removed"
 	SystemRoomRenamed   SystemEventType = "room_renamed"
+	// SystemMessagePinned はメッセージをピン留めした（ADR 0054 決定 3）。主語はピン留めした人。
+	SystemMessagePinned SystemEventType = "message_pinned"
 )
 
 // SystemEvent はシステムメッセージの中身。主語は Message.Sender（ADR 0033）。
@@ -55,6 +57,15 @@ type SystemEvent struct {
 	// OldName と NewName は room_renamed だけで入る。
 	OldName string `json:"old_name,omitzero"`
 	NewName string `json:"new_name,omitzero"`
+	// MessageID は message_pinned だけで入る。ピン留めした対象（ADR 0054 決定 3）。
+	MessageID *ulid.ULID `json:"message_id,omitzero"`
+}
+
+// MessagePin はメッセージのピン留め（ADR 0054 決定 2）。見る人によらない値なので、WebSocket でもそのまま配れる。
+type MessagePin struct {
+	// By はピン留めした人。ID だけにしないのは sender と同じ理由（ワークスペースを抜けた人の名前も出せるように）。
+	By UserProfile
+	At time.Time
 }
 
 // Message はルームのメッセージ。
@@ -89,6 +100,8 @@ type Message struct {
 	Mentions []Mention
 	// Reactions は付いた絵文字のリアクション（ADR 0044）。最初に付いた順。削除済みのメッセージでは空。
 	Reactions []MessageReaction
+	// Pinned はピン留めされているときだけ入る（ADR 0054）。削除するとピンも外れるので、削除済みでは常に nil。
+	Pinned    *MessagePin
 	CreatedAt time.Time
 	EditedAt  *time.Time
 	DeletedAt *time.Time
@@ -129,6 +142,12 @@ func toMessage(r messageView) Message {
 			if err := json.Unmarshal(r.SystemData, m.System); err != nil {
 				m.System = &SystemEvent{Type: SystemEventType(*r.SystemType)}
 			}
+		}
+	}
+	if r.PinnedAt != nil && r.PinnedBy != nil && r.PinnedByHandle != nil && r.PinnedByDisplayName != nil {
+		m.Pinned = &MessagePin{
+			By: UserProfile{ID: *r.PinnedBy, Handle: *r.PinnedByHandle, DisplayName: *r.PinnedByDisplayName},
+			At: *r.PinnedAt,
 		}
 	}
 	m.ThreadRootID = r.ThreadRootID

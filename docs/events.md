@@ -105,6 +105,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
   "thread_root_id": null, "thread_seq": null, "also_in_channel": false, "thread": null, "attachments": [],
   "mentions": [{ "kind": "user", "user": { "id": "01J8...", "handle": "kohaku", "display_name": "kohaku" } }],
   "reactions": [{ "emoji": "👍", "count": 3, "users": ["01J8...", "01J8...", "01J8..."] }],
+  "pinned": null,
   "created_at": "2026-09-14T12:00:00Z", "edited_at": null, "deleted_at": null
 }
 ```
@@ -129,6 +130,19 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 
 **`me`（自分が付けたか）はイベントに載らない。** `mentions` の「自分宛てか」と同じ理由で、受け取る人ごとの値を入れられない。
 REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）にだけ `me` が入る。
+
+#### ピン留め（`pinned`。ADR 0054）
+
+ピン留めの付け外しにも**専用のイベントを作らない**。リアクションと同じく、そのメッセージの `change_seq` が 1 つ進み、
+`message.updated` として届く（再接続の差分にもそのまま乗る）。`pinned` は見る人によらない値なので、イベントにもそのまま載る。
+
+```json
+"pinned": { "by": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" }, "at": "2026-09-22T01:00:00Z" }
+```
+
+**ピン留めしたときだけ**、チャンネルにログ（`kind: system`、`system.type: message_pinned`、`system.message_id` に対象の ID）が
+`message.created` で続けて届く。番号は「ピン留めしたメッセージの更新 → ログ」の順。外したときと、DM では残さない。
+メッセージを削除すると、ピンも一緒に外れる（`message.deleted` の tombstone の `pinned` は `null`）。
 
 #### 添付ファイルだけの削除（`attachments`。ADR 0045）
 

@@ -168,6 +168,13 @@ func CanWriteRoom(kind RoomKind, a RoomActor) bool {
 	return CanReadRoom(kind, a) && a.IsRoomMember
 }
 
+// CanPinMessage はメッセージをピン留めできる・外せるかを返す（ADR 0054 決定 4）。
+// いまは投稿できる人なら誰でも（Slack の既定と同じ）。判定を別の関数にしておくのは、
+// あとで「admin 以上だけ」に絞るときに、呼ぶ側を直さずに済むようにするため（CanMentionAll と同じ）。
+func CanPinMessage(kind RoomKind, a RoomActor) bool {
+	return CanWriteRoom(kind, a)
+}
+
 // CanJoinRoom は自分でルームに参加できるかを返す。自分で参加できるのは public だけ。
 func CanJoinRoom(kind RoomKind, a RoomActor) bool {
 	return kind == RoomPublic && a.Role.IsMember()

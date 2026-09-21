@@ -21,6 +21,7 @@ erDiagram
   rooms ||--o{ room_members : "含む"
   rooms ||--o{ messages : "含む"
   users ||--o{ messages : "投稿"
+  users |o--o{ messages : "ピン留め"
   messages |o--o{ messages : "スレッドの親"
   messages ||--o{ thread_members : "参加者"
   room_members ||--o{ thread_members : "スレッドに参加"
@@ -162,8 +163,8 @@ erDiagram
     uuid client_msg_id "UNIQUE(room_id, sender_id, これ)。冪等性"
     bigint user_seq "その行までのチャンネルの人の発言の数（ADR 0033）"
     text kind "user / system（ADR 0033）"
-    text system_type "system のときだけ。room_created など"
-    jsonb system_data "system のときだけ。room_renamed の old_name / new_name"
+    text system_type "system のときだけ。room_created / message_pinned など"
+    jsonb system_data "system のときだけ。room_renamed の old_name / new_name、message_pinned の message_id"
     text body "削除時は空にする"
     uuid thread_root_id FK "スレッドの親。(room_id, thread_root_id) の複合 FK。チャンネルの投稿なら null（ADR 0036）"
     bigint thread_seq "スレッドの中で何番目の返信か。UNIQUE(thread_root_id, これ)。返信だけ"
@@ -174,6 +175,8 @@ erDiagram
     timestamptz created_at "表示用。ソートには使わない"
     timestamptz edited_at
     timestamptz deleted_at "論理削除。tombstone を配信する"
+    timestamptz pinned_at "ピン留めした時刻。INDEX(room_id, これ DESC) WHERE NOT NULL。ルームごとに 100 件まで（ADR 0054）"
+    uuid pinned_by FK "ピン留めした人。pinned_at と一緒に NULL。削除で両方 NULL に戻る"
   }
 
   thread_members {
