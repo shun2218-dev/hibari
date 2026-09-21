@@ -35,7 +35,7 @@ const sizeClass: Record<AvatarSize, string> = {
   lg: "size-10 text-lg",
   xl: "size-14 text-xl",
   message: "size-8 text-sm md:size-10 md:text-lg",
-  photo: "aspect-square w-full text-2xl",
+  photo: "aspect-square w-full text-avatar",
 };
 
 type AvatarProps = {

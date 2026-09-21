@@ -64,7 +64,7 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 | `--font-sans` | Instrument Sans, Zen Kaku Gothic New, system-ui | `font-sans` | 既定。欧文は Instrument Sans、和文は Zen Kaku Gothic New で描く。読み込みは `web/app/fonts.ts`（next/font） |
 | `--font-mono` | JetBrains Mono | `font-mono` | 時刻、ハンドル（`@naoki`）、招待リンク、メールアドレス、ブランド名の横の `chat`。桁をそろえて視線を上下させないため |
 
-### サイズ（7 段階）
+### サイズ（7 段階 + 写真の頭文字）
 
 | トークン | 値 | Tailwind | 用途 |
 |---|---|---|---|
@@ -75,6 +75,7 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 | `--text-lg` | 15px | `text-lg` | **メッセージ本文、入力欄、主ボタン、ヘッダーのチャンネル名**。body の既定 |
 | `--text-xl` | 20px | `text-xl` | 画面・カードの見出し、サイドバーのロゴ |
 | `--text-2xl` | 26px | `text-2xl` | 認証画面のロゴ |
+| `--text-avatar` | 112px | `text-avatar` | **段階の外**。プロフィールのパネルの大きな写真に出す、画像のない人の頭文字だけ（ADR 0050） |
 
 `text-base` が 14px なのは、アプリの UI 部品の標準を 14px、読ませる本文を 15px（`text-lg`）として分けているため。Tailwind の既定（base = 16px）とは違う。
 

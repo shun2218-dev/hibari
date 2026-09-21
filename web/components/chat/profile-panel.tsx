@@ -127,7 +127,7 @@ export function ProfilePanel({
                 <div className="mt-2 flex h-6 items-center gap-2">
                   <MailIcon className="size-4 shrink-0 text-text-muted" />
                   {member.email.state === "ready" ? (
-                    <span className="truncate text-sm text-text">{member.email.value}</span>
+                    <span className="truncate font-mono text-sm text-text">{member.email.value}</span>
                   ) : (
                     // 応答を待つ間は、行の高さを取ったまま薄い帯を出す（開いた直後に並びが揺れない。決定 1）
                     <span role="status" aria-label="メールアドレスを読み込み中" className="h-4 w-44 rounded-sm bg-surface-muted" />
