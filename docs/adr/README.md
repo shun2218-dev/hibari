@@ -60,6 +60,7 @@
 | [0051](0051-message-formatting.md) | 本文の書式（Phase 6.10a。mrkdwn 寄りの記法をテキストのまま保存し、Web で解釈して React の要素で描く） | 採用 |
 | [0052](0052-rich-text-composer.md) | リッチテキストの入力欄（Phase 6.10b。Lexical を使い、読み書きは ADR 0051 の解釈と自前の書き出しで行う） | 採用 |
 | [0053](0053-require-verified-email.md) | 未検証の email ではチャットを使えないようにする（Phase 6.10.5。検証の状態はアクセストークンで渡し、メールは SMTP で非同期に送る） | 採用 |
+| [0054](0054-pins-and-saved-messages.md) | ピン留めと保存（Phase 6.12。ピン留めはメッセージの change_seq、保存は本人ごとの change_seq で同期する） | 採用 |
 
 ## テンプレート
 
