@@ -460,6 +460,7 @@ ADR 0049 のとおり、既存の部品とトークンのまま足した（新�
 | ステータスの絵文字のピッカー | `chat/presence/status-dialog-picker.png` | — |
 | ステータスを設定（日時を選択） | `chat/presence/status-dialog-custom.png` | 同上（`expires_at` は絶対の時刻） |
 | ステータスを設定（カレンダー） | `chat/presence/status-dialog-calendar.png` | — |
+| ステータスを設定（時刻の一覧） | `chat/presence/status-dialog-time.png` | — |
 | ステータスを設定（モバイル） | `chat/presence/mobile-status-dialog.png` | — |
 | メンバーのシート（モバイル） | `chat/presence/mobile-away-dots.png` | — |
 
@@ -490,6 +491,7 @@ ADR 0049 のとおり、既存の部品とトークンのまま足した（新�
   **「日時を選択」を選ぶと、日付と時刻のボタンが下に出る**。押すと**自前のカレンダー**と 30 分刻みの時刻の一覧が開く。
   ブラウザ標準の `<input type="date" / "time">` は使わない（見た目がブラウザと OS のもので、トークンに従わないため）。
   カレンダーは `components/ui/calendar.tsx`。ピン留めの期限（6.12）や検索の期間（6.16）でも使い回す。
+  **時刻も自由入力ではなく 30 分刻みの一覧**（Slack と同じ刻み）。開いたときは、選んでいる時刻が見える位置から出す。
 - **いつ消えるかは、ステータスのホバーで見せる**（「休憩中 · 今日 17:00 まで」）。Slack と同じ。
   メンバーパネルでは、ロールと文言の横にそのまま出す。
 - **よく使うものは 5 つ**（会議中 / 移動中 / 食事中 / 集中しています / 休暇中）。押すと絵文字と文言がそのまま入る。

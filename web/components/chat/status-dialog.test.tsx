@@ -101,6 +101,7 @@ describe("StatusDialog（ADR 0049）", () => {
       />,
     );
 
+    // 一覧は選んでいる時刻が見える位置から始める（jsdom には scrollIntoView が無いので置き換える）
     expect(screen.queryByRole("radio", { name: "16:30" })).not.toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "17:30" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "17:30" }));

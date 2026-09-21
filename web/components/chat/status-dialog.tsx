@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 
 import { AnchoredPanel } from "@/components/ui/anchored-panel";
 import { Calendar } from "@/components/ui/calendar";
@@ -106,6 +106,41 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
 // 日付・時刻を開くボタン。入力欄と同じ高さ・枠にして、並べたときに段差が出ないようにする。
 const pickerButtonClass =
   "flex h-11 cursor-pointer items-center rounded-md border border-border bg-surface px-3 text-lg text-text hover:bg-surface-muted";
+
+/**
+ * 30 分刻みの時刻の一覧。開いたときに、選んでいる時刻が見える位置まで送る
+ * （48 個あるので、いつも 00:00 から始まると選び直すたびにスクロールが要る）。
+ */
+function TimeList({ times, value, onSelect }: { times: string[]; value?: string; onSelect: (time: string) => void }) {
+  const selected = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // jsdom には scrollIntoView が無いので、あるときだけ呼ぶ（無くても一覧は出る）
+    selected.current?.scrollIntoView?.({ block: "center" });
+  }, []);
+
+  return (
+    // 一覧から 1 つ選ぶので、押せる要素はラジオにする（button に aria-selected は付けられない）
+    <ul role="radiogroup" aria-label="削除する時刻" className="max-h-64 overflow-y-auto p-1.5">
+      {times.map((time) => (
+        <li key={time}>
+          <button
+            ref={time === value ? selected : undefined}
+            type="button"
+            role="radio"
+            aria-checked={time === value}
+            onClick={() => onSelect(time)}
+            className={cx(
+              "flex h-9 w-full cursor-pointer items-center rounded-sm px-2.5 text-left text-base",
+              time === value ? "bg-primary-subtle font-semibold text-primary" : "text-text hover:bg-surface-muted",
+            )}
+          >
+            {time}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /**
  * カスタムステータスを設定するダイアログ（ADR 0049）。文言と選択肢は Slack に合わせる。
@@ -308,27 +343,13 @@ export function StatusDialog({
             align="start"
             label="時刻を選ぶ"
             onDismiss={() => onToggleCustomPicker?.("time")}
-            className="max-h-64 w-32 overflow-y-auto rounded-md border border-border bg-surface p-1.5 shadow-overlay"
+            className="w-32 rounded-md border border-border bg-surface shadow-overlay"
           >
-            {/* 一覧から 1 つ選ぶので、押せる要素はラジオにする（button に aria-selected は付けられない） */}
-            <ul role="radiogroup" aria-label="削除する時刻">
-              {times.map((time) => (
-                <li key={time}>
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={time === custom?.time}
-                    onClick={() => onChangeCustom?.({ date: custom?.date ?? "", time })}
-                    className={cx(
-                      "flex h-9 w-full cursor-pointer items-center rounded-sm px-2.5 text-left text-base",
-                      time === custom?.time ? "bg-primary-subtle font-semibold text-primary" : "text-text hover:bg-surface-muted",
-                    )}
-                  >
-                    {time}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <TimeList
+              times={times}
+              value={custom?.time}
+              onSelect={(time) => onChangeCustom?.({ date: custom?.date ?? "", time })}
+            />
           </AnchoredPanel>
         )}
       </div>

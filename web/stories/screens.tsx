@@ -166,7 +166,7 @@ type ChatOptions = {
    * - status-dialog: ステータスを設定するダイアログ（`picker` は絵文字のピッカーを開いたところ）
    */
   presence?: boolean;
-  statusDialog?: "empty" | "filled" | "picker" | "custom" | "calendar";
+  statusDialog?: "empty" | "filled" | "picker" | "custom" | "calendar" | "time";
   /**
    * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
@@ -380,13 +380,17 @@ export function chat({
           emoji={statusDialog === "empty" ? undefined : myStatus.emoji}
           text={statusDialog === "empty" ? "" : (myStatus.text ?? "")}
           expiry={
-            statusDialog === "empty" ? "none" : statusDialog === "custom" || statusDialog === "calendar" ? "custom" : "today"
+            statusDialog === "empty"
+              ? "none"
+              : statusDialog === "custom" || statusDialog === "calendar" || statusDialog === "time"
+                ? "custom"
+                : "today"
           }
           custom={{ date: "2026-09-25", time: "17:00" }}
           calendarMonth="2026-09"
           today="2026-09-21"
           minTime="11:00"
-          openPicker={statusDialog === "calendar" ? "date" : undefined}
+          openPicker={statusDialog === "calendar" ? "date" : statusDialog === "time" ? "time" : undefined}
           pickerOpen={statusDialog === "picker"}
           canClear={statusDialog !== "empty"}
           theme={dark ? "dark" : "light"}
