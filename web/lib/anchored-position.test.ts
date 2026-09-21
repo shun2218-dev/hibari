@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { placePanel } from "./anchored-position";
+import { placeBeside, placePanel } from "./anchored-position";
 
 const viewport = { width: 1280, height: 800 };
 const panel = { width: 352, height: 440 };
@@ -56,5 +56,34 @@ describe("placePanel", () => {
     const got = placePanel({ top: 100, bottom: 140, left: 1200, right: 1244 }, panel, viewport, "start");
 
     expect(got.left).toBe(1280 - 8 - 352);
+  });
+});
+
+describe("placeBeside", () => {
+  const card = { width: 320, height: 360 };
+
+  it("右に入るときは、アンカーの右に上端をそろえて開く", () => {
+    const got = placeBeside({ top: 200, bottom: 240, left: 300, right: 340 }, card, viewport);
+
+    expect(got).toEqual({ top: 200, left: 348, below: true });
+  });
+
+  it("右に入らなければ、アンカーの左に開く（右端のメンバーパネル）", () => {
+    const got = placeBeside({ top: 200, bottom: 240, left: 1000, right: 1260 }, card, viewport);
+
+    expect(got.left).toBe(1000 - 8 - 320);
+  });
+
+  it("下からはみ出すときは、画面の中まで持ち上げる", () => {
+    const got = placeBeside({ top: 700, bottom: 740, left: 300, right: 340 }, card, viewport);
+
+    expect(got.top).toBe(800 - 8 - 360);
+    expect(got.below).toBe(false);
+  });
+
+  it("左右どちらにも入らなければ、画面の左端に寄せる", () => {
+    const got = placeBeside({ top: 200, bottom: 240, left: 100, right: 1200 }, card, viewport);
+
+    expect(got.left).toBe(8);
   });
 });

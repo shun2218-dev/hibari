@@ -25,6 +25,7 @@ import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import { MembersPanel } from "@/components/chat/members-panel";
+import { ProfileCard } from "@/components/chat/profile-card";
 import { RoomHeader } from "@/components/chat/room-header";
 import { RoomSettingsDialog } from "@/components/chat/room-dialogs";
 import { Sidebar } from "@/components/chat/sidebar";
@@ -73,6 +74,9 @@ import {
   reactionPickerKey,
   timelineWithReactions,
   myStatus,
+  profileCards,
+  profileKeys,
+  timelineWithFormerMember,
   roomMembersWithPresence,
   roomsWithStatus,
   timelineWithStatus,
@@ -168,11 +172,46 @@ type ChatOptions = {
   presence?: boolean;
   statusDialog?: "empty" | "filled" | "picker" | "custom" | "calendar" | "time";
   /**
+   * プロフィールのカード（ADR 0050）。どれもタイムラインのアバターから開いたところ（members はメンバーパネルの行から）。
+   * - other: 他人（管理の入口なし） / menu: その 3 点メニュー
+   * - manage: 管理者から見た member の 3 点メニュー（ロールの変更と削除）
+   * - self: 自分 / loading: email の応答待ち / unverified: email が未検証
+   * - former: 外された人の縮めたカード / members: メンバーパネルの行から開いたところ
+   */
+  profile?: "other" | "menu" | "manage" | "self" | "loading" | "unverified" | "former" | "members";
+  /**
    * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
    */
   dark?: boolean;
 };
+
+/** カードを開くメッセージと、カードの中身。 */
+function profileCardContent(profile: NonNullable<ChatOptions["profile"]>) {
+  const open = (key: string, data: ComponentProps<typeof ProfileCard>["profile"], menuOpen = false) => ({
+    key,
+    userId: data.user.id,
+    node: <ProfileCard profile={data} menuOpen={menuOpen} />,
+  });
+  switch (profile) {
+    case "other":
+      return open(profileKeys.naoki, profileCards.naoki);
+    case "menu":
+      return open(profileKeys.naoki, profileCards.naoki, true);
+    case "manage":
+      return open(profileKeys.ryo, profileCards.ryo, true);
+    case "self":
+      return open(profileKeys.you, profileCards.you);
+    case "loading":
+      return open(profileKeys.miyuki, profileCards.miyukiLoading);
+    case "unverified":
+      return open(profileKeys.miyuki, profileCards.miyukiUnverified);
+    case "former":
+      return open(profileKeys.former, profileCards.former);
+    case "members":
+      return open("", profileCards.naoki);
+  }
+}
 
 /** スレッドのパネルに出す親と返信。 */
 function threadPanelContent(thread: NonNullable<ChatOptions["thread"]>) {
@@ -225,11 +264,15 @@ export function chat({
   messageAttachments,
   presence,
   statusDialog,
+  profile,
   dark,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
   const roomRemoved = body === "removed-room";
   const threadContent = thread ? threadPanelContent(thread) : undefined;
+  const card = profile ? profileCardContent(profile) : undefined;
+  // カードはステータスの出ている画面の上に開く（名前の横の絵文字とカードの中身をそろえて見せる）
+  const withStatus = presence || profile !== undefined;
   return (
     <>
       <ChatLayout
@@ -274,7 +317,12 @@ export function chat({
         }
         panel={
           members ? (
-            <MembersPanel members={presence ? roomMembersWithPresence : roomMembers} />
+            <MembersPanel
+              members={withStatus ? roomMembersWithPresence : roomMembers}
+              onOpenProfile={profile ? noop : undefined}
+              openProfileId={profile === "members" ? card?.userId : undefined}
+              profileCard={profile === "members" ? card?.node : undefined}
+            />
           ) : threadContent ? (
             <ThreadPanel
               room={{ kind: selectedRoom.kind, name: selectedRoom.name }}
@@ -309,7 +357,9 @@ export function chat({
         {body === "timeline" && !threads && (
           <Timeline
             items={
-              presence
+              profile === "former"
+                ? timelineWithFormerMember
+                : withStatus
                 ? timelineWithStatus
                 : messageAttachments
                 ? timelineWithImages
@@ -340,6 +390,9 @@ export function chat({
               reactions === "picker" ? reactionPickerKey : reactions === "picker-above" ? lastMessageKey : undefined
             }
             reactionPicker={<EmojiPicker onPick={noop} theme={dark ? "dark" : "light"} />}
+            onOpenProfile={profile ? noop : undefined}
+            openProfileKey={profile !== "members" ? card?.key : undefined}
+            profileCard={profile !== "members" ? card?.node : undefined}
             hoveredReaction={reactions === "names" ? hoveredReaction : undefined}
             onReply={noop}
             onOpenImage={noop}

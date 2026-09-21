@@ -53,3 +53,27 @@ export function placePanel(
   const top = fitsBelow ? below : anchor.bottom - OFFSET - panel.height;
   return { top: Math.max(MARGIN, Math.min(top, Math.max(MARGIN, maxTop))), left, below: fitsBelow };
 }
+
+/** アンカーの横に出すときの、アンカーとの間隔。 */
+const BESIDE_GAP = 8;
+
+/**
+ * パネルを、アンカーの**横**に開く（プロフィールのカード。ADR 0050 決定 6）。
+ *
+ * 押したアバターや名前を隠さないよう、行の上には重ねない。右に入れば右、入らなければ左に出す
+ * （右端のメンバーパネルから開いたときは、パネルの左に出る）。
+ * 縦はアンカーの上端にそろえ、下からはみ出すときは画面の中まで持ち上げる。
+ */
+export function placeBeside(
+  anchor: AnchorRect,
+  panel: { width: number; height: number },
+  viewport: { width: number; height: number },
+): PanelPlacement {
+  const maxLeft = viewport.width - MARGIN - panel.width;
+  const right = anchor.right + BESIDE_GAP;
+  const left = right <= maxLeft ? right : Math.max(MARGIN, anchor.left - BESIDE_GAP - panel.width);
+
+  const maxTop = viewport.height - MARGIN - panel.height;
+  const top = Math.max(MARGIN, Math.min(anchor.top, maxTop));
+  return { top, left, below: top >= anchor.top };
+}

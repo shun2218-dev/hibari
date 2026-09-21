@@ -30,7 +30,7 @@ const screens = compose(import.meta.glob("./**/*.stories.tsx", { eager: true }))
 const parts = compose(import.meta.glob("../components/**/*.stories.tsx", { eager: true }));
 
 /** 絞り込みに出すフェーズ。新しいフェーズの画面を足したら、ここにも足す。 */
-const phases = ["1.5", "6-1", "6-2", "6", "6.4", "6.5", "6.6", "6.7", "6.7.5", "6.8", "6.11", "6.13"];
+const phases = ["1.5", "6-1", "6-2", "6", "6.4", "6.5", "6.6", "6.7", "6.7.5", "6.8", "6.9", "6.11", "6.13"];
 
 /**
  * story の id を PNG のパスにする（`chat-thread--panel-empty` → `chat/thread/panel-empty`）。

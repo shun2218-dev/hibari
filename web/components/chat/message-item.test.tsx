@@ -512,3 +512,32 @@ describe("MessageItem の添付ファイル（ADR 0045）", () => {
     expect(screen.queryByRole("button", { name: "ファイルの操作" })).not.toBeInTheDocument();
   });
 });
+
+describe("MessageItem のプロフィールのカード（ADR 0050）", () => {
+  it("送信者のアバターと名前から、送信者のカードを開く", async () => {
+    const onOpenProfile = vi.fn();
+    render(<MessageItem message={message()} onOpenProfile={onOpenProfile} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "佐藤 直樹 のプロフィール" }));
+    await userEvent.click(screen.getByRole("button", { name: "佐藤 直樹" }));
+    expect(onOpenProfile).toHaveBeenNthCalledWith(1, "01J8ZH5K000000000000000002");
+    expect(onOpenProfile).toHaveBeenNthCalledWith(2, "01J8ZH5K000000000000000002");
+  });
+
+  it("開いているときだけ、渡した中身をカードとして出す", () => {
+    const { rerender } = render(
+      <MessageItem message={message()} onOpenProfile={vi.fn()} profileCard={<p>カードの中身</p>} />,
+    );
+    expect(screen.queryByRole("dialog", { name: "プロフィール" })).not.toBeInTheDocument();
+
+    rerender(<MessageItem message={message()} onOpenProfile={vi.fn()} profileOpen profileCard={<p>カードの中身</p>} />);
+    expect(screen.getByRole("dialog", { name: "プロフィール" })).toHaveTextContent("カードの中身");
+    expect(screen.getByRole("button", { name: "佐藤 直樹 のプロフィール" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("開く先を渡さなければ、アバターと名前は押せない", () => {
+    render(<MessageItem message={message()} />);
+
+    expect(screen.queryByRole("button", { name: /佐藤 直樹/ })).not.toBeInTheDocument();
+  });
+});

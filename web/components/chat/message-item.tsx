@@ -23,6 +23,7 @@ import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 import { MessageBody } from "./message-body";
 import { MessageLinkCard } from "./message-link-card";
 import { MessageReactions } from "./message-reactions";
+import { ProfileCardPopup } from "./profile-card";
 import type { MessageAttachmentView, MessageView } from "./types";
 import { StatusEmoji } from "./user-status";
 
@@ -85,8 +86,17 @@ type MessageItemProps = {
   onEdit?: () => void;
   onDelete?: () => void;
   editing?: MessageEditingView | null;
-  /** 本文のメンションのチップを押した（Phase 6.9 のプロフィールのカード。ADR 0043）。 */
+  /**
+   * 送信者のアバターか名前、または本文のメンションのチップを押した（プロフィールのカード。ADR 0043 / 0050）。
+   * 渡さなければアバターと名前は押せない。
+   */
   onOpenProfile?: (userId: string) => void;
+  /** プロフィールのカードをこの行から開いている。カードは送信者のアバターの横に出す（ADR 0050 決定 6）。 */
+  profileOpen?: boolean;
+  /** 開いたときに出すカードの中身（中身のデータを持つのは外側。ピッカーと同じ形）。 */
+  profileCard?: ReactNode;
+  /** カードの外を押した・Esc を押した。 */
+  onCloseProfile?: () => void;
   /**
    * リアクションの付け外し（ADR 0044）。渡さなければ、付いているリアクションを読むだけになる
    * （参加していない public ルームは投稿できないので付けられない。ADR 0044 決定 6）。
@@ -130,6 +140,9 @@ export function MessageItem({
   onDelete,
   editing = null,
   onOpenProfile,
+  profileOpen = false,
+  profileCard,
+  onCloseProfile,
   onToggleReaction,
   onTogglePicker,
   pickerOpen = false,
@@ -140,6 +153,8 @@ export function MessageItem({
   const { sender, status, deleted } = message;
   // ピッカーの置き場所の基準。行そのものを測って、画面に浮かせる位置を決める（ADR 0044）
   const rowRef = useRef<HTMLElement>(null);
+  // プロフィールのカードの基準。まとめて表示している行（アバターなし）では行そのものにする
+  const avatarRef = useRef<HTMLButtonElement>(null);
   // md 以上は画面に浮かせ、モバイルは下から出るシートにする。置き方が違うのでクラスでは書き分けられない
   const desktopPicker = useMediaQuery(DESKTOP_QUERY);
   // 削除済みには操作の対象がなく、送信失敗には専用の操作（再送・削除）があるので、ホバーの操作を出さない
@@ -177,7 +192,20 @@ export function MessageItem({
       {message.grouped ? (
         <span aria-hidden className="w-8 shrink-0 md:w-10" />
       ) : (
-        <Avatar id={sender.id} name={sender.name} imageUrl={sender.avatarUrl} size="message" className="mt-0.5" />
+        onOpenProfile ? (
+          <button
+            ref={avatarRef}
+            type="button"
+            aria-label={`${sender.name} のプロフィール`}
+            aria-expanded={profileOpen}
+            onClick={() => onOpenProfile(sender.id)}
+            className="mt-0.5 self-start rounded-full"
+          >
+            <Avatar id={sender.id} name={sender.name} imageUrl={sender.avatarUrl} size="message" />
+          </button>
+        ) : (
+          <Avatar id={sender.id} name={sender.name} imageUrl={sender.avatarUrl} size="message" className="mt-0.5" />
+        )
       )}
 
       <div className="min-w-0 flex-1">
@@ -186,7 +214,19 @@ export function MessageItem({
             {/* カスタムステータスは絵文字だけ（ADR 0049 決定 10）。文言はホバーで読める。
                 名前のすぐ横に置きたいので、時刻との間隔（gap-2）より狭いまとまりにする */}
             <span className="flex items-baseline gap-1">
-              <span className="text-sm font-semibold text-text">{sender.name}</span>
+              {onOpenProfile ? (
+                // 読み上げではアバターのボタンと同じ操作になるので、名前の方は Tab で止めない
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => onOpenProfile(sender.id)}
+                  className="cursor-pointer text-sm font-semibold text-text hover:underline"
+                >
+                  {sender.name}
+                </button>
+              ) : (
+                <span className="text-sm font-semibold text-text">{sender.name}</span>
+              )}
               {sender.status && <StatusEmoji status={sender.status} className="text-xs" />}
             </span>
             <time className="font-mono text-2xs text-text-muted">{message.timeLabel}</time>
@@ -322,6 +362,16 @@ export function MessageItem({
             </IconButton>
           )}
         </div>
+      )}
+
+      {profileOpen && profileCard && (
+        <ProfileCardPopup
+          anchorRef={message.grouped ? rowRef : avatarRef}
+          label="プロフィール"
+          onDismiss={onCloseProfile}
+        >
+          {profileCard}
+        </ProfileCardPopup>
       )}
 
       {pickerOpen &&
