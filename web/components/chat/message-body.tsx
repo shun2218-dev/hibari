@@ -133,6 +133,12 @@ function InlineView({ node, ctx }: { node: Inline; ctx: RenderContext }) {
           <Inlines nodes={node.children} ctx={ctx} />
         </em>
       );
+    case "underline":
+      return (
+        <u className="underline">
+          <Inlines nodes={node.children} ctx={ctx} />
+        </u>
+      );
     case "strike":
       return (
         <s className="line-through">
@@ -144,19 +150,28 @@ function InlineView({ node, ctx }: { node: Inline; ctx: RenderContext }) {
         <code className="rounded-sm border border-border bg-surface-muted px-1 font-mono text-base text-text">{node.text}</code>
       );
     case "link": {
-      if (!ctx.interactive) return <span className="text-primary">{node.url}</span>;
+      // 文字付きのリンク（ADR 0051 決定 4 の追記）は文字を出し、行き先の URL をホバーで見せる。
+      // 文字と行き先が違うリンクは、行き先を隠したなりすましに使えるため
+      const text = node.label ?? node.url;
+      const title = node.label === undefined ? undefined : node.url;
+      if (!ctx.interactive)
+        return (
+          <span title={title} className="text-primary">
+            {text}
+          </span>
+        );
       // パーマリンクはアプリの中を移るので、同じタブで飛ぶ（ADR 0051 決定 4。飛ぶ仕組みは ADR 0042）
       const permalink = ctx.origin === undefined ? null : parsePermalink(node.url, ctx.origin);
       if (permalink)
         return (
-          <Link href={permalinkPath(permalink)} className="text-primary hover:underline">
-            {node.url}
+          <Link href={permalinkPath(permalink)} title={title} className="text-primary hover:underline">
+            {text}
           </Link>
         );
       return (
         // 別のタブで開く（オーナーの要望。ADR 0051 決定 4）。開いた先から window.opener を触らせない
-        <a href={node.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-          {node.url}
+        <a href={node.url} title={title} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+          {text}
         </a>
       );
     }

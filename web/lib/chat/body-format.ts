@@ -7,16 +7,18 @@
  * 記法（mrkdwn 寄り。ADR 0051 決定 2）
  *
  *   ブロック: ```コード```  / 行頭の `> ` 引用 / 行頭の `- ` `* ` `• ` 箇条書き / 行頭の `1. ` 番号付き
- *   インライン: `code` / *太字* / _斜体_ / ~取り消し~ / https://… / <@ULID> <!channel> <!here>
+ *   インライン: `code` / *太字* / _斜体_ / __下線__ / ~取り消し~ / https://… / <https://…|文字> / <@ULID> <!channel> <!here>
+ *   （下線と文字付きのリンクは ADR 0051 決定 4 の追記と、同じく下線の追記）
  *
  * 規則の具体例は body-format.test.ts が正本。コードの範囲の規則はサーバー（internal/chat/mention）にも同じものがある（ADR 0051 決定 5）。
  */
 
 export type Inline =
   | { type: "text"; text: string }
-  | { type: "bold" | "italic" | "strike"; children: Inline[] }
+  | { type: "bold" | "italic" | "underline" | "strike"; children: Inline[] }
   | { type: "code"; text: string }
-  | { type: "link"; url: string }
+  /** label は文字付きのリンク（`<URL|文字>`）の文字。URL だけのリンクでは undefined。 */
+  | { type: "link"; url: string; label?: string }
   | { type: "mention"; kind: "user"; id: string; raw: string }
   | { type: "mention"; kind: "channel" | "here"; raw: string };
 
@@ -47,6 +49,13 @@ const LIST_LINE = /^( *)(?:([-*•])|(\d{1,9})\.) (.*)$/u;
 /** 引用の行。`>` の後ろの空白 1 つは記号の一部として落とす。 */
 const QUOTE_LINE = /^>(?: |$)(.*)$/u;
 
+/**
+ * 文字付きのリンク（`<https://…|文字>`。ADR 0051 決定 4 の追記）。
+ * 文字には `<` `>` `` ` `` と改行を使えない。サーバーはコードの範囲とメンションしか読まないので、文字の中にバッククォートや `<` を許すと、
+ * サーバーと Web で「どれがメンションか」の読み方がずれる（testdata/format/mentions.json に例がある）。
+ */
+const LABELED_LINK = /^<(https?:\/\/[^\s<>`|]+)\|([^<>`\n]+)>/u;
+
 /** メンションのトークン（ADR 0041）。ULID の厳密な検証は表示ではしない（mentions.ts と同じ理由）。 */
 const MENTION = /^(?:<@([0-9A-Za-z]{26})>|<!(channel|here)>)/u;
 
@@ -58,6 +67,9 @@ const URL_EXCLUDED = new Set(["<", ">", "`"]);
 const URL_TRAILING = /[.,;:!?)\]}'"*_~]+$/u;
 
 const EMPHASIS: Readonly<Record<string, "bold" | "italic" | "strike">> = { "*": "bold", _: "italic", "~": "strike" };
+
+/** 下線の記号（ADR 0051 の下線の追記）。斜体の `_` を 2 つ重ねた形。 */
+const UNDERLINE = "__";
 
 /** 本文を木に分ける。 */
 export function parseBody(body: string): Block[] {
@@ -161,12 +173,14 @@ export function parseInline(text: string): Inline[] {
       i = atom.end;
       continue;
     }
-    const kind = EMPHASIS[text[i]];
-    const close = kind ? findCloser(text, i) : -1;
+    // 下線（`__`）は斜体（`_`）より先に見る。`__` は斜体の開く記号にならない（findCloser）
+    const marker = text.startsWith(UNDERLINE, i) ? UNDERLINE : text[i];
+    const kind = marker === UNDERLINE ? "underline" : EMPHASIS[marker];
+    const close = kind ? findCloser(text, i, marker) : -1;
     if (kind && close > 0) {
       flush();
-      out.push({ type: kind, children: parseInline(text.slice(i + 1, close)) });
-      i = close + 1;
+      out.push({ type: kind, children: parseInline(text.slice(i + marker.length, close)) });
+      i = close + marker.length;
       continue;
     }
     plain += text[i];
@@ -187,6 +201,8 @@ function readAtom(text: string, i: number): { node: Inline; end: number } | null
     return null;
   }
   if (c === "<") {
+    const labeled = LABELED_LINK.exec(text.slice(i));
+    if (labeled) return { node: { type: "link", url: labeled[1], label: labeled[2] }, end: i + labeled[0].length };
     const m = MENTION.exec(text.slice(i));
     if (!m) return null;
     const raw = m[0];
@@ -206,17 +222,17 @@ function readAtom(text: string, i: number): { node: Inline; end: number } | null
 }
 
 /**
- * i にある書式の記号（`*` `_` `~`）が開く記号なら、対になる閉じる記号の位置を返す。なければ -1。
+ * i にある書式の記号（`*` `_` `__` `~`）が開く記号なら、対になる閉じる記号の位置を返す。なければ -1。
  *
  * 境界は「ASCII の英数字でないこと」（ADR 0051 決定 2）。日本語の文字は境界になるので `これは*太字*です` は太字になり、
  * `snake_case` や `2*3*4` はならない。開く記号の直後と閉じる記号の直前は空白であってはいけない。
  * 中のインラインコード・メンション・URL は飛ばして探す（`*a `*` b*` の真ん中の `*` で閉じない）。
+ * 斜体の `_` を探すときは下線の `__` を飛ばす（`_a __b__ c_` の `b__` で斜体を閉じない）。
  */
-function findCloser(text: string, i: number): number {
-  const marker = text[i];
-  const next = text[i + 1];
-  if (isWordChar(text[i - 1]) || next === undefined || /\s/u.test(next) || next === marker) return -1;
-  let j = i + 1;
+function findCloser(text: string, i: number, marker: string): number {
+  const next = text[i + marker.length];
+  if (isWordChar(text[i - 1]) || next === undefined || /\s/u.test(next) || next === marker[0]) return -1;
+  let j = i + marker.length;
   while (j < text.length) {
     const c = text[j];
     if (c === "\n") return -1;
@@ -225,7 +241,17 @@ function findCloser(text: string, i: number): number {
       j = atom.end;
       continue;
     }
-    if (c === marker && !/\s/u.test(text[j - 1]) && !isWordChar(text[j + 1])) return j;
+    if (marker === "_" && text.startsWith(UNDERLINE, j)) {
+      j += UNDERLINE.length;
+      continue;
+    }
+    if (
+      text.startsWith(marker, j) &&
+      !/\s/u.test(text[j - 1]) &&
+      !isWordChar(text[j + marker.length]) &&
+      text[j + marker.length] !== marker[0]
+    )
+      return j;
     j++;
   }
   return -1;
@@ -280,7 +306,7 @@ export function findUrls(body: string): string[] {
   const inline = (nodes: Inline[]) => {
     for (const node of nodes) {
       if (node.type === "link") urls.push(node.url);
-      else if (node.type === "bold" || node.type === "italic" || node.type === "strike") inline(node.children);
+      else if ("children" in node) inline(node.children);
     }
   };
   const block = (b: Block) => {

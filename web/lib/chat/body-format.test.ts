@@ -10,6 +10,7 @@ const text = (t: string): Inline => ({ type: "text", text: t });
 const bold = (...children: Inline[]): Inline => ({ type: "bold", children });
 const italic = (...children: Inline[]): Inline => ({ type: "italic", children });
 const strike = (...children: Inline[]): Inline => ({ type: "strike", children });
+const underline = (...children: Inline[]): Inline => ({ type: "underline", children });
 const code = (t: string): Inline => ({ type: "code", text: t });
 const link = (url: string): Inline => ({ type: "link", url });
 const para = (...children: Inline[]): Block => ({ type: "paragraph", children });
@@ -50,6 +51,46 @@ describe("parseInline（ADR 0051 決定 2）", () => {
     ["太字の中のメンション", "*<!here>*", [bold({ type: "mention", kind: "here", raw: "<!here>" })]],
     ["トークンに見えない文字列はそのまま", "@alice <@01J8> <!everyone>", [text("@alice <@01J8> <!everyone>")]],
     ["<script> はただの文字", "<script>alert(1)</script>", [text("<script>alert(1)</script>")]],
+  ])("%s", (_name, input, want) => {
+    expect(parseInline(input)).toEqual(want);
+  });
+});
+
+describe("下線（ADR 0051 の下線の追記）", () => {
+  it.each<[string, string, Inline[]]>([
+    ["下線", "__下線__", [underline(text("下線"))]],
+    ["日本語の文中でも効く", "ここは__大事__です", [text("ここは"), underline(text("大事")), text("です")]],
+    ["英数字に挟まれた __ は書式にしない", "a__b__c", [text("a__b__c")]],
+    // 行頭や空白の後に単独で書いた `__init__` は、境界の規則どおり下線になる（コードとして書くならバッククォートで囲む）
+    ["単独の __init__ は下線になる", "__init__", [underline(text("init"))]],
+    ["斜体の中の下線", "_a __b__ c_", [italic(text("a "), underline(text("b")), text(" c"))]],
+    ["下線の中の太字", "__*両方*__", [underline(bold(text("両方")))]],
+    ["閉じていない下線はただの文字", "__下線", [text("__下線")]],
+  ])("%s", (_name, input, want) => {
+    expect(parseInline(input)).toEqual(want);
+  });
+});
+
+describe("文字付きのリンク（ADR 0051 決定 4 の追記）", () => {
+  const labeled = (url: string, label: string): Inline => ({ type: "link", url, label });
+  it.each<[string, string, Inline[]]>([
+    ["文字付きのリンク", "<https://example.com/docs|手順書>", [labeled("https://example.com/docs", "手順書")]],
+    ["文中に置ける", "詳しくは<https://example.com|こちら>へ", [text("詳しくは"), labeled("https://example.com", "こちら"), text("へ")]],
+    ["太字の中に置ける", "*<https://example.com|大事なリンク>*", [bold(labeled("https://example.com", "大事なリンク"))]],
+    ["文字の中は解釈しない", "<https://example.com|*太字* _斜体_>", [labeled("https://example.com", "*太字* _斜体_")]],
+    ["http / https でなければただの文字", "<javascript:alert(1)|押して>", [text("<javascript:alert(1)|押して>")]],
+    [
+      "文字にバッククォートがあれば文字付きのリンクにしない（コードとして読む）",
+      "<https://example.com|a`b>`",
+      [text("<"), link("https://example.com|a"), code("b>")],
+    ],
+    [
+      "文字に < があれば文字付きのリンクにしない",
+      "<https://example.com|a <!here>>",
+      [text("<"), link("https://example.com|a"), text(" "), { type: "mention", kind: "here", raw: "<!here>" }, text(">")],
+    ],
+    ["文字が空なら文字付きのリンクにしない", "<https://example.com|>", [text("<"), link("https://example.com|"), text(">")]],
+    ["コードの中は解釈しない", "`<https://example.com|x>`", [code("<https://example.com|x>")]],
   ])("%s", (_name, input, want) => {
     expect(parseInline(input)).toEqual(want);
   });
@@ -181,7 +222,7 @@ function mentionTokens(blocks: Block[]): string[] {
   const inline = (nodes: Inline[]) => {
     for (const node of nodes) {
       if (node.type === "mention") found.push(node.raw);
-      else if (node.type === "bold" || node.type === "italic" || node.type === "strike") inline(node.children);
+      else if ("children" in node) inline(node.children);
     }
   };
   const block = (b: Block) => {

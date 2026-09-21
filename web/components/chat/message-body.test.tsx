@@ -161,4 +161,34 @@ describe("MessageBody の書式（ADR 0051）", () => {
     expect(screen.getByText("@田中 あおい")).toHaveClass("text-primary");
     expect(screen.getByText("https://example.com")).toHaveClass("text-primary");
   });
+
+  it("下線は u 要素で出す（ADR 0051 の下線の追記）", () => {
+    render(<MessageBody body="ここは__大事__です" />);
+
+    expect(screen.getByText("大事").tagName).toBe("U");
+  });
+
+  it("文字付きのリンクは文字をリンクにし、行き先の URL をホバーで見せる（ADR 0051 決定 4 の追記）", () => {
+    render(<MessageBody body="<https://example.com/docs|手順書> を見てください" />);
+
+    const link = screen.getByRole("link", { name: "手順書" });
+    expect(link).toHaveAttribute("href", "https://example.com/docs");
+    expect(link).toHaveAttribute("title", "https://example.com/docs");
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("URL だけのリンクには title を付けない（文字がそのまま行き先なので）", () => {
+    render(<MessageBody body="https://example.com" />);
+
+    expect(screen.getByRole("link")).not.toHaveAttribute("title");
+  });
+
+  it("文字付きのパーマリンクも同じタブで飛ぶ", () => {
+    const ids = "01J9ZQZQZQZQZQZQZQZQZQZQZ";
+    render(<MessageBody body={`<${window.location.origin}/w/${ids}A/r/${ids}B?m=${ids}C|この発言>`} />);
+
+    const link = screen.getByRole("link", { name: "この発言" });
+    expect(link).toHaveAttribute("href", `/w/${ids}A/r/${ids}B?m=${ids}C`);
+    expect(link).not.toHaveAttribute("target");
+  });
 });
