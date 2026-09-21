@@ -7,6 +7,8 @@ erDiagram
   devices |o--o{ refresh_tokens : "紐付く"
   refresh_tokens |o--o| refresh_tokens : "rotated_from"
 
+  users ||--o| user_presence_settings : "手動の離席"
+
   users ||--o{ workspaces : "作成"
   users ||--o{ workspace_members : "所属"
   workspaces ||--o{ workspace_members : "含む"
@@ -103,6 +105,15 @@ erDiagram
     uuid user_id PK, FK "複合主キー。INDEX(user_id)"
     text role "owner / admin / member。owner は部分 UNIQUE で 1 人"
     timestamptz joined_at "退出時は行を削除する"
+    text status_emoji "カスタムステータス。null なら未設定（ADR 0049）"
+    text status_text "null 可。絵文字なしの文言は CHECK で禁止"
+    timestamptz status_expires_at "null なら消えない。読むときに Clock で落とす"
+  }
+
+  user_presence_settings {
+    uuid user_id PK, FK "ULID を uuid 型で保存。ON DELETE CASCADE"
+    boolean manual_away "本人が固定した離席。行がなければ false（ADR 0049）"
+    timestamptz updated_at
   }
 
   workspace_invites {

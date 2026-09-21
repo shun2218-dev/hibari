@@ -57,7 +57,8 @@ Go 製のリアルタイムチャットアプリ。Slack / Discord 型の「ワ�
 4. **WebSocket だけでメッセージ配信を完結させない。**
    クライアントは最後に受信した seq を保持し、再接続時に REST（`after_seq`）で差分を取得する。
    Redis Pub/Sub は at-most-once なので、配信は落ちうる前提で設計する。
-5. **presence / typing は Postgres に書かない。** Redis に TTL 付きで置く。
+5. **自動で変わる presence / typing は Postgres に書かない。** Redis に TTL 付きで置く。
+   本人が選んだ設定（手動の離席、カスタムステータス）は残らなければ困るので Postgres に持つ。2 つを 1 つの状態に合わせるのは読む側（ADR 0049）。
 6. **メッセージ配信は「WebSocket に書き込む処理」ではなく「配信先を解決してから送る処理」として抽象化する。**
    `Delivery` インターフェースの裏に実装を隠す。将来 Push 通知も配信先の 1 つとして加わる前提。
 7. **デザイントークンの正本は `web/app/globals.css` の CSS 変数だけ。**
@@ -241,7 +242,7 @@ hotfix は `main` から `hotfix/vX.Y.Z` を切り、手順 2〜7 と同じ流�
 - 文字サイズは 7 段階（11 / 12 / 13 / 14 / 15 / 20 / 26px）。`text-base` は 14px（UI 部品）、メッセージ本文と入力欄は `text-lg`（15px）。行送りは本文が `leading-relaxed`（1.75）。
 - 角丸は `rounded-sm`（8px）/ `rounded-md`（12px）/ `rounded-lg`（16px）/ `rounded-full` の 4 段階。余白とサイズは `--spacing`（4px）の倍数で書く。
 - ダークテーマは `<html data-theme="dark">` で切り替える。OS の設定には追従しない。ダークの値は、ライトと同じ名前の変数を上書きして定義する（`globals.test.ts` がライトとダークで色トークンの集合が一致することを検査する）。
-- presence はオンラインのドットだけ。離席や最終オンライン時刻は出さない（Redis に TTL だけで持つため）。
+- presence のドットは 3 つの状態（オンラインは緑、離席は色なしのアウトライン、オフラインはドットなし。ADR 0049）。最終オンライン時刻は出さない。
 
 ## やってはいけないこと
 
@@ -253,7 +254,7 @@ hotfix は `main` から `hotfix/vX.Y.Z` を切り、手順 2〜7 と同じ流�
 - `internal/chat` から `internal/auth` を import する
 - `created_at` でメッセージをソートする
 - WebSocket での配信だけを前提にして、差分取得の経路を省く
-- presence / typing を Postgres に書く
+- 自動で変わる presence / typing を Postgres に書く（本人が選んだ設定は別。ルール 5）
 - Access Token / Refresh Token を URL に載せる（WS 接続で URL に載せてよいのは短命の ws-ticket だけ）
 - Refresh Token や招待コードの生値を DB に保存する
 - JWT にロールや権限を入れる（失効できないため。ロールは DB を正とする）
