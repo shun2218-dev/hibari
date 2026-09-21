@@ -58,7 +58,7 @@
 | [0049](0049-away-and-custom-status.md) | 離席とカスタムステータス（Phase 6.8。自動は Redis、本人の設定は DB。合わせるのは読む側） | 採用 |
 | [0050](0050-profile-card.md) | プロフィールのカード（Phase 6.9。email は 1 人分の API だけが返し、管理の入口は既存の写しで決める） | 採用 |
 | [0051](0051-message-formatting.md) | 本文の書式（Phase 6.10a。mrkdwn 寄りの記法をテキストのまま保存し、Web で解釈して React の要素で描く） | 採用 |
-| [0052](0052-rich-text-composer.md) | リッチテキストの入力欄（Phase 6.10b。Lexical を使い、読み書きは ADR 0051 の解釈と自前の書き出しで行う） | 提案 |
+| [0052](0052-rich-text-composer.md) | リッチテキストの入力欄（Phase 6.10b。Lexical を使い、読み書きは ADR 0051 の解釈と自前の書き出しで行う） | 採用 |
 
 ## テンプレート
 
