@@ -57,10 +57,14 @@ type messageResponse struct {
 	Reactions []messageReactionResponse `json:"reactions"`
 	// Pinned はピン留めされているときだけ入る。されていなければ null（ADR 0054 決定 2）。
 	// 見る人によらない値なので、WebSocket の配信でもそのまま載せる。
-	Pinned    *messagePinResponse `json:"pinned"`
-	CreatedAt time.Time           `json:"created_at"`
-	EditedAt  *time.Time          `json:"edited_at"`
-	DeletedAt *time.Time          `json:"deleted_at"`
+	Pinned *messagePinResponse `json:"pinned"`
+	// Saved は閲覧者が「後で」に保存しているか（ADR 0054 決定 10）。**REST のレスポンスにだけ入る。**
+	// リアクションの me と同じく受け取る人ごとの値なので、WebSocket の配信では落とす。
+	// クライアントは saved の無い更新では手元の値を保ち、saved.updated と保存の差分で直す。
+	Saved     *bool      `json:"saved,omitzero"`
+	CreatedAt time.Time  `json:"created_at"`
+	EditedAt  *time.Time `json:"edited_at"`
+	DeletedAt *time.Time `json:"deleted_at"`
 }
 
 // messagePinResponse はメッセージのピン留め（ADR 0054 決定 2）。
@@ -171,18 +175,21 @@ func newMessageResponse(m chat.Message) messageResponse {
 	if p := m.Pinned; p != nil {
 		resp.Pinned = &messagePinResponse{By: newUserProfileResponse(p.By), At: p.At}
 	}
+	saved := m.Saved
+	resp.Saved = &saved
 	return resp
 }
 
 // newBroadcastMessageResponse は WebSocket で配るメッセージ（docs/events.md）。
 //
-// REST との違いはリアクションの me を落とすことだけ。1 つのペイロードを購読者全員に配るので、
+// REST との違いは、リアクションの me と「後で」の saved を落とすことだけ。1 つのペイロードを購読者全員に配るので、
 // 受け取る人ごとの値は入れられない（ADR 0044）。
 func newBroadcastMessageResponse(m chat.Message) messageResponse {
 	resp := newMessageResponse(m)
 	for i := range resp.Reactions {
 		resp.Reactions[i].Me = nil
 	}
+	resp.Saved = nil
 	return resp
 }
 

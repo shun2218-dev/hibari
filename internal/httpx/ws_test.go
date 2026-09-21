@@ -318,10 +318,15 @@ func TestWSDeliversMessages(t *testing.T) {
 	for ev = bob.next(); ev.Type != "message.created"; ev = bob.next() {
 	}
 	// WebSocket のメッセージは REST のレスポンスと同じ形。
+	// 違うのは受け取る人ごとの値だけで、「後で」の saved は配信では落とす（ADR 0054 決定 10）。
 	var restMsg, wsMsg map[string]any
 	if err := json.Unmarshal(sent.body, &restMsg); err != nil {
 		t.Fatal(err)
 	}
+	if _, ok := restMsg["saved"]; !ok {
+		t.Errorf("REST のメッセージに saved が無い: %s", sent.body)
+	}
+	delete(restMsg, "saved")
 	if err := json.Unmarshal(ev.Data, &wsMsg); err != nil {
 		t.Fatal(err)
 	}

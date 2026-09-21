@@ -948,14 +948,14 @@ ADR 0050 の宿題（オーナーの指摘。2026-09-21）。6.10 の後に回�
 2. デザイン: メッセージのピンの印とメニュー、ピン留めのシステムメッセージ、ピン留めの一覧、「後で」の一覧（3 つのタブ・読めない行・外すときの確認）と入口。story に描いて `docs/ui/` に足し、オーナーに見てもらう
    ← 完了（`docs/ui/README.md` の「Phase 6.12 で足した画面」）
 3. DB と API: ピン留め（列・システムメッセージ・上限）と保存（テーブル・本人ごとの `change_seq`・イベント）
-   ← ピン留めは済み（`internal/chat/pin.go`）。保存は次の PR
+   ← 完了（ピン留めは `internal/chat/pin.go`、保存は `internal/chat/saved.go`）
 4. Web: ピン留めと「後で」をつなぎ、再接続の同期に保存の差分を足す
 
 **DoD**
 - [ ] ピン留めがルームの全員にリアルタイムに反映され、切断中の変化も同期で揃う
 - [x] 同じルームで多数の goroutine が同時にピン留めしても、100 件を超えない（`internal/chat/pin_test.go` の `TestConcurrentPinsRespectLimit`。95 件の状態から 20 本の goroutine が同時に付けて、成功は 5 件だけ）
-- [ ] 保存は本人にだけ見え、読めなくなったルームのメッセージは中身を返さない
-- [ ] 保存の状態の変更（タブの移動・外す）が、切断中の別の端末にも同期で揃う
+- [x] 保存は本人にだけ見え、読めなくなったルームのメッセージは中身を返さない（`internal/chat/saved_test.go` の `TestSavedBecomesUnavailable`（外された private・削除済みを区別せずに伏せ、入り直すと戻る）、`TestSaveMessage`（`saved.updated` は本人だけ・`saved` は本人から見たときだけ））
+- [ ] 保存の状態の変更（タブの移動・外す）が、切断中の別の端末にも同期で揃う（サーバーは `TestSavedChangesSync` と `TestConcurrentSavesKeepChangeSeq`。Web の同期は構築順 4）
 - [ ] 一覧から元のメッセージへ飛べる
 
 ---

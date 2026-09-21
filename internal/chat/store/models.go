@@ -66,6 +66,18 @@ type Room struct {
 	LastUserSeq    int64
 }
 
+type SavedMessage struct {
+	WorkspaceID ulid.ULID
+	UserID      ulid.ULID
+	MessageID   ulid.ULID
+	RoomID      ulid.ULID
+	ID          ulid.ULID
+	State       string
+	ChangeSeq   int64
+	SavedAt     time.Time
+	UpdatedAt   time.Time
+}
+
 type Workspace struct {
 	ID           ulid.ULID
 	Slug         string

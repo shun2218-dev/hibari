@@ -632,6 +632,9 @@ func eventData(d any) (any, error) {
 		return threadReadData{d.WorkspaceID.String(), d.RoomID.String(), d.ThreadRootID.String(), d.LastReadThreadSeq, d.UnreadCount}, nil
 	case chat.ThreadFollowed:
 		return threadFollowedData{d.WorkspaceID.String(), d.RoomID.String(), d.ThreadRootID.String(), d.LastReadThreadSeq}, nil
+	case chat.SavedItem:
+		// 本人にしか届かないので、REST と同じ形（me / saved を含む）で配る（ADR 0054 決定 7）。
+		return newSavedItemResponse(d), nil
 	default:
 		return nil, fmt.Errorf("unknown event data %T", d)
 	}

@@ -73,6 +73,8 @@ var tsEnums = []tsEnum{
 	enumOf("SystemEventType",
 		chat.SystemRoomCreated, chat.SystemMemberJoined, chat.SystemMemberLeft, chat.SystemMemberRemoved, chat.SystemRoomRenamed,
 		chat.SystemMessagePinned),
+	enumOf("SavedState", chat.SavedInProgress, chat.SavedArchived, chat.SavedCompleted, chat.SavedRemoved),
+	enumOf("SavedItemStatus", chat.SavedItemOK, chat.SavedItemUnavailable),
 	enumOf("ProblemType",
 		problemBadRequest, problemValidationError, problemUnauthenticated, problemForbidden, problemNotFound, problemInternal,
 		problemRateLimited, problemInvalidCredentials, problemInvalidRefreshToken, problemInvalidOneTimeToken,
@@ -171,8 +173,11 @@ var tsDecls = []tsDecl{
 	response[messageListResponse]("MessageList"),
 	request[markRoomReadRequest]("MarkRoomReadRequest"),
 	response[readStateResponse]("ReadState"),
-	// ピン留め（ADR 0054）
+	// ピン留めと「後で」（ADR 0054）
 	response[pinListResponse]("PinList"),
+	response[savedItemResponse]("SavedItem"),
+	response[savedListResponse]("SavedList"),
+	request[moveSavedRequest]("MoveSavedRequest"),
 	// スレッド（ADR 0036）
 	response[threadMessageListResponse]("ThreadMessageList"),
 	response[threadReadStateResponse]("ThreadReadState"),
@@ -248,6 +253,7 @@ var tsEvents = []struct {
 	{chat.EventTypingStarted, chat.TypingStarted{}},
 	{chat.EventThreadRead, chat.ThreadRead{}},
 	{chat.EventThreadFollowed, chat.ThreadFollowed{}},
+	{chat.EventSavedUpdated, chat.SavedItem{}},
 }
 
 func TestTypeScriptTypes(t *testing.T) {

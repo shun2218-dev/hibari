@@ -53,6 +53,10 @@ type ChatService interface {
 	PinMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) (chat.Message, error)
 	UnpinMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) (chat.Message, error)
 	ListPins(ctx context.Context, actor, roomID ulid.ULID) ([]chat.Message, error)
+	SaveMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) (chat.SavedItem, error)
+	MoveSaved(ctx context.Context, actor, workspaceID, messageID ulid.ULID, to chat.SavedState) (chat.SavedItem, error)
+	RemoveSaved(ctx context.Context, actor, workspaceID, messageID ulid.ULID) error
+	ListSaved(ctx context.Context, actor, workspaceID ulid.ULID, q chat.SavedQuery) (chat.SavedPage, error)
 	MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq int64) (chat.ReadState, error)
 	ListThreadMessages(ctx context.Context, actor, roomID, rootID ulid.ULID, q chat.ThreadQuery) (chat.ThreadPage, error)
 	MarkThreadRead(ctx context.Context, actor, roomID, rootID ulid.ULID, seq int64) (chat.ThreadReadState, error)
@@ -128,6 +132,12 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("PUT /api/v1/rooms/{roomID}/messages/{messageID}/pin", h.pinMessage)
 	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}/pin", h.unpinMessage)
 	handle("GET /api/v1/rooms/{roomID}/pins", h.listPins)
+	// 「後で」（ADR 0054 決定 9）。保存はメッセージを読めることが要るのでルームの下、
+	// タブの移動・外す・一覧は本人の行の操作で、読めなくなっていてもできるのでワークスペースの下に置く。
+	handle("PUT /api/v1/rooms/{roomID}/messages/{messageID}/saved", h.saveMessage)
+	handle("PATCH /api/v1/workspaces/{workspaceID}/saved/{messageID}", h.moveSaved)
+	handle("DELETE /api/v1/workspaces/{workspaceID}/saved/{messageID}", h.removeSaved)
+	handle("GET /api/v1/workspaces/{workspaceID}/saved", h.listSaved)
 	handle("POST /api/v1/rooms/{roomID}/read", h.markRoomRead)
 	handle("GET /api/v1/rooms/{roomID}/threads/{rootID}/messages", h.listThreadMessages)
 	handle("POST /api/v1/rooms/{roomID}/threads/{rootID}/read", h.markThreadRead)
