@@ -1,11 +1,15 @@
 // Package presence は presence（オンラインか）と typing（入力中か）を Redis に置く。
 //
 // どちらも失われても困らない一時的な状態なので、Postgres には書かず、TTL 付きのキーだけで持つ（CLAUDE.md ルール 5）。
-// 最終オンライン時刻や離席は持たない（docs/ui の「presence はオンラインのドットだけ」）。
+// 最終オンライン時刻は持たない。手動の離席は本人の設定なので Postgres（ADR 0049 決定 1・4）。
 //
 // presence は複数のインスタンスで数える（ADR 0016）。ユーザーごとのハッシュ presence:{userID} に、
 // そのユーザーの接続を持つインスタンスの ID をフィールドとして置き、フィールドごとに TTL を付ける（HEXPIRE。Redis 7.4 以降）。
-// フィールドが 1 つでも残っていればオンライン。インスタンスが落ちても、そのフィールドは TTL で消える。
+// インスタンスが落ちても、そのフィールドは TTL で消える。
+//
+// **フィールドの値は「そのインスタンスで画面を見ている接続の数」**（ADR 0049 決定 2）。
+// フィールドが無ければオフライン、あるが値が全部 0 なら離席（idle）、1 つでも 1 以上ならオンライン（active）。
+// 「見ているか」はクライアントが activity で知らせる。
 package presence
 
 import (
@@ -28,11 +32,30 @@ const (
 	TypingTTL = 5 * time.Second
 )
 
+// State は presence の状態（ADR 0049 決定 1）。値は docs/events.md の presence と同じ文字列。
+type State string
+
+const (
+	// StateOffline は接続がない。
+	StateOffline State = "offline"
+	// StateIdle は接続はあるが、どれも画面を見ていない。
+	StateIdle State = "idle"
+	// StateActive はどこか 1 つの接続が画面を見ている。
+	StateActive State = "active"
+)
+
+// states は Lua が返す番号（0 / 1 / 2）との対応。順番を変えない（スクリプトが ARGV の位置で選ぶ）。
+var states = [3]State{StateOffline, StateIdle, StateActive}
+
 // Announcement は presence が変わったときに publish するイベント。
+//
 // presence はイベントの中身を知らない。状態の変更と publish を 1 つの Lua スクリプトで行うために、publish する形を受け取るだけ。
+// **状態ごとの中身を渡す**のは、どの状態になるかを決めるのが Lua（ほかのインスタンスのフィールドも見る）だから。
+// Go の側で 1 つに決めて渡すと、決めてから publish するまでの間に別のインスタンスが状態を変えたときに、古い状態を配ってしまう。
 type Announcement struct {
 	Channels []string
-	Payload  []byte
+	// Payloads は状態ごとの publish する中身。空なら publish しない。
+	Payloads map[State][]byte
 }
 
 // Store は presence と typing の Redis の読み書き。
@@ -68,110 +91,131 @@ func typingKey(roomID, userID ulid.ULID, threadRootID *ulid.ULID) string {
 //
 // フィールドの数は HLEN ではなく HKEYS で数える。HLEN は期限が切れてまだ回収されていないフィールドも数えるため。
 
-// connectScript は、このインスタンスのフィールドを置き、置く前にフィールドがなかったら（最初の接続なら）publish する。
-// KEYS[1] = presence:{userID}, ARGV = instance, ttl 秒, payload, channel...
-var connectScript = goredis.NewScript(`
-local before = #redis.call('HKEYS', KEYS[1])
-redis.call('HSET', KEYS[1], ARGV[1], '1')
-redis.call('HEXPIRE', KEYS[1], ARGV[2], 'FIELDS', 1, ARGV[1])
-if before > 0 then
-  return 0
+// syncScript は、このインスタンスの「接続の数」と「そのうち画面を見ている数」を記録し、
+// ユーザー全体の状態が変わったときだけ publish する（ADR 0049 決定 2）。
+//
+// 接続・切断・activity の 3 つを 1 本にまとめてあるのは、どれも「フィールドを書いて状態を測り直す」同じ処理だから。
+// 状態の判定と publish を同じスクリプトの中で行う理由は ADR 0016 のまま（イベントの順序が Redis の中の順序と入れ替わらない）。
+//
+// KEYS[1] = presence:{userID}
+// ARGV = instance, ttl 秒, 接続の数, 見ている接続の数, offline の payload, idle の payload, active の payload, channel...
+var syncScript = goredis.NewScript(`
+local function state(key)
+  local fields = redis.call('HKEYS', key)
+  if #fields == 0 then
+    return 0
+  end
+  for i = 1, #fields do
+    if tonumber(redis.call('HGET', key, fields[i]) or '0') > 0 then
+      return 2
+    end
+  end
+  return 1
 end
-for i = 4, #ARGV do
-  redis.call('PUBLISH', ARGV[i], ARGV[3])
+
+local before = state(KEYS[1])
+if tonumber(ARGV[3]) > 0 then
+  redis.call('HSET', KEYS[1], ARGV[1], ARGV[4])
+  redis.call('HEXPIRE', KEYS[1], ARGV[2], 'FIELDS', 1, ARGV[1])
+else
+  redis.call('HDEL', KEYS[1], ARGV[1])
 end
-return 1
+local after = state(KEYS[1])
+if before ~= after and #ARGV >= 8 then
+  for i = 8, #ARGV do
+    redis.call('PUBLISH', ARGV[i], ARGV[5 + after])
+  end
+end
+return after
 `)
 
-// disconnectScript は、このインスタンスのフィールドを消し、残りがなければ（最後の切断なら）publish する。
-// KEYS[1] = presence:{userID}, ARGV = instance, payload, channel...
-var disconnectScript = goredis.NewScript(`
-redis.call('HDEL', KEYS[1], ARGV[1])
-if #redis.call('HKEYS', KEYS[1]) > 0 then
-  return 0
-end
-for i = 3, #ARGV do
-  redis.call('PUBLISH', ARGV[i], ARGV[2])
-end
-return 1
-`)
-
-// refreshScript は、このインスタンスのフィールドの TTL を延ばす。消えていたら置き直す（イベントは出さない）。
-// KEYS = presence:{userID}..., ARGV = instance, ttl 秒
+// refreshScript は、このインスタンスのフィールドを置き直して TTL を延ばす（イベントは出さない）。
+// フィールドは自分しか書かないので、いまの「見ている接続の数」でそのまま上書きしてよい。
+// KEYS = presence:{userID}..., ARGV = instance, ttl 秒, 見ている接続の数（KEYS と同じ並び）
 var refreshScript = goredis.NewScript(`
 for i = 1, #KEYS do
-  redis.call('HSET', KEYS[i], ARGV[1], '1')
+  redis.call('HSET', KEYS[i], ARGV[1], ARGV[i + 2])
   redis.call('HEXPIRE', KEYS[i], ARGV[2], 'FIELDS', 1, ARGV[1])
 end
 return #KEYS
 `)
 
-// onlineScript は、キーごとに期限内のフィールドが残っているか（1 / 0）を返す。
-var onlineScript = goredis.NewScript(`
+// stateScript は、キーごとの状態（0 = offline / 1 = idle / 2 = active）を返す。
+var stateScript = goredis.NewScript(`
 local out = {}
 for i = 1, #KEYS do
-  out[i] = (#redis.call('HKEYS', KEYS[i]) > 0) and 1 or 0
+  local fields = redis.call('HKEYS', KEYS[i])
+  out[i] = 0
+  for j = 1, #fields do
+    if tonumber(redis.call('HGET', KEYS[i], fields[j]) or '0') > 0 then
+      out[i] = 2
+      break
+    end
+    out[i] = 1
+  end
 end
 return out
 `)
 
-func scriptArgs(head []any, ann Announcement) []any {
-	args := append(head, ann.Payload)
+var ttlSeconds = strconv.Itoa(int(OnlineTTL / time.Second))
+
+// Sync は、このインスタンスの userID の接続の数（conns）と、そのうち画面を見ている数（active）を記録する。
+// ユーザー全体の状態が変わったら ann を publish し、変更後の状態を返す。
+func (s *Store) Sync(ctx context.Context, userID ulid.ULID, conns, active int, ann Announcement) (State, error) {
+	args := []any{s.instance, ttlSeconds, conns, active}
+	for _, st := range states {
+		args = append(args, ann.Payloads[st])
+	}
 	for _, ch := range ann.Channels {
 		args = append(args, ch)
 	}
-	return args
-}
-
-var ttlSeconds = strconv.Itoa(int(OnlineTTL / time.Second))
-
-// Connect は、このインスタンスに userID の接続があることを記録する。
-// どのインスタンスにも接続がなかった（ユーザーがオフラインだった）なら、ann を publish して true を返す。
-func (s *Store) Connect(ctx context.Context, userID ulid.ULID, ann Announcement) (bool, error) {
-	n, err := connectScript.Run(ctx, s.rdb, []string{onlineKey(userID)}, scriptArgs([]any{s.instance, ttlSeconds}, ann)...).Int()
+	n, err := syncScript.Run(ctx, s.rdb, []string{onlineKey(userID)}, args...).Int()
 	if err != nil {
-		return false, fmt.Errorf("connect presence: %w", err)
+		return StateOffline, fmt.Errorf("sync presence: %w", err)
 	}
-	return n == 1, nil
+	return stateOf(n), nil
 }
 
-// Disconnect は、このインスタンスに userID の接続がなくなったことを記録する。
-// ほかのインスタンスにも接続がなければ（ユーザーがオフラインになったら）、ann を publish して true を返す。
-func (s *Store) Disconnect(ctx context.Context, userID ulid.ULID, ann Announcement) (bool, error) {
-	n, err := disconnectScript.Run(ctx, s.rdb, []string{onlineKey(userID)}, scriptArgs([]any{s.instance}, ann)...).Int()
-	if err != nil {
-		return false, fmt.Errorf("disconnect presence: %w", err)
-	}
-	return n == 1, nil
-}
-
-// Refresh は、このインスタンスに接続がある userIDs の TTL を OnlineTTL に延ばす。
-func (s *Store) Refresh(ctx context.Context, userIDs ...ulid.ULID) error {
-	if len(userIDs) == 0 {
+// Refresh は、このインスタンスに接続があるユーザーのフィールドを置き直して TTL を延ばす。
+// counts はユーザーごとの「見ている接続の数」。
+func (s *Store) Refresh(ctx context.Context, counts map[ulid.ULID]int) error {
+	if len(counts) == 0 {
 		return nil
 	}
-	if err := refreshScript.Run(ctx, s.rdb, onlineKeys(userIDs), s.instance, ttlSeconds).Err(); err != nil {
+	keys := make([]string, 0, len(counts))
+	args := []any{s.instance, ttlSeconds}
+	for userID, active := range counts {
+		keys = append(keys, onlineKey(userID))
+		args = append(args, active)
+	}
+	if err := refreshScript.Run(ctx, s.rdb, keys, args...).Err(); err != nil {
 		return fmt.Errorf("refresh presence: %w", err)
 	}
 	return nil
 }
 
-// Online は userIDs のうちオンラインのユーザーを返す。1 回の往復で読む（一覧で N+1 にしない）。
-func (s *Store) Online(ctx context.Context, userIDs []ulid.ULID) (map[ulid.ULID]bool, error) {
-	online := make(map[ulid.ULID]bool, len(userIDs))
+// States は userIDs の状態を返す。1 回の往復で読む（一覧で N+1 にしない）。
+func (s *Store) States(ctx context.Context, userIDs []ulid.ULID) (map[ulid.ULID]State, error) {
+	out := make(map[ulid.ULID]State, len(userIDs))
 	if len(userIDs) == 0 {
-		return online, nil
+		return out, nil
 	}
-	values, err := onlineScript.RunRO(ctx, s.rdb, onlineKeys(userIDs)).Int64Slice()
+	values, err := stateScript.RunRO(ctx, s.rdb, onlineKeys(userIDs)).Int64Slice()
 	if err != nil {
 		return nil, fmt.Errorf("get presence: %w", err)
 	}
 	for i, v := range values {
-		if v == 1 {
-			online[userIDs[i]] = true
-		}
+		out[userIDs[i]] = stateOf(int(v))
 	}
-	return online, nil
+	return out, nil
+}
+
+// stateOf は Lua が返す番号を State にする。想定外の値は offline にする（見えないだけで壊れない）。
+func stateOf(n int) State {
+	if n < 0 || n >= len(states) {
+		return StateOffline
+	}
+	return states[n]
 }
 
 func onlineKeys(userIDs []ulid.ULID) []string {

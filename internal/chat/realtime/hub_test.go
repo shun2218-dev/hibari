@@ -174,51 +174,57 @@ func (a *fakeAuth) WorkspaceIDs(_ context.Context, userID ulid.ULID) ([]ulid.ULI
 }
 
 // fakePresence は presence と typing を記録する。typing の TTL は切れないので、2 回目以降は常に false。
-// Connect / Disconnect が状態を変えたら、実物の Lua スクリプトと同じく、渡されたイベントを publish する。
+// 実物の Lua スクリプトと同じく、状態（active / idle / offline）が変わったときだけ、その状態のイベントを publish する。
 type fakePresence struct {
 	mu        sync.Mutex
-	online    map[ulid.ULID]bool
+	states    map[ulid.ULID]presence.State
 	refreshes int
 	typing    map[[2]ulid.ULID]bool
 	publisher *fakePublisher
-	// beforeDisconnect は Disconnect の最初に呼ばれる（後始末の途中の状態を作る）。
+	// beforeDisconnect は、接続が 0 になる Sync の最初に呼ばれる（後始末の途中の状態を作る）。
 	beforeDisconnect func()
 }
 
-func (p *fakePresence) Connect(ctx context.Context, userID ulid.ULID, ann presence.Announcement) (bool, error) {
-	p.mu.Lock()
-	first := !p.online[userID]
-	p.online[userID] = true
-	p.mu.Unlock()
-	if first {
-		p.publisher.publish(ctx, ann)
-	}
-	return first, nil
-}
-
-func (p *fakePresence) Disconnect(ctx context.Context, userID ulid.ULID, ann presence.Announcement) (bool, error) {
+func (p *fakePresence) Sync(ctx context.Context, userID ulid.ULID, conns, active int, ann presence.Announcement) (presence.State, error) {
 	p.mu.Lock()
 	hook := p.beforeDisconnect
 	p.mu.Unlock()
-	if hook != nil {
+	if conns == 0 && hook != nil {
 		hook()
 	}
-	p.mu.Lock()
-	last := p.online[userID]
-	delete(p.online, userID)
-	p.mu.Unlock()
-	if last {
-		p.publisher.publish(ctx, ann)
+
+	state := presence.StateOffline
+	switch {
+	case active > 0:
+		state = presence.StateActive
+	case conns > 0:
+		state = presence.StateIdle
 	}
-	return last, nil
+
+	p.mu.Lock()
+	changed := p.states[userID] != state
+	if state == presence.StateOffline {
+		delete(p.states, userID)
+	} else {
+		p.states[userID] = state
+	}
+	p.mu.Unlock()
+	if changed {
+		p.publisher.publish(ctx, ann, state)
+	}
+	return state, nil
 }
 
-func (p *fakePresence) Refresh(_ context.Context, userIDs ...ulid.ULID) error {
+func (p *fakePresence) Refresh(_ context.Context, counts map[ulid.ULID]int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.refreshes++
-	for _, id := range userIDs {
-		p.online[id] = true
+	for id, active := range counts {
+		if active > 0 {
+			p.states[id] = presence.StateActive
+		} else {
+			p.states[id] = presence.StateIdle
+		}
 	}
 	return nil
 }
@@ -234,35 +240,40 @@ func (p *fakePresence) StartTyping(_ context.Context, roomID, userID ulid.ULID, 
 	return true, nil
 }
 
-func (p *fakePresence) isOnline(userID ulid.ULID) bool {
+func (p *fakePresence) stateOf(userID ulid.ULID) presence.State {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.online[userID]
+	if st, ok := p.states[userID]; ok {
+		return st
+	}
+	return presence.StateOffline
 }
 
 // fakePublisher は publish したイベントを、その場で Hub の DeliverLocal に渡す。
 type fakePublisher struct {
 	hub     *realtime.Hub
 	mu      sync.Mutex
-	pending map[string]chat.Event // Announcement の payload → イベント
+	pending map[string]chat.Event // Announcement の中身 → イベント
 }
 
 func (p *fakePublisher) Deliver(ctx context.Context, ev chat.Event) {
 	p.hub.DeliverLocal(ctx, ev)
 }
 
-func (p *fakePublisher) Announcement(ev chat.Event) (presence.Announcement, error) {
+func (p *fakePublisher) Encode(ev chat.Event) ([]string, []byte, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	key := ids.New().String()
 	p.pending[key] = ev
-	return presence.Announcement{Payload: []byte(key)}, nil
+	return nil, []byte(key), nil
 }
 
-func (p *fakePublisher) publish(ctx context.Context, ann presence.Announcement) {
+// publish は、その状態の中身に対応するイベントを Hub に渡す（実物は Lua が状態で選ぶ）。
+func (p *fakePublisher) publish(ctx context.Context, ann presence.Announcement, state presence.State) {
+	key := string(ann.Payloads[state])
 	p.mu.Lock()
-	ev, ok := p.pending[string(ann.Payload)]
-	delete(p.pending, string(ann.Payload))
+	ev, ok := p.pending[key]
+	delete(p.pending, key)
 	p.mu.Unlock()
 	if ok {
 		p.hub.DeliverLocal(ctx, ev)
@@ -330,7 +341,7 @@ func newEnv(t *testing.T) *env {
 	publisher := &fakePublisher{pending: map[string]chat.Event{}}
 	e := &env{
 		auth:       newFakeAuth(),
-		presence:   &fakePresence{online: map[ulid.ULID]bool{}, typing: map[[2]ulid.ULID]bool{}, publisher: publisher},
+		presence:   &fakePresence{states: map[ulid.ULID]presence.State{}, typing: map[[2]ulid.ULID]bool{}, publisher: publisher},
 		sessions:   &fakeSessions{revoked: map[ulid.ULID]bool{}},
 		subscriber: &fakeSubscriber{refs: map[string]int{}},
 	}
@@ -736,16 +747,30 @@ func TestPresence(t *testing.T) {
 		return got
 	}
 
-	// 最初の接続でオンラインになり、所属するワークスペースの購読者に知らせる。
+	// 最初の接続は「見ていない」から始まるので idle（ADR 0049 決定 3）。所属するワークスペースの購読者に知らせる。
 	tab1, _ := e.connect(t, w.alice)
-	if got := presenceEvents(); !slices.Equal(got, []chat.PresenceChanged{{UserID: w.alice, Presence: chat.PresenceActive}}) {
+	if got := presenceEvents(); !slices.Equal(got, []chat.PresenceChanged{{UserID: w.alice, Presence: chat.PresenceIdle}}) {
 		t.Errorf("after first connection: %v", got)
 	}
-	if !e.presence.isOnline(w.alice) {
-		t.Error("alice is not online in the presence store")
+	if got := e.presence.stateOf(w.alice); got != presence.StateIdle {
+		t.Errorf("alice in the presence store = %v, want idle", got)
 	}
-	// 2 本目の接続・1 本目の切断では変化がないので知らせない。
+	// クライアントが「画面を見ている」と知らせたら active になる。
+	e.hub.SetActivity(t.Context(), tab1, true)
+	if got := presenceEvents(); !slices.Equal(got, []chat.PresenceChanged{{UserID: w.alice, Presence: chat.PresenceActive}}) {
+		t.Errorf("after activity(true): %v", got)
+	}
+	// 同じ値をもう一度送っても、状態は変わらないので知らせない。
+	e.hub.SetActivity(t.Context(), tab1, true)
+	if got := presenceEvents(); len(got) != 0 {
+		t.Errorf("after the same activity: %v", got)
+	}
+	// 2 本目の接続・1 本目の切断では変化がないので知らせない（2 本目は見ていないが、1 本目が見ている）。
 	tab2, _ := e.connect(t, w.alice)
+	if got := presenceEvents(); len(got) != 0 {
+		t.Errorf("after the second connection: %v", got)
+	}
+	e.hub.SetActivity(t.Context(), tab2, true)
 	e.hub.Unregister(t.Context(), tab1)
 	e.hub.Unregister(t.Context(), tab1) // 2 回呼んでも何もしない
 	if got := presenceEvents(); len(got) != 0 {
@@ -756,18 +781,18 @@ func TestPresence(t *testing.T) {
 	if got := presenceEvents(); !slices.Equal(got, []chat.PresenceChanged{{UserID: w.alice, Presence: chat.PresenceOffline}}) {
 		t.Errorf("after last disconnection: %v", got)
 	}
-	if e.presence.isOnline(w.alice) {
-		t.Error("alice is still online in the presence store")
+	if got := e.presence.stateOf(w.alice); got != presence.StateOffline {
+		t.Errorf("alice in the presence store = %v, want offline", got)
 	}
 
-	// 接続中のユーザーの TTL を延ばす。
+	// 接続中のユーザーの TTL を延ばす。置き直す値は「見ている接続の数」なので、見ていない bob は idle のまま。
 	e.presence.mu.Lock()
 	before := e.presence.refreshes
-	e.presence.online = map[ulid.ULID]bool{} // TTL で消えた状態
+	e.presence.states = map[ulid.ULID]presence.State{} // TTL で消えた状態
 	e.presence.mu.Unlock()
 	e.hub.RefreshPresence(t.Context())
-	if !e.presence.isOnline(w.bob) || e.presence.isOnline(w.alice) {
-		t.Errorf("after refresh: bob online = %v, alice online = %v", e.presence.isOnline(w.bob), e.presence.isOnline(w.alice))
+	if got, alice := e.presence.stateOf(w.bob), e.presence.stateOf(w.alice); got != presence.StateIdle || alice != presence.StateOffline {
+		t.Errorf("after refresh: bob = %v, alice = %v; want idle / offline", got, alice)
 	}
 	e.presence.mu.Lock()
 	if e.presence.refreshes != before+1 {
@@ -793,12 +818,12 @@ func TestPresenceConcurrentConnectDisconnect(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if !e.presence.isOnline(userID) {
+	if got := e.presence.stateOf(userID); got == presence.StateOffline {
 		t.Fatal("user is offline although a connection remains")
 	}
 	e.hub.Unregister(t.Context(), keep)
-	if e.presence.isOnline(userID) {
-		t.Fatal("user is online after all connections closed")
+	if got := e.presence.stateOf(userID); got != presence.StateOffline {
+		t.Fatalf("user is %v after all connections closed", got)
 	}
 }
 
@@ -1058,7 +1083,7 @@ func TestShutdownWaitsForUnregisterCleanup(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("Shutdown() = %v", err)
 	}
-	if e.presence.isOnline(w.alice) {
+	if e.presence.stateOf(w.alice) != presence.StateOffline {
 		t.Error("alice is still online after shutdown")
 	}
 }

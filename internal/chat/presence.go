@@ -30,15 +30,13 @@ const (
 	PresenceOffline Presence = "offline"
 )
 
-// presenceOf は Redis の「接続があるか」を Presence にする。
-//
-// いまの Redis は接続の有無しか持たないので、接続があれば active になる。
-// 「見ている接続の数」を持たせて idle を返すのは構築順 4（ADR 0049 決定 2）。
-func presenceOf(online bool) Presence {
-	if online {
-		return PresenceActive
+// presenceOf は、読めなかったユーザー（ゼロ値）を offline として扱う。
+// presence は表示の補助なので、Redis に届かなければ全員オフラインにして一覧そのものは失敗させない（ADR 0015）。
+func presenceOf(state Presence) Presence {
+	if state == "" {
+		return PresenceOffline
 	}
-	return PresenceOffline
+	return state
 }
 
 // UserStatus はカスタムステータス（ADR 0049 決定 5）。ワークスペースごとに持つ。

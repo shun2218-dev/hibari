@@ -79,7 +79,7 @@ var tsEnums = []tsEnum{
 		problemInviteInvalid, problemInviteExpired, problemInviteExhausted, problemOwnerMustTransfer,
 		problemRoomNameTaken, problemUserNotInWorkspace, problemMessageDeleted,
 		problemAttachmentNotUploaded, problemAttachmentMismatch, problemWSTicketInvalid),
-	enumOf("ClientMessageType", clientSubscribe, clientUnsubscribe, clientTyping, clientPing),
+	enumOf("ClientMessageType", clientSubscribe, clientUnsubscribe, clientTyping, clientActivity, clientPing),
 	enumOf("AckError", ackInvalidMessage, ackNotFound, ackNotSubscribed, ackForbidden, ackTooManySubscriptions, ackInternal),
 }
 

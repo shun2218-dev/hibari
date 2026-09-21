@@ -40,10 +40,14 @@ export class FakeSocket implements SocketLike {
     this.onclose?.(new CloseEvent("close", { code }));
   }
 
-  /** 送られたメッセージのうち、ping を除いたもの（id も除く）。 */
+  /**
+   * 送られたメッセージのうち、ping と activity を除いたもの（id も除く）。
+   * activity は接続のたびに 1 回出る「画面を見ているか」の申告（ADR 0049）なので、購読の流れを見るテストでは邪魔になる。
+   * activity そのものを見るテストは `sent` を使う。
+   */
   messages(): Omit<ClientMessage, "id">[] {
     return this.sent
-      .filter((m) => m.type !== "ping")
+      .filter((m) => m.type !== "ping" && m.type !== "activity")
       .map((m) => {
         const rest = { ...m };
         delete rest.id;

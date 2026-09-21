@@ -18,6 +18,7 @@ import (
 
 	"github.com/shun2218-dev/hibari/internal/chat"
 	"github.com/shun2218-dev/hibari/internal/chat/chattest"
+	"github.com/shun2218-dev/hibari/internal/chat/realtime"
 	"github.com/shun2218-dev/hibari/internal/platform/storage"
 )
 
@@ -694,7 +695,7 @@ func TestCleanupAttachmentsConcurrentInstances(t *testing.T) {
 		svc := chat.NewService(chat.Deps{
 			DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Logger: slog.New(slog.DiscardHandler),
 			Storage:  barrierStorage{Storage: env.Storage, t: t, counts: &counts, first: &sync.Once{}, ready: &ready, both: both},
-			Delivery: chat.NopDelivery{}, Presence: env.Presence,
+			Delivery: chat.NopDelivery{}, Presence: realtime.PresenceStates{Store: env.Presence},
 		})
 		wg.Go(func() {
 			if _, err := svc.CleanupAttachments(context.Background()); err != nil {

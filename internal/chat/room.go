@@ -515,13 +515,13 @@ func (s *Service) attachDMPeerPresence(ctx context.Context, rooms []Room) {
 
 // online は userIDs のうちオンラインのユーザーを返す。
 // presence は表示の補助なので、Redis に届かなければ全員をオフラインとして扱い、一覧そのものは失敗させない（ADR 0015）。
-func (s *Service) online(ctx context.Context, userIDs []ulid.ULID) map[ulid.ULID]bool {
-	online, err := s.presence.Online(ctx, userIDs)
+func (s *Service) online(ctx context.Context, userIDs []ulid.ULID) map[ulid.ULID]Presence {
+	states, err := s.presence.Presence(ctx, userIDs)
 	if err != nil {
 		s.logger.WarnContext(ctx, "read presence failed", slog.Any("error", err))
-		return map[ulid.ULID]bool{}
+		return map[ulid.ULID]Presence{}
 	}
-	return online
+	return states
 }
 
 // GetRoom はルームを返す。読めなければ ErrNotFound。

@@ -15,6 +15,7 @@ import (
 	"github.com/shun2218-dev/hibari/internal/chat"
 	"github.com/shun2218-dev/hibari/internal/chat/authz"
 	"github.com/shun2218-dev/hibari/internal/chat/chattest"
+	"github.com/shun2218-dev/hibari/internal/chat/realtime"
 	"github.com/shun2218-dev/hibari/internal/platform/db"
 	"github.com/shun2218-dev/hibari/internal/platform/testenv"
 )
@@ -461,6 +462,6 @@ func tracedService(t *testing.T, env *chattest.Env, tracer pgx.QueryTracer) *cha
 		Storage:          env.Storage,
 		AttachmentLimits: chattest.AttachmentLimits,
 		Delivery:         env.Deliveries,
-		Presence:         env.Presence,
+		Presence:         realtime.PresenceStates{Store: env.Presence},
 	})
 }

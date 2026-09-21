@@ -33,7 +33,7 @@ import { type PresenceView, displayPresence } from "@/lib/presence";
 import type { OutgoingMessage, ThreadState } from "./store";
 import type { AttachmentDraft } from "./uploads";
 
-import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./format";
+import { dayKey, formatBytes, formatDate, formatListTime, formatStatusExpiry, formatTime } from "./format";
 import { type Permalink, clampCardBody, findPermalinks, linkKey, permalinkPath } from "./links";
 import { type MentionCandidate } from "./mentions";
 import { inChannel } from "./messages";
@@ -101,8 +101,18 @@ export function roomName(room: Room): string {
 export function toRoomSummaryView(
   room: Room,
   now: Date,
-  { timeZone, avatarUrls = {} }: { timeZone?: string; avatarUrls?: UrlTable } = {},
+  {
+    timeZone,
+    avatarUrls = {},
+    members = {},
+  }: {
+    timeZone?: string;
+    avatarUrls?: UrlTable;
+    /** user_id → その人の presence とステータス（ワークスペースのメンバー一覧から作る。ADR 0049）。 */
+    members?: Readonly<Record<string, { presence: PresenceView; status?: UserStatusView } | undefined>>;
+  } = {},
 ): RoomSummaryView {
+  const peer = room.dm_peer ? members[room.dm_peer.id] : undefined;
   const last = room.last_message;
   let lastMessage: string | undefined;
   if (last?.kind === "system") {
@@ -120,10 +130,11 @@ export function toRoomSummaryView(
     peer: room.dm_peer
       ? {
           // DM の相手の away とステータスは、ワークスペースのメンバー一覧から引く（ADR 0049 決定 7 の追記）。
-          // ここでは自動の presence だけを写す
+          // 引けないとき（一覧をまだ読んでいない）は、自動の presence だけで描く
           id: room.dm_peer.id,
-          presence: memberPresence(room.dm_peer),
+          presence: peer?.presence ?? memberPresence(room.dm_peer),
           avatarUrl: avatarUrls[room.dm_peer.id] ?? undefined,
+          status: peer?.status,
         }
       : undefined,
     lastMessage,
@@ -145,6 +156,11 @@ type TimelineOptions = {
   me?: UserProfile;
   /** user_id → アバターの URL。 */
   avatarUrls?: UrlTable;
+  /**
+   * user_id → カスタムステータス（ADR 0049）。名前の横に絵文字を出すのに使う。
+   * ワークスペースのメンバー一覧から作る（メッセージには載らない。ADR 0049 決定 7 の追記）。
+   */
+  statuses?: Readonly<Record<string, UserStatusView | undefined>>;
   /** attachment_id → 画像の URL。 */
   attachmentUrls?: UrlTable;
   /** 本文に貼られたパーマリンクのカードの中身（ADR 0040）。linkKey → 取得結果。 */
@@ -311,6 +327,7 @@ export function toTimelineItems(
     origin,
     currentWorkspaceId,
     memberNames,
+    statuses = {},
     timeZone,
     now = new Date(),
     threadRootId,
@@ -391,6 +408,7 @@ export function toTimelineItems(
           id: entry.sender.id,
           name: entry.sender.display_name,
           avatarUrl: avatarUrls[entry.sender.id] ?? undefined,
+          status: statuses[entry.sender.id],
         },
         timeLabel: formatTime(entry.createdAt, timeZone),
         body: entry.body,
@@ -597,23 +615,55 @@ const roleLabels: Record<Role, RoleLabel> = { owner: "オーナー", admin: "管
  * API の presence（自動）と away（本人の設定）から、画面に出す 3 つの状態を決める（ADR 0049 決定 1）。
  * 合わせるのはここだけで、部品には結果だけを渡す。
  */
-/** API のステータスを表示用にする。期限切れはサーバーが落として null を返す（ADR 0049 決定 6）。 */
-export function statusView(status: UserStatus | null | undefined): UserStatusView | undefined {
+/**
+ * API のステータスを表示用にする。期限切れはサーバーが落として null を返す（ADR 0049 決定 6）。
+ * 「いつ消えるか」はここで文言にする（ホバーに出す。Slack と同じ）。
+ */
+export function statusView(
+  status: UserStatus | null | undefined,
+  now: Date = new Date(),
+  timeZone?: string,
+): UserStatusView | undefined {
   if (!status) return undefined;
-  return { emoji: status.emoji, text: status.text === "" ? undefined : status.text };
+  return {
+    emoji: status.emoji,
+    text: status.text === "" ? undefined : status.text,
+    expiresLabel: status.expires_at ? formatStatusExpiry(new Date(status.expires_at), now, timeZone) : undefined,
+  };
+}
+
+/**
+ * ワークスペースのメンバー一覧から、user_id 引きの表を作る（ADR 0049 決定 7 の追記）。
+ * メッセージの送信者・DM の相手のステータスと presence は、この表から引く。
+ */
+export function memberSettings(
+  members: readonly Member[] | undefined,
+  now: Date = new Date(),
+  timeZone?: string,
+): Record<string, { presence: PresenceView; status?: UserStatusView }> {
+  const table: Record<string, { presence: PresenceView; status?: UserStatusView }> = {};
+  for (const m of members ?? []) {
+    table[m.user.id] = { presence: memberPresence(m), status: statusView(m.status, now, timeZone) };
+  }
+  return table;
 }
 
 export function memberPresence(member: { presence: Presence; away?: boolean }): PresenceView {
   return displayPresence(member.presence, member.away ?? false);
 }
 
-export function toRoomMemberView(member: RoomMember, avatarUrls: UrlTable = {}): RoomMemberView {
+export function toRoomMemberView(
+  member: RoomMember,
+  avatarUrls: UrlTable = {},
+  { now = new Date(), timeZone }: { now?: Date; timeZone?: string } = {},
+): RoomMemberView {
   return {
     id: member.user.id,
     name: member.user.display_name,
     avatarUrl: avatarUrls[member.user.id] ?? undefined,
     presence: memberPresence(member),
-    status: statusView(member.status),
+    // 「いつ消えるか」の文言は、見る人の時計とタイムゾーンで作る（サーバーは絶対の時刻だけを返す）
+    status: statusView(member.status, now, timeZone),
     roleLabel: roleLabels[member.role],
   };
 }

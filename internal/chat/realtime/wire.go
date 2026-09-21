@@ -61,6 +61,7 @@ var dataDecoders = map[chat.EventType]func([]byte) (any, error){
 	chat.EventWorkspaceMemberRemoved: decodeData[chat.WorkspaceMemberRemoved],
 	chat.EventWorkspaceRoleChanged:   decodeData[chat.WorkspaceRoleChanged],
 	chat.EventPresenceChanged:        decodeData[chat.PresenceChanged],
+	chat.EventMemberStatusChanged:    decodeData[chat.MemberStatusChanged],
 	chat.EventTypingStarted:          decodeData[chat.TypingStarted],
 	chat.EventThreadRead:             decodeData[chat.ThreadRead],
 	chat.EventThreadFollowed:         decodeData[chat.ThreadFollowed],

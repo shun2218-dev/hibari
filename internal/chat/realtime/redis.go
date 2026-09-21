@@ -60,20 +60,20 @@ func NewRedisDelivery(rdb *goredis.Client, ids id.Generator, logger *slog.Logger
 // Deliver はイベントを宛先のチャンネルに publish する。失敗してもエラーを返さず、ログに残す（chat.Delivery）。
 // 永続化はコミット済みなので、クライアントは change_seq の欠番と再接続時の差分取得で回復する（ADR 0004 / 0014）。
 func (p *RedisDelivery) Deliver(ctx context.Context, ev chat.Event) {
-	ann, err := p.Announcement(ev)
+	channels, payload, err := p.Encode(ev)
 	if err != nil {
 		p.logger.ErrorContext(ctx, "encode event failed", slog.String("event", string(ev.Type)), slog.Any("error", err))
 		return
 	}
-	if len(ann.Channels) == 0 {
+	if len(channels) == 0 {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, PublishTimeout)
 	defer cancel()
 	// 1 往復で送る。同じイベントのコピーが続けて届くので、受け取る側の重複の除去が少ない記憶で済む。
 	_, err = p.rdb.Pipelined(ctx, func(pipe goredis.Pipeliner) error {
-		for _, ch := range ann.Channels {
-			pipe.Publish(ctx, ch, ann.Payload)
+		for _, ch := range channels {
+			pipe.Publish(ctx, ch, payload)
 		}
 		return nil
 	})
@@ -82,15 +82,15 @@ func (p *RedisDelivery) Deliver(ctx context.Context, ev chat.Event) {
 	}
 }
 
-// Announcement はイベントを publish する形（チャンネルと payload）にする。
+// Encode はイベントを publish する形（宛先のチャンネルと中身）にする。
 // presence の変化は、状態の変更と同じ Lua スクリプトの中で publish するので、この形を presence.Store に渡す（ADR 0016）。
-func (p *RedisDelivery) Announcement(ev chat.Event) (presence.Announcement, error) {
+func (p *RedisDelivery) Encode(ev chat.Event) ([]string, []byte, error) {
 	channels := channelsFor(ev)
 	payload, err := encodeWire(ev, p.ids.New(), len(channels))
 	if err != nil {
-		return presence.Announcement{}, err
+		return nil, nil, err
 	}
-	return presence.Announcement{Channels: channels, Payload: payload}, nil
+	return channels, payload, nil
 }
 
 // Receiver は Broker が受け取ったものを渡す先（Hub が実装する）。
@@ -367,4 +367,26 @@ func (b *Broker) close() error {
 	}
 	b.mu.Unlock()
 	return b.ps.Close()
+}
+
+// PresenceStates は presence.Store を chat.PresenceReader にする。
+//
+// presence.Store は Redis の置き方だけを知っていて、chat のドメインの型は知らない。
+// 逆に chat は Redis を知らない。両方を知っているのはこのパッケージ（Hub と Broker の置き場所）なので、
+// 型の写し替えはここに置く。
+type PresenceStates struct {
+	Store *presence.Store
+}
+
+// Presence は chat.PresenceReader を満たす。
+func (p PresenceStates) Presence(ctx context.Context, userIDs []ulid.ULID) (map[ulid.ULID]chat.Presence, error) {
+	states, err := p.Store.States(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[ulid.ULID]chat.Presence, len(states))
+	for id, st := range states {
+		out[id] = chat.Presence(st)
+	}
+	return out, nil
 }

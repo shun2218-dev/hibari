@@ -156,7 +156,7 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		Storage:          objectStorage,
 		AttachmentLimits: chat.AttachmentLimits{MaxBytes: cfg.AttachmentMaxBytes, AllowedTypes: cfg.AttachmentAllowedTypes},
 		Delivery:         delivery,
-		Presence:         presenceStore,
+		Presence:         realtime.PresenceStates{Store: presenceStore},
 	})
 
 	// 添付の掃除ジョブ（ADR 0013）。DB のプールを閉じる前に止めて、終わるのを待つ。

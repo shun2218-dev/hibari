@@ -160,10 +160,10 @@ func (o *onlineSet) set(ids ...ulid.ULID) {
 	o.ids = ids
 }
 
-func (o *onlineSet) Online(ctx context.Context, userIDs []ulid.ULID) (map[ulid.ULID]bool, error) {
+func (o *onlineSet) Presence(ctx context.Context, userIDs []ulid.ULID) (map[ulid.ULID]chat.Presence, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return chattest.OnlineUsers(o.ids).Online(ctx, userIDs)
+	return chattest.OnlineUsers(o.ids).Presence(ctx, userIDs)
 }
 
 func TestMentionNonMemberIsNotCountedButStillShown(t *testing.T) {

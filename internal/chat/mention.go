@@ -49,15 +49,16 @@ func (s *Service) resolveHere(ctx context.Context, logger *slog.Logger, roomID u
 			slog.String("room_id", roomID.String()), slog.Any("error", err))
 		return mentionAll{}
 	}
-	online, err := s.presence.Online(ctx, members)
+	states, err := s.presence.Presence(ctx, members)
 	if err != nil {
 		logger.WarnContext(ctx, "resolve @here failed; counting it for nobody",
 			slog.String("room_id", roomID.String()), slog.Any("error", err))
 		return mentionAll{}
 	}
-	targets := make([]ulid.ULID, 0, len(online))
+	targets := make([]ulid.ULID, 0, len(states))
 	for _, id := range members {
-		if online[id] {
+		// @here は「いま画面を見ている人」。離席（idle）は含めない（ADR 0049）
+		if states[id] == PresenceActive {
 			targets = append(targets, id)
 		}
 	}

@@ -6,10 +6,13 @@ import { type Handler, TEST_API_BASE, fakeApi, json, tokens } from "@/test/fake-
 import { fakeSockets } from "@/test/fake-socket";
 
 import { createChatApi } from "./api";
-import { createRealtime } from "./realtime";
+import { type RealtimeOptions, createRealtime } from "./realtime";
 import { createChatStore } from "./store";
 
-function setup(routes: Record<string, Handler>, { autoAck = true } = {}) {
+function setup(
+  routes: Record<string, Handler>,
+  { autoAck = true, createActivity }: { autoAck?: boolean; createActivity?: RealtimeOptions["createActivity"] } = {},
+) {
   let tickets = 0;
   const log: string[] = [];
   const api = fakeApi({
@@ -23,13 +26,15 @@ function setup(routes: Record<string, Handler>, { autoAck = true } = {}) {
   const sockets = fakeSockets({ autoAck });
   const realtime = createRealtime({
     store,
+    createActivity,
     url: "ws://api.test/api/v1/ws",
     createSocket: (url) => {
       const socket = sockets.createSocket(url);
       const send = socket.send.bind(socket);
       socket.send = (data) => {
         const m = JSON.parse(data);
-        if (m.type !== "ping") log.push(`ws ${m.type} ${m.workspace_id ?? m.room_id}`);
+        if (m.type === "activity") log.push(`ws activity ${m.active}`);
+        else if (m.type !== "ping") log.push(`ws ${m.type} ${m.workspace_id ?? m.room_id}`);
         send(data);
       };
       return socket;
@@ -72,6 +77,8 @@ describe("createRealtime", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(log).toEqual([
+      // つないだ直後に「画面を見ているか」を送る（ADR 0049 決定 3）。jsdom では見えていない扱いになる
+      "ws activity false",
       "ws subscribe ws-1",
       "ws subscribe r1",
       "ws subscribe r2",
@@ -96,7 +103,7 @@ describe("createRealtime", () => {
     await vi.advanceTimersByTimeAsync(0);
     log.length = 0;
 
-    const [first, second] = sockets.last().sent;
+    const [first, second] = sockets.last().sent.filter((m) => m.type === "subscribe");
     sockets.last().receive({ type: "ack", id: first.id! });
     await vi.advanceTimersByTimeAsync(0);
     expect(log).toEqual([]);
@@ -127,6 +134,40 @@ describe("createRealtime", () => {
       { type: "unsubscribe", room_id: "r1" },
       { type: "subscribe", workspace_id: "ws-2" },
       { type: "subscribe", room_id: "r9" },
+    ]);
+    realtime.stop();
+  });
+
+  // ADR 0049 決定 3: 接続は「見ていない」から始まるので、つないだ直後に今の値を送り、あとは変わったときだけ送る
+  it("sends the activity right after connecting and whenever it changes", async () => {
+    let notify!: (active: boolean) => void;
+    let viewing = true;
+    const { store, realtime, sockets } = setup(
+      { "GET /api/v1/workspaces/ws-1/rooms": roomsOf("r1") },
+      {
+        createActivity: (onChange) => {
+          notify = onChange;
+          return { start: () => {}, stop: () => {}, current: () => viewing, reset: () => {} };
+        },
+      },
+    );
+    await store.loadRooms("ws-1");
+    store.setActiveWorkspace("ws-1");
+    realtime.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const socket = sockets.last();
+    socket.open();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // つないだ直後の 1 回
+    expect(socket.sent.filter((m) => m.type === "activity")).toEqual([{ type: "activity", active: true }]);
+
+    // 画面を離れたら送る
+    viewing = false;
+    notify(false);
+    expect(socket.sent.filter((m) => m.type === "activity")).toEqual([
+      { type: "activity", active: true },
+      { type: "activity", active: false },
     ]);
     realtime.stop();
   });
