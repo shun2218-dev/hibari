@@ -865,7 +865,7 @@ ADR 0050 の宿題（オーナーの指摘。2026-09-21）。6.10 の後に回�
 - [x] `smtp` のときに `AUTH_REQUIRE_VERIFIED_EMAIL=false` にすると起動しない（設定のテスト。`internal/platform/config/config_test.go` の「verified email cannot be skipped with smtp」）
 - [x] パスワードの再設定の応答の時間が、登録のある人とない人で変わらない（メールを非同期で送る。`internal/auth/mailer_test.go` の `TestPasswordResetDoesNotWaitForMail`（送信が止まったままでも、どちらも戻る）。キューそのものは `internal/platform/mail/queue_test.go`）
 - [x] 招待から登録した人が、確認メールを開くと招待の画面に戻る（Web のテスト。登録と再送で戻り先を送るのは `signup-page.test.tsx` の「puts the invite page into the verification link…」、リンクを開いたあとに戻るのは `verify-email-page.test.tsx` の「goes to the page in the link after verifying」。止められた画面から再送したときに、いまの画面を戻り先にするのは `(app)/layout.test.tsx` の「resends with the current page…」）
-- [ ] 本番の設定で、確認メールが実際に届く（オーナーによる確認）
+- [x] 本番の設定で、確認メールが実際に届く（オーナーによる確認。2026-09-22 に `hibari-chat.com` と Resend の本番の設定で、ローカルから Gmail に送って確かめた。SPF・DKIM・DMARC がすべて PASS。携帯キャリアは未確認で、オーナーの判断で届く前提にした。ADR 0053 の追記）
 
 ---
 

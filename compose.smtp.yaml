@@ -1,0 +1,16 @@
+# Resend 経由で本物のメールを送って確かめるときだけ、compose.yaml に重ねる（ADR 0053。手順は docs/deploy.md）。
+#   docker compose -f compose.yaml -f compose.smtp.yaml up -d server
+# 戻すときは -f なしで docker compose up -d server。
+# API キーは keys/resend_api_key に置く（.gitignore 済み）。
+services:
+  server:
+    environment:
+      MAIL_TRANSPORT: smtp
+      SMTP_HOST: smtp.resend.com
+      SMTP_PORT: "465"
+      SMTP_USERNAME: resend
+      # keys/ は .gitignore 済みで、/src に bind mount されている。
+      SMTP_PASSWORD_FILE: /src/keys/resend_api_key
+      MAIL_FROM: "hibari <noreply@mail.hibari-chat.com>"
+      # smtp のときは検証を外せない（外すと起動しない。ADR 0053 決定 4）。
+      AUTH_REQUIRE_VERIFIED_EMAIL: "true"
