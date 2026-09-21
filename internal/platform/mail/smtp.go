@@ -12,6 +12,7 @@ import (
 	netmail "net/mail"
 	"net/smtp"
 	"net/textproto"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -145,6 +146,11 @@ func (s *SMTP) tlsConfig() *tls.Config {
 func (s *SMTP) wrap(ctx context.Context, stage string, err error) error {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("smtp: %s: %w", stage, ctxErr)
+	}
+	// 接続には ctx と同じ期限を付けているので、読み書きのタイムアウトが ctx のタイマーより一瞬早く起きることがある。
+	// そのときはまだ ctx.Err() が nil なので、ctx の期限によるものとして DeadlineExceeded を返す（呼び出し側が理由を見分けられるように）。
+	if _, ok := ctx.Deadline(); ok && errors.Is(err, os.ErrDeadlineExceeded) {
+		return fmt.Errorf("smtp: %s: %w", stage, errors.Join(context.DeadlineExceeded, err))
 	}
 	return fmt.Errorf("smtp: %s: %w", stage, err)
 }
