@@ -78,6 +78,21 @@ SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name,
    AND wm.user_id = sqlc.arg(user_id)
    AND u.deleted_at IS NULL;
 
+-- name: GetWorkspaceMemberProfile :one
+-- プロフィールのパネルの 1 人分（ADR 0050 決定 1）。一覧の 1 行と同じ列に email を足す。
+-- email を読むのはこのクエリだけにする（一覧・UserProfile・イベントには載せない）。
+-- 検証済みかどうかで落とすのは Go の側（期限切れのステータスと同じく、CASE 式は sqlc が型を推せないため）。
+SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name,
+       COALESCE(ps.manual_away, false)::boolean AS manual_away,
+       wm.status_emoji, wm.status_text, wm.status_expires_at,
+       u.email::text AS email, u.email_verified_at
+  FROM workspace_members wm
+  JOIN users u ON u.id = wm.user_id
+  LEFT JOIN user_presence_settings ps ON ps.user_id = wm.user_id
+ WHERE wm.workspace_id = sqlc.arg(workspace_id)
+   AND wm.user_id = sqlc.arg(user_id)
+   AND u.deleted_at IS NULL;
+
 -- name: LockWorkspaceMembers :many
 -- ロールの変更・キック・譲渡の対象の行（actor と target）をロックして、ロック後のロールを返す。
 -- 行ロックは user_id の順に取る。「A が B を降格」と「B が A をキック」が同時に起きても、

@@ -213,6 +213,17 @@ export interface MemberList {
   next_cursor: string | null;
 }
 
+export interface MemberProfile {
+  user: UserProfile;
+  role: Role;
+  joined_at: string;
+  presence: Presence;
+  away: boolean;
+  /** status は設定していなければ null（期限切れも null）。 */
+  status: UserStatus | null;
+  email: string | null;
+}
+
 export interface ChangeMemberRoleRequest {
   role: Role;
 }

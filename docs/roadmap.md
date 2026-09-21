@@ -722,15 +722,17 @@ Claude Design で描いた 83 枚（`source: "design"`）は撮り直しの対�
 
 **構築順**（PR を分ける）
 1. 設計（ADR 0050） ← このフェーズの最初の PR
-2. デザイン: ホバーのカード、右のパネル（他人・自分・管理できる相手・email の読み込み中と未検証・外された人・メンバーから開いた）、3 点メニュー、モバイルの全画面。story に描いて `docs/ui/` に足し、オーナーに見てもらう
-3. API: `GET /workspaces/{id}/members/{userID}`、`authz.CanViewMemberProfile`、TypeScript の型
+2. デザイン: ホバーのカード、右のパネル（他人・自分・管理できる相手・email の読み込み中と未検証・外された人・メンバーから開いた）、3 点メニュー、モバイルの全画面。story に描いて `docs/ui/` に足し、オーナーに見てもらう ← 完了（`docs/ui/README.md` の「Phase 6.9 で足した画面」）
+3. API: `GET /workspaces/{id}/members/{userID}`、`authz.CanViewMemberProfile`、TypeScript の型 ← 完了
+   email を読むのは専用のクエリ（`GetWorkspaceMemberProfile`）だけ。検証済みかで落とすのは Go の側（期限切れのステータスと同じ理由）
 4. Web: ホバーのカードとパネル（`?p=`）のつなぎ込み、「DM を送る」、コピー、ロールの変更とキック
 
 **DoD**
 - [ ] メッセージ・スレッドのアイコンと名前に乗せるとカード、押すとパネルが開く。メンバーパネルの行からもパネルが開く
 - [ ] モバイルでは押すと全画面のパネルが開き、ブラウザの「戻る」で閉じる
-- [ ] 別のワークスペースのユーザーや、外されたユーザーの email は返らない（API のテスト）
-- [ ] 未検証の email は返らない（API のテスト）
+- [x] 別のワークスペースのユーザーや、外されたユーザーの email は返らない（API のテスト）
+      （`internal/chat/member_test.go` の `TestGetMemberProfile`、`internal/httpx/member_profile_test.go` の `TestMemberProfile`）
+- [x] 未検証の email は返らない（API のテスト。同上）
 - [ ] 外された人の過去のメッセージからは、名前と handle だけのカードとパネルが開く
 - [ ] 管理の入口は、操作できる相手のときだけ出る
 - [ ] 「DM を送る」を並行して押しても DM は 1 つ（`dm_key`）

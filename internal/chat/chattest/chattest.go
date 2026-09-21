@@ -198,6 +198,14 @@ func (e *Env) CreateUser(t testing.TB) ulid.ULID {
 	return userID
 }
 
+// VerifyEmail は userID の email を検証済みにする（CreateUser と同じく、auth のユースケースを通さずに SQL で）。
+func (e *Env) VerifyEmail(t testing.TB, userID ulid.ULID) {
+	t.Helper()
+	if _, err := e.Pool.Exec(t.Context(), `UPDATE users SET email_verified_at = $2 WHERE id = $1`, userID, e.Clock.Now()); err != nil {
+		t.Fatalf("verify email: %v", err)
+	}
+}
+
 // CreateUsers は n 人のユーザーを作る。
 func (e *Env) CreateUsers(t testing.TB, n int) []ulid.ULID {
 	t.Helper()

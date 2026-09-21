@@ -122,6 +122,7 @@ func TestWorkspaceRoleOnly(t *testing.T) {
 	checkRoles(t, "CanListInvites", CanListInvites, o, a, m)
 	checkRoles(t, "CanCreateRoom", CanCreateRoom, o, a, m)
 	checkRoles(t, "CanSubscribeWorkspace", CanSubscribeWorkspace, o, a, m)
+	checkRoles(t, "CanViewMemberProfile", CanViewMemberProfile, o, a, m)
 }
 
 func TestCanCreateInvite(t *testing.T) {

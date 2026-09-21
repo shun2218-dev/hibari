@@ -130,6 +130,7 @@ var tsDecls = []tsDecl{
 	response[userStatusResponse]("UserStatus"),
 	response[memberResponse]("Member"),
 	response[memberListResponse]("MemberList"),
+	response[memberProfileResponse]("MemberProfile"),
 	request[changeMemberRoleRequest]("ChangeMemberRoleRequest"),
 	// 離席とカスタムステータス（ADR 0049）
 	request[manualAwayRequest]("ManualAwayRequest"),

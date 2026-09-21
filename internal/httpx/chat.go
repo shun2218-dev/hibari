@@ -23,6 +23,7 @@ type ChatService interface {
 	GetWorkspace(ctx context.Context, actor, workspaceID ulid.ULID) (chat.Workspace, error)
 	UpdateWorkspace(ctx context.Context, actor, workspaceID ulid.ULID, in chat.WorkspaceUpdate) (chat.Workspace, error)
 	ListMembers(ctx context.Context, actor, workspaceID ulid.ULID, page chat.PageRequest) (chat.Page[chat.Member], error)
+	GetMemberProfile(ctx context.Context, actor, workspaceID, target ulid.ULID) (chat.MemberProfile, error)
 	ChangeMemberRole(ctx context.Context, actor, workspaceID, target ulid.ULID, newRole string) (chat.Member, error)
 	RemoveMember(ctx context.Context, actor, workspaceID, target ulid.ULID) error
 	TransferOwnership(ctx context.Context, actor, workspaceID, target ulid.ULID) error
@@ -82,6 +83,8 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("GET /api/v1/workspaces/{workspaceID}", h.getWorkspace)
 	handle("PATCH /api/v1/workspaces/{workspaceID}", h.updateWorkspace)
 	handle("GET /api/v1/workspaces/{workspaceID}/members", h.listMembers)
+	// プロフィールのパネルの 1 人分（ADR 0050 決定 1）。email を返すのはこの API だけ。
+	handle("GET /api/v1/workspaces/{workspaceID}/members/{userID}", h.getMemberProfile)
 	handle("PATCH /api/v1/workspaces/{workspaceID}/members/{userID}", h.changeMemberRole)
 	handle("DELETE /api/v1/workspaces/{workspaceID}/members/{userID}", h.removeMember)
 	handle("POST /api/v1/workspaces/{workspaceID}/ownership-transfer", h.transferOwnership)
@@ -345,6 +348,32 @@ func (h *chatHandlers) listMembers(w http.ResponseWriter, r *http.Request) {
 		resp.Members[i] = newMemberResponse(m)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// memberProfileResponse はメンバーの一覧の 1 行に email を足したもの（ADR 0050 決定 1）。
+// email は検証済みのときだけ入り、未検証なら null（決定 2）。
+type memberProfileResponse struct {
+	memberResponse
+	Email *string `json:"email"`
+}
+
+func (h *chatHandlers) getMemberProfile(w http.ResponseWriter, r *http.Request) {
+	wsID, err := pathID(r, "workspaceID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	target, err := pathID(r, "userID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	p, err := h.svc.GetMemberProfile(r.Context(), actorOf(r), wsID, target)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, memberProfileResponse{memberResponse: newMemberResponse(p.Member), Email: p.Email})
 }
 
 type memberListResponse struct {
