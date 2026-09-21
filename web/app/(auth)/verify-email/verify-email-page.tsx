@@ -18,8 +18,11 @@ type Step = "verifying" | "done" | "invalid";
  *
  * トークンのないリンク（`/verify-email`）は、無効なリンクと同じ画面にする。
  * ログインしていないときに再送を押したらログインに回し、戻ってきたこの画面から再送できるようにする。
+ *
+ * `next` は検証のあとに進む先（招待の画面など。ADR 0053 決定 3）。page.tsx で同じオリジンのパスに絞ってある。
+ * 再送するときもリンクに載せ直す。
  */
-export function VerifyEmailPage({ token }: { token: string }) {
+export function VerifyEmailPage({ token, next = "/" }: { token: string; next?: string }) {
   const router = useRouter();
   const session = useSession();
   const [step, setStep] = useState<Step>(token ? "verifying" : "invalid");
@@ -43,10 +46,11 @@ export function VerifyEmailPage({ token }: { token: string }) {
   async function resend() {
     setResending(true);
     try {
-      await session.request("POST", "/api/v1/auth/verify-email/request");
+      await session.requestEmailVerification(next === "/" ? {} : { next });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        router.push(`/login?next=${encodeURIComponent("/verify-email")}`);
+        const back = next === "/" ? "/verify-email" : `/verify-email?next=${encodeURIComponent(next)}`;
+        router.push(`/login?next=${encodeURIComponent(back)}`);
         return;
       }
       // 再送の結果（成功・回数制限）の表示はデザインにない（docs/ui/README.md の「未解決」）。
@@ -59,7 +63,7 @@ export function VerifyEmailPage({ token }: { token: string }) {
   return (
     <AuthShell>
       {step === "verifying" && <VerifyEmailChecking />}
-      {step === "done" && <VerifyEmailDone onOpen={() => router.push("/")} />}
+      {step === "done" && <VerifyEmailDone onOpen={() => router.push(next)} />}
       {step === "invalid" && <VerifyEmailInvalid resending={resending} onResend={resend} />}
     </AuthShell>
   );

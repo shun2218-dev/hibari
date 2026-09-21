@@ -10,7 +10,10 @@ import { passwordStrength } from "@/lib/auth/password-strength";
 import { useSession, useSessionState } from "@/lib/auth/session-provider";
 import { signupErrorMessage } from "@/lib/auth/signup-error";
 
-/** `next` は page.tsx で同じオリジンのパスに絞ってある（招待リンクから来た人の戻り先）。 */
+/**
+ * `next` は page.tsx で同じオリジンのパスに絞ってある（招待リンクから来た人の戻り先）。
+ * 確認メールのリンクにも載せ、検証のあとにそこへ戻す（ADR 0053 決定 3）。
+ */
 export function SignupPage({ next = "/" }: { next?: string }) {
   const router = useRouter();
   const session = useSession();
@@ -31,7 +34,7 @@ export function SignupPage({ next = "/" }: { next?: string }) {
     return (
       <AuthShell>
         {/* メールアドレスを変える API がないので、「別のアドレスに変更する」は出さない（onChangeEmail を渡さない） */}
-        <VerifyEmailPending email={registeredEmail} resending={resending} onResend={resend} />
+        <VerifyEmailPending email={registeredEmail} resending={resending} onResend={resend} onLogout={logout} />
       </AuthShell>
     );
   }
@@ -48,6 +51,7 @@ export function SignupPage({ next = "/" }: { next?: string }) {
         display_name: values.displayName,
         email: values.email,
         password: values.password,
+        ...nextParam(),
       });
       setRegisteredEmail(values.email);
     } catch (err) {
@@ -64,13 +68,25 @@ export function SignupPage({ next = "/" }: { next?: string }) {
   async function resend() {
     setResending(true);
     try {
-      await session.request("POST", "/api/v1/auth/verify-email/request");
+      await session.requestEmailVerification(nextParam());
     } catch (err) {
       // 再送の結果（成功・回数制限）の表示もデザインにない。
       console.error("resending the verification email failed", err);
     } finally {
       setResending(false);
     }
+  }
+
+  /** 戻り先が既定（`/`）なら載せない。検証のあとは既定でも `/` に進む。 */
+  function nextParam(): { next?: string } {
+    return next === "/" ? {} : { next };
+  }
+
+  async function logout() {
+    await session.logout();
+    // 確認待ちの画面を閉じて、登録のフォームに戻す。
+    registering.current = false;
+    setRegisteredEmail(undefined);
   }
 
   return (

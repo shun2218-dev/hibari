@@ -68,4 +68,39 @@ describe("VerifyEmailPage", () => {
 
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/login?next=%2Fverify-email"));
   });
+
+  it("goes to the page in the link after verifying (ADR 0053)", async () => {
+    renderWithSession(<VerifyEmailPage token="tok-1" next="/j/abc" />, {
+      "POST /api/v1/auth/verify-email/confirm": noContent,
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "hibari を開く" }));
+    expect(router.push).toHaveBeenCalledWith("/j/abc");
+  });
+
+  it("keeps the page to go back to when resending", async () => {
+    const { api } = renderWithSession(<VerifyEmailPage token="used" next="/j/abc" />, {
+      "POST /api/v1/auth/verify-email/confirm": () => problem(400, "invalid-one-time-token"),
+      "POST /api/v1/auth/refresh": () => tokens("at-1"),
+      "POST /api/v1/auth/verify-email/request": () => new Response(null, { status: 202 }),
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "確認メールを再送する" }));
+
+    await waitFor(() => expect(api.paths()).toContain("POST /api/v1/auth/verify-email/request"));
+    const call = api.calls.find((c) => c.path === "/api/v1/auth/verify-email/request");
+    expect(JSON.parse(String(call?.init.body))).toEqual({ next: "/j/abc" });
+  });
+
+  it("keeps the page to go back to through logging in", async () => {
+    renderWithSession(<VerifyEmailPage token="" next="/j/abc" />, {
+      "POST /api/v1/auth/refresh": () => problem(401, "invalid-refresh-token"),
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "確認メールを再送する" }));
+
+    await waitFor(() =>
+      expect(router.push).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/verify-email?next=%2Fj%2Fabc")}`),
+    );
+  });
 });

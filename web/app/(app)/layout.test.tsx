@@ -101,4 +101,90 @@ describe("AppLayout", () => {
 
     await waitFor(() => expect(sockets[0].closed).toBe(true));
   });
+
+  describe("until the email is verified (ADR 0053)", () => {
+    const blocked = {
+      ...signedIn,
+      "GET /api/v1/workspaces": () => problem(403, "email-unverified"),
+      "POST /api/v1/ws/ticket": () => problem(403, "email-unverified"),
+    };
+
+    it("shows the waiting screen instead of the app when chat refuses the user", async () => {
+      renderWithSession(
+        <AppLayout>
+          <HomePage />
+        </AppLayout>,
+        blocked,
+      );
+
+      expect(await screen.findByRole("heading", { name: "確認メールを送りました" })).toBeInTheDocument();
+      expect(screen.getByText(testUser.email)).toBeInTheDocument();
+    });
+
+    it("does not block when the server lets unverified users in (development)", async () => {
+      renderWithSession(
+        <AppLayout>
+          <p>protected</p>
+        </AppLayout>,
+        signedIn,
+      );
+
+      expect(await screen.findByText("protected")).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "確認メールを送りました" })).not.toBeInTheDocument();
+    });
+
+    it("resends with the current page as the place to come back to", async () => {
+      nav.pathname = "/j/abc";
+      window.history.replaceState(null, "", "/j/abc");
+      const { api } = renderWithSession(
+        <AppLayout>
+          <HomePage />
+        </AppLayout>,
+        { ...blocked, "POST /api/v1/auth/verify-email/request": () => new Response(null, { status: 202 }) },
+      );
+
+      await userEvent.click(await screen.findByRole("button", { name: "確認メールを再送する" }));
+
+      await waitFor(() => expect(api.paths()).toContain("POST /api/v1/auth/verify-email/request"));
+      const call = api.calls.find((c) => c.path === "/api/v1/auth/verify-email/request");
+      expect(JSON.parse(String(call?.init.body))).toEqual({ next: "/j/abc" });
+    });
+
+    it("logs out to the login page", async () => {
+      renderWithSession(
+        <AppLayout>
+          <HomePage />
+        </AppLayout>,
+        { ...blocked, "POST /api/v1/auth/logout": () => new Response(null, { status: 204 }) },
+      );
+
+      await userEvent.click(await screen.findByRole("button", { name: "ログアウト" }));
+
+      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/login"));
+    });
+
+    it("opens the app when coming back after verifying in another tab", async () => {
+      let verified = false;
+      renderWithSession(
+        <AppLayout>
+          <HomePage />
+        </AppLayout>,
+        {
+          ...signedIn,
+          "POST /api/v1/auth/refresh": () => tokens(verified ? "at-verified" : "at-1"),
+          "GET /api/v1/users/me": () => json(200, { ...testUser, email_verified: verified }),
+          "GET /api/v1/workspaces": (_url, init) =>
+            new Headers(init.headers).get("Authorization") === "Bearer at-verified"
+              ? json(200, { workspaces: [] })
+              : problem(403, "email-unverified"),
+        },
+      );
+      await screen.findByRole("heading", { name: "確認メールを送りました" });
+
+      verified = true;
+      window.dispatchEvent(new Event("focus"));
+
+      expect(await screen.findByRole("heading", { name: "まだワークスペースがありません" })).toBeInTheDocument();
+    });
+  });
 });
