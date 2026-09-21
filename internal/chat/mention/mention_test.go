@@ -1,6 +1,9 @@
 package mention_test
 
 import (
+	"encoding/json/v2"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -71,6 +74,12 @@ func TestParse(t *testing.T) {
 			want: []mention.Mention{{Kind: mention.KindUser, UserID: alice}},
 		},
 		{
+			// コードの中の同じ人を先に書いても、コードの外の出現で 1 件になる
+			name: "コードの中はメンションにしない",
+			body: "`<@" + alice.String() + ">` <@" + bob.String() + "> <@" + alice.String() + ">",
+			want: []mention.Mention{{Kind: mention.KindUser, UserID: bob}, {Kind: mention.KindUser, UserID: alice}},
+		},
+		{
 			name: "大文字と小文字の同じ ID は 1 件",
 			body: "<@" + alice.String() + "> <@" + strings.ToLower(alice.String()) + ">",
 			want: []mention.Mention{{Kind: mention.KindUser, UserID: alice}},
@@ -111,4 +120,47 @@ func TestUserIDsAndHas(t *testing.T) {
 	if mention.UserIDs(nil) != nil {
 		t.Error("UserIDs(nil) is not nil")
 	}
+}
+
+// TestParseSharedCases は、Web の解釈と共通の例（testdata/format/mentions.json）で、コードの範囲の規則がそろっていることを確かめる（ADR 0051 決定 5）。
+func TestParseSharedCases(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "testdata", "format", "mentions.json"))
+	if err != nil {
+		t.Fatalf("read shared cases: %v", err)
+	}
+	var file struct {
+		Cases []struct {
+			Name     string   `json:"name"`
+			Body     string   `json:"body"`
+			Mentions []string `json:"mentions"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatalf("decode shared cases: %v", err)
+	}
+	if len(file.Cases) == 0 {
+		t.Fatal("no shared cases")
+	}
+	for _, tc := range file.Cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			t.Parallel()
+			got := []string{}
+			for _, m := range mention.Parse(tc.Body) {
+				got = append(got, token(m))
+			}
+			if strings.Join(got, " ") != strings.Join(tc.Mentions, " ") {
+				t.Errorf("Parse(%q) = %v, want %v", tc.Body, got, tc.Mentions)
+			}
+		})
+	}
+}
+
+// token は Mention を本文のトークンの形に戻す。
+func token(m mention.Mention) string {
+	if m.Kind == mention.KindUser {
+		return "<@" + m.UserID.String() + ">"
+	}
+	return "<!" + string(m.Kind) + ">"
 }

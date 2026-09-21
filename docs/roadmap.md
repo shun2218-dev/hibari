@@ -772,7 +772,8 @@ DoD の 3 項目は表示だけで満たせる。
 1. 設計（ADR 0051） ← このフェーズの最初の PR
 2. デザイン: 解釈（`lib/chat/body-format.ts`）と描画（`MessageBody` の置き換え）を作り、各書式・コードブロック・引用・リスト・リンクの見た目を story に描いて `docs/ui/` に足し、オーナーに見てもらう
    （見た目を実物の解釈で確かめるため、解釈もここで作る。日時の整形の `lib/chat/format.ts` がすでにあるので、名前を ADR の仮の名前から変えた）
-3. サーバー: `internal/chat/mention` でコードの範囲のトークンを除外する（共通の JSON のテスト）
+3. サーバー: `internal/chat/mention` でコードの範囲のトークンを除外する（共通の JSON のテスト）← 完了
+   Go と TypeScript は `testdata/format/mentions.json`（「どのトークンがメンションになるか」の組）を読む。ADR の仮の名前（`code-spans.json`）から、守る約束に合わせて変えた
 4. Web: スレッドの一覧とリンクのカードを同じ解釈にする、パーマリンクを同じタブで開く、`findPermalinks` の置き換え、`toWireBody` / `toInputBody` のコードの除外
 
 **DoD**

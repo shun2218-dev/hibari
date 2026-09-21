@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { type Block, type Inline, parseBody, parseInline } from "./body-format";
@@ -170,5 +172,42 @@ describe("parseBody（ブロック）", () => {
 
   it("行頭の *太字* はリストにしない（記号の後ろに空白がない）", () => {
     expect(parseBody("*太字*")).toEqual([para(bold(text("太字")))]);
+  });
+});
+
+/** 木の中のメンションのトークンを、出現順・重複なしで集める（コードの中は木に入らない）。 */
+function mentionTokens(blocks: Block[]): string[] {
+  const found: string[] = [];
+  const inline = (nodes: Inline[]) => {
+    for (const node of nodes) {
+      if (node.type === "mention") found.push(node.raw);
+      else if (node.type === "bold" || node.type === "italic" || node.type === "strike") inline(node.children);
+    }
+  };
+  const block = (b: Block) => {
+    if (b.type === "paragraph") inline(b.children);
+    else if (b.type === "quote") b.children.forEach(block);
+    else if (b.type === "list")
+      for (const item of b.items) {
+        inline(item.children);
+        item.sublists.forEach(block);
+      }
+  };
+  blocks.forEach(block);
+  return [...new Set(found)];
+}
+
+describe("サーバーと共通のメンションの例（ADR 0051 決定 5）", () => {
+  // サーバー（internal/chat/mention）のテストも同じファイルを読む。コードの範囲の規則がずれると、どちらかが落ちる
+  const file = JSON.parse(
+    readFileSync(path.join(import.meta.dirname, "..", "..", "..", "testdata", "format", "mentions.json"), "utf8"),
+  ) as { cases: { name: string; body: string; mentions: string[] }[] };
+
+  it("例がある", () => {
+    expect(file.cases.length).toBeGreaterThan(0);
+  });
+
+  it.each(file.cases.map((c) => [c.name, c] as const))("%s", (_name, c) => {
+    expect(mentionTokens(parseBody(c.body))).toEqual(c.mentions);
   });
 });

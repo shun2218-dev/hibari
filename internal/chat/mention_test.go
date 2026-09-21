@@ -192,6 +192,25 @@ func TestMentionNonMemberIsNotCountedButStillShown(t *testing.T) {
 	})
 }
 
+func TestMentionInCodeIsNotCounted(t *testing.T) {
+	env := chattest.New(t)
+	r, room := mentionRoom(t, env)
+
+	// コード（インラインとブロック）の中のトークンは、件数にも表示にも使わない（ADR 0051 決定 5）。
+	// 表示がチップにしないものを数えると、「通知は来たのに本文のどこにもメンションがない」になる。
+	msg := send(t, env, r.member, room.ID, "`<!channel>` の書き方:\n```\n"+at(r.member2)+"\n```\n"+at(r.admin)+" 確認お願いします")
+
+	if got := mentionCount(t, env, r.member2, room.ID); got != 0 {
+		t.Errorf("mention_count for a user only mentioned in code = %d, want 0", got)
+	}
+	if got := mentionCount(t, env, r.admin, room.ID); got != 1 {
+		t.Errorf("mention_count for a user mentioned outside code = %d, want 1", got)
+	}
+	if len(msg.Mentions) != 1 || msg.Mentions[0].User == nil || msg.Mentions[0].User.ID != r.admin {
+		t.Errorf("mentions = %+v, want only the user outside code", msg.Mentions)
+	}
+}
+
 func TestMentionRowsFollowTheBody(t *testing.T) {
 	env := chattest.New(t)
 	r, room := mentionRoom(t, env)
