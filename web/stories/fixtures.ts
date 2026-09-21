@@ -508,11 +508,11 @@ export const typingNames = [users.miyuki.name];
 // ---- 離席とカスタムステータス（ADR 0049。chat/presence/） ----
 
 /** 自分のステータス。アカウントメニューと設定のダイアログに出す。 */
-export const myStatus: UserStatusView = { emoji: "🍵", text: "休憩中" };
+export const myStatus: UserStatusView = { emoji: "🍵", text: "休憩中", expiresLabel: "今日 17:00 まで" };
 
 /** 誰がどのステータスを出しているか。名前の横・メンバーパネル・サイドバーの DM で同じ表を使う。 */
 const statuses: Readonly<Record<string, UserStatusView>> = {
-  [users.naoki.id]: { emoji: "📅", text: "会議中" },
+  [users.naoki.id]: { emoji: "📅", text: "会議中", expiresLabel: "11:30 まで" },
   [users.miyuki.id]: { emoji: "🎧", text: "集中しています" },
   [users.ryo.id]: { emoji: "🌴", text: "休暇中" },
 };

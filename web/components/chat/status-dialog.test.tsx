@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -43,13 +43,38 @@ describe("StatusDialog（ADR 0049）", () => {
     expect(onChangeText).toHaveBeenCalledWith("あ");
   });
 
-  it("消える時刻を選ぶと、選んだ種類が渡る（絶対の時刻にするのはデータ層）", async () => {
+  it("消す時刻を選ぶと、選んだ種類が渡る（絶対の時刻にするのはデータ層）", async () => {
     const onChangeExpiry = vi.fn();
     render(<StatusDialog open text="休憩中" expiry="none" onChangeExpiry={onChangeExpiry} />);
 
+    // 文言と並びは Slack に合わせてある
+    expect(screen.getByText("次の時間の経過後に削除")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "削除しない" })).toBeChecked();
     await userEvent.click(screen.getByRole("radio", { name: "1 時間" }));
 
     expect(onChangeExpiry).toHaveBeenCalledWith("1h");
+  });
+
+  it("「日時を選択」のときだけ、日付と時刻の入力を出す", async () => {
+    const onChangeCustom = vi.fn();
+    const { rerender } = render(<StatusDialog open text="休憩中" expiry="today" />);
+    expect(screen.queryByLabelText("削除する日付")).not.toBeInTheDocument();
+
+    rerender(
+      <StatusDialog
+        open
+        text="休憩中"
+        expiry="custom"
+        custom={{ date: "2026-09-25", time: "17:00" }}
+        onChangeCustom={onChangeCustom}
+      />,
+    );
+
+    expect(screen.getByLabelText("削除する日付")).toHaveValue("2026-09-25");
+    expect(screen.getByLabelText("削除する時刻")).toHaveValue("17:00");
+    // 片方を変えても、もう片方は保たれる（props で値を持つので、1 回の change で確かめる）
+    fireEvent.change(screen.getByLabelText("削除する時刻"), { target: { value: "18:30" } });
+    expect(onChangeCustom).toHaveBeenLastCalledWith({ date: "2026-09-25", time: "18:30" });
   });
 
   it("絵文字のボタンでピッカーを開け閉めする", async () => {

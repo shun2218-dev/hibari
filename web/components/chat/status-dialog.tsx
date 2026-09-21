@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { type ReactNode, useRef } from "react";
 
 import { AnchoredPanel } from "@/components/ui/anchored-panel";
 import { Button, TextButton } from "@/components/ui/button";
@@ -14,20 +14,22 @@ import { EmojiPicker } from "./emoji-picker";
 import type { UserStatusView } from "./types";
 
 /**
- * ステータスが消える時刻の選び方（ADR 0049 決定 10）。
+ * ステータスを消す時刻の選び方（ADR 0049 決定 10）。文言も並びも Slack の「次の時間の経過後に削除」に合わせる。
  *
  * **相対の選択肢を絶対の時刻にするのはクライアント**（サーバーはユーザーのタイムゾーンを知らない）。
  * ここは選ばれた種類を持つだけで、時刻の計算はデータ層（構築順 4）が `Clock` で行う。
+ * `custom` だけは、下に出る日付と時刻の入力から絶対の時刻を作る。
  */
-export type StatusExpiry = "none" | "30m" | "1h" | "4h" | "today" | "week";
+export type StatusExpiry = "none" | "30m" | "1h" | "4h" | "today" | "week" | "custom";
 
 export const statusExpiryLabel: Record<StatusExpiry, string> = {
-  none: "消さない",
+  none: "削除しない",
   "30m": "30 分",
   "1h": "1 時間",
   "4h": "4 時間",
   today: "今日",
   week: "今週",
+  custom: "日時を選択",
 };
 
 /** よく使うステータスの候補。Slack と同じく、押すと絵文字と文言がそのまま入る。 */
@@ -45,12 +47,17 @@ export const STATUS_TEXT_MAX = 100;
 /** 文言だけを書いたときに添える絵文字。サーバーは絵文字を必須にしているので、クライアントが入れる。 */
 export const DEFAULT_STATUS_EMOJI = "💬";
 
+/** 「日時を選択」で入れる値。`<input type="date" / "time">` の形式のまま持ち、絶対の時刻にするのはデータ層。 */
+export type StatusExpiryCustom = { date: string; time: string };
+
 type StatusDialogProps = {
   open: boolean;
   /** いま選んでいる絵文字。未選択なら既定の絵文字を出す。 */
   emoji?: string;
   text: string;
   expiry: StatusExpiry;
+  /** `expiry` が custom のときに出す日付と時刻。 */
+  custom?: StatusExpiryCustom;
   /** 絵文字のピッカーを開いている。 */
   pickerOpen?: boolean;
   /** すでに設定してある（「削除」を出すか）。 */
@@ -60,6 +67,7 @@ type StatusDialogProps = {
   onPickEmoji?: (emoji: string) => void;
   onChangeText?: (text: string) => void;
   onChangeExpiry?: (expiry: StatusExpiry) => void;
+  onChangeCustom?: (custom: StatusExpiryCustom) => void;
   onSelectPreset?: (preset: UserStatusView) => void;
   onSave?: () => void;
   onClear?: () => void;
@@ -68,7 +76,23 @@ type StatusDialogProps = {
 };
 
 /**
- * カスタムステータスを設定するダイアログ（ADR 0049）。
+ * ラベルと中身の組。入力欄（`Field`）と同じラベルの見た目・同じ余白（gap-1.5）にそろえる。
+ * 節ごとに余白を書いていたら、見出しと中身の距離がばらついた（オーナーの指摘、2026-09-21）。
+ */
+function Section({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-xs font-medium text-text">{label}</p>
+      {children}
+    </div>
+  );
+}
+
+// 日付・時刻の入力。カレンダーはブラウザのものが開く（自前のカレンダーは作らない）。
+const dateInputClass = "h-11 rounded-md border border-border bg-surface px-3 text-lg text-text focus-visible:-outline-offset-2";
+
+/**
+ * カスタムステータスを設定するダイアログ（ADR 0049）。文言と選択肢は Slack に合わせる。
  *
  * 絵文字は 6.7 のピッカーをそのまま使う。開き方もリアクションと同じで、
  * md 以上は絵文字のボタンに合わせて**画面に浮かせ**、モバイルは下から出るシートにする（ADR 0044 決定 7）。
@@ -79,6 +103,7 @@ export function StatusDialog({
   emoji = DEFAULT_STATUS_EMOJI,
   text,
   expiry,
+  custom,
   pickerOpen = false,
   canClear = false,
   onClose,
@@ -86,6 +111,7 @@ export function StatusDialog({
   onPickEmoji,
   onChangeText,
   onChangeExpiry,
+  onChangeCustom,
   onSelectPreset,
   onSave,
   onClear,
@@ -166,15 +192,15 @@ export function StatusDialog({
             </Portal>
           ))}
 
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-medium text-text">よく使うもの</p>
+        <Section label="よく使うもの">
+          {/* 行そのものに余白があるので、見出しとの距離は行の内側の余白ぶんだけ詰めて見える。左端は入力欄とそろえる */}
           <ul className="flex flex-col">
             {statusPresets.map((preset) => (
               <li key={preset.emoji}>
                 <button
                   type="button"
                   onClick={() => onSelectPreset?.(preset)}
-                  className="flex h-9.5 w-full cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-base text-text hover:bg-surface-muted"
+                  className="flex h-9.5 w-full cursor-pointer items-center gap-2 rounded-sm px-3 text-left text-base text-text hover:bg-surface-muted"
                 >
                   <span role="img" aria-hidden>
                     {preset.emoji}
@@ -184,24 +210,46 @@ export function StatusDialog({
               </li>
             ))}
           </ul>
-        </div>
+        </Section>
 
-        <fieldset className="flex flex-col gap-2">
-          <legend className="text-xs font-medium text-text">消える時刻</legend>
-          <div className="flex flex-wrap gap-2">
-            {(Object.keys(statusExpiryLabel) as StatusExpiry[]).map((value) => (
-              <ChoiceChip
-                key={value}
-                name="status-expiry"
-                value={value}
-                checked={expiry === value}
-                onChange={(picked) => onChangeExpiry?.(picked as StatusExpiry)}
-              >
-                {statusExpiryLabel[value]}
-              </ChoiceChip>
-            ))}
+        {/* 文言と選択肢は Slack に合わせる（オーナーの指摘、2026-09-21） */}
+        <Section label="次の時間の経過後に削除">
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(statusExpiryLabel) as StatusExpiry[]).map((value) => (
+                <ChoiceChip
+                  key={value}
+                  name="status-expiry"
+                  value={value}
+                  checked={expiry === value}
+                  onChange={(picked) => onChangeExpiry?.(picked as StatusExpiry)}
+                >
+                  {statusExpiryLabel[value]}
+                </ChoiceChip>
+              ))}
+            </div>
+            {expiry === "custom" && (
+              // カレンダーはブラウザのものが開く（自前のカレンダーは作らない）。
+              // 入れた日時を絶対の時刻にするのはデータ層で、端末のタイムゾーンで解釈する
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="date"
+                  aria-label="削除する日付"
+                  value={custom?.date ?? ""}
+                  onChange={(e) => onChangeCustom?.({ date: e.target.value, time: custom?.time ?? "" })}
+                  className={dateInputClass}
+                />
+                <input
+                  type="time"
+                  aria-label="削除する時刻"
+                  value={custom?.time ?? ""}
+                  onChange={(e) => onChangeCustom?.({ date: custom?.date ?? "", time: e.target.value })}
+                  className={dateInputClass}
+                />
+              </div>
+            )}
           </div>
-        </fieldset>
+        </Section>
       </div>
     </Dialog>
   );

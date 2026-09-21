@@ -41,10 +41,9 @@ export function MembersPanel({ members, onClose }: { members: RoomMemberView[]; 
                   <span className="truncate text-base font-semibold text-text">{member.name}</span>
                   {member.status && <StatusEmoji status={member.status} className="text-sm" />}
                 </p>
-                {/* ステータスの文言は、ここでは名前の下にそのまま読める形で出す（絵文字だけでは何か分からないため） */}
+                {/* ステータスの文言と「いつ消えるか」は、ここでは名前の下にそのまま読める形で出す */}
                 <p className="truncate text-2xs text-text-muted">
-                  {member.roleLabel}
-                  {member.status?.text && ` · ${member.status.text}`}
+                  {[member.roleLabel, member.status?.text, member.status?.expiresLabel].filter(Boolean).join(" · ")}
                 </p>
               </div>
             </li>

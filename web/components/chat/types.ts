@@ -11,9 +11,11 @@ export type RoomKind = "public" | "private" | "dm";
 
 /**
  * カスタムステータス（ADR 0049）。ワークスペースごとに持ち、絵文字は必須で文言は任意。
- * 期限（`expires_at`）は画面には出さないので持たない（過ぎたステータスはデータ層が落とす）。
+ *
+ * `expiresLabel` は「いつ消えるか」を整形した文言（「今日 17:00 まで」など。Slack と同じくホバーで見せる）。
+ * 期限のないステータスでは持たない。整形はデータ層が `Clock` の時刻を使って行う。
  */
-export type UserStatusView = { emoji: string; text?: string };
+export type UserStatusView = { emoji: string; text?: string; expiresLabel?: string };
 
 /** 画面に出すユーザー。avatarUrl は画像があるときだけ（署名付き。ADR 0020）。 */
 export type UserRef = { id: string; name: string; avatarUrl?: string; status?: UserStatusView };
