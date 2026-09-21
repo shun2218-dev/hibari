@@ -8,6 +8,7 @@ import { ChevronDownIcon, HashIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon }
 import { cx } from "@/lib/cx";
 
 import type { RoomSummaryView, UserRef, WorkspaceRef } from "./types";
+import { StatusEmoji } from "./user-status";
 
 type SidebarProps = {
   workspace: WorkspaceRef;
@@ -208,7 +209,13 @@ function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string
       >
         {selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-primary" />}
         {room.kind === "dm" ? (
-          <Avatar id={room.peer?.id ?? room.id} name={room.name} imageUrl={room.peer?.avatarUrl} size="md" online={room.peer?.online} />
+          <Avatar
+            id={room.peer?.id ?? room.id}
+            name={room.name}
+            imageUrl={room.peer?.avatarUrl}
+            size="md"
+            presence={room.peer?.presence}
+          />
         ) : (
           <span className="flex w-4 shrink-0 justify-center self-start pt-1 text-text-secondary">
             {room.kind === "public" ? (
@@ -222,6 +229,7 @@ function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string
           <span className="flex items-baseline justify-between gap-2">
             {/* 知らせの要らない未読は、バッジではなく名前の太字で示す（ADR 0043） */}
             <span className={cx("truncate text-base text-text", room.unreadCount > 0 ? "font-bold" : "font-semibold")}>{room.name}</span>
+            {room.peer?.status && <StatusEmoji status={room.peer.status} className="text-xs" />}
             {room.timeLabel && <span className="shrink-0 font-mono text-2xs text-text-muted">{room.timeLabel}</span>}
           </span>
           <span className="flex items-center justify-between gap-2">

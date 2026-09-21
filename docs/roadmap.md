@@ -675,7 +675,8 @@ Claude Design で描いた 83 枚（`source: "design"`）は撮り直しの対�
 
 **構築順**（PR を分ける）
 1. 設計（ADR 0049、ERD、CLAUDE.md ルール 5 と「デザイン」、`docs/events.md`、`docs/ui/README.md`）
-2. デザイン: 離席のドット、ステータスの設定ダイアログ、名前の横とメンバーパネルの出方、アカウントメニュー、モバイル。story に描いて `docs/ui/` に足し、オーナーに見てもらう
+2. デザイン: 離席のドット、ステータスの設定ダイアログ、名前の横とメンバーパネルの出方、アカウントメニュー、モバイル。story に描いて `docs/ui/` に足し、オーナーに見てもらう ← 完了（`docs/ui/README.md` の「Phase 6.8 で足した画面」）
+   絵文字のピッカーは、ダイアログの中に流し込むと画面からはみ出したので、リアクションと同じ「浮かせる / 下から出す」形にした（ADR 0049 決定 10 の追記）
 3. DB と REST: マイグレーション、`PUT /users/me/presence`、`PUT` / `DELETE /workspaces/{id}/me/status`、メンバーのレスポンスの `presence` / `away` / `status`
 4. WebSocket と Web: `activity`、Lua スクリプトの作り直し、`member.status_changed`、Web のつなぎ込み（10 分のタイマー、再接続の同期、楽観的更新）
 

@@ -24,6 +24,7 @@ import { MessageBody } from "./message-body";
 import { MessageLinkCard } from "./message-link-card";
 import { MessageReactions } from "./message-reactions";
 import type { MessageAttachmentView, MessageView } from "./types";
+import { StatusEmoji } from "./user-status";
 
 /** 編集中の本文。null（既定）なら編集していない。編集できるのは自分のメッセージだけ（ADR 0012）。 */
 export type MessageEditingView = {
@@ -183,6 +184,8 @@ export function MessageItem({
         {!message.grouped && (
           <header className="flex items-baseline gap-2">
             <span className="text-sm font-semibold text-text">{sender.name}</span>
+            {/* カスタムステータスは絵文字だけ（ADR 0049 決定 10）。文言はホバーで読める */}
+            {sender.status && <StatusEmoji status={sender.status} className="text-xs" />}
             <time className="font-mono text-2xs text-text-muted">{message.timeLabel}</time>
           </header>
         )}

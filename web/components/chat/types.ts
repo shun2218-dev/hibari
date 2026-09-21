@@ -5,10 +5,18 @@
  * 表示する側の都合で決まるので、ここでは整形済みの文字列で受け取り、API からの変換はデータ層（Phase 6-2）で行う。
  */
 
+import type { PresenceView } from "@/lib/presence";
+
 export type RoomKind = "public" | "private" | "dm";
 
+/**
+ * カスタムステータス（ADR 0049）。ワークスペースごとに持ち、絵文字は必須で文言は任意。
+ * 期限（`expires_at`）は画面には出さないので持たない（過ぎたステータスはデータ層が落とす）。
+ */
+export type UserStatusView = { emoji: string; text?: string };
+
 /** 画面に出すユーザー。avatarUrl は画像があるときだけ（署名付き。ADR 0020）。 */
-export type UserRef = { id: string; name: string; avatarUrl?: string };
+export type UserRef = { id: string; name: string; avatarUrl?: string; status?: UserStatusView };
 
 export type WorkspaceRef = { id: string; name: string };
 
@@ -18,7 +26,7 @@ export type RoomSummaryView = {
   /** public / private はルーム名、DM は相手の表示名。 */
   name: string;
   /** DM の相手。アバターと presence に使う。 */
-  peer?: { id: string; online: boolean; avatarUrl?: string };
+  peer?: { id: string; presence: PresenceView; avatarUrl?: string; status?: UserStatusView };
   /** 最後のメッセージの 1 行。チャンネルは「送信者: 本文」、DM は本文だけ。 */
   lastMessage?: string;
   timeLabel?: string;
@@ -158,4 +166,4 @@ export type AttachmentDraftView =
 
 export type RoleLabel = "オーナー" | "管理者" | "メンバー";
 
-export type RoomMemberView = UserRef & { online: boolean; roleLabel: RoleLabel };
+export type RoomMemberView = UserRef & { presence: PresenceView; roleLabel: RoleLabel };

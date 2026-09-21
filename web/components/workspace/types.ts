@@ -1,5 +1,7 @@
 /** ワークスペースの管理画面の表示用の型。値の意味は API（ADR 0006 / 0011）に合わせる。 */
 
+import type { PresenceView } from "@/lib/presence";
+
 export type WorkspaceRole = "owner" | "admin" | "member";
 
 export type InvitePolicy = "admins_only" | "all_members";
@@ -26,7 +28,8 @@ export type MemberRowView = {
   handle: string;
   /** アバター画像の URL（署名付き。ADR 0020）。なければ頭文字を出す。 */
   avatarUrl?: string;
-  online: boolean;
+  /** 自動の状態と手動の離席を合わせた結果（ADR 0049）。 */
+  presence: PresenceView;
   role: WorkspaceRole;
   isSelf: boolean;
   manage: MemberManageView;

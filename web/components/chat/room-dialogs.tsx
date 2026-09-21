@@ -6,6 +6,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { TextField } from "@/components/ui/field";
 import { FileIcon, SearchIcon } from "@/components/ui/icons";
 
+import type { PresenceView } from "@/lib/presence";
+
 import type { RoomKind, UserRef } from "./types";
 
 /** 作成できるのは public / private だけ（DM は相手を選んで作る）。 */
@@ -78,7 +80,7 @@ export function CreateRoomDialog({
   );
 }
 
-export type DmCandidateView = UserRef & { handle: string; online: boolean };
+export type DmCandidateView = UserRef & { handle: string; presence: PresenceView };
 
 /**
  * DM の相手を選ぶ。相手はワークスペースのメンバーだけで、ひとりだけ選べる
@@ -241,7 +243,7 @@ function MemberPicker({
                   name={candidate.name}
                   imageUrl={candidate.avatarUrl}
                   size="sm"
-                  online={candidate.online}
+                  presence={candidate.presence}
                 />
               }
               title={candidate.name}

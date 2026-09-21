@@ -3,7 +3,7 @@
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useState } from "react";
 
 import { Portal } from "@/components/ui/portal";
-import { type PanelPlacement, placePanel } from "@/lib/anchored-position";
+import { type PanelAlign, type PanelPlacement, placePanel } from "@/lib/anchored-position";
 import { cx } from "@/lib/cx";
 
 /**
@@ -27,11 +27,14 @@ export function AnchoredPanel({
   className,
   children,
   onDismiss,
+  align,
 }: {
   /** 位置の基準。メッセージの行（article）を渡す。 */
   anchorRef: RefObject<HTMLElement | null>;
   label: string;
   className?: string;
+  /** 横の合わせ方（既定はアンカーの右端）。狭いアンカー（ボタン）には "start" を渡す。 */
+  align?: PanelAlign;
   children: ReactNode;
   /**
    * 外を押した、または Esc を押したので閉じる。
@@ -56,6 +59,7 @@ export function AnchoredPanel({
           rect,
           { width: panel.offsetWidth, height: panel.offsetHeight },
           { width: window.innerWidth, height: window.innerHeight },
+          align,
         ),
       );
     }
@@ -72,7 +76,7 @@ export function AnchoredPanel({
       window.removeEventListener("resize", place);
       document.removeEventListener("scroll", place, true);
     };
-  }, [anchorRef, panel]);
+  }, [align, anchorRef, panel]);
 
   // 外を押す / Esc で閉じる。押し下げで閉じるのは、押したまま外へ動かしても閉じるようにするため
   useEffect(() => {

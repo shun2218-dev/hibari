@@ -6,7 +6,15 @@
  */
 
 /** 位置を決めるのに要る矩形。`getBoundingClientRect` の一部。 */
-export type AnchorRect = { top: number; bottom: number; right: number };
+export type AnchorRect = { top: number; bottom: number; left: number; right: number };
+
+/**
+ * 横の合わせ方。
+ * - end: アンカーの右端に合わせる（既定）。メッセージの行のような**広い**アンカー向け
+ * - start: アンカーの左端に合わせる。ボタンのような**狭い**アンカー向け。
+ *   右端に合わせると、ボタンより左にパネル全体がぶら下がって、押したものから離れて見える
+ */
+export type PanelAlign = "start" | "end";
 
 export type PanelPlacement = {
   top: number;
@@ -32,9 +40,11 @@ export function placePanel(
   anchor: AnchorRect,
   panel: { width: number; height: number },
   viewport: { width: number; height: number },
+  align: PanelAlign = "end",
 ): PanelPlacement {
   const maxLeft = viewport.width - MARGIN - panel.width;
-  const left = Math.max(MARGIN, Math.min(anchor.right - GUTTER - panel.width, maxLeft));
+  const preferred = align === "start" ? anchor.left : anchor.right - GUTTER - panel.width;
+  const left = Math.max(MARGIN, Math.min(preferred, maxLeft));
 
   const maxTop = viewport.height - MARGIN - panel.height;
   const below = anchor.top + OFFSET;

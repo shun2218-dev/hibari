@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import type { DmCandidateView } from "./room-dialogs";
 import {
   ConfirmMentionAllDialog,
   CreateRoomDialog,
@@ -42,9 +43,9 @@ describe("CreateRoomDialog", () => {
 });
 
 describe("StartDmDialog", () => {
-  const candidates = [
-    { id: "u2", name: "佐藤 直樹", handle: "naoki", online: true },
-    { id: "u3", name: "中村 涼", handle: "nakamura", online: false },
+  const candidates: DmCandidateView[] = [
+    { id: "u2", name: "佐藤 直樹", handle: "naoki", presence: "online" },
+    { id: "u3", name: "中村 涼", handle: "nakamura", presence: "offline" },
   ];
 
   it("needs a peer before opening", async () => {

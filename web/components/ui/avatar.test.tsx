@@ -14,12 +14,25 @@ describe("Avatar", () => {
     expect(face).toHaveClass(`bg-avatar-${avatarColor("01J8ZH5K000000000000000002")}`);
   });
 
-  it("shows presence only when online", () => {
-    const { rerender } = render(<Avatar id="u1" name="あなた" online />);
-    expect(screen.getByRole("img", { name: "オンライン" })).toBeInTheDocument();
+  // ADR 0049: オンラインは緑、離席は色なしのアウトライン、オフラインはドットそのものを出さない
+  it("shows a green dot when online", () => {
+    render(<Avatar id="u1" name="あなた" presence="online" />);
 
-    rerender(<Avatar id="u1" name="あなた" online={false} />);
-    expect(screen.queryByRole("img", { name: "オンライン" })).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "オンライン" })).toHaveClass("bg-online");
+  });
+
+  it("shows an outlined dot when away", () => {
+    render(<Avatar id="u1" name="あなた" presence="away" />);
+
+    const dot = screen.getByRole("img", { name: "離席中" });
+    expect(dot).toHaveClass("border-2");
+    expect(dot).not.toHaveClass("bg-online");
+  });
+
+  it("shows no dot when offline", () => {
+    render(<Avatar id="u1" name="あなた" presence="offline" />);
+
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 });
 
@@ -50,7 +63,7 @@ describe("Avatar with an image", () => {
   });
 
   it("keeps presence next to the image", () => {
-    render(<Avatar id="u1" name="あなた" imageUrl="https://storage.test/a.png" online />);
+    render(<Avatar id="u1" name="あなた" imageUrl="https://storage.test/a.png" presence="online" />);
 
     expect(screen.getByRole("img", { name: "オンライン" })).toBeInTheDocument();
   });

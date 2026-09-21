@@ -25,6 +25,7 @@ import type {
   RoomMember,
   UserProfile,
 } from "@/lib/api/types.gen";
+import { type PresenceView, displayPresence } from "@/lib/presence";
 
 import type { OutgoingMessage, ThreadState } from "./store";
 import type { AttachmentDraft } from "./uploads";
@@ -114,7 +115,11 @@ export function toRoomSummaryView(
     kind: room.kind,
     name: roomName(room),
     peer: room.dm_peer
-      ? { id: room.dm_peer.id, online: room.dm_peer.online, avatarUrl: avatarUrls[room.dm_peer.id] ?? undefined }
+      ? {
+          id: room.dm_peer.id,
+          presence: memberPresence(room.dm_peer),
+          avatarUrl: avatarUrls[room.dm_peer.id] ?? undefined,
+        }
       : undefined,
     lastMessage,
     timeLabel: room.last_message_at ? formatListTime(new Date(room.last_message_at), now, timeZone) : undefined,
@@ -583,12 +588,20 @@ export function messageActions(
 
 const roleLabels: Record<Role, RoleLabel> = { owner: "オーナー", admin: "管理者", member: "メンバー" };
 
+/**
+ * API の presence と本人の設定（手動の離席）から、画面に出す 3 つの状態を決める（ADR 0049 決定 1）。
+ * 合わせるのはここだけで、部品には結果だけを渡す。
+ */
+export function memberPresence(member: { online: boolean }): PresenceView {
+  return displayPresence(member.online ? "active" : "offline", false);
+}
+
 export function toRoomMemberView(member: RoomMember, avatarUrls: UrlTable = {}): RoomMemberView {
   return {
     id: member.user.id,
     name: member.user.display_name,
     avatarUrl: avatarUrls[member.user.id] ?? undefined,
-    online: member.online,
+    presence: memberPresence(member),
     roleLabel: roleLabels[member.role],
   };
 }
@@ -656,7 +669,7 @@ export function toDmCandidates(
         m.user.display_name.toLowerCase().includes(query) ||
         m.user.handle.toLowerCase().includes(query),
     )
-    .map((m) => ({ id: m.user.id, name: m.user.display_name, handle: m.user.handle, online: m.online }));
+    .map((m) => ({ id: m.user.id, name: m.user.display_name, handle: m.user.handle, presence: memberPresence(m) }));
 }
 
 /** チャンネルの設定に並べる、いま参加している人。外せるかはサーバーと同じ規則で決める（ADR 0011）。 */
