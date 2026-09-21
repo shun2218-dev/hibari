@@ -8,6 +8,7 @@ import type {
   MessageAttachmentView,
   MessageLinkCardView,
   MessageReactionView,
+  ProfileView,
   MessageView,
   RoomMemberView,
   RoomSummaryView,
@@ -634,3 +635,73 @@ export const devices: DeviceView[] = [
   { id: "s-5", kind: "desktop", name: "Firefox · Windows 11", lastActiveLabel: "9月2日", current: false },
 ];
 
+
+// ---- プロフィールのカード（Phase 6.9。ADR 0050） ----
+
+/** ホバーのカードを出すメッセージ。どれもアバターと名前のある先頭の行。 */
+export const profileKeys = { naoki: "m-1012", ryo: "m-1030", miyuki: "m-0955", you: "m-0941", former: "m-1420" } as const;
+
+/** 外された人（森田 圭）の過去のメッセージがあるタイムライン。ステータスの表と合わせる。 */
+export const timelineWithFormerMember: TimelineItem[] = timelineWithStatus.map((item) =>
+  item.type === "message" && item.message.key === profileKeys.former
+    ? { ...item, message: { ...item.message, sender: { id: users.kei.id, name: users.kei.name } } }
+    : item,
+);
+
+const cardUser = (user: { id: string; name: string; handle: string }) => ({
+  id: user.id,
+  name: user.name,
+  handle: user.handle,
+  status: statuses[user.id],
+});
+
+/** カードとパネルの中身。名前・ロール・presence・ステータスはメンバーパネル（roomMembersWithPresence）とそろえる。 */
+export const profiles = {
+  /** 他人（オーナー）。member の自分からは管理の入口が出ない。 */
+  naoki: {
+    kind: "member",
+    user: cardUser(users.naoki),
+    presence: "online",
+    role: "owner",
+    email: { state: "ready", value: "naoki.sato@example.com" },
+    isSelf: false,
+  },
+  /** 管理者の自分から見た member。ロールの変更と削除が出る。 */
+  ryo: {
+    kind: "member",
+    user: cardUser(users.ryo),
+    presence: "offline",
+    role: "member",
+    email: { state: "ready", value: "ryo.nakamura@example.com" },
+    isSelf: false,
+    manage: { grantableRoles: ["admin", "member"], canRemove: true },
+  },
+  /** email の応答を待っている（行の高さだけ先に取る）。 */
+  miyukiLoading: {
+    kind: "member",
+    user: cardUser(users.miyuki),
+    presence: "away",
+    role: "admin",
+    email: { state: "loading" },
+    isSelf: false,
+  },
+  /** email が未検証（行もコピーも出さない。決定 2）。 */
+  miyukiUnverified: {
+    kind: "member",
+    user: cardUser(users.miyuki),
+    presence: "away",
+    role: "admin",
+    email: { state: "none" },
+    isSelf: false,
+  },
+  you: {
+    kind: "member",
+    user: { ...cardUser(users.you), status: myStatus },
+    presence: "online",
+    role: "member",
+    email: { state: "ready", value: "you@example.com" },
+    isSelf: true,
+  },
+  /** 外された人。メッセージが持っている名前・handle・アバターだけ（決定 5）。 */
+  former: { kind: "former", user: { id: users.kei.id, name: users.kei.name, handle: users.kei.handle } },
+} satisfies Record<string, ProfileView>;

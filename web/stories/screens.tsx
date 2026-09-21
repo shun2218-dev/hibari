@@ -25,6 +25,8 @@ import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import { MembersPanel } from "@/components/chat/members-panel";
+import { ProfileHoverCard } from "@/components/chat/profile-card";
+import { ProfilePanel } from "@/components/chat/profile-panel";
 import { RoomHeader } from "@/components/chat/room-header";
 import { RoomSettingsDialog } from "@/components/chat/room-dialogs";
 import { Sidebar } from "@/components/chat/sidebar";
@@ -73,6 +75,9 @@ import {
   reactionPickerKey,
   timelineWithReactions,
   myStatus,
+  profiles,
+  profileKeys,
+  timelineWithFormerMember,
   roomMembersWithPresence,
   roomsWithStatus,
   timelineWithStatus,
@@ -168,11 +173,66 @@ type ChatOptions = {
   presence?: boolean;
   statusDialog?: "empty" | "filled" | "picker" | "custom" | "calendar" | "time";
   /**
+   * プロフィール（ADR 0050 決定 6 の追記）。
+   * - hover-*: md 以上でアバターにポインタを乗せたときのカード（他人・自分・外された人）
+   * - panel-*: 押して開く右のパネル（モバイルは全画面）。menu / manage は 3 点メニューを開いたところ、
+   *   from-members はメンバーパネルから開いて「メンバーに戻る」が出ているところ
+   */
+  profile?:
+    | "hover-other"
+    | "hover-self"
+    | "hover-former"
+    | "panel-other"
+    | "panel-menu"
+    | "panel-manage"
+    | "panel-self"
+    | "panel-loading"
+    | "panel-unverified"
+    | "panel-former"
+    | "panel-unknown"
+    | "panel-from-members";
+  /**
    * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
    */
   dark?: boolean;
 };
+
+/** ホバーのカードを出すメッセージと、その中身。 */
+function profileHover(profile: NonNullable<ChatOptions["profile"]>) {
+  switch (profile) {
+    case "hover-self":
+      return { key: profileKeys.you, profile: profiles.you };
+    case "hover-former":
+      return { key: profileKeys.former, profile: profiles.former };
+    default:
+      return { key: profileKeys.naoki, profile: profiles.naoki };
+  }
+}
+
+/** 右のパネル（モバイルは全画面）。 */
+function profilePanelContent(profile: NonNullable<ChatOptions["profile"]>) {
+  switch (profile) {
+    case "panel-menu":
+      return <ProfilePanel profile={profiles.naoki} menuOpen />;
+    case "panel-manage":
+      return <ProfilePanel profile={profiles.ryo} menuOpen />;
+    case "panel-self":
+      return <ProfilePanel profile={profiles.you} />;
+    case "panel-loading":
+      return <ProfilePanel profile={profiles.miyukiLoading} />;
+    case "panel-unverified":
+      return <ProfilePanel profile={profiles.miyukiUnverified} />;
+    case "panel-former":
+      return <ProfilePanel profile={profiles.former} />;
+    case "panel-unknown":
+      return <ProfilePanel profile={{ kind: "unknown" }} />;
+    case "panel-from-members":
+      return <ProfilePanel profile={profiles.naoki} onBack={noop} />;
+    default:
+      return <ProfilePanel profile={profiles.naoki} />;
+  }
+}
 
 /** スレッドのパネルに出す親と返信。 */
 function threadPanelContent(thread: NonNullable<ChatOptions["thread"]>) {
@@ -225,11 +285,16 @@ export function chat({
   messageAttachments,
   presence,
   statusDialog,
+  profile,
   dark,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
   const roomRemoved = body === "removed-room";
   const threadContent = thread ? threadPanelContent(thread) : undefined;
+  const hover = profile?.startsWith("hover-") ? profileHover(profile) : undefined;
+  const profilePanel = profile?.startsWith("panel-") ? profilePanelContent(profile) : undefined;
+  // ステータスの出ている画面の上に出す（名前の横の絵文字とカードの中身をそろえて見せる）
+  const withStatus = presence || profile !== undefined;
   return (
     <>
       <ChatLayout
@@ -274,7 +339,12 @@ export function chat({
         }
         panel={
           members ? (
-            <MembersPanel members={presence ? roomMembersWithPresence : roomMembers} />
+            <MembersPanel
+              members={withStatus ? roomMembersWithPresence : roomMembers}
+              onOpenProfile={profile ? noop : undefined}
+            />
+          ) : profilePanel ? (
+            profilePanel
           ) : threadContent ? (
             <ThreadPanel
               room={{ kind: selectedRoom.kind, name: selectedRoom.name }}
@@ -309,7 +379,9 @@ export function chat({
         {body === "timeline" && !threads && (
           <Timeline
             items={
-              presence
+              profile === "hover-former" || profile === "panel-former"
+                ? timelineWithFormerMember
+                : withStatus
                 ? timelineWithStatus
                 : messageAttachments
                 ? timelineWithImages
@@ -340,6 +412,9 @@ export function chat({
               reactions === "picker" ? reactionPickerKey : reactions === "picker-above" ? lastMessageKey : undefined
             }
             reactionPicker={<EmojiPicker onPick={noop} theme={dark ? "dark" : "light"} />}
+            onOpenProfile={profile ? noop : undefined}
+            profileHoverCardFor={hover ? () => <ProfileHoverCard profile={hover.profile} /> : undefined}
+            hoveredProfileKey={hover?.key}
             hoveredReaction={reactions === "names" ? hoveredReaction : undefined}
             onReply={noop}
             onOpenImage={noop}

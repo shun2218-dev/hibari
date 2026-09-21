@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import { MembersPanel } from "./members-panel";
 import type { RoomMemberView } from "./types";
@@ -27,5 +28,21 @@ describe("MembersPanel", () => {
     const row = screen.getAllByRole("listitem")[1];
     expect(within(row).getByRole("img", { name: "ステータス: 🎧 集中しています" })).toBeInTheDocument();
     expect(within(row).getByText("管理者 · 集中しています")).toBeInTheDocument();
+  });
+});
+
+describe("MembersPanel からプロフィールを開く（ADR 0050）", () => {
+  it("行を押すと、そのメンバーのプロフィールを開く", async () => {
+    const onOpenProfile = vi.fn();
+    render(<MembersPanel members={members} onOpenProfile={onOpenProfile} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /高橋 みゆき/ }));
+    expect(onOpenProfile).toHaveBeenCalledWith("u2");
+  });
+
+  it("開く先を渡さなければ、行は押せない", () => {
+    render(<MembersPanel members={members} />);
+
+    expect(screen.queryByRole("button", { name: /佐藤 直樹/ })).not.toBeInTheDocument();
   });
 });

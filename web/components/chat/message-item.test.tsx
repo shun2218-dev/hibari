@@ -1,6 +1,8 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+
+import { HOVER_OPEN_DELAY_MS } from "@/lib/use-hover-intent";
 
 import { MessageItem } from "./message-item";
 import type { MessageView } from "./types";
@@ -510,5 +512,57 @@ describe("MessageItem の添付ファイル（ADR 0045）", () => {
     render(<MessageItem message={message({ attachments: [image] })} canDelete onDeleteAttachment={vi.fn()} />);
 
     expect(screen.queryByRole("button", { name: "ファイルの操作" })).not.toBeInTheDocument();
+  });
+});
+
+describe("MessageItem のプロフィール（ADR 0050）", () => {
+  // ホバーのカードは md 以上でだけ出す。jsdom には matchMedia が無いので、デスクトップとして当てる
+  function asDesktop() {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+  }
+
+  it("送信者のアバターと名前を押すと、送信者のプロフィールを開く", async () => {
+    const onOpenProfile = vi.fn();
+    render(<MessageItem message={message()} onOpenProfile={onOpenProfile} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "佐藤 直樹 のプロフィール" }));
+    await userEvent.click(screen.getByRole("button", { name: "佐藤 直樹" }));
+    expect(onOpenProfile).toHaveBeenNthCalledWith(1, "01J8ZH5K000000000000000002");
+    expect(onOpenProfile).toHaveBeenNthCalledWith(2, "01J8ZH5K000000000000000002");
+  });
+
+  it("マウスを乗せて少したつと、ホバーのカードを出す", () => {
+    asDesktop();
+    vi.useFakeTimers();
+    try {
+      render(<MessageItem message={message()} onOpenProfile={vi.fn()} profileHoverCard={() => <p>カードの中身</p>} />);
+
+      fireEvent.pointerEnter(screen.getByRole("button", { name: "佐藤 直樹 のプロフィール" }), { pointerType: "mouse" });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(HOVER_OPEN_DELAY_MS));
+      expect(screen.getByRole("dialog", { name: "佐藤 直樹 のプロフィール" })).toHaveTextContent("カードの中身");
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("モバイルではホバーのカードを出さない（押せば全画面のパネル）", () => {
+    render(
+      <MessageItem message={message()} onOpenProfile={vi.fn()} profileHoverCard={() => <p>カードの中身</p>} forceProfileHover />,
+    );
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("開く先を渡さなければ、アバターと名前は押せない", () => {
+    render(<MessageItem message={message()} />);
+
+    expect(screen.queryByRole("button", { name: /佐藤 直樹/ })).not.toBeInTheDocument();
   });
 });

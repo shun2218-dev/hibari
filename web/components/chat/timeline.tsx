@@ -63,6 +63,12 @@ type TimelineProps = {
   onTogglePicker?: (key: string) => void;
   /** ピッカーを開いているメッセージ（1 度に 1 件）。 */
   openPickerKey?: string;
+  /** 送信者のアバターや名前、メンションを押した（右のプロフィールのパネルを開く。ADR 0050）。 */
+  onOpenProfile?: (userId: string) => void;
+  /** 送信者にポインタを乗せたときのカードの中身（ADR 0050 決定 6 の追記）。渡さなければカードは出ない。 */
+  profileHoverCardFor?: (userId: string) => ReactNode;
+  /** ホバーのカードを固定で出すメッセージ（story 用）。 */
+  hoveredProfileKey?: string;
   /** ピッカーの中身。emoji-mart は動的 import なので、作るのは外側に任せる（ADR 0044 決定 7）。 */
   reactionPicker?: ReactNode;
   /** ホバーの見た目を固定で出すメッセージ（story 用）。 */
@@ -151,6 +157,9 @@ export function Timeline({
   onTogglePicker,
   openPickerKey,
   reactionPicker,
+  onOpenProfile,
+  profileHoverCardFor,
+  hoveredProfileKey,
   hoveredKey,
   hoveredReaction,
   onReachStart,
@@ -319,6 +328,13 @@ export function Timeline({
                     onTogglePicker={onTogglePicker === undefined ? undefined : () => onTogglePicker(key)}
                     pickerOpen={openPickerKey === key}
                     picker={openPickerKey === key ? reactionPicker : undefined}
+                    onOpenProfile={onOpenProfile}
+                    profileHoverCard={
+                      profileHoverCardFor === undefined
+                        ? undefined
+                        : () => profileHoverCardFor(item.message.sender.id)
+                    }
+                    forceProfileHover={hoveredProfileKey === key}
                     forceHoverReaction={hoveredReaction?.key === key ? hoveredReaction.emoji : undefined}
                   />
                 </li>

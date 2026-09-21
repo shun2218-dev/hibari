@@ -239,7 +239,7 @@ hotfix は `main` から `hotfix/vX.Y.Z` を切り、手順 2〜7 と同じ流�
 - 名前は役割ベースの `--color-*` / `--text-*` / `--radius-*` などにする（`--color-text-muted`、`--color-primary-subtle`）。Claude Design 上の名前（`--ink` / `--brand` / `--live`）はコードに持ち込まない。
 - Tailwind の既定テーマは `@theme static { --*: initial; }` で捨ててある。`text-red-500` や `rounded-xl` は存在しない前提で書く。
 - **緑（primary）= 操作できるもの、琥珀（attention）= いま起きていること。** 未読バッジ・入力中・接続状態に primary を使わない。琥珀の要素を押せるようにしない。
-- 文字サイズは 7 段階（11 / 12 / 13 / 14 / 15 / 20 / 26px）。`text-base` は 14px（UI 部品）、メッセージ本文と入力欄は `text-lg`（15px）。行送りは本文が `leading-relaxed`（1.75）。
+- 文字サイズは 7 段階（11 / 12 / 13 / 14 / 15 / 20 / 26px）。段階の外は、プロフィールのパネルの写真の頭文字（`text-avatar`、112px）だけ。`text-base` は 14px（UI 部品）、メッセージ本文と入力欄は `text-lg`（15px）。行送りは本文が `leading-relaxed`（1.75）。
 - 角丸は `rounded-sm`（8px）/ `rounded-md`（12px）/ `rounded-lg`（16px）/ `rounded-full` の 4 段階。余白とサイズは `--spacing`（4px）の倍数で書く。
 - ダークテーマは `<html data-theme="dark">` で切り替える。OS の設定には追従しない。ダークの値は、ライトと同じ名前の変数を上書きして定義する（`globals.test.ts` がライトとダークで色トークンの集合が一致することを検査する）。
 - presence のドットは 3 つの状態（オンラインは緑、離席は色なしのアウトライン、オフラインはドットなし。ADR 0049）。最終オンライン時刻は出さない。

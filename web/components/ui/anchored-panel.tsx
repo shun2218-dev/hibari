@@ -3,7 +3,7 @@
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useState } from "react";
 
 import { Portal } from "@/components/ui/portal";
-import { type PanelAlign, type PanelPlacement, placePanel } from "@/lib/anchored-position";
+import { type PanelAlign, type PanelPlacement, placeBeside, placePanel } from "@/lib/anchored-position";
 import { cx } from "@/lib/cx";
 
 /**
@@ -28,6 +28,7 @@ export function AnchoredPanel({
   children,
   onDismiss,
   align,
+  beside = false,
 }: {
   /** 位置の基準。メッセージの行（article）を渡す。 */
   anchorRef: RefObject<HTMLElement | null>;
@@ -35,6 +36,8 @@ export function AnchoredPanel({
   className?: string;
   /** 横の合わせ方（既定はアンカーの右端）。狭いアンカー（ボタン）には "start" を渡す。 */
   align?: PanelAlign;
+  /** 行に重ねずに、アンカーの横に出す（プロフィールのカード。`placeBeside`）。`align` は使わない。 */
+  beside?: boolean;
   children: ReactNode;
   /**
    * 外を押した、または Esc を押したので閉じる。
@@ -54,14 +57,9 @@ export function AnchoredPanel({
       const anchor = anchorRef.current;
       if (!anchor || !panel) return;
       const rect = anchor.getBoundingClientRect();
-      setPlacement(
-        placePanel(
-          rect,
-          { width: panel.offsetWidth, height: panel.offsetHeight },
-          { width: window.innerWidth, height: window.innerHeight },
-          align,
-        ),
-      );
+      const size = { width: panel.offsetWidth, height: panel.offsetHeight };
+      const viewport = { width: window.innerWidth, height: window.innerHeight };
+      setPlacement(beside ? placeBeside(rect, size, viewport) : placePanel(rect, size, viewport, align));
     }
     place();
 
@@ -76,7 +74,7 @@ export function AnchoredPanel({
       window.removeEventListener("resize", place);
       document.removeEventListener("scroll", place, true);
     };
-  }, [align, anchorRef, panel]);
+  }, [align, anchorRef, beside, panel]);
 
   // 外を押す / Esc で閉じる。押し下げで閉じるのは、押したまま外へ動かしても閉じるようにするため
   useEffect(() => {
