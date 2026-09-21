@@ -2,14 +2,17 @@ package config_test
 
 import (
 	"log/slog"
+	netmail "net/mail"
 	"net/netip"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/shun2218-dev/hibari/internal/platform/config"
+	"github.com/shun2218-dev/hibari/internal/platform/mail"
 	"github.com/shun2218-dev/hibari/internal/platform/storage"
 )
 
@@ -26,6 +29,8 @@ func TestLoad(t *testing.T) {
 		"REDIS_URL":    "redis://localhost:6379/0",
 
 		"JWT_PRIVATE_KEY_FILE": "/keys/jwt.pem",
+
+		"MAIL_TRANSPORT": "log",
 
 		"S3_ENDPOINT":          "http://minio:9000",
 		"S3_BUCKET":            "hibari",
@@ -65,6 +70,7 @@ func TestLoad(t *testing.T) {
 				JWTAudience:         "hibari-api",
 				RefreshCookieSecure: true,
 				AppBaseURL:          &url.URL{Scheme: "http", Host: "localhost:3000"},
+				Mail:                config.MailConfig{Transport: config.MailTransportLog},
 
 				Storage:                storage.Config{Endpoint: "http://minio:9000", Region: "us-east-1", Bucket: "hibari", AccessKeyID: "id", SecretAccessKey: "secret"},
 				AttachmentMaxBytes:     25 << 20,
@@ -97,6 +103,7 @@ func TestLoad(t *testing.T) {
 				TrustedProxies: []netip.Prefix{
 					netip.MustParsePrefix("172.16.0.0/12"), netip.MustParsePrefix("fdaa::/16"), netip.MustParsePrefix("203.0.113.7/32"),
 				},
+				Mail: config.MailConfig{Transport: config.MailTransportLog},
 
 				Storage: storage.Config{
 					Endpoint: "http://minio:9000", PublicEndpoint: "http://localhost:9000", Region: "auto", Bucket: "hibari",
@@ -112,7 +119,29 @@ func TestLoad(t *testing.T) {
 			name: "missing required values are all reported",
 			env:  map[string]string{"DATABASE_URL": ""},
 			wantErr: []string{"DATABASE_URL is required", "REDIS_URL is required", "JWT_PRIVATE_KEY_FILE is required",
-				"S3_ENDPOINT is required", "S3_BUCKET is required", "S3_ACCESS_KEY_ID is required", "S3_SECRET_ACCESS_KEY is required"},
+				"MAIL_TRANSPORT is required", "S3_ENDPOINT is required", "S3_BUCKET is required", "S3_ACCESS_KEY_ID is required", "S3_SECRET_ACCESS_KEY is required"},
+		},
+		{
+			// 本番で設定を忘れて、黙ってログに出すだけにならないように、既定を置かない（ADR 0053）。
+			name:    "mail transport is required",
+			env:     with("MAIL_TRANSPORT", ""),
+			wantErr: []string{"MAIL_TRANSPORT is required"},
+		},
+		{
+			name:    "unknown mail transport",
+			env:     with("MAIL_TRANSPORT", "resend"),
+			wantErr: []string{`MAIL_TRANSPORT: must be "log" or "smtp", got "resend"`},
+		},
+		{
+			name: "smtp requires its settings",
+			env:  with("MAIL_TRANSPORT", "smtp"),
+			wantErr: []string{"SMTP_HOST is required", "SMTP_PORT is required", "SMTP_USERNAME is required",
+				"SMTP_PASSWORD_FILE is required", "MAIL_FROM is required"},
+		},
+		{
+			name:    "invalid smtp port and from",
+			env:     with("MAIL_TRANSPORT", "smtp", "SMTP_HOST", "smtp.resend.com", "SMTP_PORT", "smtps", "SMTP_USERNAME", "resend", "SMTP_PASSWORD_FILE", "/run/secrets/smtp", "MAIL_FROM", "hibari"),
+			wantErr: []string{`SMTP_PORT: must be a port number, got "smtps"`, "MAIL_FROM"},
 		},
 		{
 			name:    "invalid path style",
@@ -202,6 +231,41 @@ func TestLoad(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("Load() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TLS の方式はポート番号から決める（465 / 2465 は暗黙の TLS、それ以外は STARTTLS）。
+func TestLoadSMTP(t *testing.T) {
+	for _, tt := range []struct {
+		port        string
+		wantImplied bool
+	}{{"465", true}, {"587", false}} {
+		t.Run(tt.port, func(t *testing.T) {
+			port, _ := strconv.Atoi(tt.port)
+			got, err := config.Load(env(map[string]string{
+				"DATABASE_URL": "postgres://localhost/hibari", "REDIS_URL": "redis://localhost:6379/0",
+				"JWT_PRIVATE_KEY_FILE": "/keys/jwt.pem",
+				"S3_ENDPOINT":          "http://minio:9000", "S3_BUCKET": "hibari", "S3_ACCESS_KEY_ID": "id", "S3_SECRET_ACCESS_KEY": "secret",
+
+				"MAIL_TRANSPORT": "smtp", "SMTP_HOST": "smtp.resend.com", "SMTP_PORT": tt.port, "SMTP_USERNAME": "resend",
+				"SMTP_PASSWORD_FILE": "/run/secrets/smtp_password", "MAIL_FROM": "hibari <noreply@mail.example.com>",
+			}))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			want := config.MailConfig{
+				Transport: config.MailTransportSMTP,
+				SMTP: mail.SMTPConfig{
+					Host: "smtp.resend.com", Port: port, Username: "resend",
+					From:        &netmail.Address{Name: "hibari", Address: "noreply@mail.example.com"},
+					ImplicitTLS: tt.wantImplied,
+				},
+				SMTPPasswordFile: "/run/secrets/smtp_password",
+			}
+			if !reflect.DeepEqual(got.Mail, want) {
+				t.Fatalf("Mail = %+v, want %+v", got.Mail, want)
 			}
 		})
 	}

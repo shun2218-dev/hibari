@@ -854,8 +854,8 @@ ADR 0050 の宿題（オーナーの指摘。2026-09-21）。6.10 の後に回�
 - メール → SMTP で送り、業者は Resend から始める。`MAIL_TRANSPORT` は必須。プロセスの中のキューで非同期に送る（時間差を出さない）
 
 **構築順**（PR を分ける）
-1. 設計（ADR 0053） ← このフェーズの最初の PR
-2. メール: SMTP の Mailer・非同期のキュー・設定（`MAIL_TRANSPORT` など）と `docs/deploy.md`（DNS のレコード）
+1. 設計（ADR 0053） ← 完了
+2. メール: SMTP の Mailer・非同期のキュー・設定（`MAIL_TRANSPORT` など）と `docs/deploy.md`（DNS のレコード） ← 完了（`internal/platform/mail`。ADR 0053 の追記）
 3. 塞ぐ: トークンのクレーム・`Identity`・`RequireVerifiedEmail`・`AUTH_REQUIRE_VERIFIED_EMAIL`・確認メールのリンクの戻り先。CLAUDE.md ルール 1 を直す
 4. Web: 未検証のときの画面、検証の直後の refresh、403 のときの refresh、招待への戻り
 
@@ -863,7 +863,7 @@ ADR 0050 の宿題（オーナーの指摘。2026-09-21）。6.10 の後に回�
 - [ ] 未検証のアクセストークンでは chat の API と ws-ticket が 403 になり、auth の API は使える（API のテスト）
 - [ ] 検証すると、refresh した後のトークンで chat を使える（API のテスト）
 - [ ] `smtp` のときに `AUTH_REQUIRE_VERIFIED_EMAIL=false` にすると起動しない（設定のテスト）
-- [ ] パスワードの再設定の応答の時間が、登録のある人とない人で変わらない（メールを非同期で送る。テスト）
+- [x] パスワードの再設定の応答の時間が、登録のある人とない人で変わらない（メールを非同期で送る。`internal/auth/mailer_test.go` の `TestPasswordResetDoesNotWaitForMail`（送信が止まったままでも、どちらも戻る）。キューそのものは `internal/platform/mail/queue_test.go`）
 - [ ] 招待から登録した人が、確認メールを開くと招待の画面に戻る（Web のテスト）
 - [ ] 本番の設定で、確認メールが実際に届く（オーナーによる確認）
 

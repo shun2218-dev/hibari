@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -26,6 +28,7 @@ import (
 	"github.com/shun2218-dev/hibari/internal/platform/db"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
 	platformlog "github.com/shun2218-dev/hibari/internal/platform/log"
+	"github.com/shun2218-dev/hibari/internal/platform/mail"
 	"github.com/shun2218-dev/hibari/internal/platform/ratelimit"
 	"github.com/shun2218-dev/hibari/internal/platform/redis"
 	"github.com/shun2218-dev/hibari/internal/platform/storage"
@@ -60,6 +63,11 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		return fmt.Errorf("read JWT_PRIVATE_KEY_FILE (run `make keys` to create a development key): %w", err)
 	}
 	signingKey, err := auth.ParseEd25519PrivateKeyPEM(keyPEM)
+	if err != nil {
+		return err
+	}
+	// メールのパスワードも同じく、接続する前に読んでおく。
+	smtpPassword, err := readSMTPPassword(cfg.Mail)
 	if err != nil {
 		return err
 	}
@@ -105,6 +113,25 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		return err
 	}
 
+	mailer, mailQueue, err := newMailer(cfg, smtpPassword, clk, ids, logger)
+	if err != nil {
+		return err
+	}
+	if mailQueue != nil {
+		// メールのキュー（ADR 0053 決定 6）も、停止の合図（ctx）では止めず、HTTP サーバーが止まってから止める。
+		// 先に止めると、停止の途中で処理を終えたリクエスト（登録やパスワードの再設定）が積んだメールを送り残す。
+		mailCtx, stopMail := context.WithCancel(context.WithoutCancel(ctx))
+		mailDone := make(chan struct{})
+		go func() {
+			defer close(mailDone)
+			mailQueue.Run(mailCtx)
+		}()
+		defer func() {
+			stopMail()
+			<-mailDone
+		}()
+	}
+
 	authService := auth.NewService(auth.Deps{
 		DB:           pool,
 		Clock:        clk,
@@ -117,10 +144,9 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		Limits:       auth.DefaultRateLimits,
 		Storage:      objectStorage,
 		AvatarLimits: auth.AvatarLimits{MaxBytes: cfg.AvatarMaxBytes, AllowedTypes: cfg.AvatarAllowedTypes},
-		// 本番用のメール送信はまだない。デプロイ（Phase 7 以降）の前に、非同期で送る実装に差し替える。
-		Mailer:     auth.LogMailer{Logger: logger},
-		AppBaseURL: cfg.AppBaseURL,
-		Logger:     logger,
+		Mailer:       mailer,
+		AppBaseURL:   cfg.AppBaseURL,
+		Logger:       logger,
 	})
 	// 同じプロセスなので公開鍵を直接渡す。auth を別プロセスに切り出したら、JWKS を取得して渡す形に変える（ADR 0001）。
 	verifier := authn.NewVerifier([]authn.PublicKey{accessTokens.PublicKey()}, cfg.JWTIssuer, cfg.JWTAudience, clk)
@@ -243,4 +269,44 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	}
 	logger.InfoContext(ctx, "server stopped")
 	return nil
+}
+
+// newMailer は MAIL_TRANSPORT に応じた Mailer を返す（ADR 0053 決定 5）。
+// smtp のときは、送信を待たないためのキューも返す。呼び出し側がキューの Run を動かす。
+func newMailer(cfg config.Config, smtpPassword string, clk clock.Clock, ids id.Generator, logger *slog.Logger) (auth.Mailer, *mail.Queue, error) {
+	switch cfg.Mail.Transport {
+	case config.MailTransportSMTP:
+		smtpConfig := cfg.Mail.SMTP
+		smtpConfig.Password = smtpPassword
+		sender, err := mail.NewSMTP(smtpConfig, clk, ids)
+		if err != nil {
+			return nil, nil, err
+		}
+		opts := mail.DefaultQueueOptions
+		opts.DrainTimeout = cfg.ShutdownTimeout
+		queue := mail.NewQueue(sender, opts, logger)
+		logger.Info("mail transport: smtp", slog.String("host", smtpConfig.Host), slog.Int("port", smtpConfig.Port))
+		return auth.NewMailer(queue), queue, nil
+	default:
+		// config.Load が log と smtp 以外を通さないので、ここは log。メールを送らず、リンクをログに出す。
+		logger.Info("mail transport: log (mails are not sent; links are logged)")
+		return auth.LogMailer{Logger: logger}, nil, nil
+	}
+}
+
+// readSMTPPassword は SMTP_PASSWORD_FILE を読む。smtp でなければ空を返す。
+func readSMTPPassword(c config.MailConfig) (string, error) {
+	if c.Transport != config.MailTransportSMTP {
+		return "", nil
+	}
+	b, err := os.ReadFile(c.SMTPPasswordFile)
+	if err != nil {
+		return "", fmt.Errorf("read SMTP_PASSWORD_FILE: %w", err)
+	}
+	// シークレットのファイルは末尾に改行が入りやすい（echo で作ると付く）。
+	password := strings.TrimSpace(string(b))
+	if password == "" {
+		return "", errors.New("SMTP_PASSWORD_FILE is empty")
+	}
+	return password, nil
 }

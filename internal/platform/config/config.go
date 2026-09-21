@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"log/slog"
 	"mime"
+	netmail "net/mail"
 	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/shun2218-dev/hibari/internal/platform/mail"
 	"github.com/shun2218-dev/hibari/internal/platform/storage"
 )
 
@@ -41,6 +43,9 @@ type Config struct {
 	// TrustedProxies は X-Forwarded-For を信用する前段のプロキシのアドレス（CIDR）。既定は空で、XFF を読まない（ADR 0017）。
 	// ローカルは Caddy、本番は Fly のプロキシになるので、環境ごとに差し替える（docs/deploy.md）。
 	TrustedProxies []netip.Prefix
+
+	// Mail は認証のメール（確認と再設定）の送り方（ADR 0053 決定 5）。
+	Mail MailConfig
 
 	// Storage は添付ファイルを置く S3 API のストレージ（ADR 0008 / 0013）。
 	Storage storage.Config
@@ -73,6 +78,26 @@ var DefaultAttachmentAllowedTypes = []string{
 	"application/pdf", "text/plain", "text/csv", "application/json", "application/zip",
 	"video/mp4", "audio/mpeg",
 	"application/octet-stream",
+}
+
+// MailTransport はメールの送り方。
+type MailTransport string
+
+const (
+	// MailTransportLog はメールを送らず、リンクをログに出す（開発用）。
+	MailTransportLog MailTransport = "log"
+	// MailTransportSMTP は SMTP で本当に送る。
+	MailTransportSMTP MailTransport = "smtp"
+)
+
+// MailConfig はメールの設定。
+type MailConfig struct {
+	Transport MailTransport
+	// SMTP は Transport が smtp のときだけ入る。Password は空のままで、起動時に SMTPPasswordFile から読んで入れる。
+	SMTP mail.SMTPConfig
+	// SMTPPasswordFile は SMTP のパスワード（業者の API キー）のファイルのパス。
+	// JWT の署名鍵と同じく、値ではなくパスを受け取る（本番でシークレットをファイルとしてマウントする形に合わせる）。
+	SMTPPasswordFile string
 }
 
 // LogFormat はログの出力形式。
@@ -165,6 +190,8 @@ func Load(lookup LookupEnv) (Config, error) {
 		cfg.TrustedProxies = append(cfg.TrustedProxies, prefix)
 	}
 
+	cfg.Mail = mailVar(&errs, required)
+
 	cfg.Storage = storage.Config{
 		Endpoint:        required("S3_ENDPOINT"),
 		PublicEndpoint:  optional("S3_PUBLIC_ENDPOINT", ""),
@@ -188,6 +215,45 @@ func Load(lookup LookupEnv) (Config, error) {
 		return Config{}, fmt.Errorf("load config: %w", errors.Join(errs...))
 	}
 	return cfg, nil
+}
+
+// mailVar はメールの設定を読む。
+//
+// MAIL_TRANSPORT に既定を置かないのは、本番で設定を忘れて、黙ってログに出すだけ（誰にもメールが届かない）になるのを防ぐため（ADR 0053 決定 5）。
+func mailVar(errs *[]error, required func(string) string) MailConfig {
+	var c MailConfig
+	switch t := MailTransport(required("MAIL_TRANSPORT")); t {
+	case "":
+		return c // required が不足を報告している
+	case MailTransportLog:
+		c.Transport = t
+		return c
+	case MailTransportSMTP:
+		c.Transport = t
+	default:
+		*errs = append(*errs, fmt.Errorf("MAIL_TRANSPORT: must be %q or %q, got %q", MailTransportLog, MailTransportSMTP, t))
+		return c
+	}
+
+	c.SMTP.Host = required("SMTP_HOST")
+	c.SMTP.Username = required("SMTP_USERNAME")
+	c.SMTPPasswordFile = required("SMTP_PASSWORD_FILE")
+	if raw := required("SMTP_PORT"); raw != "" {
+		port, err := strconv.Atoi(raw)
+		if err != nil || port <= 0 || port > 65535 {
+			*errs = append(*errs, fmt.Errorf("SMTP_PORT: must be a port number, got %q", raw))
+		}
+		c.SMTP.Port = port
+		c.SMTP.ImplicitTLS = mail.ImplicitTLSPort(port)
+	}
+	if raw := required("MAIL_FROM"); raw != "" {
+		from, err := netmail.ParseAddress(raw)
+		if err != nil {
+			*errs = append(*errs, fmt.Errorf("MAIL_FROM: %w", err))
+		}
+		c.SMTP.From = from
+	}
+	return c
 }
 
 // maxBytesVar はサイズの上限の環境変数を読む。正の数でなければエラーにする。

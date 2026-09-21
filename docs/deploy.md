@@ -33,6 +33,63 @@ Web クライアントの URL。メールのリンクの起点、WebSocket で�
 - **Web と API は同じサイト（登録可能なドメインが同じ）に置く**（例: `app.hibari.example` と `api.hibari.example`）。Refresh Token の Cookie は `SameSite=Strict` なので、サイトが違うと refresh に載らない。
 - `*.vercel.app` や `*.fly.dev` はそれぞれがサイトの単位（Public Suffix List に載っている）なので、別のアプリどうしは同じサイトにならない。独自ドメインを使う。
 
+## メール（ADR 0053）
+
+確認メールとパスワードの再設定のメールを送る。業者の SDK は使わず SMTP で送るので、業者を替えるときは下の値だけを変える。
+
+| 環境 | `MAIL_TRANSPORT` | 送り先 |
+|---|---|---|
+| ローカル（compose） | `log` | 送らない。リンクを server のログに出す |
+| 本番 | `smtp` | Resend（`smtp.resend.com`） |
+
+`MAIL_TRANSPORT` には既定の値がない。設定を忘れると起動しない（黙ってログに出すだけになるのを防ぐ）。
+`smtp` のときは次もすべて要る。
+
+| 変数 | 本番（Resend）の値 |
+|---|---|
+| `SMTP_HOST` | `smtp.resend.com` |
+| `SMTP_PORT` | `465`（暗黙の TLS）。`587` にすると STARTTLS で送る |
+| `SMTP_USERNAME` | `resend` |
+| `SMTP_PASSWORD_FILE` | Resend の API キーを書いたファイルのパス（下の「API キーの渡し方」） |
+| `MAIL_FROM` | `hibari <noreply@mail.<独自ドメイン>>` |
+
+- **TLS はポート番号で決める。** `465` と `2465` は接続した直後から TLS、それ以外は STARTTLS。STARTTLS を広告しないサーバーには送らない。
+- Resend の接続先とポートは [Resend Docs: Send emails with SMTP](https://resend.com/docs/send-with-smtp) で確かめた（2026-09-21）。
+
+### Resend の準備
+
+1. Resend のアカウントを作り、**送信用のサブドメイン**（`mail.<独自ドメイン>`）を追加する。ルートのドメインから送らないのは、送信の評判を切り分けるため（Resend も推奨している）。
+2. Resend の画面の **Records** のタブに出るレコードを、**そのまま** DNS に足す。内容はドメインを作った時期で変わるので、ここに値は書かない。
+   [Resend Docs: Managing Domains](https://resend.com/docs/dashboard/domains/manage-domains) によると、2026-09 時点では次が出る。
+   - **SPF**: バウンスを受け取る MX と、`include:amazonses.com` を含む TXT
+   - **DKIM**: `resend._domainkey` で始まる名前の TXT（公開鍵）
+3. **DMARC** を足す（[Resend Docs: DMARC](https://resend.com/docs/dashboard/domains/dmarc)）。最初は監視だけにする: `_dmarc.<独自ドメイン>` の TXT に `v=DMARC1; p=none; rua=mailto:<受け取るアドレス>;`。
+   レポートで SPF と DKIM が通っていることを確かめてから `p=quarantine` に上げる。
+4. Resend の画面でドメインが Verified になったら、**送信だけ**の権限（Sending access）で、そのドメインに絞った API キーを作る。
+
+### API キーの渡し方（Fly.io）
+
+API キーは環境変数ではなくファイルで渡す（`JWT_PRIVATE_KEY_FILE` と同じ）。Fly では、シークレットをファイルとしてマシンに置ける。
+
+```toml
+# fly.toml
+[[files]]
+guest_path = "/run/secrets/smtp_password"
+secret_name = "SMTP_PASSWORD"
+```
+
+```bash
+fly secrets set SMTP_PASSWORD="$(printf '%s' 're_xxxxxxxx' | base64)"
+```
+
+`secret_name` で置くシークレットは **base64 で渡す**（Fly が戻してファイルに書く。[Fly Docs: files](https://fly.io/docs/reference/configuration/#the-files-section)）。
+末尾の改行は server が読むときに取り除く。
+
+### 届いたことの確かめ方
+
+- 本番で登録し、確認メールが届くこと、迷惑メールに入らないことを確かめる。受け取った側でヘッダの `Authentication-Results` が `spf=pass` / `dkim=pass` / `dmarc=pass` になっていること。
+- **送れなかったメールは失う**（数回だけ送り直す。ADR 0053 決定 6）。server のログの `mail queue: gave up` と `mail queue: dropped on shutdown` を見る。ログには宛先も本文も出さず、種類（`kind`）だけを出す。
+
 ## 置き場所（ADR 0046）
 
 | 役割 | 本番 | ローカル |
