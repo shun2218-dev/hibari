@@ -490,7 +490,7 @@ export const timelineWithFormatting: TimelineItem[] = [
     "10:02",
     "金曜のリリースの手順です。*本番の前に必ずステージングで確認*してください。\n1. `make migrate` を流す\n2. ステージングで確認する\n  - ログイン・送信・_再接続_\n  - 添付のアップロード\n    - 画像とファイルの両方\n3. 本番に出す",
   ),
-  message("m-f02", naoki, "10:03", "手順書は https://example.com/runbook/release にまとめてあります。~木曜~ 金曜の 17 時からです。", {
+  message("m-f02", naoki, "10:03", "手順は<https://example.com/runbook/release|リリースの手順書>に、画面は https://example.com/screens にあります。~木曜~ __金曜の 17 時__からです。", {
     grouped: true,
   }),
   message("m-f03", miyuki, "10:10", "> 本番の前に必ずステージングで確認\n了解です。マイグレーションはこれで合っていますか？\n```\nmake migrate\ngo run ./cmd/server -check\n```", {

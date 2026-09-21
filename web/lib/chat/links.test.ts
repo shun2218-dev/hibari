@@ -123,6 +123,10 @@ describe("findPermalinks", () => {
     expect(findPermalinks(`${permalink}を見て`, ORIGIN)).toEqual([{ workspaceId: WS, roomId: ROOM, messageId: MSG }]);
   });
 
+  it("文字付きのリンクのパーマリンクもカードにする（ADR 0051 決定 4 の追記）", () => {
+    expect(findPermalinks(`<${permalink}|この発言>`, ORIGIN)).toEqual([{ workspaceId: WS, roomId: ROOM, messageId: MSG }]);
+  });
+
   it("リンクのない本文では空", () => {
     expect(findPermalinks("ただの本文です https://example.com も混ざる", ORIGIN)).toEqual([]);
   });
