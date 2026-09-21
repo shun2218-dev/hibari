@@ -37,7 +37,7 @@ export function MembersPanel({ members, onClose }: { members: RoomMemberView[]; 
             <li key={member.id} className="flex items-center gap-2.5 px-4 py-2">
               <Avatar id={member.id} name={member.name} imageUrl={member.avatarUrl} size="sm" presence={member.presence} />
               <div className="min-w-0">
-                <p className="flex items-center gap-1.5">
+                <p className="flex items-center gap-1">
                   <span className="truncate text-base font-semibold text-text">{member.name}</span>
                   {member.status && <StatusEmoji status={member.status} className="text-sm" />}
                 </p>

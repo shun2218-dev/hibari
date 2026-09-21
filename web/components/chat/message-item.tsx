@@ -183,9 +183,12 @@ export function MessageItem({
       <div className="min-w-0 flex-1">
         {!message.grouped && (
           <header className="flex items-baseline gap-2">
-            <span className="text-sm font-semibold text-text">{sender.name}</span>
-            {/* カスタムステータスは絵文字だけ（ADR 0049 決定 10）。文言はホバーで読める */}
-            {sender.status && <StatusEmoji status={sender.status} className="text-xs" />}
+            {/* カスタムステータスは絵文字だけ（ADR 0049 決定 10）。文言はホバーで読める。
+                名前のすぐ横に置きたいので、時刻との間隔（gap-2）より狭いまとまりにする */}
+            <span className="flex items-baseline gap-1">
+              <span className="text-sm font-semibold text-text">{sender.name}</span>
+              {sender.status && <StatusEmoji status={sender.status} className="text-xs" />}
+            </span>
             <time className="font-mono text-2xs text-text-muted">{message.timeLabel}</time>
           </header>
         )}

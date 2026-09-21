@@ -228,8 +228,11 @@ function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-2">
             {/* 知らせの要らない未読は、バッジではなく名前の太字で示す（ADR 0043） */}
-            <span className={cx("truncate text-base text-text", room.unreadCount > 0 ? "font-bold" : "font-semibold")}>{room.name}</span>
-            {room.peer?.status && <StatusEmoji status={room.peer.status} className="text-xs" />}
+            {/* ステータスの絵文字は名前のすぐ横に置く。時刻と同じ並びに入れると、名前から離れて右端に寄ってしまう */}
+            <span className="flex min-w-0 items-baseline gap-1">
+              <span className={cx("truncate text-base text-text", room.unreadCount > 0 ? "font-bold" : "font-semibold")}>{room.name}</span>
+              {room.peer?.status && <StatusEmoji status={room.peer.status} className="text-xs" />}
+            </span>
             {room.timeLabel && <span className="shrink-0 font-mono text-2xs text-text-muted">{room.timeLabel}</span>}
           </span>
           <span className="flex items-center justify-between gap-2">
