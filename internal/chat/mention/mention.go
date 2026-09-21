@@ -10,13 +10,16 @@
 // 誰がメンションされたかは、クライアントの申告ではなくサーバーがこの解釈で決める。
 // 申告を信じると、本文に出てこない相手の件数を増やせてしまう。
 //
-// 本文から「特別な部分」を見つける処理は、Phase 6.10（本文の書式）でまとめて作る予定になっている。
-// ここに閉じ込めておけば、6.10 の解釈からこのパッケージを呼ぶだけで済み、同じ解釈を 2 か所に書かずにすむ。
-// 6.10 が入るまでは、コードブロックや引用の中のメンションも区別しない（除外は 6.10 と同時に足す）。
+// コード（コードブロックとインラインコード）の中のトークンはメンションにしない（ADR 0051 決定 5）。
+// 表示はコードの中をチップにしないので、ここで数えると「通知は来たのに本文のどこにもメンションがない」が起きる。
+// 書式の解釈は Web（web/lib/chat/body-format.ts）にあり、サーバーが知るのはコードの範囲だけにする（太字などは件数に効かない）。
+// 同じ規則を 2 か所に書くことになるので、両方のテストが testdata/format/mentions.json を読んでずれを防ぐ。
+// 引用の中のメンションは数える（ADR 0051 決定 5）。
 package mention
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -47,26 +50,31 @@ var tokenRe = regexp.MustCompile(`<@([0-9A-Za-z]{26})>|<!(channel|here)>`)
 // Parse は本文からメンションを出現順に返す。同じ対象は 1 件にまとめる。
 // 読めない ID（存在しないユーザーを含む）は、ただの文字列として無視する。エラーにはしない。
 func Parse(body string) []Mention {
-	matches := tokenRe.FindAllStringSubmatch(body, -1)
+	matches := tokenRe.FindAllStringSubmatchIndex(body, -1)
 	if matches == nil {
 		return nil
 	}
+	code := codeRanges(body)
 	var (
 		out      []Mention
 		seenUser = make(map[ulid.ULID]bool, len(matches))
 		seenAll  = make(map[Kind]bool, 2)
 	)
 	for _, m := range matches {
+		// トークンはバッククォートを含まないので、コードの範囲にまたがることはない。始まりだけを見ればよい
+		if inRanges(code, m[0]) {
+			continue
+		}
 		switch {
-		case m[1] != "":
-			id, err := ulid.ParseStrict(m[1])
+		case m[2] >= 0:
+			id, err := ulid.ParseStrict(body[m[2]:m[3]])
 			if err != nil || seenUser[id] {
 				continue
 			}
 			seenUser[id] = true
 			out = append(out, Mention{Kind: KindUser, UserID: id})
 		default:
-			kind := Kind(m[2])
+			kind := Kind(body[m[4]:m[5]])
 			if seenAll[kind] {
 				continue
 			}
@@ -92,6 +100,65 @@ func UserIDs(ms []Mention) []ulid.ULID {
 func Has(ms []Mention, kind Kind) bool {
 	for _, m := range ms {
 		if m.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// fence はコードブロックの記号。
+const fence = "```"
+
+// codeRanges は、本文の中のコードの範囲（記号を含む、バイトの [始まり, 終わり)）を前から順に返す（ADR 0051 決定 2）。
+//
+//   - コードブロック: ``` を前から順に対にする。行の途中でもよい。閉じていない ``` はコードではない
+//   - インラインコード: コードブロックの外で、` から同じ行の次の ` まで。中身が空のもの（バッククォートが 2 つ続くだけ）はコードではない
+//
+// Web の解釈（body-format.ts の splitFences と readAtom）と同じ結果になるように書く。
+func codeRanges(body string) [][2]int {
+	var ranges [][2]int
+	pos := 0
+	for {
+		open := strings.Index(body[pos:], fence)
+		if open < 0 {
+			break
+		}
+		open += pos
+		closing := strings.Index(body[open+len(fence):], fence)
+		if closing < 0 {
+			break
+		}
+		end := open + len(fence) + closing + len(fence)
+		ranges = appendInlineCode(ranges, body, pos, open)
+		ranges = append(ranges, [2]int{open, end})
+		pos = end
+	}
+	return appendInlineCode(ranges, body, pos, len(body))
+}
+
+// appendInlineCode は、body[from:to] の中のインラインコードの範囲を ranges に足す。
+// コードブロックで区切られた両側のバッククォートは対にしない（Web もコードブロックの前後を別々に解釈する）。
+func appendInlineCode(ranges [][2]int, body string, from, to int) [][2]int {
+	s := body[from:to]
+	for i := 0; i < len(s); i++ {
+		if s[i] != '`' {
+			continue
+		}
+		rest := s[i+1:]
+		closing := strings.IndexByte(rest, '`')
+		newline := strings.IndexByte(rest, '\n')
+		// 中身が 1 文字以上あり、同じ行で閉じるものだけ。閉じなければ、次のバッククォートから探し直す（``a` の a はコード）
+		if closing > 0 && (newline < 0 || closing < newline) {
+			ranges = append(ranges, [2]int{from + i, from + i + 1 + closing + 1})
+			i += 1 + closing
+		}
+	}
+	return ranges
+}
+
+func inRanges(ranges [][2]int, pos int) bool {
+	for _, r := range ranges {
+		if r[0] <= pos && pos < r[1] {
 			return true
 		}
 	}
