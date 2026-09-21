@@ -22,6 +22,8 @@ export type MessageLinkStatus = "ok" | "unavailable";
 
 export type MentionKind = "user" | "channel" | "here";
 
+export type Presence = "active" | "idle" | "offline";
+
 export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed";
 
 export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid";
@@ -190,11 +192,20 @@ export interface WorkspaceList {
   workspaces: Workspace[];
 }
 
+export interface UserStatus {
+  emoji: string;
+  text: string;
+  expires_at: string | null;
+}
+
 export interface Member {
   user: UserProfile;
   role: Role;
   joined_at: string;
-  online: boolean;
+  presence: Presence;
+  away: boolean;
+  /** status は設定していなければ null（期限切れも null）。 */
+  status: UserStatus | null;
 }
 
 export interface MemberList {
@@ -204,6 +215,20 @@ export interface MemberList {
 
 export interface ChangeMemberRoleRequest {
   role: Role;
+}
+
+export interface ManualAwayRequest {
+  away: boolean;
+}
+
+export interface ManualAwayResponse {
+  away: boolean;
+}
+
+export interface SetStatusRequest {
+  emoji: string;
+  text: string;
+  expires_at?: string | null;
 }
 
 export interface TransferOwnershipRequest {
@@ -301,7 +326,7 @@ export interface DMPeer {
   id: string;
   handle: string;
   display_name: string;
-  online: boolean;
+  presence: Presence;
 }
 
 export interface LastMessage {
@@ -323,7 +348,10 @@ export interface RoomMember {
   user: UserProfile;
   role: Role;
   joined_at: string;
-  online: boolean;
+  presence: Presence;
+  away: boolean;
+  /** status は設定していなければ null（期限切れも null）。 */
+  status: UserStatus | null;
 }
 
 export interface RoomMemberList {
@@ -651,7 +679,14 @@ export interface WorkspaceRoleChangedData {
 
 export interface PresenceChangedData {
   user_id: string;
-  online: boolean;
+  presence: Presence;
+}
+
+export interface MemberStatusChangedData {
+  workspace_id: string;
+  user_id: string;
+  away: boolean;
+  status: UserStatus | null;
 }
 
 export interface TypingStartedData {
@@ -691,6 +726,7 @@ export type ServerEvent =
   | { type: "workspace.member_removed"; data: WorkspaceMemberRemovedData }
   | { type: "workspace.role_changed"; data: WorkspaceRoleChangedData }
   | { type: "presence.changed"; data: PresenceChangedData }
+  | { type: "member.status_changed"; data: MemberStatusChangedData }
   | { type: "typing.started"; data: TypingStartedData }
   | { type: "thread.read"; data: ThreadReadData }
   | { type: "thread.followed"; data: ThreadFollowedData };

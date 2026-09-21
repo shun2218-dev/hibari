@@ -78,7 +78,7 @@ describe("createConnection", () => {
     await vi.advanceTimersByTimeAsync(0);
     sockets.last().open();
 
-    const event: ServerEvent = { type: "presence.changed", data: { user_id: "u1", online: true } };
+    const event: ServerEvent = { type: "presence.changed", data: { user_id: "u1", presence: "active" } };
     sockets.last().receive(event);
     const ack = connection.request({ type: "subscribe", room_id: "r1" });
     sockets.last().serverClose(1001);

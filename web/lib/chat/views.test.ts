@@ -66,7 +66,7 @@ describe("toRoomSummaryView", () => {
       room("r2", "", {
         kind: "dm",
         name: null,
-        dm_peer: { ...naoki, online: true },
+        dm_peer: { ...naoki, presence: "active" },
         last_message_at: "2026-09-12T01:00:00Z",
         last_message: { id: "m2", sender: naoki, kind: "user", body: "あとで見ます", created_at: "2026-09-12T01:00:00Z", deleted: false },
       }),
@@ -342,7 +342,7 @@ describe("toAttachmentDraftView", () => {
 describe("toRoomMemberView", () => {
   it("labels the workspace role", () => {
     expect(
-      toRoomMemberView(roomMember(naoki, { role: "owner", online: true }), { [naoki.id]: "https://storage.test/n" }),
+      toRoomMemberView(roomMember(naoki, { role: "owner", presence: "active" }), { [naoki.id]: "https://storage.test/n" }),
     ).toEqual({
       id: naoki.id,
       name: "佐藤 直樹",
@@ -387,9 +387,9 @@ describe("messageActions", () => {
 
 describe("toDmCandidates", () => {
   const members = [
-    member(naoki, { role: "owner", online: true }),
+    member(naoki, { role: "owner", presence: "active" }),
     member(miyuki),
-    member(kei, { online: true }),
+    member(kei, { presence: "active" }),
   ];
 
   it("leaves out the viewer and anyone already in the room", () => {
@@ -884,7 +884,7 @@ describe("toMemberNames", () => {
 });
 
 describe("mentionAllRecipients", () => {
-  const members = [roomMember(naoki, { online: true }), roomMember(miyuki), roomMember(kei, { online: true })];
+  const members = [roomMember(naoki, { presence: "active" }), roomMember(miyuki), roomMember(kei, { presence: "active" })];
 
   it("channel はメンバー全員から自分を引いた数", () => {
     expect(mentionAllRecipients(members, "channel", naoki.id)).toBe(2);

@@ -57,7 +57,7 @@ describe("toMemberRowView", () => {
   });
 
   it("never lets the owner manage themselves", () => {
-    const view = toMemberRowView(member(naoki, { role: "owner", online: true }), { userId: naoki.id, myRole: "owner" });
+    const view = toMemberRowView(member(naoki, { role: "owner", presence: "active" }), { userId: naoki.id, myRole: "owner" });
 
     expect(view).toMatchObject({ isSelf: true, presence: "online", manage: { kind: "locked" } });
   });

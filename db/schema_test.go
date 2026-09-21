@@ -389,6 +389,43 @@ func TestThreadMembersConstraints(t *testing.T) {
 	})
 }
 
+// ---- 離席とカスタムステータス（ADR 0049） ----
+
+func TestPresenceAndStatusConstraints(t *testing.T) {
+	pool := openPool(t)
+	inTx(t, pool, func(tx pgx.Tx) {
+		alice := insertUser(t, tx, "alice")
+		w := insertWorkspace(t, tx, alice)
+		const setStatus = `UPDATE workspace_members SET status_emoji = $1, status_text = $2, status_expires_at = $3
+			WHERE workspace_id = $4 AND user_id = $5`
+
+		// 絵文字なしの文言・期限は、画面に出せない組み合わせなので DB が拒む。
+		expectViolation(t, tx, sqlstateCheck, "workspace_members_status_check", setStatus, nil, "休憩中", nil, w, alice)
+		expectViolation(t, tx, sqlstateCheck, "workspace_members_status_check", setStatus, nil, nil, now, w, alice)
+		// 絵文字だけ・絵文字 + 文言・すべて NULL（解除）は通る。
+		mustExec(t, tx, setStatus, "🍵", nil, nil, w, alice)
+		mustExec(t, tx, setStatus, "🍵", "休憩中", now, w, alice)
+		mustExec(t, tx, setStatus, nil, nil, nil, w, alice)
+
+		// 手動の離席はユーザーごとに 1 行。同じユーザーの 2 行目は主キーが拒む。
+		const setAway = `INSERT INTO user_presence_settings (user_id, manual_away, updated_at) VALUES ($1, $2, $3)`
+		mustExec(t, tx, setAway, alice, true, now)
+		expectViolation(t, tx, sqlstateUnique, "user_presence_settings_pkey", setAway, alice, false, now)
+
+		// ワークスペースを抜ければ、その行のステータスも消える（後始末のコードを持たない）。
+		mustExec(t, tx, setStatus, "🌴", "休暇中", nil, w, alice)
+		mustExec(t, tx, `DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`, w, alice)
+		var n int
+		if err := tx.QueryRow(t.Context(),
+			`SELECT count(*) FROM workspace_members WHERE workspace_id = $1 AND status_emoji IS NOT NULL`, w).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("status rows after leaving the workspace = %d, want 0", n)
+		}
+	})
+}
+
 // ---- 添付 ----
 
 func TestAttachmentsConstraints(t *testing.T) {

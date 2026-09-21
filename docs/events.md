@@ -260,6 +260,8 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 | `offline` | 接続がない |
 
 初期値は REST で取る（`GET /api/v1/rooms/{id}/members` の `presence`、ルームの `dm_peer.presence`）。
+`away` と `status` を返すのは**メンバー一覧だけ**（`GET /api/v1/workspaces/{id}/members` と `GET /api/v1/rooms/{id}/members`）。
+DM の相手とメッセージの送信者のぶんは、クライアントがワークスペースのメンバー一覧から ID で引く（ADR 0049 決定 7 の追記）。
 同じユーザーが複数の端末（複数のサーバー）に接続していても、状態が変わったときに 1 回だけ送る（ADR 0016）。
 
 **画面に出す 3 つの状態は、これと本人の設定（`away`）を合わせて決める**（合わせるのは読む側。ADR 0049 決定 1）。

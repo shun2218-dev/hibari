@@ -534,9 +534,19 @@ type workspaceRoleChangedData struct {
 	Role        chat.Role `json:"role"`
 }
 
+// presenceChangedData は自動で決まる状態だけ（ADR 0049）。手動の離席は memberStatusChangedData で届く。
 type presenceChangedData struct {
-	UserID string `json:"user_id"`
-	Online bool   `json:"online"`
+	UserID   string        `json:"user_id"`
+	Presence chat.Presence `json:"presence"`
+}
+
+// memberStatusChangedData は本人が選んだ設定（ADR 0049 決定 8）。
+// away はユーザーごとなので所属するすべてのワークスペースに同じ値が飛び、status はワークスペースごと。
+type memberStatusChangedData struct {
+	WorkspaceID string              `json:"workspace_id"`
+	UserID      string              `json:"user_id"`
+	Away        bool                `json:"away"`
+	Status      *userStatusResponse `json:"status"`
 }
 
 type typingStartedData struct {
@@ -594,7 +604,9 @@ func eventData(d any) (any, error) {
 	case chat.WorkspaceRoleChanged:
 		return workspaceRoleChangedData{d.WorkspaceID.String(), d.UserID.String(), d.Role}, nil
 	case chat.PresenceChanged:
-		return presenceChangedData{d.UserID.String(), d.Online}, nil
+		return presenceChangedData{d.UserID.String(), d.Presence}, nil
+	case chat.MemberStatusChanged:
+		return memberStatusChangedData{d.WorkspaceID.String(), d.UserID.String(), d.Away, newUserStatusResponse(d.Status)}, nil
 	case chat.TypingStarted:
 		var root *string
 		if d.ThreadRootID != nil {

@@ -34,7 +34,7 @@ const design = room("r-design", "デザインレビュー", {
   last_message: { id: "m-3", sender: miyuki, kind: "user", body: "presence を確認します", created_at: "2026-09-13T02:05:00Z", deleted: false },
 });
 const chat = room("r-chat", "雑談", { is_default: true });
-const dm = room("r-dm", "", { kind: "dm", name: null, dm_peer: { ...naoki, online: true } });
+const dm = room("r-dm", "", { kind: "dm", name: null, dm_peer: { ...naoki, presence: "active" } });
 
 function routes(overrides: Record<string, Handler> = {}): Record<string, Handler> {
   return {
@@ -54,7 +54,7 @@ function openRoom(r: Room, messages = [message(1), message(2), message(3)]): Rec
     [`POST /api/v1/rooms/${r.id}/read`]: () => json(200, { last_read_seq: r.last_message_seq, last_read_user_seq: r.last_message_seq, unread_count: 0, mention_count: 0 }),
     // `@` の補完のために、ルームを開いた時点でメンバーを引く（ADR 0043）
     [`GET /api/v1/rooms/${r.id}/members?limit=200`]: () =>
-      json(200, { members: [roomMember(naoki, { role: "owner", online: true }), roomMember(miyuki), roomMember(kei)], next_cursor: null }),
+      json(200, { members: [roomMember(naoki, { role: "owner", presence: "active" }), roomMember(miyuki), roomMember(kei)], next_cursor: null }),
   };
 }
 
@@ -197,7 +197,7 @@ describe("WorkspaceScreen", () => {
           ...openRoom(design),
           "GET /api/v1/rooms/r-design/members?limit=200": () =>
             json(200, {
-              members: [roomMember(naoki, { role: "owner", online: true }), roomMember(miyuki)],
+              members: [roomMember(naoki, { role: "owner", presence: "active" }), roomMember(miyuki)],
               next_cursor: null,
             }),
         }),
@@ -214,7 +214,7 @@ describe("WorkspaceScreen", () => {
 
     it("opens a dm with a member picked from the sidebar", async () => {
       const user = userEvent.setup();
-      const dmRoom = room("r-new-dm", "", { kind: "dm", name: null, dm_peer: { ...miyuki, online: true } });
+      const dmRoom = room("r-new-dm", "", { kind: "dm", name: null, dm_peer: { ...miyuki, presence: "active" } });
       const { api } = renderWithChat(
         <WorkspaceScreen />,
         routes({

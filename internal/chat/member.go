@@ -32,11 +32,15 @@ func (s *Service) ListMembers(ctx context.Context, actor, workspaceID ulid.ULID,
 	}
 	members := make([]Member, len(rows))
 	ids := make([]ulid.ULID, len(rows))
+	now := s.clock.Now()
 	for i, r := range rows {
 		members[i] = Member{
 			User:     UserProfile{ID: r.UserID, Handle: r.Handle, DisplayName: r.DisplayName},
 			Role:     Role(r.Role),
 			JoinedAt: r.JoinedAt,
+			Away:     r.ManualAway,
+			// 期限切れのステータスはここで落とす（ADR 0049 決定 6 の追記）。時刻は Clock から取る
+			Status: statusOf(r.StatusEmoji, r.StatusText, r.StatusExpiresAt, now),
 		}
 		ids[i] = r.UserID
 	}
@@ -44,7 +48,7 @@ func (s *Service) ListMembers(ctx context.Context, actor, workspaceID ulid.ULID,
 	// presence はページに残した分だけを 1 回の MGET で読む（ルームのメンバー一覧と同じ。ADR 0015）。
 	online := s.online(ctx, ids[:len(result.Items)])
 	for i := range result.Items {
-		result.Items[i].Online = online[result.Items[i].User.ID]
+		result.Items[i].Presence = presenceOf(online[result.Items[i].User.ID])
 	}
 	return result, nil
 }

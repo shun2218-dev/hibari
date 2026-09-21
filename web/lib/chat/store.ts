@@ -1103,30 +1103,31 @@ export function createChatStore(
         return;
       }
       case "presence.changed": {
-        const { user_id, online } = event.data;
+        // 自動で決まる状態だけが届く。手動の離席とカスタムステータスは member.status_changed（ADR 0049）
+        const { user_id, presence } = event.data;
         update((s) => {
           let rooms = s.rooms;
           for (const room of Object.values(s.rooms)) {
-            if (room?.dm_peer?.id !== user_id || room.dm_peer.online === online) continue;
+            if (room?.dm_peer?.id !== user_id || room.dm_peer.presence === presence) continue;
             if (rooms === s.rooms) rooms = { ...s.rooms };
-            rooms[room.id] = { ...room, dm_peer: { ...room.dm_peer, online } };
+            rooms[room.id] = { ...room, dm_peer: { ...room.dm_peer, presence } };
           }
           let roomMembers = s.roomMembers;
           for (const [roomId, entry] of Object.entries(s.roomMembers)) {
-            if (!entry?.members.some((m) => m.user.id === user_id && m.online !== online)) continue;
+            if (!entry?.members.some((m) => m.user.id === user_id && m.presence !== presence)) continue;
             if (roomMembers === s.roomMembers) roomMembers = { ...s.roomMembers };
             roomMembers[roomId] = {
               ...entry,
-              members: entry.members.map((m) => (m.user.id === user_id ? { ...m, online } : m)),
+              members: entry.members.map((m) => (m.user.id === user_id ? { ...m, presence } : m)),
             };
           }
           let members = s.members;
           for (const [workspaceId, entry] of Object.entries(s.members)) {
-            if (!entry?.list.some((m) => m.user.id === user_id && m.online !== online)) continue;
+            if (!entry?.list.some((m) => m.user.id === user_id && m.presence !== presence)) continue;
             if (members === s.members) members = { ...s.members };
             members[workspaceId] = {
               ...entry,
-              list: entry.list.map((m) => (m.user.id === user_id ? { ...m, online } : m)),
+              list: entry.list.map((m) => (m.user.id === user_id ? { ...m, presence } : m)),
             };
           }
           return rooms === s.rooms && roomMembers === s.roomMembers && members === s.members

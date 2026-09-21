@@ -109,8 +109,12 @@ type Member struct {
 	User     UserProfile
 	Role     Role
 	JoinedAt time.Time
-	// Online は presence の初期値（ADR 0015）。変化は WebSocket の presence.changed で届く。
-	Online bool
+	// Presence は自動で決まる状態の初期値（ADR 0015 / 0049）。変化は WebSocket の presence.changed で届く。
+	Presence Presence
+	// Away は本人が手動で離席にしているか（ADR 0049）。変化は member.status_changed で届く。
+	Away bool
+	// Status はカスタムステータス。設定していなければ nil（期限切れも nil）。
+	Status *UserStatus
 }
 
 // 一覧のページングの既定値と上限（ADR 0011）。
