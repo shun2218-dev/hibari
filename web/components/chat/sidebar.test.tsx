@@ -11,8 +11,8 @@ const currentUser = { id: "u1", name: "あなた" };
 const rooms: RoomSummaryView[] = [
   { id: "r1", kind: "public", name: "デザインレビュー", lastMessage: "中村 涼: 確認します", timeLabel: "11:05", unreadCount: 0, mentionCount: 0 },
   { id: "r2", kind: "private", name: "リリース準備", timeLabel: "昨日", unreadCount: 3, mentionCount: 0 },
-  { id: "d1", kind: "dm", name: "佐藤 直樹", peer: { id: "u2", online: true }, unreadCount: 0, mentionCount: 0 },
-  { id: "d2", kind: "dm", name: "中村 涼", peer: { id: "u3", online: false }, unreadCount: 1, mentionCount: 0 },
+  { id: "d1", kind: "dm", name: "佐藤 直樹", peer: { id: "u2", presence: "online" }, unreadCount: 0, mentionCount: 0 },
+  { id: "d2", kind: "dm", name: "中村 涼", peer: { id: "u3", presence: "offline" }, unreadCount: 1, mentionCount: 0 },
 ];
 
 function renderSidebar(props: Partial<Parameters<typeof Sidebar>[0]> = {}) {
@@ -85,7 +85,7 @@ describe("Sidebar", () => {
         { id: "r1", kind: "public", name: "デザインレビュー", timeLabel: "11:05", unreadCount: 7, mentionCount: 2 },
         { id: "r2", kind: "private", name: "リリース準備", timeLabel: "昨日", unreadCount: 3, mentionCount: 0 },
         { id: "r3", kind: "public", name: "雑談", timeLabel: "昨日", unreadCount: 0, mentionCount: 0 },
-        { id: "d1", kind: "dm", name: "佐藤 直樹", peer: { id: "u2", online: true }, unreadCount: 2, mentionCount: 0 },
+        { id: "d1", kind: "dm", name: "佐藤 直樹", peer: { id: "u2", presence: "online" }, unreadCount: 2, mentionCount: 0 },
       ],
     });
 
@@ -112,6 +112,26 @@ describe("Sidebar", () => {
     const offline = screen.getByRole("link", { name: /^中村 涼/ });
     expect(within(online).getByRole("img", { name: "オンライン" })).toBeInTheDocument();
     expect(within(offline).queryByRole("img", { name: "オンライン" })).not.toBeInTheDocument();
+  });
+
+  // ADR 0049: 離席は色を持たないドット、ステータスは絵文字だけを名前の横に出す
+  it("離席の DM の相手には、離席のドットとステータスの絵文字を出す", () => {
+    renderSidebar({
+      rooms: [
+        {
+          id: "d1",
+          kind: "dm",
+          name: "佐藤 直樹",
+          peer: { id: "u2", presence: "away", status: { emoji: "📅", text: "会議中" } },
+          unreadCount: 0,
+          mentionCount: 0,
+        },
+      ],
+    });
+
+    const row = screen.getByRole("link", { name: /佐藤 直樹/ });
+    expect(within(row).getByRole("img", { name: "離席中" })).toBeInTheDocument();
+    expect(within(row).getByRole("img", { name: "ステータス: 📅 会議中" })).toBeInTheDocument();
   });
 
   it("invites to create a channel when there are no rooms", () => {

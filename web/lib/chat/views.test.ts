@@ -76,7 +76,7 @@ describe("toRoomSummaryView", () => {
 
     expect(view).toMatchObject({
       name: "佐藤 直樹",
-      peer: { id: naoki.id, online: true, avatarUrl: "https://storage.test/naoki.png" },
+      peer: { id: naoki.id, presence: "online", avatarUrl: "https://storage.test/naoki.png" },
       lastMessage: "あとで見ます",
       timeLabel: "昨日",
     });
@@ -347,7 +347,7 @@ describe("toRoomMemberView", () => {
       id: naoki.id,
       name: "佐藤 直樹",
       avatarUrl: "https://storage.test/n",
-      online: true,
+      presence: "online",
       roleLabel: "オーナー",
     });
   });
@@ -394,7 +394,7 @@ describe("toDmCandidates", () => {
 
   it("leaves out the viewer and anyone already in the room", () => {
     expect(toDmCandidates(members, { userId: naoki.id, exclude: [kei.id] })).toEqual([
-      { id: miyuki.id, name: miyuki.display_name, handle: miyuki.handle, online: false },
+      { id: miyuki.id, name: miyuki.display_name, handle: miyuki.handle, presence: "offline" },
     ]);
   });
 

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { type AvatarColor, avatarColor, avatarInitial } from "@/lib/avatar";
 import { cx } from "@/lib/cx";
+import { type PresenceView, presenceLabel } from "@/lib/presence";
 
 // Tailwind はソース中の完全なクラス名しか生成しないので、番号から組み立てずに対応表で持つ
 const colorClass: Record<AvatarColor, string> = {
@@ -48,12 +49,15 @@ type AvatarProps = {
    * ユーザーは円、ワークスペースは角丸の四角にする（同じ頭文字でも人と場所を見分けられるように）。
    */
   shape?: "circle" | "square";
-  /** presence。オンラインのときだけドットを出す（離席やオフラインの表示はしない）。 */
-  online?: boolean;
+  /**
+   * presence のドット（ADR 0049）。オンラインは緑、離席は色なしのアウトライン、オフラインはドットを出さない。
+   * 自動の状態と本人の手動の離席を合わせた結果を受け取る（合わせるのは `lib/presence.ts`）。
+   */
+  presence?: PresenceView;
   className?: string;
 };
 
-export function Avatar({ id, name, imageUrl, size = "lg", shape = "circle", online = false, className }: AvatarProps) {
+export function Avatar({ id, name, imageUrl, size = "lg", shape = "circle", presence = "offline", className }: AvatarProps) {
   // 読み込めなかった URL。取り直して URL が変われば、もう一度画像を試す（ADR 0028）
   const [failedUrl, setFailedUrl] = useState<string>();
   const radius = shape === "circle" ? "rounded-full" : size === "xl" ? "rounded-lg" : "rounded-sm";
@@ -81,11 +85,15 @@ export function Avatar({ id, name, imageUrl, size = "lg", shape = "circle", onli
           {avatarInitial(name)}
         </span>
       )}
-      {online && (
+      {presence !== "offline" && (
         <span
           role="img"
-          aria-label="オンライン"
-          className="absolute right-0 bottom-0 size-2 rounded-full bg-online ring-2 ring-surface"
+          aria-label={presenceLabel[presence]}
+          className={cx(
+            "absolute right-0 bottom-0 size-2 rounded-full ring-2 ring-surface",
+            // 離席は「色を持たない」ことで、いま起きていること（オンライン）と見分ける。中身は地と同じ色で抜く
+            presence === "online" ? "bg-online" : "border-2 border-text-muted bg-surface",
+          )}
         />
       )}
     </span>

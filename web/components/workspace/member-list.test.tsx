@@ -6,8 +6,8 @@ import { MemberList } from "./member-list";
 import type { MemberRowView } from "./types";
 
 const members: MemberRowView[] = [
-  { id: "u1", name: "あなた", handle: "you", online: true, role: "admin", isSelf: true, manage: { kind: "locked", reason: "自分と同じか上のロールのメンバーは変更できません。" } },
-  { id: "u2", name: "鈴木 涼", handle: "ryo", online: false, role: "member", isSelf: false, manage: { kind: "menu", grantableRoles: ["admin", "member"], canRemove: true } },
+  { id: "u1", name: "あなた", handle: "you", presence: "online", role: "admin", isSelf: true, manage: { kind: "locked", reason: "自分と同じか上のロールのメンバーは変更できません。" } },
+  { id: "u2", name: "鈴木 涼", handle: "ryo", presence: "offline", role: "member", isSelf: false, manage: { kind: "menu", grantableRoles: ["admin", "member"], canRemove: true } },
 ];
 
 describe("MemberList", () => {

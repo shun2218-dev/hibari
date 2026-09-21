@@ -28,6 +28,7 @@ import { MembersPanel } from "@/components/chat/members-panel";
 import { RoomHeader } from "@/components/chat/room-header";
 import { RoomSettingsDialog } from "@/components/chat/room-dialogs";
 import { Sidebar } from "@/components/chat/sidebar";
+import { StatusDialog } from "@/components/chat/status-dialog";
 import { ThreadList } from "@/components/chat/thread-list";
 import { ThreadPanel } from "@/components/chat/thread-panel";
 import { Timeline } from "@/components/chat/timeline";
@@ -71,6 +72,10 @@ import {
   lastMessageKey,
   reactionPickerKey,
   timelineWithReactions,
+  myStatus,
+  roomMembersWithPresence,
+  roomsWithStatus,
+  timelineWithStatus,
   roomsWithMentions,
   timelineWithBroadcast,
   timelineWithMentions,
@@ -156,6 +161,13 @@ type ChatOptions = {
    */
   messageAttachments?: "images" | "menu";
   /**
+   * 離席とカスタムステータス（ADR 0049）。
+   * - presence: メンバーパネル・タイムライン・サイドバーに、離席とステータスが混ざった状態を出す
+   * - status-dialog: ステータスを設定するダイアログ（`picker` は絵文字のピッカーを開いたところ）
+   */
+  presence?: boolean;
+  statusDialog?: "empty" | "filled" | "picker";
+  /**
    * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
    */
@@ -211,6 +223,8 @@ export function chat({
   linkCards,
   reactions,
   messageAttachments,
+  presence,
+  statusDialog,
   dark,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
@@ -224,7 +238,17 @@ export function chat({
           <Sidebar
             workspace={workspaces.dev}
             currentUser={currentUser}
-            rooms={noRooms ? [] : roomRemoved ? rooms.filter((r) => r.id !== selectedRoom.id) : mentions ? roomsWithMentions : rooms}
+            rooms={
+              noRooms
+                ? []
+                : roomRemoved
+                  ? rooms.filter((r) => r.id !== selectedRoom.id)
+                  : mentions
+                    ? roomsWithMentions
+                    : presence
+                      ? roomsWithStatus
+                      : rooms
+            }
             selectedRoomId={roomRemoved || threads ? undefined : selectedRoom.id}
             threads={
               thread || threads
@@ -236,7 +260,12 @@ export function chat({
             onCreateRoom={noop}
             onStartDm={noop}
             accountMenuOpen={accountMenu}
-            accountMenu={<AccountMenu user={{ ...users.you, handle: users.you.handle }} />}
+            accountMenu={
+              <AccountMenu
+                user={{ ...users.you, handle: users.you.handle, status: presence ? myStatus : undefined }}
+                away={presence}
+              />
+            }
             switcherOpen={switcher}
             switcher={
               <WorkspaceSwitcher workspaces={[workspaces.dev, workspaces.memo]} currentWorkspaceId={workspaces.dev.id} />
@@ -245,7 +274,7 @@ export function chat({
         }
         panel={
           members ? (
-            <MembersPanel members={roomMembers} />
+            <MembersPanel members={presence ? roomMembersWithPresence : roomMembers} />
           ) : threadContent ? (
             <ThreadPanel
               room={{ kind: selectedRoom.kind, name: selectedRoom.name }}
@@ -280,7 +309,9 @@ export function chat({
         {body === "timeline" && !threads && (
           <Timeline
             items={
-              messageAttachments
+              presence
+                ? timelineWithStatus
+                : messageAttachments
                 ? timelineWithImages
                 : reactions
                 ? timelineWithReactions
@@ -343,6 +374,17 @@ export function chat({
         {footer === "join" && <JoinRoomBar />}
       </ChatLayout>
       {dialog}
+      {statusDialog && (
+        <StatusDialog
+          open
+          emoji={statusDialog === "empty" ? undefined : myStatus.emoji}
+          text={statusDialog === "empty" ? "" : (myStatus.text ?? "")}
+          expiry={statusDialog === "empty" ? "none" : "today"}
+          pickerOpen={statusDialog === "picker"}
+          canClear={statusDialog !== "empty"}
+          theme={dark ? "dark" : "light"}
+        />
+      )}
       <CreateWorkspaceDialog open={Boolean(createWorkspace)} />
     </>
   );

@@ -59,7 +59,7 @@ describe("toMemberRowView", () => {
   it("never lets the owner manage themselves", () => {
     const view = toMemberRowView(member(naoki, { role: "owner", online: true }), { userId: naoki.id, myRole: "owner" });
 
-    expect(view).toMatchObject({ isSelf: true, online: true, manage: { kind: "locked" } });
+    expect(view).toMatchObject({ isSelf: true, presence: "online", manage: { kind: "locked" } });
   });
 
   it("uses the signed url of the avatar when there is one", () => {

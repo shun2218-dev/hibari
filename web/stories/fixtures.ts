@@ -14,12 +14,14 @@ import type {
   ThreadListItemView,
   TimelineItem,
   UserRef,
+  UserStatusView,
   WorkspaceRef,
 } from "@/components/chat/types";
 import type { TransferCandidate } from "@/components/workspace/member-dialogs";
 import type { InviteRowView, MemberRowView, WorkspaceRole } from "@/components/workspace/types";
 import type { DeviceView } from "@/components/settings/settings-sections";
 import type { MentionCandidate } from "@/lib/chat/mentions";
+import type { PresenceView } from "@/lib/presence";
 
 /**
  * story のモックのアバター画像（public/dev/。Storybook は staticDirs で配る）。
@@ -82,7 +84,7 @@ export const rooms: RoomSummaryView[] = [
     id: "dm-naoki",
     kind: "dm",
     name: users.naoki.name,
-    peer: { id: users.naoki.id, online: true },
+    peer: { id: users.naoki.id, presence: "online" },
     lastMessage: "縦バーの件、あとで画面で見ます",
     timeLabel: "10:14",
     unreadCount: 0,
@@ -92,7 +94,7 @@ export const rooms: RoomSummaryView[] = [
     id: "dm-miyuki",
     kind: "dm",
     name: users.miyuki.name,
-    peer: { id: users.miyuki.id, online: true },
+    peer: { id: users.miyuki.id, presence: "online" },
     lastMessage: "モックのリンク送りますね",
     timeLabel: "09:58",
     unreadCount: 1,
@@ -102,7 +104,7 @@ export const rooms: RoomSummaryView[] = [
     id: "dm-ryo",
     kind: "dm",
     name: users.ryo.name,
-    peer: { id: users.ryo.id, online: false },
+    peer: { id: users.ryo.id, presence: "offline" },
     lastMessage: "ありがとうございます、確認しました",
     timeLabel: "昨日",
     unreadCount: 0,
@@ -495,19 +497,56 @@ export const mentionCandidates: MentionCandidate[] = [
 ];
 
 export const roomMembers: RoomMemberView[] = [
-  { ...naoki, online: true, roleLabel: "オーナー" },
-  { ...miyuki, online: true, roleLabel: "管理者" },
-  { ...you, online: true, roleLabel: "メンバー" },
-  { ...ryo, online: false, roleLabel: "メンバー" },
+  { ...naoki, presence: "online", roleLabel: "オーナー" },
+  { ...miyuki, presence: "online", roleLabel: "管理者" },
+  { ...you, presence: "online", roleLabel: "メンバー" },
+  { ...ryo, presence: "offline", roleLabel: "メンバー" },
 ];
 
 export const typingNames = [users.miyuki.name];
 
+// ---- 離席とカスタムステータス（ADR 0049。chat/presence/） ----
+
+/** 自分のステータス。アカウントメニューと設定のダイアログに出す。 */
+export const myStatus: UserStatusView = { emoji: "🍵", text: "休憩中" };
+
+/** 誰がどのステータスを出しているか。名前の横・メンバーパネル・サイドバーの DM で同じ表を使う。 */
+const statuses: Readonly<Record<string, UserStatusView>> = {
+  [users.naoki.id]: { emoji: "📅", text: "会議中" },
+  [users.miyuki.id]: { emoji: "🎧", text: "集中しています" },
+  [users.ryo.id]: { emoji: "🌴", text: "休暇中" },
+};
+
+/**
+ * 3 つの状態が並ぶメンバーパネル（ADR 0049）。
+ * オンライン（緑）・離席（アウトライン）・オフライン（ドットなし）を 1 枚で見比べられるようにする。
+ */
+export const roomMembersWithPresence: RoomMemberView[] = [
+  { ...naoki, status: statuses[users.naoki.id], presence: "online", roleLabel: "オーナー" },
+  { ...miyuki, status: statuses[users.miyuki.id], presence: "away", roleLabel: "管理者" },
+  { ...you, status: myStatus, presence: "online", roleLabel: "メンバー" },
+  { ...ryo, status: statuses[users.ryo.id], presence: "offline", roleLabel: "メンバー" },
+];
+
+/** DM の相手にステータスと離席が付いたサイドバー。 */
+export const roomsWithStatus: RoomSummaryView[] = rooms.map((room) =>
+  room.peer
+    ? { ...room, peer: { ...room.peer, status: statuses[room.peer.id], presence: room.peer.id === users.miyuki.id ? "away" : room.peer.presence } }
+    : room,
+);
+
+/** 名前の横にステータスの絵文字が出るタイムライン。文言はホバーでだけ読める（ADR 0049 決定 10）。 */
+export const timelineWithStatus: TimelineItem[] = timeline.map((item) =>
+  item.type === "message" && statuses[item.message.sender.id]
+    ? { ...item, message: { ...item.message, sender: { ...item.message.sender, status: statuses[item.message.sender.id] } } }
+    : item,
+);
+
 /** DM の相手の候補。hibari 開発のメンバーから自分を除いたもの。 */
 export const dmCandidates: DmCandidateView[] = [
-  { id: users.naoki.id, name: users.naoki.name, handle: users.naoki.handle, online: true },
-  { id: users.miyuki.id, name: users.miyuki.name, handle: users.miyuki.handle, online: true },
-  { id: users.ryo.id, name: users.ryo.name, handle: users.ryo.handle, online: false },
+  { id: users.naoki.id, name: users.naoki.name, handle: users.naoki.handle, presence: "online" },
+  { id: users.miyuki.id, name: users.miyuki.name, handle: users.miyuki.handle, presence: "online" },
+  { id: users.ryo.id, name: users.ryo.name, handle: users.ryo.handle, presence: "offline" },
 ];
 
 /** 非公開チャンネル「リリース準備」の参加者。 */
@@ -523,13 +562,13 @@ export const lockedReason = "自分と同じか上のロールのメンバーは
 
 type Viewer = Exclude<WorkspaceRole, never>;
 
-const roster: Array<{ user: (typeof users)[keyof typeof users]; online: boolean; role: WorkspaceRole }> = [
-  { user: users.you, online: true, role: "owner" },
-  { user: users.naoki, online: true, role: "admin" },
-  { user: users.misaki, online: true, role: "admin" },
-  { user: users.suzuki, online: false, role: "member" },
-  { user: users.haru, online: false, role: "member" },
-  { user: users.kei, online: false, role: "member" },
+const roster: Array<{ user: (typeof users)[keyof typeof users]; presence: PresenceView; role: WorkspaceRole }> = [
+  { user: users.you, presence: "online", role: "owner" },
+  { user: users.naoki, presence: "online", role: "admin" },
+  { user: users.misaki, presence: "online", role: "admin" },
+  { user: users.suzuki, presence: "offline", role: "member" },
+  { user: users.haru, presence: "offline", role: "member" },
+  { user: users.kei, presence: "offline", role: "member" },
 ];
 
 const rank: Record<WorkspaceRole, number> = { owner: 3, admin: 2, member: 1 };
@@ -540,22 +579,22 @@ const rank: Record<WorkspaceRole, number> = { owner: 3, admin: 2, member: 1 };
  * 操作できるかは canManage（actor のロールが target より上）と canGrant（actor 以下で owner 以外）で決める。
  */
 export function membersAs(viewer: Viewer): MemberRowView[] {
-  const people =
+  const people: typeof roster =
     viewer === "owner"
       ? roster
       : [
-          { user: users.naoki, online: true, role: "owner" as const },
-          { user: users.misaki, online: true, role: "admin" as const },
-          { user: users.you, online: true, role: viewer },
+          { user: users.naoki, presence: "online" as const, role: "owner" as const },
+          { user: users.misaki, presence: "online" as const, role: "admin" as const },
+          { user: users.you, presence: "online", role: viewer },
           ...roster.slice(3),
         ];
-  return people.map(({ user, online, role }) => {
+  return people.map(({ user, presence, role }) => {
     const canManage = user.id !== users.you.id && rank[viewer] > rank[role];
     return {
       id: user.id,
       name: user.name,
       handle: user.handle,
-      online,
+      presence,
       role,
       isSelf: user.id === users.you.id,
       manage: canManage

@@ -4,6 +4,7 @@ import { IconButton, TextButton } from "@/components/ui/button";
 import { CheckIcon, LockIcon, MoreIcon } from "@/components/ui/icons";
 import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
+import { presenceLabel } from "@/lib/presence";
 
 import { roleLabel, type MemberRowView, type WorkspaceRole } from "./types";
 
@@ -42,7 +43,7 @@ export function MemberList({ members, openMenu = null, onOpenMenu, onCloseMenu, 
               key={member.id}
               className={cx("relative flex items-center gap-3 px-3.5 py-3", index > 0 && "border-t border-border")}
             >
-              <Avatar id={member.id} name={member.name} imageUrl={member.avatarUrl} size="md" online={member.online} />
+              <Avatar id={member.id} name={member.name} imageUrl={member.avatarUrl} size="md" presence={member.presence} />
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2">
                   <span className="truncate text-base font-semibold text-text">{member.name}</span>
@@ -50,7 +51,7 @@ export function MemberList({ members, openMenu = null, onOpenMenu, onCloseMenu, 
                 </p>
                 <p className="font-mono text-2xs text-text-muted">
                   @{member.handle}
-                  <span className="ml-2">{member.online ? "オンライン" : "オフライン"}</span>
+                  <span className="ml-2">{presenceLabel[member.presence]}</span>
                 </p>
               </div>
               <Badge tone={roleTone[member.role]}>{roleLabel[member.role]}</Badge>

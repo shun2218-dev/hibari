@@ -12,10 +12,11 @@ const meta = {
   title: "components/ui/Avatar",
   component: Avatar,
   tags: ["autodocs"],
-  args: { id: users.miyuki.id, name: users.miyuki.name, size: "lg", shape: "circle", online: false },
+  args: { id: users.miyuki.id, name: users.miyuki.name, size: "lg", shape: "circle", presence: "offline" },
   argTypes: {
     size: { control: "inline-radio", options: ["xs", "sm", "md", "lg", "xl", "message"] },
     shape: { control: "inline-radio", options: ["circle", "square"] },
+    presence: { control: "inline-radio", options: ["online", "away", "offline"] },
   },
 } satisfies Meta<typeof Avatar>;
 
@@ -25,7 +26,10 @@ type Story = StoryObj<typeof meta>;
 
 export const Initial: Story = { name: "頭文字（画像なし）" };
 
-export const Online: Story = { name: "オンライン", args: { online: true } };
+export const Online: Story = { name: "オンライン", args: { presence: "online" } };
+
+/** 離席（ADR 0049）。色を持たないアウトラインで、オンラインの緑と見分ける。 */
+export const Away: Story = { name: "離席中", args: { presence: "away" } };
 
 export const Image: Story = { name: "画像あり", args: { imageUrl: mockAvatars.miyuki } };
 

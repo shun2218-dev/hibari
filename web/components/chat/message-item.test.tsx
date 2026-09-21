@@ -102,6 +102,19 @@ describe("MessageItem", () => {
     expect(screen.getByRole("button", { name: "返信", hidden: true })).toBeInTheDocument();
   });
 
+  // ADR 0049: 名前の横に出すのは絵文字だけで、文言はホバー（title）と読み上げで読む
+  it("名前の横にカスタムステータスの絵文字を出す", () => {
+    render(<MessageItem message={message({ sender: { id: "u2", name: "佐藤 直樹", status: { emoji: "📅", text: "会議中" } } })} />);
+
+    expect(screen.getByRole("img", { name: "ステータス: 📅 会議中" })).toHaveAttribute("title", "会議中");
+  });
+
+  it("ステータスがなければ何も出さない", () => {
+    render(<MessageItem message={message()} />);
+
+    expect(screen.queryByRole("img", { name: /ステータス/ })).not.toBeInTheDocument();
+  });
+
   it("marks a pending message as sending", () => {
     render(<MessageItem message={message({ status: "pending" })} />);
 

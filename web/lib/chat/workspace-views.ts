@@ -3,7 +3,7 @@ import type { InviteRowView, MemberRowView, WorkspaceRole } from "@/components/w
 import type { Invite, InvitePolicy, Member, Role } from "@/lib/api/types.gen";
 
 import { formatDayTime } from "./format";
-import type { UrlTable } from "./views";
+import { type UrlTable, memberPresence } from "./views";
 
 /**
  * ワークスペースの管理画面の表示用の変換（ADR 0018 / 0029）。
@@ -47,7 +47,7 @@ export function toMemberRowView(
     name: member.user.display_name,
     handle: member.user.handle,
     avatarUrl: avatarUrls[member.user.id] ?? undefined,
-    online: member.online,
+    presence: memberPresence(member),
     role: member.role,
     isSelf: member.user.id === userId,
     manage: manageable
