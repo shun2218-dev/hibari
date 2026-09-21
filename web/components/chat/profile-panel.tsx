@@ -87,7 +87,7 @@ export function ProfilePanel({
         ) : (
           <>
             <div className="p-5">
-              <ProfileSummary profile={profile} />
+              <ProfileSummary profile={profile} layout="panel" />
             </div>
 
             <div className="relative flex gap-2 px-5 pb-5">
@@ -156,7 +156,8 @@ function ProfileMenu({
   onRemove?: () => void;
 }) {
   return (
-    <Popover label="その他の操作" className="top-11 right-5 w-58">
+    // 操作の行は大きな写真の下にあり、下に開くと画面の下で切れる。上（写真の側）に開く
+    <Popover label="その他の操作" className="right-5 bottom-full w-58">
       <MenuItem onClick={onCopyHandle}>ハンドルをコピー</MenuItem>
       {profile.email.state === "ready" && <MenuItem onClick={onCopyEmail}>メールアドレスをコピー</MenuItem>}
       {profile.manage && (

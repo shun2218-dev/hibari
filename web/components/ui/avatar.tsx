@@ -23,8 +23,10 @@ const colorClass: Record<AvatarColor, string> = {
  * - lg: 40px（メッセージ）
  * - xl: 56px（プロフィール・招待のワークスペース）
  * - message: メッセージ。モバイルでは本文の幅を確保するため 32px、md 以上で 40px
+ * - photo: プロフィールのパネルの写真。置き場所の幅いっぱいの正方形（上限は呼ぶ側が `max-w-*` で決める）。
+ *   Slack と同じく、パネルの高さの 1/3〜1/2 ほどを占める大きさにする（ADR 0050 決定 6 の追記）
  */
-export type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl" | "message";
+export type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl" | "message" | "photo";
 
 const sizeClass: Record<AvatarSize, string> = {
   xs: "size-6.5 text-2xs",
@@ -33,6 +35,7 @@ const sizeClass: Record<AvatarSize, string> = {
   lg: "size-10 text-lg",
   xl: "size-14 text-xl",
   message: "size-8 text-sm md:size-10 md:text-lg",
+  photo: "aspect-square w-full text-2xl",
 };
 
 type AvatarProps = {
@@ -60,7 +63,7 @@ type AvatarProps = {
 export function Avatar({ id, name, imageUrl, size = "lg", shape = "circle", presence = "offline", className }: AvatarProps) {
   // 読み込めなかった URL。取り直して URL が変われば、もう一度画像を試す（ADR 0028）
   const [failedUrl, setFailedUrl] = useState<string>();
-  const radius = shape === "circle" ? "rounded-full" : size === "xl" ? "rounded-lg" : "rounded-sm";
+  const radius = shape === "circle" ? "rounded-full" : size === "xl" || size === "photo" ? "rounded-lg" : "rounded-sm";
   return (
     <span className={cx("relative inline-flex shrink-0", className)}>
       {imageUrl && imageUrl !== failedUrl ? (
@@ -85,17 +88,26 @@ export function Avatar({ id, name, imageUrl, size = "lg", shape = "circle", pres
           {avatarInitial(name)}
         </span>
       )}
-      {presence !== "offline" && (
-        <span
-          role="img"
-          aria-label={presenceLabel[presence]}
-          className={cx(
-            "absolute right-0 bottom-0 size-2 rounded-full ring-2 ring-surface",
-            // 離席は「色を持たない」ことで、いま起きていること（オンライン）と見分ける。中身は地と同じ色で抜く
-            presence === "online" ? "bg-online" : "border-2 border-text-muted bg-surface",
-          )}
-        />
-      )}
+      {presence !== "offline" && <PresenceDot presence={presence} className="absolute right-0 bottom-0" />}
     </span>
+  );
+}
+
+/**
+ * presence のドット（ADR 0049）。アバターの右下に重ねるほか、プロフィールのパネルでは文言の前に置く
+ * （写真が大きいと、隅のドットが写真から離れて見えるため）。オフラインは呼ぶ側で出さない。
+ */
+export function PresenceDot({ presence, className }: { presence: Exclude<PresenceView, "offline">; className?: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={presenceLabel[presence]}
+      className={cx(
+        "inline-block size-2 shrink-0 rounded-full ring-2 ring-surface",
+        // 離席は「色を持たない」ことで、いま起きていること（オンライン）と見分ける。中身は地と同じ色で抜く
+        presence === "online" ? "bg-online" : "border-2 border-text-muted bg-surface",
+        className,
+      )}
+    />
   );
 }

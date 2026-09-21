@@ -3,7 +3,7 @@
 import type { ReactNode, RefObject } from "react";
 
 import { AnchoredPanel } from "@/components/ui/anchored-panel";
-import { Avatar, type AvatarSize } from "@/components/ui/avatar";
+import { Avatar, PresenceDot } from "@/components/ui/avatar";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { roleLabel, type WorkspaceRole } from "@/components/workspace/types";
@@ -20,25 +20,34 @@ type KnownProfile = Exclude<ProfileView, { kind: "unknown" }>;
  * カードとパネルに共通する上の段: アバター・表示名とステータスの絵文字・`@handle`・ロールと presence、ステータスの文言。
  * 表示するものはオーナーと確定したものに、Phase 6.8 のカスタムステータスを足したものだけ。
  * 最終オンライン時刻は出さない（ADR 0049）。
+ *
+ * - card: ホバーのカード。丸いアバター（56px）の右に名前を並べる
+ * - panel: 右のパネル。角丸の正方形の写真を幅いっぱいに大きく出し、名前はその下に置く（Slack と同じ。ADR 0050 決定 6 の追記）
  */
-export function ProfileSummary({ profile, avatarSize = "xl" }: { profile: KnownProfile; avatarSize?: AvatarSize }) {
+export function ProfileSummary({ profile, layout = "card" }: { profile: KnownProfile; layout?: "card" | "panel" }) {
   const { user } = profile;
   const member = profile.kind === "member" ? profile : undefined;
   const status = member ? user.status : undefined;
+  const panel = layout === "panel";
 
   return (
     <>
-      <div className="flex gap-3">
+      <div className={panel ? "flex flex-col gap-4" : "flex gap-3"}>
         {/* 外された人の presence は出さない（一覧にいないので分からない。決定 5）。
-            列の高さに引き伸ばされるとドットがアバターの下にずれるので、上に寄せる */}
-        <Avatar
-          id={user.id}
-          name={user.name}
-          imageUrl={user.avatarUrl}
-          size={avatarSize}
-          presence={member?.presence}
-          className="self-start"
-        />
+            パネルの大きな写真の隅にはドットを重ねず、ロールの横の文言の前に置く（写真から離れて見えるため） */}
+        {panel ? (
+          <Avatar id={user.id} name={user.name} imageUrl={user.avatarUrl} size="photo" shape="square" className="w-full max-w-88" />
+        ) : (
+          // 列の高さに引き伸ばされるとドットがアバターの下にずれるので、上に寄せる
+          <Avatar
+            id={user.id}
+            name={user.name}
+            imageUrl={user.avatarUrl}
+            size="xl"
+            presence={member?.presence}
+            className="self-start"
+          />
+        )}
         <div className="flex min-w-0 flex-col gap-1">
           <p className="flex items-center gap-1.5">
             <span className="truncate text-xl font-bold text-text">{user.name}</span>
@@ -53,7 +62,10 @@ export function ProfileSummary({ profile, avatarSize = "xl" }: { profile: KnownP
             <p className="flex items-center gap-2">
               <Badge tone={roleTone[member.role]}>{roleLabel[member.role]}</Badge>
               {member.presence !== "offline" && (
-                <span className="text-xs text-text-secondary">{presenceLabel[member.presence]}</span>
+                <span className="flex items-center gap-1.5 text-xs text-text-secondary">
+                  {panel && <PresenceDot presence={member.presence} />}
+                  {presenceLabel[member.presence]}
+                </span>
               )}
             </p>
           ) : (

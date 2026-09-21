@@ -67,4 +67,12 @@ describe("Avatar with an image", () => {
 
     expect(screen.getByRole("img", { name: "オンライン" })).toBeInTheDocument();
   });
+
+  it("draws the profile photo as a rounded square that fills its box (ADR 0050)", () => {
+    render(<Avatar id="u1" name="あなた" imageUrl="https://storage.test/a.png" size="photo" shape="square" />);
+
+    const img = screen.getByRole("presentation", { hidden: true });
+    expect(img).toHaveClass("aspect-square", "w-full", "rounded-lg");
+    expect(img).not.toHaveClass("rounded-full");
+  });
 });
