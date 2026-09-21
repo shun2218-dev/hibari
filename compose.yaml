@@ -84,6 +84,8 @@ services:
       HTTP_ADDR: :8080
       # `make keys` で作る開発用の鍵。リポジトリを /src に bind mount しているのでそのまま読める。
       JWT_PRIVATE_KEY_FILE: /src/keys/jwt_ed25519.pem
+      # 開発ではメールを送らず、確認や再設定のリンクを server のログに出す（ADR 0053 決定 5）。
+      MAIL_TRANSPORT: log
       # X-Forwarded-For を信用するのは Caddy からの接続だけ（ADR 0017）。
       TRUSTED_PROXIES: ${CADDY_IP:-172.31.250.10}/32
       # サーバーはサービス名で MinIO に到達し、署名付き URL はブラウザから到達できるホスト名で作る（ADR 0013）。

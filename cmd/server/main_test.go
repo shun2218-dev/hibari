@@ -47,6 +47,7 @@ func TestRunFailsWithoutSigningKey(t *testing.T) {
 		"DATABASE_URL":         "postgres://unused",
 		"REDIS_URL":            "redis://unused",
 		"JWT_PRIVATE_KEY_FILE": filepath.Join(t.TempDir(), "missing.pem"),
+		"MAIL_TRANSPORT":       "log",
 		"S3_ENDPOINT":          "http://unused",
 		"S3_BUCKET":            "unused",
 		"S3_ACCESS_KEY_ID":     "unused",
@@ -60,6 +61,31 @@ func TestRunFailsWithoutSigningKey(t *testing.T) {
 	}
 }
 
+// SMTP のパスワードのファイルがなければ、DB に接続する前に起動を止める（ADR 0053）。
+func TestRunFailsWithoutSMTPPassword(t *testing.T) {
+	env := map[string]string{
+		"DATABASE_URL":         "postgres://unused",
+		"REDIS_URL":            "redis://unused",
+		"JWT_PRIVATE_KEY_FILE": writeSigningKey(t),
+		"MAIL_TRANSPORT":       "smtp",
+		"SMTP_HOST":            "smtp.resend.com",
+		"SMTP_PORT":            "465",
+		"SMTP_USERNAME":        "resend",
+		"SMTP_PASSWORD_FILE":   filepath.Join(t.TempDir(), "missing"),
+		"MAIL_FROM":            "hibari <noreply@mail.example.com>",
+		"S3_ENDPOINT":          "http://unused",
+		"S3_BUCKET":            "unused",
+		"S3_ACCESS_KEY_ID":     "unused",
+		"S3_SECRET_ACCESS_KEY": "unused",
+	}
+	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+
+	err := run(t.Context(), lookup, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "SMTP_PASSWORD_FILE") {
+		t.Fatalf("run() = %v, want an error mentioning SMTP_PASSWORD_FILE", err)
+	}
+}
+
 // 実物の Postgres / Redis に対してサーバーを起動し、/healthz が 200 を返し、
 // ctx のキャンセルで run がエラーなく戻る（graceful shutdown して後始末まで終わる）ことを確かめる。
 func TestRunServesHealthzAndShutsDown(t *testing.T) {
@@ -70,6 +96,7 @@ func TestRunServesHealthzAndShutsDown(t *testing.T) {
 		"SHUTDOWN_TIMEOUT": "5s",
 
 		"JWT_PRIVATE_KEY_FILE": writeSigningKey(t),
+		"MAIL_TRANSPORT":       "log",
 	}
 	s3 := testenv.S3(t)
 	env["S3_ENDPOINT"], env["S3_BUCKET"], env["S3_ACCESS_KEY_ID"], env["S3_SECRET_ACCESS_KEY"] = s3.Endpoint, s3.Bucket, s3.AccessKeyID, s3.SecretAccessKey

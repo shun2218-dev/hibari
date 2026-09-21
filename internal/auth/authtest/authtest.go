@@ -65,6 +65,7 @@ var GenerousRateLimits = auth.RateLimits{
 type options struct {
 	limits  auth.RateLimits
 	limiter auth.RateLimiter
+	mailer  auth.Mailer
 }
 
 // Option は New の組み立てを変える。
@@ -74,6 +75,11 @@ type Option func(*options)
 // ルールの Name は RuleName で実行ごとに一意にする。
 func WithRateLimits(l auth.RateLimits) Option {
 	return func(o *options) { o.limits = l }
+}
+
+// WithMailer は Mailer を差し替える（本番と同じキューを通すテスト用）。このとき Env.Mailer は nil になる。
+func WithMailer(m auth.Mailer) Option {
+	return func(o *options) { o.mailer = m }
 }
 
 // WithRateLimiter は回数制限の判定そのものを差し替える（Redis の障害を再現するなど）。
@@ -143,7 +149,12 @@ func New(t testing.TB, opts ...Option) *Env {
 	}
 
 	rec := &RecordingNotifier{}
-	mailer := &RecordingMailer{}
+	var recording *RecordingMailer
+	mailer := o.mailer
+	if mailer == nil {
+		recording = &RecordingMailer{}
+		mailer = recording
+	}
 	baseURL, _ := url.Parse(AppBaseURL)
 	svc := auth.NewService(auth.Deps{
 		DB:           pool,
@@ -170,7 +181,7 @@ func New(t testing.TB, opts ...Option) *Env {
 		AccessTokens: issuer,
 		Verifier:     authn.NewVerifier([]authn.PublicKey{issuer.PublicKey()}, Issuer, Audience, clk),
 		Revocations:  rec,
-		Mailer:       mailer,
+		Mailer:       recording,
 	}
 }
 
