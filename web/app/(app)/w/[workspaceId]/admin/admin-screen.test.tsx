@@ -26,7 +26,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 // 自分（naoki）が owner、高橋 みゆきが member のワークスペース。
-const roster = [member(naoki, { role: "owner", online: true }), member(miyuki, { role: "member" })];
+const roster = [member(naoki, { role: "owner", presence: "active" }), member(miyuki, { role: "member" })];
 
 function routes(overrides: Record<string, Handler> = {}, myRole: Role = "owner"): Record<string, Handler> {
   return {

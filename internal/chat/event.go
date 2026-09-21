@@ -39,6 +39,7 @@ const (
 	EventWorkspaceMemberRemoved EventType = "workspace.member_removed"
 	EventWorkspaceRoleChanged   EventType = "workspace.role_changed"
 	EventPresenceChanged        EventType = "presence.changed"
+	EventMemberStatusChanged    EventType = "member.status_changed"
 	EventTypingStarted          EventType = "typing.started"
 	EventThreadRead             EventType = "thread.read"
 	EventThreadFollowed         EventType = "thread.followed"
@@ -83,6 +84,7 @@ type Event struct {
 //	workspace.member_removed            → WorkspaceMemberRemoved
 //	workspace.role_changed              → WorkspaceRoleChanged
 //	presence.changed                    → PresenceChanged
+//	member.status_changed               → MemberStatusChanged
 //	typing.started                      → TypingStarted
 //	thread.read                         → ThreadRead
 //	thread.followed                     → ThreadFollowed
@@ -153,7 +155,21 @@ type WorkspaceRoleChanged struct {
 
 type PresenceChanged struct {
 	UserID ulid.ULID
-	Online bool
+	// Presence は自動で決まる状態だけ（ADR 0049）。手動の離席は member.status_changed で届く。
+	Presence Presence
+}
+
+// MemberStatusChanged は本人が選んだ設定が変わった（ADR 0049 決定 8）。
+//
+// Away はユーザーごとなので、所属するすべてのワークスペースに同じ値が飛ぶ。
+// Status はワークスペースごとなので、ワークスペースごとにその値を入れて配る。
+// 2 つを 1 つのイベントにまとめるのは、同じダイアログで同時に変わりうるうえ、
+// 受け取る側の反映先（メンバーの行）が同じで、片方だけ届いた中間の見た目を作りたくないため。
+type MemberStatusChanged struct {
+	WorkspaceID ulid.ULID
+	UserID      ulid.ULID
+	Away        bool
+	Status      *UserStatus
 }
 
 type TypingStarted struct {
@@ -209,5 +225,14 @@ func memberJoinedEvent(workspaceID, roomID ulid.ULID, user UserProfile) Event {
 		Type: EventMemberJoined,
 		To:   Audience{Rooms: []ulid.ULID{roomID}, Users: []ulid.ULID{user.ID}},
 		Data: MemberJoined{WorkspaceID: workspaceID, RoomID: roomID, User: user},
+	}
+}
+
+// memberStatusChangedEvent は、そのワークスペースの購読者と本人のすべての接続に届ける（別のタブを揃えるため）。
+func memberStatusChangedEvent(workspaceID, userID ulid.ULID, away bool, status *UserStatus) Event {
+	return Event{
+		Type: EventMemberStatusChanged,
+		To:   Audience{Workspaces: []ulid.ULID{workspaceID}, Users: []ulid.ULID{userID}},
+		Data: MemberStatusChanged{WorkspaceID: workspaceID, UserID: userID, Away: away, Status: status},
 	}
 }

@@ -685,7 +685,9 @@ func (h *Hub) syncPresence(ctx context.Context, userID ulid.ULID) {
 		ann, err = h.publisher.Announcement(chat.Event{
 			Type: chat.EventPresenceChanged,
 			To:   chat.Audience{Workspaces: workspaces},
-			Data: chat.PresenceChanged{UserID: userID, Online: online},
+			// 「見ている接続の数」を数えて idle を出すのは構築順 4（ADR 0049 決定 2）。
+			// いまの Hub は接続の有無しか知らないので、接続があれば active になる。
+			Data: chat.PresenceChanged{UserID: userID, Presence: presenceValue(online)},
 		})
 		if err != nil {
 			h.logger.ErrorContext(ctx, "encode presence event failed", slog.String("user_id", userID.String()), slog.Any("error", err))
@@ -728,4 +730,12 @@ func keys(m map[ulid.ULID]bool) []ulid.ULID {
 		out = append(out, k)
 	}
 	return out
+}
+
+// presenceValue は、このインスタンスの接続の有無を配信する状態にする（ADR 0049）。
+func presenceValue(online bool) chat.Presence {
+	if online {
+		return chat.PresenceActive
+	}
+	return chat.PresenceOffline
 }

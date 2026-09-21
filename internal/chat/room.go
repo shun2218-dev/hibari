@@ -45,8 +45,9 @@ type Room struct {
 	MemberCount int64
 	// DMPeer は dm の相手。dm 以外では nil。
 	DMPeer *UserProfile
-	// DMPeerOnline は dm の相手が presence でオンラインか（ADR 0015）。dm 以外では false。
-	DMPeerOnline   bool
+	// DMPeerPresence は dm の相手の自動の presence（ADR 0015 / 0049）。dm 以外では offline。
+	// 相手のカスタムステータスと手動の離席は、クライアントがワークスペースのメンバー一覧から引く（ADR 0049 決定 7 の追記）。
+	DMPeerPresence Presence
 	LastMessageSeq int64
 	LastMessageAt  *time.Time
 	// LastReadSeq は actor の既読位置。ルームのメンバーでなければ nil。
@@ -140,8 +141,11 @@ type RoomMember struct {
 	// Role はワークスペースでのロール（ルーム単位のロールは持たない。ADR 0006）。
 	Role     Role
 	JoinedAt time.Time
-	// Online は presence の初期値（ADR 0015）。変化は WebSocket の presence.changed で届く。
-	Online bool
+	// Presence は自動で決まる状態の初期値（ADR 0015 / 0049）。変化は WebSocket の presence.changed で届く。
+	Presence Presence
+	// Away は本人が手動で離席にしているか、Status はカスタムステータス（ADR 0049）。
+	Away   bool
+	Status *UserStatus
 }
 
 // userProfile は 1 人の公開プロフィールを読む。
@@ -306,7 +310,7 @@ func (s *Service) CreateRoom(ctx context.Context, actor, workspaceID ulid.ULID, 
 	}
 	if room.DMPeer != nil {
 		// presence（Redis）はコミットの後に読む。行ロックを持ったまま外部への I/O を挟まない（ADR 0002）。
-		room.DMPeerOnline = s.online(ctx, []ulid.ULID{room.DMPeer.ID})[room.DMPeer.ID]
+		room.DMPeerPresence = presenceOf(s.online(ctx, []ulid.ULID{room.DMPeer.ID})[room.DMPeer.ID])
 	}
 	s.deliver(ctx, events...)
 	return room, created, nil
@@ -504,7 +508,7 @@ func (s *Service) attachDMPeerPresence(ctx context.Context, rooms []Room) {
 	online := s.online(ctx, ids)
 	for i := range rooms {
 		if p := rooms[i].DMPeer; p != nil {
-			rooms[i].DMPeerOnline = online[p.ID]
+			rooms[i].DMPeerPresence = presenceOf(online[p.ID])
 		}
 	}
 }
@@ -779,11 +783,14 @@ func (s *Service) ListRoomMembers(ctx context.Context, actor, roomID ulid.ULID, 
 	}
 	members := make([]RoomMember, len(rows))
 	ids := make([]ulid.ULID, len(rows))
+	now := s.clock.Now()
 	for i, r := range rows {
 		members[i] = RoomMember{
 			User:     UserProfile{ID: r.UserID, Handle: r.Handle, DisplayName: r.DisplayName},
 			Role:     Role(r.Role),
 			JoinedAt: r.JoinedAt,
+			Away:     r.ManualAway,
+			Status:   statusOf(r.StatusEmoji, r.StatusText, r.StatusExpiresAt, now),
 		}
 		ids[i] = r.UserID
 	}
@@ -792,7 +799,7 @@ func (s *Service) ListRoomMembers(ctx context.Context, actor, roomID ulid.ULID, 
 	pageIDs := ids[:len(result.Items)]
 	online := s.online(ctx, pageIDs)
 	for i := range result.Items {
-		result.Items[i].Online = online[result.Items[i].User.ID]
+		result.Items[i].Presence = presenceOf(online[result.Items[i].User.ID])
 	}
 	return result, nil
 }

@@ -53,9 +53,14 @@ RETURNING *;
 -- name: ListWorkspaceMembers :many
 -- メンバー一覧。主キー (workspace_id, user_id) の順に走査するので、user_id をカーソルにする。
 -- 退会済みのユーザーは表示しない（退会時に行を消す実装になるまでの保険）。
-SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name
+-- 本人の設定（手動の離席とカスタムステータス。ADR 0049）も一緒に読む（N+1 にしない）。
+-- 期限切れのステータスを落とすのは読み取りの変換（statusOf）の側（ADR 0049 決定 6 の追記）。
+SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name,
+       COALESCE(ps.manual_away, false)::boolean AS manual_away,
+       wm.status_emoji, wm.status_text, wm.status_expires_at
   FROM workspace_members wm
   JOIN users u ON u.id = wm.user_id
+  LEFT JOIN user_presence_settings ps ON ps.user_id = wm.user_id
  WHERE wm.workspace_id = sqlc.arg(workspace_id)
    AND wm.user_id > sqlc.arg(after)
    AND u.deleted_at IS NULL
@@ -63,9 +68,12 @@ SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name
  LIMIT sqlc.arg(max_rows);
 
 -- name: GetWorkspaceMember :one
-SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name
+SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name,
+       COALESCE(ps.manual_away, false)::boolean AS manual_away,
+       wm.status_emoji, wm.status_text, wm.status_expires_at
   FROM workspace_members wm
   JOIN users u ON u.id = wm.user_id
+  LEFT JOIN user_presence_settings ps ON ps.user_id = wm.user_id
  WHERE wm.workspace_id = sqlc.arg(workspace_id)
    AND wm.user_id = sqlc.arg(user_id)
    AND u.deleted_at IS NULL;

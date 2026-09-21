@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -54,6 +55,10 @@ type ChatService interface {
 	ListThreads(ctx context.Context, actor, workspaceID ulid.ULID, page chat.PageRequest) (chat.Page[chat.FollowedThread], error)
 	UnreadThreadCount(ctx context.Context, actor, workspaceID ulid.ULID) (int64, error)
 
+	SetManualAway(ctx context.Context, actor ulid.ULID, away bool) (bool, error)
+	SetStatus(ctx context.Context, actor, workspaceID ulid.ULID, status chat.UserStatus) (*chat.UserStatus, error)
+	ClearStatus(ctx context.Context, actor, workspaceID ulid.ULID) error
+
 	CreateAttachment(ctx context.Context, actor, roomID ulid.ULID, in chat.AttachmentInput) (chat.CreatedAttachment, error)
 	CompleteAttachment(ctx context.Context, actor, attachmentID ulid.ULID) (chat.Attachment, error)
 	GetAttachmentURL(ctx context.Context, actor, attachmentID ulid.ULID) (chat.DownloadURL, error)
@@ -80,6 +85,12 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("PATCH /api/v1/workspaces/{workspaceID}/members/{userID}", h.changeMemberRole)
 	handle("DELETE /api/v1/workspaces/{workspaceID}/members/{userID}", h.removeMember)
 	handle("POST /api/v1/workspaces/{workspaceID}/ownership-transfer", h.transferOwnership)
+
+	// 離席とカスタムステータス（ADR 0049）。手動の離席は人の状態なのでユーザーごと、
+	// カスタムステータスはワークスペースごと。パスは auth の /users/me の下に並ぶが、中身は chat のもの。
+	handle("PUT /api/v1/users/me/presence", h.setManualAway)
+	handle("PUT /api/v1/workspaces/{workspaceID}/me/status", h.setStatus)
+	handle("DELETE /api/v1/workspaces/{workspaceID}/me/status", h.clearStatus)
 
 	handle("POST /api/v1/workspaces/{workspaceID}/invites", h.createInvite)
 	handle("GET /api/v1/workspaces/{workspaceID}/invites", h.listInvites)
@@ -203,16 +214,40 @@ func newWorkspaceResponse(w chat.Workspace, withCount bool) workspaceResponse {
 	return resp
 }
 
-// memberResponse はワークスペースのメンバー。online は presence の初期値で、変化は WebSocket で届く（ADR 0015）。
+// memberResponse はワークスペースのメンバー。
+//
+// presence は自動で決まる状態の初期値で、変化は WebSocket の presence.changed で届く（ADR 0015 / 0049）。
+// away（本人が選んだ離席）と status（カスタムステータス）は member.status_changed で届く。
+// **画面に出す 3 つの状態は、presence と away をクライアントが合わせて決める**（ADR 0049 決定 1）。
 type memberResponse struct {
 	User     userProfileResponse `json:"user"`
 	Role     authz.Role          `json:"role"`
 	JoinedAt time.Time           `json:"joined_at"`
-	Online   bool                `json:"online"`
+	Presence chat.Presence       `json:"presence"`
+	Away     bool                `json:"away"`
+	// Status は設定していなければ null（期限切れも null）。
+	Status *userStatusResponse `json:"status"`
+}
+
+// userStatusResponse はカスタムステータス（ADR 0049）。expires_at が null なら消えない。
+type userStatusResponse struct {
+	Emoji     string     `json:"emoji"`
+	Text      string     `json:"text"`
+	ExpiresAt *time.Time `json:"expires_at"`
+}
+
+func newUserStatusResponse(s *chat.UserStatus) *userStatusResponse {
+	if s == nil {
+		return nil
+	}
+	return &userStatusResponse{Emoji: s.Emoji, Text: s.Text, ExpiresAt: s.ExpiresAt}
 }
 
 func newMemberResponse(m chat.Member) memberResponse {
-	return memberResponse{User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt, Online: m.Online}
+	return memberResponse{
+		User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt,
+		Presence: m.Presence, Away: m.Away, Status: newUserStatusResponse(m.Status),
+	}
 }
 
 type createWorkspaceRequest struct {
@@ -315,6 +350,71 @@ func (h *chatHandlers) listMembers(w http.ResponseWriter, r *http.Request) {
 type memberListResponse struct {
 	Members    []memberResponse `json:"members"`
 	NextCursor *string          `json:"next_cursor"`
+}
+
+type manualAwayRequest struct {
+	Away bool `json:"away"`
+}
+
+type manualAwayResponse struct {
+	Away bool `json:"away"`
+}
+
+// setManualAway は本人の離席を固定する / 解除する（ADR 0049 決定 4）。冪等。
+func (h *chatHandlers) setManualAway(w http.ResponseWriter, r *http.Request) {
+	var req manualAwayRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	away, err := h.svc.SetManualAway(r.Context(), actorOf(r), req.Away)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, manualAwayResponse{Away: away})
+}
+
+// setStatusRequest は expires_at が null なら「消えない」。相対の期限（今日・今週）を
+// 絶対の時刻にするのはクライアント（サーバーはユーザーのタイムゾーンを知らない。ADR 0049 決定 5）。
+type setStatusRequest struct {
+	Emoji     string     `json:"emoji"`
+	Text      string     `json:"text"`
+	ExpiresAt *time.Time `json:"expires_at"`
+}
+
+func (h *chatHandlers) setStatus(w http.ResponseWriter, r *http.Request) {
+	wsID, err := pathID(r, "workspaceID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	var req setStatusRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	status, err := h.svc.SetStatus(r.Context(), actorOf(r), wsID, chat.UserStatus{
+		Emoji: req.Emoji, Text: strings.TrimSpace(req.Text), ExpiresAt: req.ExpiresAt,
+	})
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newUserStatusResponse(status))
+}
+
+func (h *chatHandlers) clearStatus(w http.ResponseWriter, r *http.Request) {
+	wsID, err := pathID(r, "workspaceID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	if err := h.svc.ClearStatus(r.Context(), actorOf(r), wsID); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type changeMemberRoleRequest struct {
@@ -573,10 +673,13 @@ type roomResponse struct {
 	CreatedAt   time.Time            `json:"created_at"`
 }
 
-// dmPeerResponse は DM の相手。online は presence の初期値（ADR 0015）。
+// dmPeerResponse は DM の相手。presence は自動で決まる状態の初期値（ADR 0015 / 0049）。
+//
+// 相手の away とカスタムステータスはここに載せない。クライアントはワークスペースのメンバー一覧から引く
+// （メッセージの送信者の横に出すステータスと同じ経路にして、載せ場所を増やさない。ADR 0049 決定 7 の追記）。
 type dmPeerResponse struct {
 	userProfileResponse
-	Online bool `json:"online"`
+	Presence chat.Presence `json:"presence"`
 }
 
 func newLastMessageResponse(m chat.MessagePreview) lastMessageResponse {
@@ -625,7 +728,7 @@ func newRoomResponse(r chat.Room, withCount bool) roomResponse {
 		resp.MemberCount = &r.MemberCount
 	}
 	if r.DMPeer != nil {
-		resp.DMPeer = &dmPeerResponse{userProfileResponse: newUserProfileResponse(*r.DMPeer), Online: r.DMPeerOnline}
+		resp.DMPeer = &dmPeerResponse{userProfileResponse: newUserProfileResponse(*r.DMPeer), Presence: r.DMPeerPresence}
 	}
 	return resp
 }
@@ -782,7 +885,10 @@ func (h *chatHandlers) listRoomMembers(w http.ResponseWriter, r *http.Request) {
 	resp := roomMemberListResponse{Members: make([]roomMemberResponse, len(p.Items)), NextCursor: nextCursor(p.NextCursor)}
 	for i, m := range p.Items {
 		resp.Members[i] = roomMemberResponse{
-			memberResponse{User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt, Online: m.Online},
+			memberResponse{
+				User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt,
+				Presence: m.Presence, Away: m.Away, Status: newUserStatusResponse(m.Status),
+			},
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)

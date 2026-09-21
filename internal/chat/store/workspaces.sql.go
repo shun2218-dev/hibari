@@ -168,9 +168,12 @@ func (q *Queries) GetWorkspaceForUser(ctx context.Context, arg GetWorkspaceForUs
 }
 
 const getWorkspaceMember = `-- name: GetWorkspaceMember :one
-SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name
+SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name,
+       COALESCE(ps.manual_away, false)::boolean AS manual_away,
+       wm.status_emoji, wm.status_text, wm.status_expires_at
   FROM workspace_members wm
   JOIN users u ON u.id = wm.user_id
+  LEFT JOIN user_presence_settings ps ON ps.user_id = wm.user_id
  WHERE wm.workspace_id = $1
    AND wm.user_id = $2
    AND u.deleted_at IS NULL
@@ -182,11 +185,15 @@ type GetWorkspaceMemberParams struct {
 }
 
 type GetWorkspaceMemberRow struct {
-	UserID      ulid.ULID
-	Role        string
-	JoinedAt    time.Time
-	Handle      string
-	DisplayName string
+	UserID          ulid.ULID
+	Role            string
+	JoinedAt        time.Time
+	Handle          string
+	DisplayName     string
+	ManualAway      bool
+	StatusEmoji     *string
+	StatusText      *string
+	StatusExpiresAt *time.Time
 }
 
 func (q *Queries) GetWorkspaceMember(ctx context.Context, arg GetWorkspaceMemberParams) (GetWorkspaceMemberRow, error) {
@@ -198,6 +205,10 @@ func (q *Queries) GetWorkspaceMember(ctx context.Context, arg GetWorkspaceMember
 		&i.JoinedAt,
 		&i.Handle,
 		&i.DisplayName,
+		&i.ManualAway,
+		&i.StatusEmoji,
+		&i.StatusText,
+		&i.StatusExpiresAt,
 	)
 	return i, err
 }
@@ -328,9 +339,12 @@ func (q *Queries) GetWorkspaceRoleForShare(ctx context.Context, arg GetWorkspace
 }
 
 const listWorkspaceMembers = `-- name: ListWorkspaceMembers :many
-SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name
+SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name,
+       COALESCE(ps.manual_away, false)::boolean AS manual_away,
+       wm.status_emoji, wm.status_text, wm.status_expires_at
   FROM workspace_members wm
   JOIN users u ON u.id = wm.user_id
+  LEFT JOIN user_presence_settings ps ON ps.user_id = wm.user_id
  WHERE wm.workspace_id = $1
    AND wm.user_id > $2
    AND u.deleted_at IS NULL
@@ -345,15 +359,21 @@ type ListWorkspaceMembersParams struct {
 }
 
 type ListWorkspaceMembersRow struct {
-	UserID      ulid.ULID
-	Role        string
-	JoinedAt    time.Time
-	Handle      string
-	DisplayName string
+	UserID          ulid.ULID
+	Role            string
+	JoinedAt        time.Time
+	Handle          string
+	DisplayName     string
+	ManualAway      bool
+	StatusEmoji     *string
+	StatusText      *string
+	StatusExpiresAt *time.Time
 }
 
 // メンバー一覧。主キー (workspace_id, user_id) の順に走査するので、user_id をカーソルにする。
 // 退会済みのユーザーは表示しない（退会時に行を消す実装になるまでの保険）。
+// 本人の設定（手動の離席とカスタムステータス。ADR 0049）も一緒に読む（N+1 にしない）。
+// 期限切れのステータスを落とすのは読み取りの変換（statusOf）の側（ADR 0049 決定 6 の追記）。
 func (q *Queries) ListWorkspaceMembers(ctx context.Context, arg ListWorkspaceMembersParams) ([]ListWorkspaceMembersRow, error) {
 	rows, err := q.db.Query(ctx, listWorkspaceMembers, arg.WorkspaceID, arg.After, arg.MaxRows)
 	if err != nil {
@@ -369,6 +389,10 @@ func (q *Queries) ListWorkspaceMembers(ctx context.Context, arg ListWorkspaceMem
 			&i.JoinedAt,
 			&i.Handle,
 			&i.DisplayName,
+			&i.ManualAway,
+			&i.StatusEmoji,
+			&i.StatusText,
+			&i.StatusExpiresAt,
 		); err != nil {
 			return nil, err
 		}

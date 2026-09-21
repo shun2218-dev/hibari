@@ -183,11 +183,15 @@ SELECT user_id
 
 -- name: ListRoomMembers :many
 -- ルームのメンバーと、ワークスペースでのロール。主キー (room_id, user_id) の順に走査するので user_id をカーソルにする。
-SELECT rm.user_id, rm.joined_at, wm.role, u.handle, u.display_name
+-- 本人の設定（手動の離席とカスタムステータス。ADR 0049）も一緒に読む。期限切れのステータスはここで落とす。
+SELECT rm.user_id, rm.joined_at, wm.role, u.handle, u.display_name,
+       COALESCE(ps.manual_away, false)::boolean AS manual_away,
+       wm.status_emoji, wm.status_text, wm.status_expires_at
   FROM room_members rm
   JOIN rooms r ON r.id = rm.room_id
   JOIN workspace_members wm ON wm.workspace_id = r.workspace_id AND wm.user_id = rm.user_id
   JOIN users u ON u.id = rm.user_id
+  LEFT JOIN user_presence_settings ps ON ps.user_id = rm.user_id
  WHERE rm.room_id = sqlc.arg(room_id)
    AND rm.user_id > sqlc.arg(after)
    AND u.deleted_at IS NULL

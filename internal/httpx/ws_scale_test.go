@@ -84,8 +84,8 @@ func TestWSPresenceAcrossInstances(t *testing.T) {
 		}
 		return out
 	}
-	onlineEvent := `{"user_id":"` + f.bob.id + `","online":true}`
-	offlineEvent := `{"user_id":"` + f.bob.id + `","online":false}`
+	onlineEvent := `{"user_id":"` + f.bob.id + `","presence":"active"}`
+	offlineEvent := `{"user_id":"` + f.bob.id + `","presence":"offline"}`
 
 	bobOnA, bobOnB := a.dialWS(f.bob), b.dialWS(f.bob)
 	bobOnA.sync()

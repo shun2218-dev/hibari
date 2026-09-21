@@ -71,12 +71,12 @@ export function systemMessage(seq: number, system: Message["system"], overrides:
 }
 
 export function roomMember(user: UserProfile, overrides: Partial<RoomMember> = {}): RoomMember {
-  return { user, role: "member", joined_at: "2026-09-01T00:00:00Z", online: false, ...overrides };
+  return { user, role: "member", joined_at: "2026-09-01T00:00:00Z", presence: "offline", away: false, status: null, ...overrides };
 }
 
 /** ワークスペースのメンバー（管理画面）。形はルームのメンバーと同じ。 */
 export function member(user: UserProfile, overrides: Partial<Member> = {}): Member {
-  return { user, role: "member", joined_at: "2026-09-01T00:00:00Z", online: false, ...overrides };
+  return { user, role: "member", joined_at: "2026-09-01T00:00:00Z", presence: "offline", away: false, status: null, ...overrides };
 }
 
 export function invite(id: string, overrides: Partial<Invite> = {}): Invite {

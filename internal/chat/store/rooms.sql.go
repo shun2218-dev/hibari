@@ -484,11 +484,14 @@ func (q *Queries) ListRoomMemberIDs(ctx context.Context, roomID ulid.ULID) ([]ul
 }
 
 const listRoomMembers = `-- name: ListRoomMembers :many
-SELECT rm.user_id, rm.joined_at, wm.role, u.handle, u.display_name
+SELECT rm.user_id, rm.joined_at, wm.role, u.handle, u.display_name,
+       COALESCE(ps.manual_away, false)::boolean AS manual_away,
+       wm.status_emoji, wm.status_text, wm.status_expires_at
   FROM room_members rm
   JOIN rooms r ON r.id = rm.room_id
   JOIN workspace_members wm ON wm.workspace_id = r.workspace_id AND wm.user_id = rm.user_id
   JOIN users u ON u.id = rm.user_id
+  LEFT JOIN user_presence_settings ps ON ps.user_id = rm.user_id
  WHERE rm.room_id = $1
    AND rm.user_id > $2
    AND u.deleted_at IS NULL
@@ -503,14 +506,19 @@ type ListRoomMembersParams struct {
 }
 
 type ListRoomMembersRow struct {
-	UserID      ulid.ULID
-	JoinedAt    time.Time
-	Role        string
-	Handle      string
-	DisplayName string
+	UserID          ulid.ULID
+	JoinedAt        time.Time
+	Role            string
+	Handle          string
+	DisplayName     string
+	ManualAway      bool
+	StatusEmoji     *string
+	StatusText      *string
+	StatusExpiresAt *time.Time
 }
 
 // ルームのメンバーと、ワークスペースでのロール。主キー (room_id, user_id) の順に走査するので user_id をカーソルにする。
+// 本人の設定（手動の離席とカスタムステータス。ADR 0049）も一緒に読む。期限切れのステータスはここで落とす。
 func (q *Queries) ListRoomMembers(ctx context.Context, arg ListRoomMembersParams) ([]ListRoomMembersRow, error) {
 	rows, err := q.db.Query(ctx, listRoomMembers, arg.RoomID, arg.After, arg.MaxRows)
 	if err != nil {
@@ -526,6 +534,10 @@ func (q *Queries) ListRoomMembers(ctx context.Context, arg ListRoomMembersParams
 			&i.Role,
 			&i.Handle,
 			&i.DisplayName,
+			&i.ManualAway,
+			&i.StatusEmoji,
+			&i.StatusText,
+			&i.StatusExpiresAt,
 		); err != nil {
 			return nil, err
 		}

@@ -738,7 +738,7 @@ func TestPresence(t *testing.T) {
 
 	// 最初の接続でオンラインになり、所属するワークスペースの購読者に知らせる。
 	tab1, _ := e.connect(t, w.alice)
-	if got := presenceEvents(); !slices.Equal(got, []chat.PresenceChanged{{UserID: w.alice, Online: true}}) {
+	if got := presenceEvents(); !slices.Equal(got, []chat.PresenceChanged{{UserID: w.alice, Presence: chat.PresenceActive}}) {
 		t.Errorf("after first connection: %v", got)
 	}
 	if !e.presence.isOnline(w.alice) {
@@ -753,7 +753,7 @@ func TestPresence(t *testing.T) {
 	}
 	// 最後の接続が切れたらオフライン。
 	e.hub.Unregister(t.Context(), tab2)
-	if got := presenceEvents(); !slices.Equal(got, []chat.PresenceChanged{{UserID: w.alice, Online: false}}) {
+	if got := presenceEvents(); !slices.Equal(got, []chat.PresenceChanged{{UserID: w.alice, Presence: chat.PresenceOffline}}) {
 		t.Errorf("after last disconnection: %v", got)
 	}
 	if e.presence.isOnline(w.alice) {

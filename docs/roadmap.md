@@ -677,7 +677,10 @@ Claude Design で描いた 83 枚（`source: "design"`）は撮り直しの対�
 1. 設計（ADR 0049、ERD、CLAUDE.md ルール 5 と「デザイン」、`docs/events.md`、`docs/ui/README.md`）
 2. デザイン: 離席のドット、ステータスの設定ダイアログ、名前の横とメンバーパネルの出方、アカウントメニュー、モバイル。story に描いて `docs/ui/` に足し、オーナーに見てもらう ← 完了（`docs/ui/README.md` の「Phase 6.8 で足した画面」）
    絵文字のピッカーは、ダイアログの中に流し込むと画面からはみ出したので、リアクションと同じ「浮かせる / 下から出す」形にした（ADR 0049 決定 10 の追記）
-3. DB と REST: マイグレーション、`PUT /users/me/presence`、`PUT` / `DELETE /workspaces/{id}/me/status`、メンバーのレスポンスの `presence` / `away` / `status`
+   期限の文言と選択肢を Slack に合わせ、「日時を選択」と自前のカレンダー（`components/ui/calendar.tsx`）を足した（オーナーの指摘、2026-09-21）
+3. DB と REST: マイグレーション、`PUT /users/me/presence`、`PUT` / `DELETE /workspaces/{id}/me/status`、メンバーのレスポンスの `presence` / `away` / `status` ← 完了
+   期限切れを落とすのは SQL ではなく Go の `statusOf` 1 箇所（sqlc が CASE 式の NULL 可能性を推せないため。ADR 0049 決定 6 の追記）
+   `away` と `status` を載せるのはメンバー一覧だけ。DM の相手とメッセージの送信者の分は、クライアントが一覧から引く（決定 7 の追記）
 4. WebSocket と Web: `activity`、Lua スクリプトの作り直し、`member.status_changed`、Web のつなぎ込み（10 分のタイマー、再接続の同期、楽観的更新）
 
 **DoD**

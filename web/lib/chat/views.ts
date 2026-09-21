@@ -8,6 +8,7 @@ import type {
   RoomKind,
   RoomMemberView,
   RoomSummaryView,
+  UserStatusView,
   ThreadListItemView,
   TimelineItem,
 } from "@/components/chat/types";
@@ -20,10 +21,12 @@ import type {
   MessageAttachment,
   MessageLink,
   MessageReaction,
+  Presence,
   Role,
   Room,
   RoomMember,
   UserProfile,
+  UserStatus,
 } from "@/lib/api/types.gen";
 import { type PresenceView, displayPresence } from "@/lib/presence";
 
@@ -116,6 +119,8 @@ export function toRoomSummaryView(
     name: roomName(room),
     peer: room.dm_peer
       ? {
+          // DM の相手の away とステータスは、ワークスペースのメンバー一覧から引く（ADR 0049 決定 7 の追記）。
+          // ここでは自動の presence だけを写す
           id: room.dm_peer.id,
           presence: memberPresence(room.dm_peer),
           avatarUrl: avatarUrls[room.dm_peer.id] ?? undefined,
@@ -589,11 +594,17 @@ export function messageActions(
 const roleLabels: Record<Role, RoleLabel> = { owner: "オーナー", admin: "管理者", member: "メンバー" };
 
 /**
- * API の presence と本人の設定（手動の離席）から、画面に出す 3 つの状態を決める（ADR 0049 決定 1）。
+ * API の presence（自動）と away（本人の設定）から、画面に出す 3 つの状態を決める（ADR 0049 決定 1）。
  * 合わせるのはここだけで、部品には結果だけを渡す。
  */
-export function memberPresence(member: { online: boolean }): PresenceView {
-  return displayPresence(member.online ? "active" : "offline", false);
+/** API のステータスを表示用にする。期限切れはサーバーが落として null を返す（ADR 0049 決定 6）。 */
+export function statusView(status: UserStatus | null | undefined): UserStatusView | undefined {
+  if (!status) return undefined;
+  return { emoji: status.emoji, text: status.text === "" ? undefined : status.text };
+}
+
+export function memberPresence(member: { presence: Presence; away?: boolean }): PresenceView {
+  return displayPresence(member.presence, member.away ?? false);
 }
 
 export function toRoomMemberView(member: RoomMember, avatarUrls: UrlTable = {}): RoomMemberView {
@@ -602,6 +613,7 @@ export function toRoomMemberView(member: RoomMember, avatarUrls: UrlTable = {}):
     name: member.user.display_name,
     avatarUrl: avatarUrls[member.user.id] ?? undefined,
     presence: memberPresence(member),
+    status: statusView(member.status),
     roleLabel: roleLabels[member.role],
   };
 }
@@ -648,7 +660,8 @@ export function mentionAllRecipients(
   kind: "channel" | "here",
   meId: string | undefined,
 ): number {
-  return (members ?? []).filter((m) => m.user.id !== meId && (kind === "channel" || m.online)).length;
+  // @here は「いま見ている人」（自動の presence が active）。手動の離席は数に含める（通知は止めない。ADR 0049 決定 11）
+  return (members ?? []).filter((m) => m.user.id !== meId && (kind === "channel" || m.presence === "active")).length;
 }
 
 /**
@@ -669,7 +682,13 @@ export function toDmCandidates(
         m.user.display_name.toLowerCase().includes(query) ||
         m.user.handle.toLowerCase().includes(query),
     )
-    .map((m) => ({ id: m.user.id, name: m.user.display_name, handle: m.user.handle, presence: memberPresence(m) }));
+    .map((m) => ({
+      id: m.user.id,
+      name: m.user.display_name,
+      handle: m.user.handle,
+      presence: memberPresence(m),
+      status: statusView(m.status),
+    }));
 }
 
 /** チャンネルの設定に並べる、いま参加している人。外せるかはサーバーと同じ規則で決める（ADR 0011）。 */

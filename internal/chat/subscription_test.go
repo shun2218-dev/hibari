@@ -149,7 +149,7 @@ func TestPresenceInRoomResponses(t *testing.T) {
 	}
 	online := map[ulid.ULID]bool{}
 	for _, m := range page.Items {
-		online[m.User.ID] = m.Online
+		online[m.User.ID] = m.Presence == chat.PresenceActive
 	}
 	if len(online) != 2 || !online[r.member2] || online[r.member] {
 		t.Errorf("room members online = %v, want only member2", online)
@@ -162,7 +162,7 @@ func TestPresenceInRoomResponses(t *testing.T) {
 	}
 	wsOnline := map[ulid.ULID]bool{}
 	for _, m := range members.Items {
-		wsOnline[m.User.ID] = m.Online
+		wsOnline[m.User.ID] = m.Presence == chat.PresenceActive
 	}
 	if len(wsOnline) != 5 || !wsOnline[r.member2] || wsOnline[r.member] {
 		t.Errorf("workspace members online = %v, want only member2", wsOnline)
@@ -172,31 +172,31 @@ func TestPresenceInRoomResponses(t *testing.T) {
 	if err != nil || len(first.Items) != 1 {
 		t.Fatalf("ListMembers(limit 1) = %d items, %v", len(first.Items), err)
 	}
-	if first.Items[0].Online != wsOnline[first.Items[0].User.ID] {
-		t.Errorf("paged member online = %v, want %v", first.Items[0].Online, wsOnline[first.Items[0].User.ID])
+	if got := first.Items[0].Presence == chat.PresenceActive; got != wsOnline[first.Items[0].User.ID] {
+		t.Errorf("paged member online = %v, want %v", got, wsOnline[first.Items[0].User.ID])
 	}
 
 	dm, _ := createDM(t, env, r.member, r.ws.ID, r.member2)
-	if !dm.DMPeerOnline {
+	if dm.DMPeerPresence != chat.PresenceActive {
 		t.Error("CreateRoom(dm) dm_peer is not online")
 	}
 	got, err := env.Service.GetRoom(t.Context(), r.member, dm.ID)
-	if err != nil || !got.DMPeerOnline {
-		t.Errorf("GetRoom(dm) dm_peer online = %v, %v", got.DMPeerOnline, err)
+	if err != nil || got.DMPeerPresence != chat.PresenceActive {
+		t.Errorf("GetRoom(dm) dm_peer presence = %v, %v", got.DMPeerPresence, err)
 	}
 	got, err = env.Service.GetRoom(t.Context(), r.member2, dm.ID)
-	if err != nil || got.DMPeerOnline {
-		t.Errorf("GetRoom(dm) from member2: peer online = %v, %v; want offline", got.DMPeerOnline, err)
+	if err != nil || got.DMPeerPresence != chat.PresenceOffline {
+		t.Errorf("GetRoom(dm) from member2: peer presence = %v, %v; want offline", got.DMPeerPresence, err)
 	}
 	rooms, err := env.Service.ListRooms(t.Context(), r.member, r.ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, rm := range rooms {
-		if rm.ID == dm.ID && !rm.DMPeerOnline {
+		if rm.ID == dm.ID && rm.DMPeerPresence != chat.PresenceActive {
 			t.Error("ListRooms dm_peer is not online")
 		}
-		if rm.ID == room.ID && rm.DMPeerOnline {
+		if rm.ID == room.ID && rm.DMPeerPresence == chat.PresenceActive {
 			t.Error("non-dm room has dm_peer online")
 		}
 	}

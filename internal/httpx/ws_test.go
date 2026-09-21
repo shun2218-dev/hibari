@@ -769,11 +769,11 @@ func TestWSPresence(t *testing.T) {
 				User struct {
 					ID string `json:"id"`
 				} `json:"user"`
-				Online bool `json:"online"`
+				Presence string `json:"presence"`
 			} `json:"members"`
 		}](t, r).Members {
 			if m.User.ID == userID {
-				return m.Online
+				return m.Presence == "active"
 			}
 		}
 		t.Fatalf("%s is not a member", userID)
@@ -785,7 +785,7 @@ func TestWSPresence(t *testing.T) {
 
 	bob := c.dialWS(f.bob)
 	bob.sync() // 登録が終わったことを待つ
-	if got := eventsOfType(owner.sync(), "presence.changed"); len(got) != 1 || string(got[0].Data) != `{"user_id":"`+f.bob.id+`","online":true}` {
+	if got := eventsOfType(owner.sync(), "presence.changed"); len(got) != 1 || string(got[0].Data) != `{"user_id":"`+f.bob.id+`","presence":"active"}` {
 		t.Errorf("presence.changed = %v", got)
 	}
 	if !online(f.bob.id) {
@@ -794,7 +794,7 @@ func TestWSPresence(t *testing.T) {
 	// DM の相手の presence も REST で返す。
 	r := c.as(f.owner, http.MethodPost, "/api/v1/workspaces/"+f.ws.ID+"/rooms", map[string]string{"kind": "dm", "user_id": f.bob.id})
 	expectStatus(t, r, http.StatusCreated)
-	if !strings.Contains(string(r.body), `"online":true`) {
+	if !strings.Contains(string(r.body), `"presence":"active"`) {
 		t.Errorf("dm_peer = %s, want online", r.body)
 	}
 
@@ -805,7 +805,7 @@ func TestWSPresence(t *testing.T) {
 	for len(got) == 0 {
 		got = eventsOfType([]wsFrame{owner.next()}, "presence.changed")
 	}
-	if string(got[0].Data) != `{"user_id":"`+f.bob.id+`","online":false}` {
+	if string(got[0].Data) != `{"user_id":"`+f.bob.id+`","presence":"offline"}` {
 		t.Errorf("presence.changed after disconnect = %s", got[0].Data)
 	}
 	if online(f.bob.id) {

@@ -896,19 +896,19 @@ describe("createChatStore realtime", () => {
     it("updates presence in DM peers and loaded member lists", async () => {
       const { store } = setup({
         "GET /api/v1/workspaces/ws-1/rooms": () =>
-          json(200, { rooms: [room("dm", "", { kind: "dm", name: null, dm_peer: { ...miyuki, online: false } })] }),
+          json(200, { rooms: [room("dm", "", { kind: "dm", name: null, dm_peer: { ...miyuki, presence: "offline" } })] }),
         "GET /api/v1/rooms/r1/members?limit=200": () =>
-          json(200, { members: [roomMember(miyuki), roomMember(naoki, { online: true })], next_cursor: null }),
+          json(200, { members: [roomMember(miyuki), roomMember(naoki, { presence: "active" })], next_cursor: null }),
       });
       await store.loadRooms("ws-1");
       await store.loadRoomMembers("r1");
       const untouched = store.getSnapshot().roomMembers.r1!.members[1];
 
-      store.applyEvent({ type: "presence.changed", data: { user_id: miyuki.id, online: true } });
+      store.applyEvent({ type: "presence.changed", data: { user_id: miyuki.id, presence: "active" } });
 
       const state = store.getSnapshot();
-      expect(state.rooms.dm?.dm_peer?.online).toBe(true);
-      expect(state.roomMembers.r1?.members[0].online).toBe(true);
+      expect(state.rooms.dm?.dm_peer?.presence).toBe("active");
+      expect(state.roomMembers.r1?.members[0].presence).toBe("active");
       expect(state.roomMembers.r1?.members[1]).toBe(untouched);
     });
 
@@ -1259,7 +1259,7 @@ describe("createChatStore realtime", () => {
 
 describe("createChatStore rooms", () => {
   it("opens a dm and puts it in the list only once", async () => {
-    const dm = room("r-dm", "", { kind: "dm", name: null, dm_peer: { ...miyuki, online: true } });
+    const dm = room("r-dm", "", { kind: "dm", name: null, dm_peer: { ...miyuki, presence: "active" } });
     const { store, api } = setup({
       "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "雑談")] }),
       "POST /api/v1/workspaces/ws-1/rooms": () => json(200, dm),
@@ -1475,8 +1475,8 @@ describe("createChatStore workspace admin", () => {
     await Promise.all([store.loadWorkspaces(), store.loadMembers("ws-1")]);
 
     store.applyEvent({ type: "workspace.role_changed", data: { workspace_id: "ws-1", user_id: miyuki.id, role: "admin" } });
-    store.applyEvent({ type: "presence.changed", data: { user_id: miyuki.id, online: true } });
-    expect(store.getSnapshot().members["ws-1"]?.list[1]).toMatchObject({ role: "admin", online: true });
+    store.applyEvent({ type: "presence.changed", data: { user_id: miyuki.id, presence: "active" } });
+    expect(store.getSnapshot().members["ws-1"]?.list[1]).toMatchObject({ role: "admin", presence: "active" });
 
     store.applyEvent({
       type: "workspace.member_removed",
