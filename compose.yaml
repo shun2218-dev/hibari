@@ -86,6 +86,9 @@ services:
       JWT_PRIVATE_KEY_FILE: /src/keys/jwt_ed25519.pem
       # 開発ではメールを送らず、確認や再設定のリンクを server のログに出す（ADR 0053 決定 5）。
       MAIL_TRANSPORT: log
+      # 開発では email の検証なしで chat を使えるようにする（ADR 0053 決定 4）。検証の流れを試すときは true にし、
+      # ログに出る確認のリンクを開く。MAIL_TRANSPORT=smtp のときは false にできない（起動しない）。
+      AUTH_REQUIRE_VERIFIED_EMAIL: ${AUTH_REQUIRE_VERIFIED_EMAIL:-false}
       # X-Forwarded-For を信用するのは Caddy からの接続だけ（ADR 0017）。
       TRUSTED_PROXIES: ${CADDY_IP:-172.31.250.10}/32
       # サーバーはサービス名で MinIO に到達し、署名付き URL はブラウザから到達できるホスト名で作る（ADR 0013）。

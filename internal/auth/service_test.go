@@ -166,6 +166,54 @@ func TestLogin(t *testing.T) {
 	}
 }
 
+// TestAccessTokenCarriesEmailVerified は、Access Token の email_verified が、発行の時点の検証の状態になることを確かめる（ADR 0053 決定 2）。
+// 検証する前のトークンは未検証のまま残り、検証した後の refresh とログインで検証済みになる。
+func TestAccessTokenCarriesEmailVerified(t *testing.T) {
+	env := authtest.New(t)
+	_, registered, in := env.Register(t)
+	verified := func(t *testing.T, raw string) bool {
+		t.Helper()
+		id, err := env.Verifier.Verify(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id.EmailVerified
+	}
+
+	if verified(t, registered.AccessToken) {
+		t.Fatal("token issued at registration is verified")
+	}
+	beforeVerify, err := env.Service.Refresh(t.Context(), registered.RefreshToken, auth.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified(t, beforeVerify.AccessToken) {
+		t.Fatal("token refreshed before verification is verified")
+	}
+
+	if err := env.Service.VerifyEmail(t.Context(), env.Mailer.Last(t, in.Email).Token()); err != nil {
+		t.Fatal(err)
+	}
+	// 検証の前に発行したトークンは、期限まで未検証のまま（止める側にしか間違えない）。
+	if verified(t, beforeVerify.AccessToken) {
+		t.Fatal("token issued before verification became verified")
+	}
+	afterVerify, err := env.Service.Refresh(t.Context(), beforeVerify.RefreshToken, auth.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !verified(t, afterVerify.AccessToken) {
+		t.Fatal("token refreshed after verification is not verified")
+	}
+	_, loggedIn, err := env.Service.Login(t.Context(), in.Email, in.Password, auth.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !verified(t, loggedIn.AccessToken) {
+		t.Fatal("token issued at login after verification is not verified")
+	}
+}
+
 // ログインのたびに別のセッション（family）になる。
 func TestLoginStartsNewSession(t *testing.T) {
 	env := authtest.New(t)

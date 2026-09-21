@@ -228,15 +228,17 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		// 前段のプロキシ（ローカルは Caddy、本番は Fly のプロキシ）。空なら X-Forwarded-For を読まない（ADR 0017）。
 		TrustedProxies: cfg.TrustedProxies,
 		// Web クライアントはブラウザから API を直接呼ぶ（ADR 0021）。
-		AllowedOrigins:      []string{httpx.OriginOf(cfg.AppBaseURL)},
-		Auth:                authService,
-		Verifier:            verifier,
-		JWKS:                jwks,
-		RefreshCookieSecure: cfg.RefreshCookieSecure,
-		Chat:                chatService,
-		Realtime:            hub,
-		WSTickets:           authn.NewWSTickets(rdb, rand.Reader),
-		Sessions:            authService,
+		AllowedOrigins: []string{httpx.OriginOf(cfg.AppBaseURL)},
+		Auth:           authService,
+		Verifier:       verifier,
+		// 開発環境（compose）だけ外せる（ADR 0053 決定 4）。
+		AllowUnverifiedEmail: !cfg.RequireVerifiedEmail,
+		JWKS:                 jwks,
+		RefreshCookieSecure:  cfg.RefreshCookieSecure,
+		Chat:                 chatService,
+		Realtime:             hub,
+		WSTickets:            authn.NewWSTickets(rdb, rand.Reader),
+		Sessions:             authService,
 		// ブラウザからの接続は Web クライアントのオリジンだけを許す。
 		WS: httpx.DefaultWSConfig([]string{cfg.AppBaseURL.Host}),
 	})

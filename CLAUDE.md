@@ -48,7 +48,8 @@ Go 製のリアルタイムチャットアプリ。Slack / Discord 型の「ワ�
 
 1. **auth と chat は同じバイナリに同居するが、パッケージは厳密に分ける。**
    `internal/chat` は `internal/auth` を import してはいけない。
-   両者の接点は「`internal/platform/authn` が渡す検証済みの userID / sid」と「Redis 経由の失効イベント」の 2 つだけ。
+   両者の接点は「`internal/platform/authn` が渡す検証済みの userID / sid / email の検証の状態」と「Redis 経由の失効イベント」の 2 つだけ。
+   email を検証していない利用者は、authn のミドルウェア（`RequireVerifiedEmail`）が chat の入り口で止める。chat のコードは検証を知らない（ADR 0053）。
    ws-ticket の発行と消費も `platform/authn` に置く（chat が auth の Redis キーを直接読まないようにするため）。
 2. **認証はトークンを発行する。Cookie は Web クライアントの実装詳細にすぎない。**
    将来のネイティブアプリを見据え、Cookie が前提の設計にしない。

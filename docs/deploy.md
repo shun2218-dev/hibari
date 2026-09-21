@@ -90,6 +90,17 @@ fly secrets set SMTP_PASSWORD="$(printf '%s' 're_xxxxxxxx' | base64)"
 - 本番で登録し、確認メールが届くこと、迷惑メールに入らないことを確かめる。受け取った側でヘッダの `Authentication-Results` が `spf=pass` / `dkim=pass` / `dmarc=pass` になっていること。
 - **送れなかったメールは失う**（数回だけ送り直す。ADR 0053 決定 6）。server のログの `mail queue: gave up` と `mail queue: dropped on shutdown` を見る。ログには宛先も本文も出さず、種類（`kind`）だけを出す。
 
+### email の検証（`AUTH_REQUIRE_VERIFIED_EMAIL`）
+
+email を検証するまで、chat の API と WebSocket は 403（`email-unverified`）になる（ADR 0053 決定 1）。
+
+| 環境 | `AUTH_REQUIRE_VERIFIED_EMAIL` |
+|---|---|
+| ローカル（compose） | `false`（検証なしで使える。試すときは `AUTH_REQUIRE_VERIFIED_EMAIL=true make up` にして、ログに出る確認のリンクを開く） |
+| 本番 | 設定しない（既定の `true`） |
+
+`MAIL_TRANSPORT=smtp` のときに `false` にすると起動しない。メールが届く環境で検証を外す理由はないので、本番で誤って外れることがない。
+
 ## 置き場所（ADR 0046）
 
 | 役割 | 本番 | ローカル |

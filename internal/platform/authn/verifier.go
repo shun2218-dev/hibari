@@ -74,7 +74,15 @@ func (v *Verifier) Verify(raw string) (Identity, error) {
 	if err != nil {
 		return Identity{}, fmt.Errorf("%w: sid: %w", ErrInvalidToken, err)
 	}
-	return Identity{UserID: userID, SessionID: sid}, nil
+	// email_verified は必須にしない。無ければ未検証として扱う（止める側に倒す）。
+	// クレームを足す前に発行されたトークン（最大 15 分）も、これで読める。
+	var verified bool
+	if tok.Has(ClaimEmailVerified) {
+		if err := tok.Get(ClaimEmailVerified, &verified); err != nil {
+			return Identity{}, fmt.Errorf("%w: %s: %w", ErrInvalidToken, ClaimEmailVerified, err)
+		}
+	}
+	return Identity{UserID: userID, SessionID: sid, EmailVerified: verified}, nil
 }
 
 // provideKey は、ヘッダの内容を検査してから検証に使う鍵を 1 つだけ渡す。

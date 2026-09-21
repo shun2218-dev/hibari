@@ -25,7 +25,8 @@ func TestWSTickets(t *testing.T) {
 	t.Cleanup(func() { _ = rdb.Close() })
 	tickets := authn.NewWSTickets(rdb, rand.Reader)
 	ids := id.NewGenerator(clock.NewFake(time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)), rand.Reader)
-	who := authn.Identity{UserID: ids.New(), SessionID: ids.New()}
+	// email_verified も ticket に載せて戻すことを確かめる（ADR 0053）。
+	who := authn.Identity{UserID: ids.New(), SessionID: ids.New(), EmailVerified: true}
 
 	t.Run("issue and consume once", func(t *testing.T) {
 		ticket, err := tickets.Issue(t.Context(), who)

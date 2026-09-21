@@ -28,7 +28,7 @@ type AuthService interface {
 	Sessions(ctx context.Context, userID, currentSessionID ulid.ULID) ([]auth.SessionInfo, error)
 	RevokeSession(ctx context.Context, userID, sessionID ulid.ULID) error
 	RevokeOtherSessions(ctx context.Context, userID, keepSessionID ulid.ULID) (int, error)
-	RequestEmailVerification(ctx context.Context, userID ulid.ULID) error
+	RequestEmailVerification(ctx context.Context, userID ulid.ULID, next string) error
 	VerifyEmail(ctx context.Context, rawToken string) error
 	RequestPasswordReset(ctx context.Context, email string, c auth.Client) error
 	ResetPassword(ctx context.Context, rawToken, newPassword string) error
@@ -117,6 +117,8 @@ type registerRequest struct {
 	DisplayName string `json:"display_name"`
 	Email       string `json:"email"`
 	Password    string `json:"password"`
+	// Next は email を検証したあとに進む先（招待の画面など）。確認メールのリンクに載る（ADR 0053 決定 3）。
+	Next string `json:"next,omitzero"`
 }
 
 func (h *authHandlers) register(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +132,7 @@ func (h *authHandlers) register(w http.ResponseWriter, r *http.Request) {
 		DisplayName: req.DisplayName,
 		Email:       req.Email,
 		Password:    req.Password,
+		Next:        req.Next,
 	}, clientOf(r))
 	if err != nil {
 		writeError(h.logger, w, r, err)
@@ -201,10 +204,24 @@ func (h *authHandlers) me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, newUserResponse(u))
 }
 
+type emailVerificationRequest struct {
+	// Next は検証したあとに進む先。登録と同じく確認メールのリンクに載る（ADR 0053 決定 3）。
+	Next string `json:"next,omitzero"`
+}
+
 // requestEmailVerification は確認メールを送り直す。確認済みでも同じ 202 を返す（クライアントは me で状態を見る）。
+//
+// ボディは省略できる（戻り先がなければ要らない。Phase 6.10.5 より前のクライアントもボディを送らない）。
 func (h *authHandlers) requestEmailVerification(w http.ResponseWriter, r *http.Request) {
 	id, _ := authn.FromContext(r.Context())
-	if err := h.svc.RequestEmailVerification(r.Context(), id.UserID); err != nil {
+	var req emailVerificationRequest
+	if r.ContentLength != 0 {
+		if err := decodeJSON(w, r, &req); err != nil {
+			writeError(h.logger, w, r, err)
+			return
+		}
+	}
+	if err := h.svc.RequestEmailVerification(r.Context(), id.UserID, req.Next); err != nil {
 		writeError(h.logger, w, r, err)
 		return
 	}

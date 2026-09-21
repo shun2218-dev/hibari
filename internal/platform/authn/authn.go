@@ -1,7 +1,8 @@
 // Package authn は、リクエストが「誰の・どのセッションのものか」を確定させる。
 //
 // auth（トークンを発行する側）と chat（トークンを受け取る側）の接点はここに集める（ADR 0001 / 0007）。
-//   - Access JWT の検証と、検証済みの userID / sid の context への格納
+//   - Access JWT の検証と、検証済みの userID / sid / email の検証の状態の context への格納
+//   - email を検証していない利用者を止めるミドルウェア（ADR 0053）
 //   - 失効イベント（Redis の auth:revoked）の形式、publish と購読
 //
 // chat は auth を import しないので、トークンの形式（クレーム名や typ）の知識もここに置き、
@@ -21,12 +22,19 @@ const (
 	AccessTokenType = "at+jwt"
 	// ClaimSessionID はセッション ID（refresh_tokens.family_id）のクレーム名（ADR 0007）。
 	ClaimSessionID = "sid"
+	// ClaimEmailVerified は email を検証済みかのクレーム名（ADR 0053 決定 2）。
+	// OpenID Connect の ID Token と同じ名前にして、意味を取り違えないようにする。
+	ClaimEmailVerified = "email_verified"
 )
 
 // Identity は検証済みのリクエストの主体。ロールや権限は含めない（DB を正とするため。CLAUDE.md）。
 type Identity struct {
 	UserID    ulid.ULID
 	SessionID ulid.ULID
+	// EmailVerified はトークンの発行の時点で email を検証済みだったか（ADR 0053 決定 2）。
+	// 権限と違って JWT に入れてよいのは、検証が「未 → 済」の一方向で取り上げられず、
+	// 古いトークンは「まだ止める」側にしか間違えないため。email を変える機能を足すときはこの前提を見直す。
+	EmailVerified bool
 }
 
 // identityKey は context のキー。非公開の型にして、他のパッケージから偽の Identity を詰められないようにする。

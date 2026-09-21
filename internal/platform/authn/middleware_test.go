@@ -84,3 +84,52 @@ func TestFromContextWithoutIdentity(t *testing.T) {
 		t.Fatal("FromContext() ok = true for a context without identity")
 	}
 }
+
+func TestRequireVerifiedEmail(t *testing.T) {
+	tests := []struct {
+		name     string
+		enforce  bool
+		verified bool
+		wantNext bool
+	}{
+		{name: "verified", enforce: true, verified: true, wantNext: true},
+		{name: "unverified is stopped", enforce: true, verified: false, wantNext: false},
+		// 開発環境で外したとき（ADR 0053 決定 4）。
+		{name: "not enforced", enforce: false, verified: false, wantNext: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var (
+				nextSeen bool
+				gotErr   error
+			)
+			h := authn.RequireVerifiedEmail(tt.enforce, func(w http.ResponseWriter, _ *http.Request, err error) {
+				gotErr = err
+				w.WriteHeader(http.StatusForbidden)
+			})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { nextSeen = true }))
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req = req.WithContext(authn.WithIdentity(req.Context(), authn.Identity{EmailVerified: tt.verified}))
+			h.ServeHTTP(httptest.NewRecorder(), req)
+
+			if nextSeen != tt.wantNext {
+				t.Fatalf("next called = %v, want %v", nextSeen, tt.wantNext)
+			}
+			if !tt.wantNext && !errors.Is(gotErr, authn.ErrEmailUnverified) {
+				t.Fatalf("forbidden err = %v, want ErrEmailUnverified", gotErr)
+			}
+		})
+	}
+}
+
+// TestRequireVerifiedEmailOutsideRequire は、Require の外に置く誤りを通さないことを確かめる。
+func TestRequireVerifiedEmailOutsideRequire(t *testing.T) {
+	h := authn.RequireVerifiedEmail(true, func(http.ResponseWriter, *http.Request, error) {})(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("next must not be called") }))
+	defer func() {
+		if recover() == nil {
+			t.Fatal("RequireVerifiedEmail without identity did not panic")
+		}
+	}()
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+}

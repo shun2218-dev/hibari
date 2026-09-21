@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/mail"
+	"net/url"
 	"regexp"
 	"strings"
 	"unicode"
@@ -14,6 +15,8 @@ type RegisterInput struct {
 	DisplayName string
 	Email       string
 	Password    string
+	// Next は email を検証したあとに Web が進む先（招待の画面など。ADR 0053 決定 3）。空なら載せない。
+	Next string
 }
 
 // 入力の制約。
@@ -70,10 +73,46 @@ func (in RegisterInput) normalize() (RegisterInput, error) {
 		add("password", reason)
 	}
 
+	if reason := nextPathProblem(in.Next); reason != "" {
+		add("next", reason)
+	}
+
 	if len(fields) > 0 {
 		return RegisterInput{}, &ValidationError{Fields: fields}
 	}
 	return in, nil
+}
+
+// nextPathMaxBytes は戻り先の長さの上限。招待の URL（/invite/{code}）には十分で、メールのリンクを膨らませない。
+const nextPathMaxBytes = 512
+
+// nextPathProblem は戻り先（next）が使えない理由を返す。空か、使えるなら空文字列。
+//
+// 受け付けるのはアプリの中のパスだけ（`/` で始まり、別のホストを指さない）。確認メールのリンクに載るので、
+// 外のサイトを指せると、hibari のメールを踏み台にしたオープンリダイレクトになる（ADR 0053 決定 3）。
+// Web の safeNextPath も同じ規則で読み直すが、メールに載せる前に auth でも止める。
+func nextPathProblem(next string) string {
+	if next == "" {
+		return ""
+	}
+	if len(next) > nextPathMaxBytes {
+		return ReasonTooLong
+	}
+	// `//host` はスキーム相対の URL、`/\host` はブラウザが `//host` と読むので、どちらも外のホストになる。
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
+		return ReasonInvalidFormat
+	}
+	for _, r := range next {
+		// 制御文字は URL の解釈をずらす余地があり、正しい戻り先には現れない。
+		if r < 0x20 || r == 0x7f {
+			return ReasonInvalidFormat
+		}
+	}
+	u, err := url.Parse(next)
+	if err != nil || u.Scheme != "" || u.Host != "" {
+		return ReasonInvalidFormat
+	}
+	return ""
 }
 
 // passwordProblem はパスワードが制約を満たさない理由を返す。満たしていれば空文字列。

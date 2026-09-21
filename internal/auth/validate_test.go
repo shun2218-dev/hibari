@@ -75,3 +75,32 @@ func TestRegisterInputNormalize(t *testing.T) {
 		})
 	}
 }
+
+// TestNextPathProblem は、確認メールに載せる戻り先をアプリの中のパスに限ることを確かめる（ADR 0053 決定 3）。
+func TestNextPathProblem(t *testing.T) {
+	tests := []struct {
+		next string
+		want string
+	}{
+		{next: "", want: ""},
+		{next: "/", want: ""},
+		{next: "/invite/abc_DEF-123", want: ""},
+		{next: "/w/01J/r/01K?m=01L#top", want: ""},
+		{next: "/検索", want: ""},
+		{next: "invite/abc", want: ReasonInvalidFormat},
+		{next: "https://evil.example/", want: ReasonInvalidFormat},
+		{next: "javascript:alert(1)", want: ReasonInvalidFormat},
+		// スキーム相対の URL と、ブラウザが // と読む /\ は、外のホストを指す。
+		{next: "//evil.example/", want: ReasonInvalidFormat},
+		{next: `/\evil.example/`, want: ReasonInvalidFormat},
+		{next: "/a\r\nLocation: https://evil.example/", want: ReasonInvalidFormat},
+		{next: "/a\tb", want: ReasonInvalidFormat},
+		{next: "/" + strings.Repeat("a", nextPathMaxBytes-1), want: ""},
+		{next: "/" + strings.Repeat("a", nextPathMaxBytes), want: ReasonTooLong},
+	}
+	for _, tt := range tests {
+		if got := nextPathProblem(tt.next); got != tt.want {
+			t.Errorf("nextPathProblem(%q) = %q, want %q", tt.next, got, tt.want)
+		}
+	}
+}

@@ -150,3 +150,43 @@ func TestVerifierAcceptsAnyConfiguredKey(t *testing.T) {
 		}
 	}
 }
+
+// TestVerifierEmailVerified は email_verified のクレームを Identity に移すことを確かめる（ADR 0053 決定 2）。
+func TestVerifierEmailVerified(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	v := authn.NewVerifier([]authn.PublicKey{{ID: kid, Key: pub}}, issuer, audience, clock.NewFake(now))
+
+	tests := []struct {
+		name    string
+		claim   any // nil ならクレームを入れない
+		want    bool
+		wantErr bool
+	}{
+		{name: "verified", claim: true, want: true},
+		{name: "unverified", claim: false, want: false},
+		// クレームを足す前に発行されたトークン。止める側（未検証）に倒す。
+		{name: "missing", claim: nil, want: false},
+		{name: "not a boolean", claim: "true", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := validSpec(t, priv)
+			if tt.claim != nil {
+				spec.claims[authn.ClaimEmailVerified] = tt.claim
+			}
+			got, err := v.Verify(sign(t, spec))
+			if tt.wantErr {
+				if !errors.Is(err, authn.ErrInvalidToken) {
+					t.Fatalf("Verify() error = %v, want ErrInvalidToken", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.EmailVerified != tt.want {
+				t.Fatalf("EmailVerified = %v, want %v", got.EmailVerified, tt.want)
+			}
+		})
+	}
+}

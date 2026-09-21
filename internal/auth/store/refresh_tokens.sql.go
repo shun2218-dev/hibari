@@ -60,7 +60,8 @@ func (q *Queries) GetRefreshTokenFamily(ctx context.Context, tokenHash []byte) (
 }
 
 const getRefreshTokenForUpdate = `-- name: GetRefreshTokenForUpdate :one
-SELECT rt.id, rt.user_id, rt.family_id, rt.expires_at, rt.revoked_at, rt.revoked_reason
+SELECT rt.id, rt.user_id, rt.family_id, rt.expires_at, rt.revoked_at, rt.revoked_reason,
+       (u.email_verified_at IS NOT NULL)::boolean AS email_verified
   FROM refresh_tokens rt
   JOIN users u ON u.id = rt.user_id
  WHERE rt.token_hash = $1
@@ -75,12 +76,14 @@ type GetRefreshTokenForUpdateRow struct {
 	ExpiresAt     time.Time
 	RevokedAt     *time.Time
 	RevokedReason *string
+	EmailVerified bool
 }
 
 // ローテーションの対象を行ロックして読む。
 // 同じトークンで同時に refresh されても、2 本目は 1 本目のコミットを待ってから
 // 「rotated で失効済み」の状態を読むので、必ず再利用として検知される。
 // 退会済みのユーザーのトークンは見つからないものとして扱う。
+// email の検証の状態も一緒に読む。新しい Access Token の email_verified に入れるため（ADR 0053 決定 2）。
 func (q *Queries) GetRefreshTokenForUpdate(ctx context.Context, tokenHash []byte) (GetRefreshTokenForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getRefreshTokenForUpdate, tokenHash)
 	var i GetRefreshTokenForUpdateRow
@@ -91,6 +94,7 @@ func (q *Queries) GetRefreshTokenForUpdate(ctx context.Context, tokenHash []byte
 		&i.ExpiresAt,
 		&i.RevokedAt,
 		&i.RevokedReason,
+		&i.EmailVerified,
 	)
 	return i, err
 }

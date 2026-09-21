@@ -73,7 +73,7 @@ type chatHandlers struct {
 
 func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	h := &chatHandlers{svc: d.Chat, logger: d.Logger}
-	requireAuth := authn.Require(d.Verifier, writeUnauthorized)
+	requireAuth := requireChatUser(d)
 	handle := func(pattern string, f http.HandlerFunc) {
 		mux.Handle(pattern, requireAuth(f))
 	}

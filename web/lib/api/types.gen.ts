@@ -26,7 +26,7 @@ export type Presence = "active" | "idle" | "offline";
 
 export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed";
 
-export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid";
+export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified";
 
 export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "activity" | "ping";
 
@@ -58,6 +58,8 @@ export interface RegisterRequest {
   display_name: string;
   email: string;
   password: string;
+  /** next は email を検証したあとに進む先（招待の画面など）。確認メールのリンクに載る（ADR 0053 決定 3）。 */
+  next?: string;
 }
 
 export interface LoginRequest {
@@ -71,6 +73,11 @@ export interface RefreshTokenRequest {
 
 export interface OneTimeTokenRequest {
   token: string;
+}
+
+export interface EmailVerificationRequest {
+  /** next は検証したあとに進む先。登録と同じく確認メールのリンクに載る（ADR 0053 決定 3）。 */
+  next?: string;
 }
 
 export interface PasswordResetRequest {

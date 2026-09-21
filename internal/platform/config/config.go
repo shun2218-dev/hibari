@@ -46,6 +46,9 @@ type Config struct {
 
 	// Mail は認証のメール（確認と再設定）の送り方（ADR 0053 決定 5）。
 	Mail MailConfig
+	// RequireVerifiedEmail は、email を検証していない利用者に chat を使わせないか（ADR 0053 決定 1）。
+	// 既定は true。false にできるのはメールが本当には届かない設定（MAIL_TRANSPORT=log）のときだけ（決定 4）。
+	RequireVerifiedEmail bool
 
 	// Storage は添付ファイルを置く S3 API のストレージ（ADR 0008 / 0013）。
 	Storage storage.Config
@@ -191,6 +194,17 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 
 	cfg.Mail = mailVar(&errs, required)
+
+	requireVerified, err := strconv.ParseBool(optional("AUTH_REQUIRE_VERIFIED_EMAIL", "true"))
+	switch {
+	case err != nil:
+		errs = append(errs, fmt.Errorf("AUTH_REQUIRE_VERIFIED_EMAIL: %w", err))
+	// 外してよい理由は「メールが届かないので検証できない」ことだけ。メールが届く設定で外すと、
+	// 本番で誤って外れたまま動くので、起動させない（ADR 0053 決定 4）。環境の名前ではなく、この理由そのものを条件にする。
+	case !requireVerified && cfg.Mail.Transport == MailTransportSMTP:
+		errs = append(errs, fmt.Errorf("AUTH_REQUIRE_VERIFIED_EMAIL: cannot be false when MAIL_TRANSPORT is %q", MailTransportSMTP))
+	}
+	cfg.RequireVerifiedEmail = requireVerified
 
 	cfg.Storage = storage.Config{
 		Endpoint:        required("S3_ENDPOINT"),
