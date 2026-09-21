@@ -13,6 +13,8 @@ type AccountMenuProps = {
   onOpenWorkspaceSettings?: () => void;
   onOpenSettings?: () => void;
   onLogout?: () => void;
+  /** 外を押す・Esc で閉じる。 */
+  onDismiss?: () => void;
 };
 
 /**
@@ -27,9 +29,10 @@ export function AccountMenu({
   onOpenWorkspaceSettings,
   onOpenSettings,
   onLogout,
+  onDismiss,
 }: AccountMenuProps) {
   return (
-    <Popover label="アカウント" className="top-14 right-3 w-58">
+    <Popover label="アカウント" className="top-14 right-3 w-58" onDismiss={onDismiss}>
       <div className="flex flex-col gap-0.5 px-2.5 pt-1.5 pb-2">
         <span className="text-base font-semibold text-text">{user.name}</span>
         <span className="font-mono text-2xs text-text-muted">@{user.handle}</span>

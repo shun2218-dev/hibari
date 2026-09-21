@@ -436,7 +436,7 @@ export function MessageItem({
         ))}
 
       {menuOpen && hasMenu && (
-        <Popover label="メッセージの操作" className="top-6 right-4 w-52">
+        <Popover label="メッセージの操作" className="top-6 right-4 w-52" onDismiss={onToggleMenu}>
           {copyLink && (
             <MenuItem icon={LinkIcon} onClick={copyLink.onClick}>
               {copyLink.label}
@@ -592,7 +592,7 @@ function Attachment({
         </IconButton>
       )}
       {menuOpen && onDelete && (
-        <Popover label="ファイルの操作" className="top-11 right-0 w-44">
+        <Popover label="ファイルの操作" className="top-11 right-0 w-44" onDismiss={() => onToggleMenu?.(attachment.id)}>
           <MenuItem icon={TrashIcon} onClick={() => onDelete(attachment.id)} danger>
             ファイルを削除
           </MenuItem>

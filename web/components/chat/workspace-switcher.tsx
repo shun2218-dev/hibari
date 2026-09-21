@@ -10,11 +10,13 @@ type WorkspaceSwitcherProps = {
   currentWorkspaceId: string;
   onSelect?: (workspaceId: string) => void;
   onCreate?: () => void;
+  /** 外を押す・Esc で閉じる。 */
+  onDismiss?: () => void;
 };
 
-export function WorkspaceSwitcher({ workspaces, currentWorkspaceId, onSelect, onCreate }: WorkspaceSwitcherProps) {
+export function WorkspaceSwitcher({ workspaces, currentWorkspaceId, onSelect, onCreate, onDismiss }: WorkspaceSwitcherProps) {
   return (
-    <Popover label="ワークスペースを切り替える" className="top-14 left-3 w-60">
+    <Popover label="ワークスペースを切り替える" className="top-14 left-3 w-60" onDismiss={onDismiss}>
       <p className="flex items-baseline gap-1.5 px-2.5 pt-1.5 pb-1">
         <span className="text-sm font-bold text-text">hibari</span>
         <span className="font-mono text-2xs text-text-muted">workspaces</span>
