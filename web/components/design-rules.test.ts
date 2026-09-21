@@ -65,4 +65,15 @@ describe("design rules", () => {
   it.each(chatFiles.map((file) => [path.relative(webRoot, file), file]))("%s embeds no HTML strings", (_name, file) => {
     expect(readFileSync(file, "utf8")).not.toMatch(/dangerouslySetInnerHTML|\.innerHTML\s*=/);
   });
+
+  // Lexical は 1.0 前で破壊的変更が続くので、import する場所を 1 つに限る（ADR 0052 決定 1）
+  const editorDir = path.join(webRoot, "components", "chat", "editor") + path.sep;
+  const libFiles = sourceFiles(path.join(webRoot, "lib"));
+
+  it.each([...files, ...libFiles].filter((file) => !file.startsWith(editorDir)).map((file) => [path.relative(webRoot, file), file]))(
+    "%s does not import Lexical outside components/chat/editor",
+    (_name, file) => {
+      expect(readFileSync(file, "utf8")).not.toMatch(/from "(lexical|@lexical\/[^"]+)"/);
+    },
+  );
 });
