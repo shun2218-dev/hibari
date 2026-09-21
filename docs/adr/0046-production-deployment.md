@@ -133,6 +133,19 @@ ADR 0008 の「本番は R2 が暫定の第一候補」を**本決まり**にす
 - Valkey が再起動すると presence が一斉に消える。数十秒で各クライアントの再送で戻るが、その間はオンラインの点が消える。
 - 独自ドメインの取得と更新が要る（`*.fly.dev` では成立しない）。
 
+## 追記: ドメインの取得（2026-09-22）
+
+- **ドメインは `hibari-chat.com`**（`hibari.com` は取得済みで取れなかった）。決定 2 のとおり `app.` / `api.` / `ui.` をこの下に置く。
+- **取得先は Cloudflare Registrar**（オーナーが比較を見て決定）。
+  - 更新の料金が原価で、上乗せがない（Squarespace Domains は `.com` の更新が年 $20）
+  - R2（決定 7）と同じアカウントにまとまる
+  - DNS のレコードの種類に制限がない（Squarespace の自前の DNS は種類に制限があるとされる）
+  - 引き換えに、**DNS は Cloudflare に固定される**（Registrar のドメインはほかのネームサーバーを使えない）。移るにはドメインごと移管する
+  - `.jp` は Cloudflare Registrar で取れなかったので、`.com` にした。`.com` は迷惑メールの判定でも不利になりにくい（確認メールが届かないと使い始められない。ADR 0053）
+- **Fly に向けるレコードは DNS only（Cloudflare のプロキシを通さない）。** 前段は Fly のプロキシだけにする。
+  Cloudflare を通すと Fly の証明書の自動発行とぶつかり、クライアントの IP の取り方（ADR 0017、`TRUSTED_PROXIES`）も変わる。
+- DNS のレコードの一覧と手順は `docs/deploy.md` の「ドメインと DNS」。
+
 ## 参考
 
 - https://developers.cloudflare.com/r2/pricing/
@@ -143,3 +156,4 @@ ADR 0008 の「本番は R2 が暫定の第一候補」を**本決まり**にす
 
 - 2026-09-20: 置き場所（Fly の 1 リージョン + R2）、DB と Redis を自前にすること、ドメインの分け方について
   オーナーの判断を取り、採用。デプロイの手順そのものは Phase 7 で書く。
+- 2026-09-22: ドメイン（`hibari-chat.com`）と取得先（Cloudflare Registrar）を追記。

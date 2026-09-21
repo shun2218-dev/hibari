@@ -28,9 +28,9 @@ Web クライアントの URL。メールのリンクの起点、WebSocket で�
 | 環境 | 値 |
 |---|---|
 | ローカル（compose） | `http://localhost:3000`（`make web`） |
-| 本番 | `https://app.<独自ドメイン>`（ドメインの取得は Phase 7。置き場所は ADR 0046） |
+| 本番 | `https://app.hibari-chat.com`（置き場所は ADR 0046。ドメインは下の「ドメインと DNS」） |
 
-- **Web と API は同じサイト（登録可能なドメインが同じ）に置く**（例: `app.hibari.example` と `api.hibari.example`）。Refresh Token の Cookie は `SameSite=Strict` なので、サイトが違うと refresh に載らない。
+- **Web と API は同じサイト（登録可能なドメインが同じ）に置く**（`app.hibari-chat.com` と `api.hibari-chat.com`）。Refresh Token の Cookie は `SameSite=Strict` なので、サイトが違うと refresh に載らない。
 - `*.vercel.app` や `*.fly.dev` はそれぞれがサイトの単位（Public Suffix List に載っている）なので、別のアプリどうしは同じサイトにならない。独自ドメインを使う。
 
 ## メール（ADR 0053）
@@ -51,21 +51,42 @@ Web クライアントの URL。メールのリンクの起点、WebSocket で�
 | `SMTP_PORT` | `465`（暗黙の TLS）。`587` にすると STARTTLS で送る |
 | `SMTP_USERNAME` | `resend` |
 | `SMTP_PASSWORD_FILE` | Resend の API キーを書いたファイルのパス（下の「API キーの渡し方」） |
-| `MAIL_FROM` | `hibari <noreply@mail.<独自ドメイン>>` |
+| `MAIL_FROM` | `hibari <noreply@mail.hibari-chat.com>` |
 
 - **TLS はポート番号で決める。** `465` と `2465` は接続した直後から TLS、それ以外は STARTTLS。STARTTLS を広告しないサーバーには送らない。
 - Resend の接続先とポートは [Resend Docs: Send emails with SMTP](https://resend.com/docs/send-with-smtp) で確かめた（2026-09-21）。
 
 ### Resend の準備
 
-1. Resend のアカウントを作り、**送信用のサブドメイン**（`mail.<独自ドメイン>`）を追加する。ルートのドメインから送らないのは、送信の評判を切り分けるため（Resend も推奨している）。
-2. Resend の画面の **Records** のタブに出るレコードを、**そのまま** DNS に足す。内容はドメインを作った時期で変わるので、ここに値は書かない。
-   [Resend Docs: Managing Domains](https://resend.com/docs/dashboard/domains/manage-domains) によると、2026-09 時点では次が出る。
-   - **SPF**: バウンスを受け取る MX と、`include:amazonses.com` を含む TXT
-   - **DKIM**: `resend._domainkey` で始まる名前の TXT（公開鍵）
-3. **DMARC** を足す（[Resend Docs: DMARC](https://resend.com/docs/dashboard/domains/dmarc)）。最初は監視だけにする: `_dmarc.<独自ドメイン>` の TXT に `v=DMARC1; p=none; rua=mailto:<受け取るアドレス>;`。
-   レポートで SPF と DKIM が通っていることを確かめてから `p=quarantine` に上げる。
-4. Resend の画面でドメインが Verified になったら、**送信だけ**の権限（Sending access）で、そのドメインに絞った API キーを作る。
+2026-09-21 に行った手順。作り直すときも同じ。
+
+1. Resend の **Domains → Add Domain** で、**送信用のサブドメイン** `mail.hibari-chat.com` を追加する。ルートのドメインから送らないのは、送信の評判を切り分けるため（Resend も推奨している）。
+   - Region は **Tokyo（`ap-northeast-1`）**。Custom Return-Path は既定の `send` のまま。
+   - **Tracking Subdomain は空のまま**にし、click tracking と open tracking を使わない（下の「トラッキングを使わない」）。
+2. DNS Records は **Auto configure**（Cloudflare にサインインして、そのときだけの許可で Resend がレコードを足す）で入れた。足されたのは次の 3 つで、どれも DNS only。
+   値は Resend がドメインごとに出すので、作り直すときは Resend の画面の値をそのまま使う。
+
+   | 種類 | 名前 | 内容 | 用途 |
+   |---|---|---|---|
+   | CNAME | `send.mail` | `send.forge.rmta.net` | Return-Path（バウンスの受け口と SPF）。中身は Resend 側で管理される |
+   | CNAME | `rsend.mail` | `rsend.forge.rmta.net` | Resend が管理する（用途は画面に出ない） |
+   | TXT | `resend._domainkey.mail` | `p=…`（公開鍵） | DKIM |
+
+   以前の Resend の案内（MX と `include:amazonses.com` の TXT を自分で置く形）とは違い、CNAME で Resend に任せる形になっていた。
+3. **DMARC** を足す。`_dmarc.hibari-chat.com` の TXT に `v=DMARC1; p=none; rua=mailto:<受け取るアドレス>`。
+   Cloudflare の **Email → DMARC Management** を有効にすると、レコードとレポートの受け取り先を Cloudflare が用意する。
+   `_dmarc` の TXT は 1 つだけにする（2 つあると DMARC が無効になる）。`mail.` にも同じ宣言が効く。
+   レポートで SPF と DKIM が通っていることを確かめてから `p=quarantine`、`p=reject` と上げる。
+4. Resend の画面でドメインが Verified になったら、**送信だけ**の権限（Sending access）で、`mail.hibari-chat.com` に絞った API キーを作る。
+
+#### トラッキングを使わない
+
+Resend の click tracking はメールの中のリンクを転送用の URL に書き換え、open tracking は見えない画像を入れる。どちらも使わない。
+
+- hibari のメールのリンクにはワンタイムトークン（`/verify-email?token=…`、`/reset-password?token=…`）が入る。業者の転送を通すと、トークン入りの URL が外に出る（CLAUDE.md。`/verify-email` を `no-referrer` にしているのと同じ理由）。
+- 送るのは確認と再設定の 2 種類だけで、開封やクリックを数える理由がない。
+- トラッキングが働くのは「ドメインの設定で有効」かつ「トラッキング用のサブドメインが Verified」のときだけ（[Resend Docs: Tracking](https://resend.com/docs/dashboard/domains/tracking)）。サブドメインを作らなければ働かない。
+  画面のチェックを外すときは、ドメインの **Configuration** のタブで行う（「New tracking subdomain」の画面はサブドメインを作る画面で、サブドメインが必須になる）。
 
 ### API キーの渡し方（Fly.io）
 
@@ -87,7 +108,25 @@ fly secrets set SMTP_PASSWORD="$(printf '%s' 're_xxxxxxxx' | base64)"
 
 ### 届いたことの確かめ方
 
-- 本番で登録し、確認メールが届くこと、迷惑メールに入らないことを確かめる。受け取った側でヘッダの `Authentication-Results` が `spf=pass` / `dkim=pass` / `dmarc=pass` になっていること。
+- 登録し、確認メールが届くこと、迷惑メールに入らないこと、リンクが書き換えられていないことを確かめる。
+- ヘッダの `spf=pass` / `dkim=pass` / `dmarc=pass` を見る。Gmail なら、PC のブラウザでメールを開き「︙ → メッセージのソースを表示」の上の表に出る。
+- Resend の **Emails** の画面に、送ったメールごとの状態（Delivered / Bounced）が出る。届かないときは、まずここで業者から相手のサーバーまで届いたかを切り分ける。
+- 2026-09-22 に、ローカルから下の手順で Gmail に送り、受信トレイに届き、SPF・DKIM・DMARC がすべて PASS、リンクもそのままだった（ADR 0053 の追記）。
+
+#### ローカルから本物のメールを送る
+
+本番にデプロイする前でも、compose の server を SMTP の設定にして、Resend 経由で送れる。
+
+1. Resend の API キーを `keys/resend_api_key` に置く（`keys/` は `.gitignore` 済みで、`/src/keys` に bind mount されている）。
+   ```bash
+   pbpaste > keys/resend_api_key && chmod 600 keys/resend_api_key
+   ```
+2. `compose.smtp.yaml` を重ねて server を起動し直す。`MAIL_TRANSPORT=smtp` と `AUTH_REQUIRE_VERIFIED_EMAIL=true` になる。
+   ```bash
+   docker compose -f compose.yaml -f compose.smtp.yaml up -d server
+   ```
+3. `http://localhost:3000/signup` で自分のアドレスで登録する。リンクは `http://localhost:3000/…` なので、開くのは PC のブラウザから。
+4. 終わったら戻す: `docker compose up -d server`
 - **送れなかったメールは失う**（数回だけ送り直す。ADR 0053 決定 6）。server のログの `mail queue: gave up` と `mail queue: dropped on shutdown` を見る。ログには宛先も本文も出さず、種類（`kind`）だけを出す。
 
 ### email の検証（`AUTH_REQUIRE_VERIFIED_EMAIL`）
@@ -105,14 +144,32 @@ email を検証するまで、chat の API と WebSocket は 403（`email-unveri
 
 | 役割 | 本番 | ローカル |
 |---|---|---|
-| Go サーバー（API / WebSocket） | Fly app（`nrt`）/ `api.<ドメイン>` | compose の `server`（Caddy の後ろ） |
-| Next.js | Fly app（`nrt`）/ `app.<ドメイン>` | ホストで `make web` |
-| Storybook | Fly app（`nrt`、静的 + `auto_stop_machines`）/ `ui.<ドメイン>` | ホスト |
+| Go サーバー（API / WebSocket） | Fly app（`nrt`）/ `api.hibari-chat.com` | compose の `server`（Caddy の後ろ） |
+| Next.js | Fly app（`nrt`）/ `app.hibari-chat.com` | ホストで `make web` |
+| Storybook | Fly app（`nrt`、静的 + `auto_stop_machines`）/ `ui.hibari-chat.com` | ホスト |
 | Postgres | Fly app + ボリューム（自前） | compose の `postgres` |
 | Valkey | Fly app（自前・永続化なし） | compose の `redis` |
 | オブジェクトストレージ | Cloudflare R2 | compose の `minio` |
 
 3 つのサブドメインを同じ登録可能ドメインに置くのは、Refresh Token の Cookie（`SameSite=Strict`）を載せるため（上の `APP_BASE_URL`）。
+
+## ドメインと DNS（ADR 0046 の追記）
+
+- ドメインは **`hibari-chat.com`**。**Cloudflare Registrar** で取得し、DNS も Cloudflare（Registrar のドメインは Cloudflare のネームサーバーでしか使えない）。
+- サブドメインは、Cloudflare の **DNS → Records → Add record** でレコードを足すだけ。Name には `api` のように左側だけを入れる（`.hibari-chat.com` は自動で付く）。
+
+| 名前 | 種類 | 向け先 | 状態 |
+|---|---|---|---|
+| `app` / `api` / `ui` | A と AAAA（または `<アプリ名>.fly.dev` への CNAME） | それぞれの Fly app | Phase 7 のデプロイで足す |
+| `send.mail` / `rsend.mail` / `resend._domainkey.mail` | CNAME / CNAME / TXT | Resend | 足した（上の「Resend の準備」） |
+| `_dmarc` | TXT | — | 足した（`p=none`） |
+
+### Fly app に向ける手順（`app` / `api` / `ui`）
+
+1. `fly certs add api.hibari-chat.com -a <アプリ名>` で証明書を申し込み、出てきた値（A / AAAA か CNAME）を Cloudflare に足す。
+2. **Proxy status は DNS only（灰色の雲）にする。** Cloudflare のプロキシ（オレンジの雲）を通すと、Fly の証明書の自動発行とぶつかる。
+   また、前段が Fly のプロキシである前提（`TRUSTED_PROXIES`。上の節と ADR 0017）が崩れ、クライアントの IP の取り方が変わる。
+3. `fly certs check api.hibari-chat.com -a <アプリ名>` で発行されたことを確かめる。
 
 ## ストレージ（ADR 0008 / 0046）
 

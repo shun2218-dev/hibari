@@ -167,3 +167,16 @@ SendGrid は無料プランが 2025-05 に終わり、ほかは今の規模で�
 - **戻り先（`next`）は、登録（`POST /auth/register`）と再送（`POST /auth/verify-email/request`）のボディで受け取る。** 再送のボディは省略できる。
   アプリの中のパス（`/` で始まり、`//` と `/\` で始まらず、制御文字を含まず、スキームとホストを持たない。512 バイトまで）でなければ 422（`next` のフィールドの検証エラー）にする。
   黙って捨てずに断るのは、戻れないことに利用者も開発者も気づけるようにするため。確認のリンクには `&next=` としてエスケープして載せる。
+
+## 追記: 本物のメールが届くことの確認（2026-09-22）
+
+- `mail.hibari-chat.com` を Resend（東京リージョン）に登録し、ローカルの compose を SMTP の設定（`compose.smtp.yaml`）にして、Gmail のアドレスで登録した。
+  - 受信トレイに届いた（迷惑メールではない）。送信から 1 秒で届いた
+  - ヘッダは **SPF・DKIM（`mail.hibari-chat.com`）・DMARC がすべて PASS**
+  - メールの中のリンクは `/verify-email?token=…` のままで、書き換えられていない（トラッキングを使っていない）
+  - リンクを開いて確認でき、`email_verified_at` が入った
+- **Resend の DNS のレコードは、決定 5 の追記のときの公式の案内（MX と SPF の TXT）と違い、CNAME 2 つと DKIM の TXT 1 つだった**（`send.mail` と `rsend.mail` が Resend のホストへの CNAME）。バウンスと SPF の中身は Resend 側で管理される。`docs/deploy.md` を実際の形に直した。
+- Resend の東京リージョンは、裏で Amazon SES（`ap-northeast-1`）から送っている（Message-ID で分かる）。
+- **Resend のトラッキング（click / open）は使わない。** リンクを業者の転送用の URL に書き換えると、ワンタイムトークン入りの URL が外に出るため。トラッキング用のサブドメインを作らなければ働かない（`docs/deploy.md`）。
+- **日本の携帯キャリアのアドレスでは試していない**（手元にアドレスがないため）。オーナーの判断で、届く前提で進める（2026-09-22）。
+  届かないという報告があれば、Resend の Emails の画面で Delivered / Bounced を見て、業者の側か受け取り側の判定かを切り分ける。
