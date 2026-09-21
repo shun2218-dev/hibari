@@ -56,6 +56,7 @@
 | [0047](0047-storybook.md) | `/dev/preview` を Storybook に移す（Phase 6.7.6。story id を PNG のパスにし、撮影と 1 対 1 の検査も移す） | 採用 |
 | [0048](0048-resizable-panes.md) | パネルの幅はユーザーが変えられるようにし、入力欄は中身に合わせて 16 行まで伸ばす（大きさの正本は globals.css） | 採用 |
 | [0049](0049-away-and-custom-status.md) | 離席とカスタムステータス（Phase 6.8。自動は Redis、本人の設定は DB。合わせるのは読む側） | 採用 |
+| [0050](0050-profile-card.md) | プロフィールのカード（Phase 6.9。email は 1 人分の API だけが返し、管理の入口は既存の写しで決める） | 採用 |
 
 ## テンプレート
 
