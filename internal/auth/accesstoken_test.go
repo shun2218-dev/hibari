@@ -41,7 +41,7 @@ func TestAccessTokenIssueAndVerify(t *testing.T) {
 	ids := id.NewGenerator(clk, rand.Reader)
 	userID, sid := ids.New(), ids.New()
 
-	raw, exp, err := iss.Issue(userID, sid)
+	raw, exp, err := iss.Issue(userID, sid, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,18 +61,18 @@ func TestAccessTokenIssueAndVerify(t *testing.T) {
 		t.Errorf("kid = %q, want %q", kid, iss.PublicKey().ID)
 	}
 
-	// ロールや権限のクレームを入れていないこと（CLAUDE.md）。
+	// ロールや権限のクレームを入れていないこと（CLAUDE.md）。email_verified だけは入れる（ADR 0053 決定 2）。
 	var claims map[string]any
 	if err := json.Unmarshal(msg.Payload(), &claims); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"sub", "sid", "jti", "iat", "exp", "iss", "aud"} {
+	for _, k := range []string{"sub", "sid", "email_verified", "jti", "iat", "exp", "iss", "aud"} {
 		if _, ok := claims[k]; !ok {
 			t.Errorf("claim %q is missing", k)
 		}
 	}
-	if len(claims) != 7 {
-		t.Errorf("claims = %v, want exactly sub/sid/jti/iat/exp/iss/aud", claims)
+	if len(claims) != 8 {
+		t.Errorf("claims = %v, want exactly sub/sid/email_verified/jti/iat/exp/iss/aud", claims)
 	}
 
 	v := authn.NewVerifier([]authn.PublicKey{iss.PublicKey()}, "hibari", "hibari-api", clk)
@@ -80,8 +80,15 @@ func TestAccessTokenIssueAndVerify(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Verify() error = %v", err)
 	}
-	if got.UserID != userID || got.SessionID != sid {
-		t.Fatalf("Verify() = %+v, want user %s sid %s", got, userID, sid)
+	if got.UserID != userID || got.SessionID != sid || !got.EmailVerified {
+		t.Fatalf("Verify() = %+v, want user %s sid %s verified", got, userID, sid)
+	}
+	unverified, _, err := iss.Issue(userID, sid, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := v.Verify(unverified); err != nil || got.EmailVerified {
+		t.Fatalf("Verify(unverified) = %+v, %v; want EmailVerified false", got, err)
 	}
 
 	clk.Advance(15*time.Minute - time.Second)

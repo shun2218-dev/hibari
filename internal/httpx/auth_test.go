@@ -52,6 +52,8 @@ type apiOptions struct {
 	auth    []authtest.Option
 	ws      httpx.WSConfig
 	trusted httpx.TrustedProxies
+	// requireVerifiedEmail は本番と同じく email の検証を求めるか。
+	requireVerifiedEmail bool
 }
 
 // apiOption は newAPI の組み立てを変える。
@@ -59,6 +61,11 @@ type apiOption func(*apiOptions)
 
 func withAuthOptions(opts ...authtest.Option) apiOption {
 	return func(o *apiOptions) { o.auth = append(o.auth, opts...) }
+}
+
+// withVerifiedEmailRequired は本番と同じく、email を検証していない利用者に chat を使わせない（ADR 0053 決定 1）。
+func withVerifiedEmailRequired() apiOption {
+	return func(o *apiOptions) { o.requireVerifiedEmail = true }
 }
 
 func withWSConfig(cfg httpx.WSConfig) apiOption {
@@ -132,14 +139,17 @@ func startInstance(t *testing.T, env *authtest.Env, o apiOptions) *apiClient {
 	}()
 
 	h := httpx.NewRouter(httpx.Deps{
-		Logger:              logger,
-		Clock:               env.Clock,
-		IDs:                 id.NewGenerator(env.Clock, rand.Reader),
-		TrustedProxies:      o.trusted,
-		Auth:                env.Service,
-		Verifier:            env.Verifier,
-		JWKS:                jwks,
-		RefreshCookieSecure: true,
+		Logger:         logger,
+		Clock:          env.Clock,
+		IDs:            id.NewGenerator(env.Clock, rand.Reader),
+		TrustedProxies: o.trusted,
+		Auth:           env.Service,
+		Verifier:       env.Verifier,
+		// ほとんどのテストは登録した直後の（未検証の）利用者で chat を使うので、開発環境と同じく検証を外す。
+		// 塞ぐことそのものは withVerifiedEmailRequired を付けたテストで確かめる（ADR 0053）。
+		AllowUnverifiedEmail: !o.requireVerifiedEmail,
+		JWKS:                 jwks,
+		RefreshCookieSecure:  true,
 		// auth と同じ DB・時計で組み立てる。chat の統合テストは、auth で登録したユーザーを使う。
 		Chat: chat.NewService(chat.Deps{
 			DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Random: rand.Reader, Logger: logger,

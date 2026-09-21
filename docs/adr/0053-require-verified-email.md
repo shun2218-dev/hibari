@@ -154,3 +154,16 @@ SendGrid は無料プランが 2025-05 に終わり、ほかは今の規模で�
   To / Cc / Bcc の宛先は 1 件ずつ数え、日の区切りは UTC の 0 時（日本時間の 9 時）。
   hibari は 1 通に宛先を 1 つしか入れないので、「1 日に送れる確認と再設定のメールの合計が 100 通」になる。
 - **日本の携帯キャリアのメールに届くか**は、どの業者も公式の情報がない。ドメインを取った後に、実物で送って確かめる（DoD の「本番の設定で、確認メールが実際に届く」）。
+
+## 追記: 塞ぐ部分の実装（構築順 3。2026-09-21）
+
+- **止めるのは `httpx` の `requireChatUser` の 1 か所。** `authn.Require` のすぐ内側に `authn.RequireVerifiedEmail` を重ね、chat のルートの登録（`registerChatRoutes`）と `POST /api/v1/ws/ticket` の両方がこれを使う。
+  chat のルートは 1 つの登録の関数を通るので、足した API も自動で止まる。`/users/me/presence` のように auth の API と同じパスの下に置いた chat の API も止まる。
+- **`email_verified` のクレームがないトークンは未検証として読む**（止める側に倒す）。クレームを足す前に発行されたトークン（最大 15 分）もこれで読める。真偽値でなければ不正なトークン（401）。
+- **refresh のたびに DB から検証の状態を読み直す。** Refresh Token を行ロックで読むクエリ（`GetRefreshTokenForUpdate`）で `users.email_verified_at` も一緒に読むので、問い合わせは増えない。
+- ws-ticket にも `email_verified` を載せ、消費した `Identity` に戻す（今は WebSocket の中で使わないが、`Identity` を欠けさせないため）。
+- **`httpx.Deps` の項目は「外す」の向き（`AllowUnverifiedEmail`）にした。** ゼロ値（設定し忘れ）が止める側になるようにするため。環境変数は決定 4 のとおり `AUTH_REQUIRE_VERIFIED_EMAIL`（既定 `true`）。
+  httpx のテストは開発環境と同じく外して組み立て、止めることそのものは `withVerifiedEmailRequired` を付けたテストで確かめる。
+- **戻り先（`next`）は、登録（`POST /auth/register`）と再送（`POST /auth/verify-email/request`）のボディで受け取る。** 再送のボディは省略できる。
+  アプリの中のパス（`/` で始まり、`//` と `/\` で始まらず、制御文字を含まず、スキームとホストを持たない。512 バイトまで）でなければ 422（`next` のフィールドの検証エラー）にする。
+  黙って捨てずに断るのは、戻れないことに利用者も開発者も気づけるようにするため。確認のリンクには `&next=` としてエスケープして載せる。

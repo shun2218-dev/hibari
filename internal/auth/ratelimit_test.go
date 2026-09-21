@@ -106,10 +106,10 @@ func TestPasswordResetRateLimitPerAccount(t *testing.T) {
 func TestEmailVerificationRateLimitPerUser(t *testing.T) {
 	env := newLimitedEnv(t, 1, func(l *auth.RateLimits, r ratelimit.Rule) { l.EmailVerificationPerUser = r })
 	u, _, _ := env.Register(t)
-	if err := env.Service.RequestEmailVerification(t.Context(), u.ID); err != nil {
+	if err := env.Service.RequestEmailVerification(t.Context(), u.ID, ""); err != nil {
 		t.Fatal(err)
 	}
-	expectRateLimited(t, env.Service.RequestEmailVerification(t.Context(), u.ID))
+	expectRateLimited(t, env.Service.RequestEmailVerification(t.Context(), u.ID, ""))
 }
 
 type failingLimiter struct{}

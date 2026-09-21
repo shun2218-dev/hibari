@@ -8,7 +8,9 @@ VALUES (sqlc.arg(id), sqlc.arg(user_id), sqlc.arg(family_id), sqlc.arg(token_has
 -- 同じトークンで同時に refresh されても、2 本目は 1 本目のコミットを待ってから
 -- 「rotated で失効済み」の状態を読むので、必ず再利用として検知される。
 -- 退会済みのユーザーのトークンは見つからないものとして扱う。
-SELECT rt.id, rt.user_id, rt.family_id, rt.expires_at, rt.revoked_at, rt.revoked_reason
+-- email の検証の状態も一緒に読む。新しい Access Token の email_verified に入れるため（ADR 0053 決定 2）。
+SELECT rt.id, rt.user_id, rt.family_id, rt.expires_at, rt.revoked_at, rt.revoked_reason,
+       (u.email_verified_at IS NOT NULL)::boolean AS email_verified
   FROM refresh_tokens rt
   JOIN users u ON u.id = rt.user_id
  WHERE rt.token_hash = sqlc.arg(token_hash)

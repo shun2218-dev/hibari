@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -37,7 +38,11 @@ const revokedPasswordReset = "password_reset"
 var ErrInvalidOneTimeToken = errors.New("auth: invalid or expired one-time token")
 
 // RequestEmailVerification は userID の email に確認メールを送り直す。確認済みなら何もしない。
-func (s *Service) RequestEmailVerification(ctx context.Context, userID ulid.ULID) error {
+// next は検証のあとに Web が進む先（アプリの中のパス。空なら載せない。ADR 0053 決定 3）。
+func (s *Service) RequestEmailVerification(ctx context.Context, userID ulid.ULID, next string) error {
+	if reason := nextPathProblem(next); reason != "" {
+		return &ValidationError{Fields: []FieldError{{Field: "next", Reason: reason}}}
+	}
 	u, err := store.New(s.db).GetActiveUserByID(ctx, userID)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -51,15 +56,23 @@ func (s *Service) RequestEmailVerification(ctx context.Context, userID ulid.ULID
 	if err := s.checkRateLimits(ctx, limitKey{s.limits.EmailVerificationPerUser, u.ID.String()}); err != nil {
 		return err
 	}
-	return s.sendEmailVerification(ctx, u.ID, u.Email)
+	return s.sendEmailVerification(ctx, u.ID, u.Email, next)
 }
 
-func (s *Service) sendEmailVerification(ctx context.Context, userID ulid.ULID, email string) error {
+// sendEmailVerification は確認メールを送る。next は検証してから進む先で、確認のリンクに載せる。
+//
+// 戻り先をブラウザに覚えさせずリンクに載せるのは、メールを別の端末で開いても戻れるようにするため（ADR 0053 決定 3）。
+// next は呼び出し側で検証済みのものだけを渡す。
+func (s *Service) sendEmailVerification(ctx context.Context, userID ulid.ULID, email, next string) error {
 	raw, err := s.issueOneTimeToken(ctx, userID, purposeEmailVerify, EmailVerificationTTL)
 	if err != nil {
 		return err
 	}
-	if err := s.mailer.SendEmailVerification(ctx, email, s.link("/verify-email", raw)); err != nil {
+	link := s.link("/verify-email", raw)
+	if next != "" {
+		link += "&next=" + url.QueryEscape(next)
+	}
+	if err := s.mailer.SendEmailVerification(ctx, email, link); err != nil {
 		return fmt.Errorf("send email verification: %w", err)
 	}
 	return nil

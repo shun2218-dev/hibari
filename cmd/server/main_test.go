@@ -97,6 +97,8 @@ func TestRunServesHealthzAndShutsDown(t *testing.T) {
 
 		"JWT_PRIVATE_KEY_FILE": writeSigningKey(t),
 		"MAIL_TRANSPORT":       "log",
+		// 登録した直後の（未検証の）利用者で WebSocket を張るので、開発環境（compose）と同じく検証を外す（ADR 0053 決定 4）。
+		"AUTH_REQUIRE_VERIFIED_EMAIL": "false",
 	}
 	s3 := testenv.S3(t)
 	env["S3_ENDPOINT"], env["S3_BUCKET"], env["S3_ACCESS_KEY_ID"], env["S3_SECRET_ACCESS_KEY"] = s3.Endpoint, s3.Bucket, s3.AccessKeyID, s3.SecretAccessKey

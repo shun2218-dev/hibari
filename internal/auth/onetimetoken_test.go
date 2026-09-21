@@ -2,6 +2,7 @@ package auth_test
 
 import (
 	"errors"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -72,7 +73,7 @@ func TestVerifyEmailRejects(t *testing.T) {
 			setup: func(t *testing.T, env *authtest.Env) string {
 				u, _, in := env.Register(t)
 				old := env.Mailer.Last(t, in.Email).Token()
-				if err := env.Service.RequestEmailVerification(t.Context(), u.ID); err != nil {
+				if err := env.Service.RequestEmailVerification(t.Context(), u.ID, ""); err != nil {
 					t.Fatal(err)
 				}
 				return old
@@ -123,7 +124,7 @@ func TestRequestEmailVerification(t *testing.T) {
 	env := authtest.New(t)
 	u, _, in := env.Register(t)
 
-	if err := env.Service.RequestEmailVerification(t.Context(), u.ID); err != nil {
+	if err := env.Service.RequestEmailVerification(t.Context(), u.ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := len(env.Mailer.Sent(in.Email)); got != 2 {
@@ -134,13 +135,13 @@ func TestRequestEmailVerification(t *testing.T) {
 	}
 
 	// 確認済みなら何も送らない。
-	if err := env.Service.RequestEmailVerification(t.Context(), u.ID); err != nil {
+	if err := env.Service.RequestEmailVerification(t.Context(), u.ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := len(env.Mailer.Sent(in.Email)); got != 2 {
 		t.Fatalf("mails = %d, want no mail for a verified user", got)
 	}
-	if err := env.Service.RequestEmailVerification(t.Context(), env.IDs.New()); !errors.Is(err, auth.ErrUserNotFound) {
+	if err := env.Service.RequestEmailVerification(t.Context(), env.IDs.New(), ""); !errors.Is(err, auth.ErrUserNotFound) {
 		t.Fatalf("RequestEmailVerification(unknown) error = %v", err)
 	}
 }
@@ -284,4 +285,70 @@ func TestPasswordResetTokenLifetime(t *testing.T) {
 	if err := env.Service.ResetPassword(t.Context(), newer, "a brand new passphrase"); err != nil {
 		t.Fatalf("ResetPassword(newer) error = %v", err)
 	}
+}
+
+// TestEmailVerificationLinkCarriesNext は、確認メールのリンクに戻り先を載せることを確かめる（ADR 0053 決定 3）。
+// 別の端末でメールを開いても招待の画面へ戻れるように、ブラウザではなくリンクに持たせる。
+func TestEmailVerificationLinkCarriesNext(t *testing.T) {
+	const next = "/invite/abc?from=mail"
+
+	t.Run("register", func(t *testing.T) {
+		env := authtest.New(t)
+		in := env.NewRegisterInput()
+		in.Next = next
+		if _, _, err := env.Service.Register(t.Context(), in, auth.Client{}); err != nil {
+			t.Fatal(err)
+		}
+		if got := nextOf(t, env.Mailer.Last(t, in.Email)); got != next {
+			t.Fatalf("next in link = %q, want %q", got, next)
+		}
+	})
+
+	t.Run("resend", func(t *testing.T) {
+		env := authtest.New(t)
+		u, _, in := env.Register(t)
+		if got := nextOf(t, env.Mailer.Last(t, in.Email)); got != "" {
+			t.Fatalf("next in link without next = %q, want none", got)
+		}
+		if err := env.Service.RequestEmailVerification(t.Context(), u.ID, next); err != nil {
+			t.Fatal(err)
+		}
+		mail := env.Mailer.Last(t, in.Email)
+		if got := nextOf(t, mail); got != next {
+			t.Fatalf("next in link = %q, want %q", got, next)
+		}
+		// 戻り先を載せても、トークンはそのまま読める。
+		if err := env.Service.VerifyEmail(t.Context(), mail.Token()); err != nil {
+			t.Fatalf("VerifyEmail() error = %v", err)
+		}
+	})
+
+	t.Run("rejects a path outside the app", func(t *testing.T) {
+		env := authtest.New(t)
+		in := env.NewRegisterInput()
+		in.Next = "//evil.example/"
+		_, _, err := env.Service.Register(t.Context(), in, auth.Client{})
+		var verr *auth.ValidationError
+		if !errors.As(err, &verr) || len(verr.Fields) != 1 || verr.Fields[0].Field != "next" {
+			t.Fatalf("Register() error = %v, want a validation error on next", err)
+		}
+		if sent := env.Mailer.Sent(in.Email); len(sent) != 0 {
+			t.Fatalf("mails = %+v, want none", sent)
+		}
+
+		u, _, _ := env.Register(t)
+		err = env.Service.RequestEmailVerification(t.Context(), u.ID, "https://evil.example/")
+		if !errors.As(err, &verr) || verr.Fields[0].Field != "next" {
+			t.Fatalf("RequestEmailVerification() error = %v, want a validation error on next", err)
+		}
+	})
+}
+
+func nextOf(t *testing.T, m authtest.Mail) string {
+	t.Helper()
+	u, err := url.Parse(m.Link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.Query().Get("next")
 }

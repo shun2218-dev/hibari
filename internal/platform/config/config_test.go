@@ -71,6 +71,8 @@ func TestLoad(t *testing.T) {
 				RefreshCookieSecure: true,
 				AppBaseURL:          &url.URL{Scheme: "http", Host: "localhost:3000"},
 				Mail:                config.MailConfig{Transport: config.MailTransportLog},
+				// 既定は検証を求める（ADR 0053 決定 4）。
+				RequireVerifiedEmail: true,
 
 				Storage:                storage.Config{Endpoint: "http://minio:9000", Region: "us-east-1", Bucket: "hibari", AccessKeyID: "id", SecretAccessKey: "secret"},
 				AttachmentMaxBytes:     25 << 20,
@@ -86,7 +88,7 @@ func TestLoad(t *testing.T) {
 				"APP_BASE_URL", "https://hibari.example/app",
 				"S3_PUBLIC_ENDPOINT", "http://localhost:9000", "S3_REGION", "auto", "S3_USE_PATH_STYLE", "true",
 				"ATTACHMENT_MAX_BYTES", "1048576", "ATTACHMENT_ALLOWED_TYPES", "image/png, application/octet-stream",
-				"TRUSTED_PROXIES", "172.16.0.0/12, fdaa::/16,203.0.113.7/32"),
+				"TRUSTED_PROXIES", "172.16.0.0/12, fdaa::/16,203.0.113.7/32", "AUTH_REQUIRE_VERIFIED_EMAIL", "false"),
 			want: config.Config{
 				HTTPAddr:        ":9090",
 				DatabaseURL:     "postgres://localhost/hibari",
@@ -104,6 +106,8 @@ func TestLoad(t *testing.T) {
 					netip.MustParsePrefix("172.16.0.0/12"), netip.MustParsePrefix("fdaa::/16"), netip.MustParsePrefix("203.0.113.7/32"),
 				},
 				Mail: config.MailConfig{Transport: config.MailTransportLog},
+				// MAIL_TRANSPORT=log なので外せる。
+				RequireVerifiedEmail: false,
 
 				Storage: storage.Config{
 					Endpoint: "http://minio:9000", PublicEndpoint: "http://localhost:9000", Region: "auto", Bucket: "hibari",
@@ -142,6 +146,18 @@ func TestLoad(t *testing.T) {
 			name:    "invalid smtp port and from",
 			env:     with("MAIL_TRANSPORT", "smtp", "SMTP_HOST", "smtp.resend.com", "SMTP_PORT", "smtps", "SMTP_USERNAME", "resend", "SMTP_PASSWORD_FILE", "/run/secrets/smtp", "MAIL_FROM", "hibari"),
 			wantErr: []string{`SMTP_PORT: must be a port number, got "smtps"`, "MAIL_FROM"},
+		},
+		{
+			name:    "invalid require verified email",
+			env:     with("AUTH_REQUIRE_VERIFIED_EMAIL", "no"),
+			wantErr: []string{"AUTH_REQUIRE_VERIFIED_EMAIL"},
+		},
+		{
+			// メールが本当に届く設定で検証を外すと、本番で誤って外れたまま動くので起動しない（ADR 0053 決定 4）。
+			name: "verified email cannot be skipped with smtp",
+			env: with("MAIL_TRANSPORT", "smtp", "SMTP_HOST", "smtp.resend.com", "SMTP_PORT", "465", "SMTP_USERNAME", "resend",
+				"SMTP_PASSWORD_FILE", "/run/secrets/smtp", "MAIL_FROM", "noreply@mail.example.com", "AUTH_REQUIRE_VERIFIED_EMAIL", "false"),
+			wantErr: []string{`AUTH_REQUIRE_VERIFIED_EMAIL: cannot be false when MAIL_TRANSPORT is "smtp"`},
 		},
 		{
 			name:    "invalid path style",
@@ -266,6 +282,9 @@ func TestLoadSMTP(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got.Mail, want) {
 				t.Fatalf("Mail = %+v, want %+v", got.Mail, want)
+			}
+			if !got.RequireVerifiedEmail {
+				t.Fatal("RequireVerifiedEmail = false, want true by default with smtp")
 			}
 		})
 	}

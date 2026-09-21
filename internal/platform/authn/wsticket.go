@@ -43,8 +43,9 @@ func wsTicketKey(ticket string) string {
 
 // wsTicketValue は Redis に保存する値。
 type wsTicketValue struct {
-	UserID    ulid.ULID `json:"user_id"`
-	SessionID ulid.ULID `json:"sid"`
+	UserID        ulid.ULID `json:"user_id"`
+	SessionID     ulid.ULID `json:"sid"`
+	EmailVerified bool      `json:"email_verified,omitzero"`
 }
 
 // Issue は id の ws-ticket を発行する。

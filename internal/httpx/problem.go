@@ -46,6 +46,7 @@ const (
 	problemValidationError       problemType = "validation-error"
 	problemUnauthenticated       problemType = "unauthenticated"
 	problemWSTicketInvalid       problemType = "ws-ticket-invalid"
+	problemEmailUnverified       problemType = "email-unverified"
 )
 
 // problem は RFC 9457 の Problem Details。
@@ -180,4 +181,12 @@ func writeUnauthorized(w http.ResponseWriter, r *http.Request, err error) {
 		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 	}
 	writeProblem(w, r, problem{Type: problemUnauthenticated, Title: "Authentication required", Status: http.StatusUnauthorized})
+}
+
+// writeEmailUnverified は email を検証していない利用者を止めたことを返す（authn.RequireVerifiedEmail の ForbiddenFunc。ADR 0053 決定 1）。
+//
+// 401 ではなく 403 にするのは、トークンは正しく、refresh しても（検証するまでは）通らないため。
+// type を分けるのは、Web が普通の 403（権限がない）と区別して「確認メールを送りました」の画面を出すため。
+func writeEmailUnverified(w http.ResponseWriter, r *http.Request, _ error) {
+	writeProblem(w, r, problem{Type: problemEmailUnverified, Title: "Verify your email address to continue", Status: http.StatusForbidden})
 }

@@ -184,7 +184,8 @@ func (s *Service) Register(ctx context.Context, in RegisterInput, c Client) (Use
 	if err != nil {
 		return User{}, Session{}, createUserError(err)
 	}
-	sess, err := s.startSession(ctx, q, u.ID, s.ids.New(), nil, c, now)
+	// 登録した直後は必ず未検証。検証を済ませたら、Web は refresh で検証済みのトークンを取り直す（ADR 0053 決定 2）。
+	sess, err := s.startSession(ctx, q, u.ID, s.ids.New(), nil, false, c, now)
 	if err != nil {
 		return User{}, Session{}, err
 	}
@@ -194,7 +195,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput, c Client) (Use
 	}
 
 	// 確認メールを送れなくても登録は成功させる。利用者は画面から再送できる。
-	if err := s.sendEmailVerification(ctx, u.ID, u.Email); err != nil {
+	if err := s.sendEmailVerification(ctx, u.ID, u.Email, in.Next); err != nil {
 		s.logger.ErrorContext(ctx, "send email verification after register failed",
 			slog.String("user_id", u.ID.String()), slog.Any("error", err))
 	}
@@ -250,7 +251,7 @@ func (s *Service) Login(ctx context.Context, email, password string, c Client) (
 		return User{}, Session{}, ErrInvalidCredentials
 	}
 
-	sess, err := s.startSession(ctx, q, u.ID, s.ids.New(), nil, c, s.clock.Now())
+	sess, err := s.startSession(ctx, q, u.ID, s.ids.New(), nil, u.EmailVerifiedAt != nil, c, s.clock.Now())
 	if err != nil {
 		return User{}, Session{}, err
 	}
@@ -298,7 +299,8 @@ func (s *Service) Refresh(ctx context.Context, rawToken string, c Client) (Sessi
 	if err := q.MarkRefreshTokenRotated(ctx, store.MarkRefreshTokenRotatedParams{ID: rt.ID, Now: now}); err != nil {
 		return Session{}, fmt.Errorf("mark rotated: %w", err)
 	}
-	sess, err := s.startSession(ctx, q, rt.UserID, rt.FamilyID, &rt.ID, c, now)
+	// 検証の状態は refresh のたびに DB から読み直す。検証した後の refresh で、chat を使えるトークンになる（ADR 0053 決定 2）。
+	sess, err := s.startSession(ctx, q, rt.UserID, rt.FamilyID, &rt.ID, rt.EmailVerified, c, now)
 	if err != nil {
 		return Session{}, err
 	}
@@ -384,7 +386,8 @@ func (s *Service) Me(ctx context.Context, userID ulid.ULID) (User, error) {
 }
 
 // startSession は familyID のセッションに新しい Refresh Token を保存し、Access Token と組にして返す。
-func (s *Service) startSession(ctx context.Context, q *store.Queries, userID, familyID ulid.ULID, rotatedFrom *ulid.ULID, c Client, now time.Time) (Session, error) {
+// emailVerified は Access Token の email_verified に入れる値（ADR 0053 決定 2）。
+func (s *Service) startSession(ctx context.Context, q *store.Queries, userID, familyID ulid.ULID, rotatedFrom *ulid.ULID, emailVerified bool, c Client, now time.Time) (Session, error) {
 	raw, hash, err := newOpaqueToken(s.random)
 	if err != nil {
 		return Session{}, err
@@ -404,7 +407,7 @@ func (s *Service) startSession(ctx context.Context, q *store.Queries, userID, fa
 		return Session{}, fmt.Errorf("create refresh token: %w", err)
 	}
 
-	access, accessExp, err := s.accessTokens.Issue(userID, familyID)
+	access, accessExp, err := s.accessTokens.Issue(userID, familyID, emailVerified)
 	if err != nil {
 		return Session{}, err
 	}

@@ -78,7 +78,7 @@ var tsEnums = []tsEnum{
 		problemHandleTaken, problemEmailTaken, problemAvatarNotUploaded, problemAvatarMismatch,
 		problemInviteInvalid, problemInviteExpired, problemInviteExhausted, problemOwnerMustTransfer,
 		problemRoomNameTaken, problemUserNotInWorkspace, problemMessageDeleted,
-		problemAttachmentNotUploaded, problemAttachmentMismatch, problemWSTicketInvalid),
+		problemAttachmentNotUploaded, problemAttachmentMismatch, problemWSTicketInvalid, problemEmailUnverified),
 	enumOf("ClientMessageType", clientSubscribe, clientUnsubscribe, clientTyping, clientActivity, clientPing),
 	enumOf("AckError", ackInvalidMessage, ackNotFound, ackNotSubscribed, ackForbidden, ackTooManySubscriptions, ackInternal),
 }
@@ -105,6 +105,7 @@ var tsDecls = []tsDecl{
 	request[loginRequest]("LoginRequest"),
 	request[refreshTokenRequest]("RefreshTokenRequest"),
 	request[oneTimeTokenRequest]("OneTimeTokenRequest"),
+	request[emailVerificationRequest]("EmailVerificationRequest"),
 	request[passwordResetRequest]("PasswordResetRequest"),
 	request[passwordResetConfirmRequest]("PasswordResetConfirmRequest"),
 	response[tokenResponse]("TokenResponse"),

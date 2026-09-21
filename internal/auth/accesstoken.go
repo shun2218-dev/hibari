@@ -97,9 +97,10 @@ func (i *AccessTokenIssuer) PublicKey() authn.PublicKey {
 
 // Issue は userID のセッション sid に対する Access Token を発行する。
 //
-// クレームは sub / sid / jti / iat / exp / iss / aud だけ。ロールや権限は入れない
+// クレームは sub / sid / email_verified / jti / iat / exp / iss / aud だけ。ロールや権限は入れない
 // （JWT は失効できないので、入れると権限の変更が有効期限まで反映されなくなる。CLAUDE.md）。
-func (i *AccessTokenIssuer) Issue(userID, sid ulid.ULID) (string, time.Time, error) {
+// email_verified は例外として入れる。検証は取り上げられないので、古いトークンは止める側にしか間違えない（ADR 0053 決定 2）。
+func (i *AccessTokenIssuer) Issue(userID, sid ulid.ULID, emailVerified bool) (string, time.Time, error) {
 	now := i.clock.Now()
 	exp := now.Add(AccessTokenTTL)
 	tok, err := jwt.NewBuilder().
@@ -111,6 +112,7 @@ func (i *AccessTokenIssuer) Issue(userID, sid ulid.ULID) (string, time.Time, err
 		// jti は現時点では検証に使わない。将来の拒否リスト（ADR 0007 の代替案）とログの突き合わせのために入れる。
 		JwtID(i.ids.New().String()).
 		Claim(authn.ClaimSessionID, sid.String()).
+		Claim(authn.ClaimEmailVerified, emailVerified).
 		Build()
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("build access token: %w", err)
