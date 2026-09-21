@@ -144,7 +144,7 @@ func startInstance(t *testing.T, env *authtest.Env, o apiOptions) *apiClient {
 		Chat: chat.NewService(chat.Deps{
 			DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Random: rand.Reader, Logger: logger,
 			Storage: chattest.NewStorage(t), AttachmentLimits: chattest.AttachmentLimits,
-			Delivery: delivery, Presence: presenceStore,
+			Delivery: delivery, Presence: realtime.PresenceStates{Store: presenceStore},
 		}),
 		Realtime:  hub,
 		WSTickets: authn.NewWSTickets(rdb, rand.Reader),

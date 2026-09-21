@@ -76,16 +76,19 @@ type Authorizer interface {
 // Presence は presence と typing の置き場所（presence.Store が実装する）。
 // presence の変化のイベントは、状態の変更と同じ Lua スクリプトの中で publish させる（ADR 0016）。
 type Presence interface {
-	Connect(ctx context.Context, userID ulid.ULID, online presence.Announcement) (bool, error)
-	Disconnect(ctx context.Context, userID ulid.ULID, offline presence.Announcement) (bool, error)
-	Refresh(ctx context.Context, userIDs ...ulid.ULID) error
+	// Sync はこのインスタンスの接続の数と、そのうち画面を見ている数を記録する（ADR 0049 決定 2）。
+	Sync(ctx context.Context, userID ulid.ULID, conns, active int, ann presence.Announcement) (presence.State, error)
+	// Refresh はユーザーごとの「見ている接続の数」でフィールドを置き直し、TTL を延ばす。
+	Refresh(ctx context.Context, counts map[ulid.ULID]int) error
 	StartTyping(ctx context.Context, roomID, userID ulid.ULID, threadRootID *ulid.ULID) (bool, error)
 }
 
 // Publisher はイベントをすべてのインスタンスに向けて publish する（*RedisDelivery が実装する）。
 type Publisher interface {
 	chat.Delivery
-	Announcement(ev chat.Event) (presence.Announcement, error)
+	// Encode はイベントを publish する形（宛先のチャンネルと中身）にする。
+	// presence は状態の変更と publish を 1 つの Lua スクリプトで行うので、Hub がこれを presence に渡す（ADR 0016）。
+	Encode(ev chat.Event) (channels []string, payload []byte, err error)
 }
 
 // Subscriber は Redis Pub/Sub のチャンネルの購読を数える（*Broker が実装する）。
@@ -127,6 +130,10 @@ type Client struct {
 	rooms      map[ulid.ULID]ulid.ULID
 	workspaces map[ulid.ULID]struct{}
 	registered bool
+	// active はこの接続が画面を見ているか（ADR 0049 決定 3）。
+	// **接続は「見ていない」から始まる**。つないだ直後にクライアントが今の値を送る。
+	// 逆にすると、見ていないタブの再接続のたびに、そのユーザーが一瞬オンラインに見える。
+	active bool
 }
 
 // Identity は接続の主体を返す。
@@ -158,8 +165,9 @@ type Hub struct {
 	// epochs はユーザーごとの「購読の再検証を始めた回数」。
 	// 購読の authz の前後で値が変わっていたら、authz が権限の変更の前の DB を読んだ可能性があるので、やり直す（ADR 0015）。
 	epochs map[ulid.ULID]uint64
-	// announced は、このインスタンスが presence にオンラインとして記録したユーザー。
-	announced    map[ulid.ULID]bool
+	// announced は、このインスタンスが presence に記録した数（接続の数と、そのうち見ている数）。
+	// 同じ値なら Redis に書き直さない。
+	announced    map[ulid.ULID]presenceCounts
 	shuttingDown bool
 	// unregistering は、登録を外したが後始末（Redis の購読の解除と presence の更新）が終わっていない Unregister の数。
 	unregistering int
@@ -169,6 +177,12 @@ type Hub struct {
 	drainClosed bool
 
 	presenceLocks [presenceStripes]sync.Mutex
+}
+
+// presenceCounts はこのインスタンスの、あるユーザーの接続の数と、そのうち画面を見ている数。
+type presenceCounts struct {
+	conns  int
+	active int
 }
 
 var _ Receiver = (*Hub)(nil)
@@ -188,7 +202,7 @@ func NewHub(d Deps) *Hub {
 		roomSubs:      map[ulid.ULID]clientSet{},
 		workspaceSubs: map[ulid.ULID]clientSet{},
 		epochs:        map[ulid.ULID]uint64{},
-		announced:     map[ulid.ULID]bool{},
+		announced:     map[ulid.ULID]presenceCounts{},
 		drained:       make(chan struct{}),
 	}
 }
@@ -604,14 +618,15 @@ func (h *Hub) Revalidate(ctx context.Context) {
 }
 
 // RefreshPresence は、このインスタンスに接続しているユーザーの presence の TTL を延ばす。
+// 置き直す値は「見ている接続の数」。'1' で置き直すと、見ていない接続が突然オンラインに戻る。
 func (h *Hub) RefreshPresence(ctx context.Context) {
 	h.mu.Lock()
-	users := make([]ulid.ULID, 0, len(h.announced))
-	for userID := range h.announced {
-		users = append(users, userID)
+	counts := make(map[ulid.ULID]int, len(h.announced))
+	for userID, c := range h.announced {
+		counts[userID] = c.active
 	}
 	h.mu.Unlock()
-	if err := h.presence.Refresh(ctx, users...); err != nil {
+	if err := h.presence.Refresh(ctx, counts); err != nil {
 		h.logger.ErrorContext(ctx, "refresh presence failed", slog.Any("error", err))
 	}
 }
@@ -653,8 +668,8 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 	}
 }
 
-// syncPresence は、userID のこのインスタンスの接続の有無と、presence に記録した状態が食い違っていれば、presence を更新する。
-// インスタンスをまたいで最初の接続・最後の切断になったときだけ、presence の Lua スクリプトが presence.changed を publish する（ADR 0016）。
+// syncPresence は、userID のこのインスタンスの接続の数と「見ている数」を presence に記録する。
+// 状態（offline / idle / active）がインスタンスをまたいで変わったときだけ、Lua スクリプトが presence.changed を publish する。
 //
 // 同じユーザーの遷移はこのインスタンスの中でロックで直列にする。「最後の接続の切断」と「新しい接続」が並行すると、
 // Redis の HDEL と HSET の順序が入れ替わり、接続しているのにフィールドが消えることがあるため。
@@ -664,44 +679,71 @@ func (h *Hub) syncPresence(ctx context.Context, userID ulid.ULID) {
 	defer lock.Unlock()
 
 	h.mu.Lock()
-	online := len(h.byUser[userID]) > 0
-	if online == h.announced[userID] {
+	counts := h.countsLocked(userID)
+	if counts == h.announced[userID] {
 		h.mu.Unlock()
 		return
 	}
-	if online {
-		h.announced[userID] = true
+	if counts.conns > 0 {
+		h.announced[userID] = counts
 	} else {
 		delete(h.announced, userID)
 	}
 	h.mu.Unlock()
 
-	// 宛先のワークスペースを読めなくても presence は更新する（REST の online を正しく保つ）。そのときは知らせない。
+	// 宛先のワークスペースを読めなくても presence は更新する（REST の presence を正しく保つ）。そのときは知らせない。
 	var ann presence.Announcement
 	workspaces, err := h.auth.WorkspaceIDs(ctx, userID)
 	if err != nil {
 		h.logger.ErrorContext(ctx, "list workspaces for presence failed", slog.String("user_id", userID.String()), slog.Any("error", err))
 	} else {
-		ann, err = h.publisher.Announcement(chat.Event{
-			Type: chat.EventPresenceChanged,
-			To:   chat.Audience{Workspaces: workspaces},
-			// 「見ている接続の数」を数えて idle を出すのは構築順 4（ADR 0049 決定 2）。
-			// いまの Hub は接続の有無しか知らないので、接続があれば active になる。
-			Data: chat.PresenceChanged{UserID: userID, Presence: presenceValue(online)},
-		})
-		if err != nil {
-			h.logger.ErrorContext(ctx, "encode presence event failed", slog.String("user_id", userID.String()), slog.Any("error", err))
+		// どの状態になるかを決めるのは Lua（ほかのインスタンスのフィールドも見る）なので、状態ごとの中身を渡す。
+		ann = presence.Announcement{Payloads: map[presence.State][]byte{}}
+		for _, st := range []presence.State{presence.StateOffline, presence.StateIdle, presence.StateActive} {
+			channels, payload, err := h.publisher.Encode(chat.Event{
+				Type: chat.EventPresenceChanged,
+				To:   chat.Audience{Workspaces: workspaces},
+				Data: chat.PresenceChanged{UserID: userID, Presence: chat.Presence(st)},
+			})
+			if err != nil {
+				h.logger.ErrorContext(ctx, "encode presence event failed", slog.String("user_id", userID.String()), slog.Any("error", err))
+				ann = presence.Announcement{}
+				break
+			}
+			ann.Channels = channels
+			ann.Payloads[st] = payload
 		}
 	}
-	if online {
-		_, err = h.presence.Connect(ctx, userID, ann)
-	} else {
-		_, err = h.presence.Disconnect(ctx, userID, ann)
-	}
-	if err != nil {
+	if _, err := h.presence.Sync(ctx, userID, counts.conns, counts.active, ann); err != nil {
 		// 接続中なら RefreshPresence が次の周期でフィールドを置き直す。切断なら TTL で消える。
 		h.logger.ErrorContext(ctx, "update presence failed", slog.String("user_id", userID.String()), slog.Any("error", err))
 	}
+}
+
+// countsLocked は、このインスタンスの userID の接続の数と、そのうち画面を見ている数を数える（h.mu を持って呼ぶ）。
+func (h *Hub) countsLocked(userID ulid.ULID) presenceCounts {
+	var counts presenceCounts
+	for c := range h.byUser[userID] {
+		counts.conns++
+		if c.active {
+			counts.active++
+		}
+	}
+	return counts
+}
+
+// SetActivity は、この接続が画面を見ているかを記録する（クライアントの activity。ADR 0049 決定 3）。
+// 変わったときだけ presence を書き直す。
+func (h *Hub) SetActivity(ctx context.Context, c *Client, active bool) {
+	h.mu.Lock()
+	if !c.registered || c.active == active {
+		h.mu.Unlock()
+		return
+	}
+	c.active = active
+	h.mu.Unlock()
+
+	h.syncPresence(ctx, c.identity.UserID)
 }
 
 func addTo(m map[ulid.ULID]clientSet, key ulid.ULID, c *Client) {
@@ -730,12 +772,4 @@ func keys(m map[ulid.ULID]bool) []ulid.ULID {
 		out = append(out, k)
 	}
 	return out
-}
-
-// presenceValue は、このインスタンスの接続の有無を配信する状態にする（ADR 0049）。
-func presenceValue(online bool) chat.Presence {
-	if online {
-		return chat.PresenceActive
-	}
-	return chat.PresenceOffline
 }

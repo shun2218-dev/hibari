@@ -30,6 +30,8 @@ type RealtimeHub interface {
 	Subscribe(ctx context.Context, c *realtime.Client, t realtime.Topic) error
 	Unsubscribe(c *realtime.Client, t realtime.Topic)
 	Typing(ctx context.Context, c *realtime.Client, roomID ulid.ULID, threadRootID *ulid.ULID) error
+	// SetActivity はこの接続が画面を見ているかを記録する（ADR 0049 決定 3）。
+	SetActivity(ctx context.Context, c *realtime.Client, active bool)
 }
 
 // WSTicketStore は ws-ticket の発行と消費（authn.WSTickets が実装する）。
@@ -202,6 +204,8 @@ type clientMessage struct {
 	WorkspaceID string `json:"workspace_id,omitempty"`
 	// ThreadRootID は typing でだけ使う。スレッドで入力しているときの親（ADR 0036）。
 	ThreadRootID string `json:"thread_root_id,omitempty"`
+	// Active は activity でだけ使う。この接続が画面を見ているか（ADR 0049 決定 3）。
+	Active bool `json:"active,omitempty"`
 }
 
 // clientMessageType はクライアントからのメッセージの type。
@@ -211,6 +215,7 @@ const (
 	clientSubscribe   clientMessageType = "subscribe"
 	clientUnsubscribe clientMessageType = "unsubscribe"
 	clientTyping      clientMessageType = "typing"
+	clientActivity    clientMessageType = "activity"
 	clientPing        clientMessageType = "ping"
 )
 
@@ -280,6 +285,14 @@ func (h *wsHandlers) handleMessage(ctx context.Context, client *realtime.Client,
 			threadRootID = &id
 		}
 		return reply(h.hub.Typing(ctx, client, roomID, threadRootID))
+	case clientActivity:
+		// 接続そのものの属性なので、購読しているルームは関係ない（ADR 0049 決定 3）。
+		// 接続は「見ていない」から始まり、クライアントがつないだ直後に今の値を送る。
+		if m.RoomID != "" || m.WorkspaceID != "" {
+			return reply(errInvalidMessage)
+		}
+		h.hub.SetActivity(ctx, client, m.Active)
+		return reply(nil)
 	case clientPing:
 		// ブラウザは WebSocket の ping フレームを送れないので、アプリケーションの ping には id がなくても ack を返す。
 		return &ackMessage{Type: ackType, ID: m.ID}

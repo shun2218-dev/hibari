@@ -137,11 +137,12 @@ func TestPresenceInRoomResponses(t *testing.T) {
 	if _, err := env.Service.JoinRoom(t.Context(), r.member2, room.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := env.Presence.Connect(t.Context(), r.member2, presence.Announcement{}); err != nil {
+	// 画面を見ている接続が 1 本ある状態にする（ADR 0049 決定 2）。
+	if _, err := env.Presence.Sync(t.Context(), r.member2, 1, 1, presence.Announcement{}); err != nil {
 		t.Fatal(err)
 	}
 	// t.Context は Cleanup の前にキャンセルされるので使わない。
-	t.Cleanup(func() { _, _ = env.Presence.Disconnect(context.Background(), r.member2, presence.Announcement{}) })
+	t.Cleanup(func() { _, _ = env.Presence.Sync(context.Background(), r.member2, 0, 0, presence.Announcement{}) })
 
 	page, err := env.Service.ListRoomMembers(t.Context(), r.member, room.ID, chat.PageRequest{})
 	if err != nil {

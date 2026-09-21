@@ -27,14 +27,16 @@ type Deps struct {
 	AttachmentLimits AttachmentLimits
 	// Delivery はコミット済みの変更を配信する（ADR 0015）。
 	Delivery Delivery
-	// Presence はユーザーがオンラインかを読む。REST で presence の初期値を返すのに使う（ADR 0015）。
+	// Presence は自動で決まる presence を読む。REST で初期値を返すのに使う（ADR 0015 / 0049）。
 	Presence PresenceReader
 }
 
-// PresenceReader は presence（Redis に TTL 付きで置く。CLAUDE.md ルール 5）を読む。
+// PresenceReader は自動で決まる presence（Redis に TTL 付きで置く。CLAUDE.md ルール 5）を読む。
+//
+// 本人が選んだ設定（手動の離席）は Postgres にあり、ここには来ない。2 つを合わせるのは読む側（ADR 0049 決定 1）。
 type PresenceReader interface {
-	// Online は userIDs のうちオンラインのユーザーを返す。
-	Online(ctx context.Context, userIDs []ulid.ULID) (map[ulid.ULID]bool, error)
+	// Presence は userIDs の状態を返す。返らなかったユーザーは offline として扱う。
+	Presence(ctx context.Context, userIDs []ulid.ULID) (map[ulid.ULID]Presence, error)
 }
 
 // Service はチャットのユースケース。

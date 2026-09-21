@@ -67,20 +67,30 @@ func received(t *testing.T, rdb *goredis.Client, channel string, ch <-chan strin
 	}
 }
 
-func announce(channel, payload string) presence.Announcement {
-	return presence.Announcement{Channels: []string{channel}, Payload: []byte(payload)}
+// announce は、状態ごとの中身を「状態の名前そのもの」にした Announcement を返す。
+// どの状態が publish されたかを、届いた文字列で見分けられるようにするため。
+func announce(channel string) presence.Announcement {
+	return presence.Announcement{
+		Channels: []string{channel},
+		Payloads: map[presence.State][]byte{
+			presence.StateOffline: []byte("offline"),
+			presence.StateIdle:    []byte("idle"),
+			presence.StateActive:  []byte("active"),
+		},
+	}
 }
 
-// 複数のインスタンスに接続していても、最初の接続でだけオンライン、最後の切断でだけオフラインを知らせる。
-func TestConnectDisconnectAcrossInstances(t *testing.T) {
+// 複数のインスタンスに接続していても、状態が変わったときだけ知らせる（ADR 0016 / 0049）。
+// 「見ている接続の数」で active / idle / offline が決まる。
+func TestSyncAcrossInstances(t *testing.T) {
 	rdb := openRedis(t)
 	a, b := presence.New(rdb, ids.New()), presence.New(rdb, ids.New())
 	alice, bob := ids.New(), ids.New()
 	channel := "test:presence:" + ids.New().String()
 	events := listen(t, rdb, channel)
-	online := func() map[ulid.ULID]bool {
+	stateOf := func() map[ulid.ULID]presence.State {
 		t.Helper()
-		got, err := a.Online(t.Context(), []ulid.ULID{alice, bob})
+		got, err := a.States(t.Context(), []ulid.ULID{alice, bob})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -88,32 +98,37 @@ func TestConnectDisconnectAcrossInstances(t *testing.T) {
 	}
 
 	steps := []struct {
-		name       string
-		do         func() (bool, error)
-		wantFirst  bool
-		wantEvents []string
-		wantOnline bool
+		name          string
+		store         *presence.Store
+		conns, active int
+		wantEvents    []string
+		wantState     presence.State
 	}{
-		{"connect on A", func() (bool, error) { return a.Connect(t.Context(), alice, announce(channel, "on")) }, true, []string{"on"}, true},
-		{"connect on B", func() (bool, error) { return b.Connect(t.Context(), alice, announce(channel, "on")) }, false, nil, true},
-		{"disconnect from A", func() (bool, error) { return a.Disconnect(t.Context(), alice, announce(channel, "off")) }, false, nil, true},
-		{"disconnect from B", func() (bool, error) { return b.Disconnect(t.Context(), alice, announce(channel, "off")) }, true, []string{"off"}, false},
+		// 接続は「見ていない」から始まる（ADR 0049 決定 3）。まず idle になる
+		{"A につなぐ（まだ見ていない）", a, 1, 0, []string{"idle"}, presence.StateIdle},
+		{"A のタブが画面を見る", a, 1, 1, []string{"active"}, presence.StateActive},
+		{"B にもつなぐ（見ていない）", b, 1, 0, nil, presence.StateActive},
+		// A が見るのをやめても、どのインスタンスにも見ている接続が無くなって初めて idle になる
+		{"A が見るのをやめる", a, 1, 0, []string{"idle"}, presence.StateIdle},
+		{"B のタブが画面を見る", b, 1, 1, []string{"active"}, presence.StateActive},
+		{"A が切れる", a, 0, 0, nil, presence.StateActive},
+		{"B も切れる", b, 0, 0, []string{"offline"}, presence.StateOffline},
 	}
 	for _, s := range steps {
-		got, err := s.do()
-		if err != nil || got != s.wantFirst {
-			t.Fatalf("%s = %v, %v; want %v", s.name, got, err, s.wantFirst)
+		got, err := s.store.Sync(t.Context(), alice, s.conns, s.active, announce(channel))
+		if err != nil || got != s.wantState {
+			t.Fatalf("%s = %v, %v; want %v", s.name, got, err, s.wantState)
 		}
 		if ev := received(t, rdb, channel, events); len(ev) != len(s.wantEvents) || (len(ev) > 0 && ev[0] != s.wantEvents[0]) {
 			t.Fatalf("%s published %v, want %v", s.name, ev, s.wantEvents)
 		}
-		if got := online(); got[alice] != s.wantOnline || got[bob] {
-			t.Fatalf("%s: Online() = %v, want alice=%v", s.name, got, s.wantOnline)
+		if got := stateOf(); got[alice] != s.wantState || got[bob] != presence.StateOffline {
+			t.Fatalf("%s: States() = %v, want alice=%v", s.name, got, s.wantState)
 		}
 	}
 
-	if got, err := a.Online(t.Context(), nil); err != nil || len(got) != 0 {
-		t.Fatalf("Online(nil) = %v, %v", got, err)
+	if got, err := a.States(t.Context(), nil); err != nil || len(got) != 0 {
+		t.Fatalf("States(nil) = %v, %v", got, err)
 	}
 }
 
@@ -123,7 +138,7 @@ func TestCrashedInstanceExpires(t *testing.T) {
 	crashed, alive := ids.New(), presence.New(rdb, ids.New())
 	alice := ids.New()
 	key := "presence:" + alice.String()
-	if _, err := presence.New(rdb, crashed).Connect(t.Context(), alice, presence.Announcement{}); err != nil {
+	if _, err := presence.New(rdb, crashed).Sync(t.Context(), alice, 1, 1, presence.Announcement{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -141,14 +156,14 @@ func TestCrashedInstanceExpires(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
-		got, err := alive.Online(t.Context(), []ulid.ULID{alice})
-		return err == nil && !got[alice]
+		got, err := alive.States(t.Context(), []ulid.ULID{alice})
+		return err == nil && got[alice] == presence.StateOffline
 	})
 
-	// 期限切れの後の接続は、最初の接続としてオンラインを知らせる。
-	first, err := alive.Connect(t.Context(), alice, presence.Announcement{})
-	if err != nil || !first {
-		t.Fatalf("Connect() after the other instance expired = %v, %v; want true", first, err)
+	// 期限切れの後の接続は、offline からの変化として知らせる。
+	got, err := alive.Sync(t.Context(), alice, 1, 1, presence.Announcement{})
+	if err != nil || got != presence.StateActive {
+		t.Fatalf("Sync() after the other instance expired = %v, %v; want active", got, err)
 	}
 }
 
@@ -157,7 +172,7 @@ func TestRefresh(t *testing.T) {
 	instance := ids.New()
 	st := presence.New(rdb, instance)
 	alice, bob := ids.New(), ids.New()
-	if _, err := st.Connect(t.Context(), alice, presence.Announcement{}); err != nil {
+	if _, err := st.Sync(t.Context(), alice, 1, 1, presence.Announcement{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := rdb.HExpire(t.Context(), "presence:"+alice.String(), 5*time.Second, instance.String()).Err(); err != nil {
@@ -165,7 +180,7 @@ func TestRefresh(t *testing.T) {
 	}
 
 	// 延ばすのは TTL だけ。消えていたフィールド（bob）も置き直す。
-	if err := st.Refresh(t.Context(), alice, bob); err != nil {
+	if err := st.Refresh(t.Context(), map[ulid.ULID]int{alice: 1, bob: 0}); err != nil {
 		t.Fatal(err)
 	}
 	for _, u := range []ulid.ULID{alice, bob} {
@@ -177,13 +192,19 @@ func TestRefresh(t *testing.T) {
 			t.Errorf("TTL of %s after Refresh = %v s", u, ttls)
 		}
 	}
-	if err := st.Refresh(t.Context()); err != nil {
+	if err := st.Refresh(t.Context(), nil); err != nil {
 		t.Fatalf("Refresh() without users = %v", err)
+	}
+
+	// 置き直す値は「見ている接続の数」。見ていない接続（bob）を active に戻さない。
+	got, err := st.States(t.Context(), []ulid.ULID{alice, bob})
+	if err != nil || got[alice] != presence.StateActive || got[bob] != presence.StateIdle {
+		t.Errorf("States() after Refresh = %v, %v; want alice=active / bob=idle", got, err)
 	}
 }
 
 // 2 つのインスタンスで同じユーザーの接続と切断が並行しても、イベントは状態の変わった順に並ぶ
-// （online と offline が交互になり、最後のイベントが最終的な状態と一致する）。
+// （active と offline が交互になり、最後のイベントが最終的な状態と一致する）。
 func TestConcurrentTransitionsKeepEventOrder(t *testing.T) {
 	rdb := openRedis(t)
 	a, b := presence.New(rdb, ids.New()), presence.New(rdb, ids.New())
@@ -194,13 +215,13 @@ func TestConcurrentTransitionsKeepEventOrder(t *testing.T) {
 	var wg sync.WaitGroup
 	for _, st := range []*presence.Store{a, b} {
 		wg.Go(func() {
-			// Hub はユーザーごとに接続と切断を直列にするので、1 つのインスタンスの中では順番に呼ぶ。
+			// Hub はユーザーごとに遷移を直列にするので、1 つのインスタンスの中では順番に呼ぶ。
 			for range 100 {
-				if _, err := st.Connect(t.Context(), alice, announce(channel, "on")); err != nil {
+				if _, err := st.Sync(t.Context(), alice, 1, 1, announce(channel)); err != nil {
 					t.Error(err)
 					return
 				}
-				if _, err := st.Disconnect(t.Context(), alice, announce(channel, "off")); err != nil {
+				if _, err := st.Sync(t.Context(), alice, 0, 0, announce(channel)); err != nil {
 					t.Error(err)
 					return
 				}
@@ -208,18 +229,18 @@ func TestConcurrentTransitionsKeepEventOrder(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if _, err := a.Connect(t.Context(), alice, announce(channel, "on")); err != nil {
+	if _, err := a.Sync(t.Context(), alice, 1, 1, announce(channel)); err != nil {
 		t.Fatal(err)
 	}
 
 	got := received(t, rdb, channel, events)
-	if len(got) == 0 || got[len(got)-1] != "on" {
-		t.Fatalf("last event = %v, want on", got)
+	if len(got) == 0 || got[len(got)-1] != "active" {
+		t.Fatalf("last event = %v, want active", got)
 	}
 	for i, p := range got {
-		want := "on"
+		want := "active"
 		if i%2 == 1 {
-			want = "off"
+			want = "offline"
 		}
 		if p != want {
 			t.Fatalf("event %d = %q, want %q (events must alternate)", i, p, want)

@@ -13,7 +13,9 @@ import { useAvatarUrls, useChatState, useChatStore, useRealtime } from "@/lib/ch
 import { formatTime } from "@/lib/chat/format";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
 import { countUnreadThreads } from "@/lib/chat/threads";
-import { toRoomSummaryView } from "@/lib/chat/views";
+import { memberSettings, statusView, toRoomSummaryView } from "@/lib/chat/views";
+
+import { MyStatusDialog } from "./my-status";
 
 import { CreateWorkspace } from "../../../create-workspace";
 import { CreateRoom } from "./create-room";
@@ -42,6 +44,7 @@ export function WorkspaceScreen() {
   const unavailable = useChatState((s) => s.connection.unavailable);
   const removal = useChatState((s) => s.removedWorkspaces[workspaceId]);
   const threadList = useChatState((s) => s.threadLists[workspaceId]);
+  const members = useChatState((s) => s.members[workspaceId]);
   const unreadThreadCount = useChatState((s) => s.unreadThreadCounts[workspaceId]);
   // 開いているルームを読めない（外された、URL のルームが読めない）。メンバーのパネルも閉じる（名前を見せない。ADR 0035）
   const roomRemoved = useChatState((s) =>
@@ -55,6 +58,7 @@ export function WorkspaceScreen() {
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [startingDm, setStartingDm] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
   // モバイルで「一覧に戻る」を押した。URL はルームのままにして、別のルームを開いたら詳細に戻す
   const [listShownFor, setListShownFor] = useState<string>();
 
@@ -66,6 +70,11 @@ export function WorkspaceScreen() {
   useEffect(() => {
     store.loadWorkspaces();
   }, [store]);
+
+  // ワークスペースのメンバー一覧は、名前の横のステータスと DM の相手の presence に使う（ADR 0049 決定 7 の追記）
+  useEffect(() => {
+    store.loadMembers(workspaceId);
+  }, [store, workspaceId]);
 
   // 表示中のワークスペースとそのルームを購読する（lib/chat/realtime.ts）
   useEffect(() => {
@@ -112,6 +121,10 @@ export function WorkspaceScreen() {
   }, [roomList, rooms, me]);
   const avatarUrls = useAvatarUrls(sidebarUserIds);
 
+  const memberTable = useMemo(() => memberSettings(members?.list), [members]);
+  const myMember = useMemo(() => members?.list.find((m) => m.user.id === me?.id), [members, me]);
+  const myStatus = useMemo(() => statusView(myMember?.status), [myMember]);
+
   const roomViews = useMemo(() => {
     if (roomList?.status !== "ready") return [];
     const now = new Date();
@@ -119,10 +132,10 @@ export function WorkspaceScreen() {
     return roomList.ids
       .flatMap((id) => {
         const room = rooms[id];
-        return room ? [toRoomSummaryView(room, now, { avatarUrls })] : [];
+        return room ? [toRoomSummaryView(room, now, { avatarUrls, members: memberTable })] : [];
       })
       .filter((view) => query === "" || view.name.toLowerCase().includes(query));
-  }, [roomList, rooms, search, avatarUrls]);
+  }, [roomList, rooms, search, avatarUrls, memberTable]);
 
   function openThread(rootId: string) {
     setMembersOpen(false);
@@ -205,7 +218,16 @@ export function WorkspaceScreen() {
             }}
             accountMenu={
               <AccountMenu
-                user={{ ...currentUser, handle: user.handle }}
+                user={{ ...currentUser, handle: user.handle, status: myStatus }}
+                away={myMember?.away ?? false}
+                onOpenStatus={() => {
+                  setAccountMenuOpen(false);
+                  setStatusOpen(true);
+                }}
+                onToggleAway={() => {
+                  setAccountMenuOpen(false);
+                  void store.setAway(!(myMember?.away ?? false));
+                }}
                 onOpenWorkspaceSettings={() => {
                   setAccountMenuOpen(false);
                   router.push(`/w/${workspaceId}/admin/settings`);
@@ -264,6 +286,9 @@ export function WorkspaceScreen() {
         )}
       </ChatLayout>
       <CreateWorkspace open={creatingWorkspace} onClose={() => setCreatingWorkspace(false)} />
+      {statusOpen && (
+        <MyStatusDialog workspaceId={workspaceId} status={myStatus} onClose={() => setStatusOpen(false)} />
+      )}
       <CreateRoom workspaceId={workspaceId} open={creatingRoom} onClose={() => setCreatingRoom(false)} />
       <StartDm workspaceId={workspaceId} open={startingDm} onClose={() => setStartingDm(false)} />
     </>

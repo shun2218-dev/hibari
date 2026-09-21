@@ -16,7 +16,9 @@ import type {
   RoomKind,
   RoomMember,
   ServerEvent,
+  SetStatusRequest,
   UserProfile,
+  UserStatus,
   Workspace,
 } from "@/lib/api/types.gen";
 
@@ -1136,6 +1138,13 @@ export function createChatStore(
         });
         return;
       }
+      case "member.status_changed": {
+        // 本人が選んだ設定（手動の離席とカスタムステータス。ADR 0049 決定 8）。
+        // away はユーザーごとなので、どのワークスペースの行にも同じ値を当てる。status はワークスペースごと
+        const { workspace_id, user_id, away, status } = event.data;
+        patchMemberSettings(workspace_id, user_id, away, status);
+        return;
+      }
       case "typing.started":
         // スレッドでの入力はチャンネルの入力中に出さない。スレッドのパネルに出すのは構築順 5（ADR 0036）
         if (event.data.thread_root_id !== null) receiveThreadTyping(event.data.thread_root_id, event.data.user);
@@ -1154,6 +1163,72 @@ export function createChatStore(
         return;
       }
     }
+  }
+
+  /**
+   * 手元のメンバーの行に、本人の設定（away / status）を当てる（ADR 0049）。
+   *
+   * away はユーザーごとの設定なので、読み込んでいるすべてのワークスペース / ルームの行に当てる。
+   * status はワークスペースごとなので、そのワークスペースと、そのワークスペースのルームだけに当てる。
+   */
+  function patchMemberSettings(workspaceId: string, userId: string, away: boolean, status: UserStatus | null) {
+    update((s) => {
+      const roomsOfWorkspace = new Set(
+        Object.values(s.rooms)
+          .filter((room) => room?.workspace_id === workspaceId)
+          .map((room) => room!.id),
+      );
+
+      let members = s.members;
+      for (const [id, entry] of Object.entries(s.members)) {
+        const sameWorkspace = id === workspaceId;
+        if (!entry?.list.some((m) => m.user.id === userId && changed(m, away, status, sameWorkspace))) continue;
+        if (members === s.members) members = { ...s.members };
+        members[id] = {
+          ...entry,
+          list: entry.list.map((m) => (m.user.id === userId ? applySettings(m, away, status, sameWorkspace) : m)),
+        };
+      }
+
+      let roomMembers = s.roomMembers;
+      for (const [roomId, entry] of Object.entries(s.roomMembers)) {
+        const sameWorkspace = roomsOfWorkspace.has(roomId);
+        if (!entry?.members.some((m) => m.user.id === userId && changed(m, away, status, sameWorkspace))) continue;
+        if (roomMembers === s.roomMembers) roomMembers = { ...s.roomMembers };
+        roomMembers[roomId] = {
+          ...entry,
+          members: entry.members.map((m) => (m.user.id === userId ? applySettings(m, away, status, sameWorkspace) : m)),
+        };
+      }
+
+      return members === s.members && roomMembers === s.roomMembers ? s : { ...s, members, roomMembers };
+    });
+  }
+
+  /** 手元に持っている自分の行から、いまの away を読む（読み込んでいなければ false）。 */
+  function myAway(): boolean {
+    for (const entry of Object.values(state.members)) {
+      const me = entry?.list.find((m) => m.user.id === userId);
+      if (me) return me.away;
+    }
+    return false;
+  }
+
+  /** 手元に持っている自分の行から、そのワークスペースのステータスを読む。 */
+  function myStatus(workspaceId: string): UserStatus | null {
+    const me = state.members[workspaceId]?.list.find((m) => m.user.id === userId);
+    return me?.status ?? null;
+  }
+
+  /** 自分の設定を手元に当てる（楽観的更新）。渡さなかった方は変えない。 */
+  function patchMySettings(away: boolean | undefined, status: UserStatus | null | undefined, workspaceId?: string) {
+    const nextAway = away ?? myAway();
+    if (status === undefined) {
+      // away だけを変える。ステータスはどのワークスペースのものも触らない
+      for (const id of Object.keys(state.members)) patchMemberSettings(id, userId, nextAway, myStatus(id));
+      return;
+    }
+    patchMemberSettings(workspaceId!, userId, nextAway, status);
   }
 
   function loadRooms(workspaceId: string): Promise<void> {
@@ -1369,6 +1444,38 @@ export function createChatStore(
     },
 
     /** ロールを変える。失敗したら ApiError を投げる。 */
+    /**
+     * 手動の離席を設定 / 解除する（ADR 0049 決定 4）。手元で先に反映し、失敗したら元に戻す。
+     * サーバーからは member.status_changed が本人のすべての接続にも届くので、別のタブも揃う。
+     */
+    async setAway(away: boolean): Promise<void> {
+      const before = myAway();
+      patchMySettings(away, undefined);
+      try {
+        await api.setManualAway(away);
+      } catch (error) {
+        patchMySettings(before, undefined);
+        throw error;
+      }
+    },
+
+    /** カスタムステータスを設定する（ワークスペースごと）。status が null なら解除。 */
+    async setStatus(workspaceId: string, status: SetStatusRequest | null): Promise<void> {
+      const before = myStatus(workspaceId);
+      patchMySettings(
+        undefined,
+        status === null ? null : { emoji: status.emoji, text: status.text, expires_at: status.expires_at ?? null },
+        workspaceId,
+      );
+      try {
+        if (status === null) await api.clearStatus(workspaceId);
+        else await api.setStatus(workspaceId, status);
+      } catch (error) {
+        patchMySettings(undefined, before, workspaceId);
+        throw error;
+      }
+    },
+
     async changeMemberRole(workspaceId: string, targetUserId: string, role: Role): Promise<void> {
       const member = await api.changeMemberRole(workspaceId, targetUserId, role);
       patchWorkspaceMembers(workspaceId, (list) => list.map((m) => (m.user.id === targetUserId ? member : m)));
@@ -1893,6 +2000,28 @@ export function createChatStore(
       );
     },
   };
+}
+
+/** away / status を当てた行を返す（同じワークスペースでなければ status は触らない）。 */
+function applySettings<T extends { away: boolean; status: UserStatus | null }>(
+  member: T,
+  away: boolean,
+  status: UserStatus | null,
+  sameWorkspace: boolean,
+): T {
+  return { ...member, away, status: sameWorkspace ? status : member.status };
+}
+
+/** 当てても値が変わらないなら、その一覧は作り直さない。 */
+function changed(
+  member: { away: boolean; status: UserStatus | null },
+  away: boolean,
+  status: UserStatus | null,
+  sameWorkspace: boolean,
+): boolean {
+  if (member.away !== away) return true;
+  if (!sameWorkspace) return false;
+  return JSON.stringify(member.status ?? null) !== JSON.stringify(status ?? null);
 }
 
 export type ChatStore = ReturnType<typeof createChatStore>;

@@ -39,6 +39,7 @@ import {
   previewImageIds,
   roomName,
   toAttachmentDraftView,
+  memberSettings,
   toMemberNames,
   toMentionCandidates,
   toTimelineItems,
@@ -94,6 +95,7 @@ export function RoomView({
   const outgoing = useChatState((s) => s.outgoing[roomId]);
   const myRole = useChatState((s) => s.workspaces.list.find((w) => w.id === workspaceId)?.my_role);
   const members = useChatState((s) => s.roomMembers[roomId]?.members);
+  const workspaceMembers = useChatState((s) => s.members[workspaceId]);
   const timeline = useChatState((s) => s.timelines[roomId]);
   const banner = useChatState((s) => s.connection.banner);
   const typing = useChatState((s) => s.typing[roomId]);
@@ -199,6 +201,12 @@ export function RoomView({
   const linkCards = useLinkCards(permalinks);
 
   const memberNames = useMemo(() => toMemberNames(members), [members]);
+  // 名前の横に出すカスタムステータスは、ワークスペースのメンバー一覧から引く（ADR 0049 決定 7 の追記）
+  const statuses = useMemo(() => memberSettings(workspaceMembers?.list), [workspaceMembers]);
+  const statusEmojis = useMemo(
+    () => Object.fromEntries(Object.entries(statuses).map(([id, member]) => [id, member.status])),
+    [statuses],
+  );
   const mentionCandidates = useMemo(
     () => toMentionCandidates(members, { kind: room?.kind ?? "public", avatarUrls }),
     [members, room?.kind, avatarUrls],
@@ -228,8 +236,21 @@ export function RoomView({
         origin,
         currentWorkspaceId: workspaceId,
         memberNames,
+        statuses: statusEmojis,
       }),
-    [messages, unreadAfterSeq, outgoing, me, avatarUrls, attachmentUrls, linkCards, origin, workspaceId, memberNames],
+    [
+      messages,
+      unreadAfterSeq,
+      outgoing,
+      me,
+      avatarUrls,
+      attachmentUrls,
+      linkCards,
+      origin,
+      workspaceId,
+      memberNames,
+      statusEmojis,
+    ],
   );
   /**
    * 未読が、読み込んだページより古いところにある（ADR 0042）。そのときだけ「未読 N 件 / 最初の未読へ」を出す。

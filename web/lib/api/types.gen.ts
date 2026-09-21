@@ -28,7 +28,7 @@ export type SystemEventType = "room_created" | "member_joined" | "member_left" |
 
 export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid";
 
-export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "ping";
+export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "activity" | "ping";
 
 export type AckError = "invalid_message" | "not_found" | "not_subscribed" | "forbidden" | "too_many_subscriptions" | "internal";
 
@@ -615,6 +615,8 @@ export interface ClientMessage {
   workspace_id?: string;
   /** thread_root_id は typing でだけ使う。スレッドで入力しているときの親（ADR 0036）。 */
   thread_root_id?: string;
+  /** active は activity でだけ使う。この接続が画面を見ているか（ADR 0049 決定 3）。 */
+  active?: boolean;
 }
 
 export interface Ack {

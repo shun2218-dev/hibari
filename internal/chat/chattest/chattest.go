@@ -18,6 +18,7 @@ import (
 
 	"github.com/shun2218-dev/hibari/internal/chat"
 	"github.com/shun2218-dev/hibari/internal/chat/presence"
+	"github.com/shun2218-dev/hibari/internal/chat/realtime"
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
 	"github.com/shun2218-dev/hibari/internal/platform/config"
 	"github.com/shun2218-dev/hibari/internal/platform/db"
@@ -95,16 +96,20 @@ func WithClockStart(t time.Time) Option {
 	return func(o *options) { o.start = t }
 }
 
-// OnlineUsers は「誰がオンラインか」を固定する chat.PresenceReader。
+// OnlineUsers は「誰が画面を見ているか（active）」を固定する chat.PresenceReader。
 // @here の対象（ADR 0041）のように presence の中身が結果を決めるテストで、Redis の TTL に依存させないために使う
 // （時刻に依存するテストで Clock を固定するのと同じ考え方。CLAUDE.md「テスト」）。
 type OnlineUsers []ulid.ULID
 
-// Online は chat.PresenceReader を満たす。
-func (o OnlineUsers) Online(_ context.Context, userIDs []ulid.ULID) (map[ulid.ULID]bool, error) {
-	out := make(map[ulid.ULID]bool, len(userIDs))
+// Presence は chat.PresenceReader を満たす。並んでいない人は offline にする。
+func (o OnlineUsers) Presence(_ context.Context, userIDs []ulid.ULID) (map[ulid.ULID]chat.Presence, error) {
+	out := make(map[ulid.ULID]chat.Presence, len(userIDs))
 	for _, id := range userIDs {
-		out[id] = slices.Contains(o, id)
+		if slices.Contains(o, id) {
+			out[id] = chat.PresenceActive
+		} else {
+			out[id] = chat.PresenceOffline
+		}
 	}
 	return out, nil
 }
@@ -131,7 +136,7 @@ func New(t testing.TB, opts ...Option) *Env {
 	st := NewStorage(t)
 	pr := NewPresence(t)
 	rec := &Recorder{}
-	var svcPresence chat.PresenceReader = pr
+	var svcPresence chat.PresenceReader = realtime.PresenceStates{Store: pr}
 	if o.presence != nil {
 		svcPresence = o.presence
 	}

@@ -13,6 +13,8 @@ import type {
   InviteAcceptance,
   InviteList,
   InvitePreview,
+  ManualAwayRequest,
+  ManualAwayResponse,
   MarkRoomReadRequest,
   Member,
   MemberList,
@@ -27,6 +29,7 @@ import type {
   RoomMember,
   RoomMemberList,
   SendMessageRequest,
+  SetStatusRequest,
   SignedURL,
   ThreadList,
   ThreadMessageList,
@@ -36,6 +39,7 @@ import type {
   WSTicket,
   Workspace,
   WorkspaceList,
+  UserStatus,
 } from "@/lib/api/types.gen";
 import type { Session } from "@/lib/auth/session";
 
@@ -86,6 +90,18 @@ export function createChatApi(request: Session["request"]) {
         "DELETE",
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
       ),
+
+    /** 手動の離席を設定 / 解除する（ユーザーごと。ADR 0049 決定 4）。冪等。 */
+    setManualAway: (away: boolean) =>
+      request<ManualAwayResponse>("PUT", "/api/v1/users/me/presence", { away } satisfies ManualAwayRequest),
+
+    /** カスタムステータスを設定する（ワークスペースごと。ADR 0049 決定 5）。 */
+    setStatus: (workspaceId: string, body: SetStatusRequest) =>
+      request<UserStatus>("PUT", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/me/status`, body),
+
+    /** カスタムステータスを解除する。設定していなくても成功（冪等）。 */
+    clearStatus: (workspaceId: string) =>
+      request<void>("DELETE", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/me/status`),
 
     /** owner を譲渡する。自分は admin になる（ADR 0011）。 */
     transferOwnership: (workspaceId: string, userId: string) =>

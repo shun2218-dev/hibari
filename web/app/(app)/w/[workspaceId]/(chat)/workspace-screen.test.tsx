@@ -42,6 +42,9 @@ function routes(overrides: Record<string, Handler> = {}): Record<string, Handler
       json(200, { workspaces: [workspace("ws-1", "hibari 開発"), workspace("ws-2", "個人メモ")] }),
     "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [design, chat, dm], unread_thread_count: 0 }),
     "GET /api/v1/workspaces/ws-1/threads?limit=200": () => json(200, { threads: [], next_cursor: null }),
+    // 名前の横のステータスと DM の相手の presence に使う（ADR 0049 決定 7 の追記）
+    "GET /api/v1/workspaces/ws-1/members?limit=200": () =>
+      json(200, { members: [member(naoki, { role: "owner" }), member(miyuki), member(kei)], next_cursor: null }),
     ...overrides,
   };
 }
@@ -420,6 +423,57 @@ describe("WorkspaceScreen", () => {
       );
       return result;
     }
+
+    // 離席とカスタムステータス（ADR 0049）
+    describe("離席とカスタムステータス（ADR 0049）", () => {
+      it("アカウントメニューから離席にできる", async () => {
+        const { api } = await connected({
+          "PUT /api/v1/users/me/presence": () => json(200, { away: true }),
+        });
+
+        await userEvent.click(screen.getByRole("button", { name: "アカウントメニュー" }));
+        await userEvent.click(await screen.findByRole("button", { name: "離席中にする" }));
+
+        await waitFor(() =>
+          expect(api.calls.filter((c) => c.path === "/api/v1/users/me/presence")).toHaveLength(1),
+        );
+        expect(JSON.parse(api.calls.at(-1)!.init.body as string)).toEqual({ away: true });
+      });
+
+      it("ステータスを設定すると、絶対の時刻にして送る", async () => {
+        const { api } = await connected({
+          "PUT /api/v1/workspaces/ws-1/me/status": () => json(200, { emoji: "📅", text: "会議中", expires_at: null }),
+        });
+
+        await userEvent.click(screen.getByRole("button", { name: "アカウントメニュー" }));
+        await userEvent.click(await screen.findByRole("button", { name: "ステータスを設定" }));
+        await userEvent.click(await screen.findByRole("button", { name: "会議中" }));
+        await userEvent.click(screen.getByRole("radio", { name: "1 時間" }));
+        await userEvent.click(screen.getByRole("button", { name: "保存" }));
+
+        await waitFor(() => expect(api.calls.some((c) => c.path === "/api/v1/workspaces/ws-1/me/status")).toBe(true));
+        const body = JSON.parse(api.calls.findLast((c) => c.path === "/api/v1/workspaces/ws-1/me/status")!.init.body as string);
+        expect(body).toMatchObject({ emoji: "📅", text: "会議中" });
+        // 「1 時間」はクライアントが絶対の時刻にして送る（サーバーはタイムゾーンを知らない）
+        expect(new Date(body.expires_at).getTime() - Date.now()).toBeGreaterThan(50 * 60 * 1000);
+      });
+
+      it("届いた member.status_changed で、名前の横に絵文字が出る", async () => {
+        const { sockets } = await connected();
+
+        sockets.last().receive({
+          type: "member.status_changed",
+          data: {
+            workspace_id: "ws-1",
+            user_id: naoki.id,
+            away: false,
+            status: { emoji: "🌴", text: "休暇中", expires_at: null },
+          },
+        });
+
+        expect(await screen.findAllByRole("img", { name: "ステータス: 🌴 休暇中" })).not.toHaveLength(0);
+      });
+    });
 
     it("shows a message from someone else as it arrives and reads it while the latest is in view", async () => {
       const { sockets, api } = await connected({

@@ -78,6 +78,17 @@ export function formatListTime(date: Date, now: Date, timeZone?: string): string
   return `${d.year}年${d.month}月${d.day}日`;
 }
 
+/**
+ * ステータスがいつ消えるか（`17:00 まで` / `9月25日 17:00 まで`。ADR 0049）。
+ * 今日なら時刻だけにする。ホバーに出す短い文言なので、年は出さない（期限は先でもせいぜい数か月）。
+ */
+export function formatStatusExpiry(date: Date, now: Date, timeZone?: string): string {
+  const d = localParts(date, timeZone);
+  const today = localParts(now, timeZone);
+  if (sameDay(d, today)) return `${formatTime(date, timeZone)} まで`;
+  return `${formatDayTime(date, timeZone)} まで`;
+}
+
 function sameDay(a: DayParts, b: DayParts): boolean {
   return a.year === b.year && a.month === b.month && a.day === b.day;
 }

@@ -681,16 +681,22 @@ Claude Design で描いた 83 枚（`source: "design"`）は撮り直しの対�
 3. DB と REST: マイグレーション、`PUT /users/me/presence`、`PUT` / `DELETE /workspaces/{id}/me/status`、メンバーのレスポンスの `presence` / `away` / `status` ← 完了
    期限切れを落とすのは SQL ではなく Go の `statusOf` 1 箇所（sqlc が CASE 式の NULL 可能性を推せないため。ADR 0049 決定 6 の追記）
    `away` と `status` を載せるのはメンバー一覧だけ。DM の相手とメッセージの送信者の分は、クライアントが一覧から引く（決定 7 の追記）
-4. WebSocket と Web: `activity`、Lua スクリプトの作り直し、`member.status_changed`、Web のつなぎ込み（10 分のタイマー、再接続の同期、楽観的更新）
+4. WebSocket と Web: `activity`、Lua スクリプトの作り直し、`member.status_changed`、Web のつなぎ込み（10 分のタイマー、再接続の同期、楽観的更新） ← 完了
 
 **DoD**
-- [ ] 別のタブを見る・ウィンドウを切り替えると離席になり、戻るとオンラインになる。ほかの人の画面にもリアルタイムに反映される
-- [ ] 操作がないまま一定時間たつと離席になる（時間は `Clock` を固定してテストする）
-- [ ] 複数のタブや端末のうち 1 つでも見ていればオンライン。複数のインスタンスにまたがる接続でも正しい（並行テスト）
-- [ ] 自分で離席にすると、画面を見ても操作してもオンラインに戻らない。再ログインや別の端末でも離席のまま
-- [ ] カスタムステータスを設定・消去でき、期限が来たら出なくなる（サーバーは `Clock` を固定して、クライアントは偽のタイマーで確かめる）
-- [ ] カスタムステータスはワークスペースごとに別（同じユーザーが、別のワークスペースでは別の文言、または未設定）
-- [ ] 手動の離席とカスタムステータスの変更が、本人のほかのタブと同じワークスペースのメンバーに届く。切断中の変更も、再接続の同期で揃う
+- [x] 別のタブを見る・ウィンドウを切り替えると離席になり、戻るとオンラインになる。ほかの人の画面にもリアルタイムに反映される
+      （`activity.test.ts` の「タブを離れると false、戻ると true を知らせる」、`internal/httpx/presence_test.go` の `TestWSActivityAndStatus`）
+- [x] 操作がないまま一定時間たつと離席になる（`activity.test.ts` の「操作がないまま 10 分たつと離席にする」。偽のタイマーで確かめている）
+- [x] 複数のタブや端末のうち 1 つでも見ていればオンライン。複数のインスタンスにまたがる接続でも正しい
+      （`internal/chat/presence/presence_test.go` の `TestSyncAcrossInstances` と `TestConcurrentTransitionsKeepEventOrder`、`hub_test.go` の `TestPresence*`）
+- [x] 自分で離席にすると、画面を見ても操作してもオンラインに戻らない。再ログインや別の端末でも離席のまま
+      （手動の離席は Postgres の `user_presence_settings`。合わせるのは読む側なので、自動の状態が active でも away が勝つ。`lib/presence.test.ts` と `TestSetManualAway`）
+- [x] カスタムステータスを設定・消去でき、期限が来たら出なくなる（`TestSetAndClearStatus` の「期限が過ぎたら出なくなる」で `Clock` を進めている）
+- [x] カスタムステータスはワークスペースごとに別（`TestSetAndClearStatus` の「ワークスペースごとに別」、`store.test.ts` の「別のワークスペースには away だけを当てる」）
+- [x] 手動の離席とカスタムステータスの変更が、本人のほかのタブと同じワークスペースのメンバーに届く。切断中の変更も、再接続の同期で揃う
+      （`TestWSActivityAndStatus` の「本人のほかのタブにも届く」。再接続では、ワークスペースのメンバー一覧を取り直して揃える。ADR 0049 決定 9）
+
+オーナーによる実物での確認は未実施。
 
 ---
 

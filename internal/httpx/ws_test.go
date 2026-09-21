@@ -16,6 +16,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/oklog/ulid/v2"
 
+	"github.com/shun2218-dev/hibari/internal/chat/presence"
 	"github.com/shun2218-dev/hibari/internal/chat/realtime"
 	"github.com/shun2218-dev/hibari/internal/httpx"
 	"github.com/shun2218-dev/hibari/internal/platform/authn"
@@ -785,8 +786,14 @@ func TestWSPresence(t *testing.T) {
 
 	bob := c.dialWS(f.bob)
 	bob.sync() // 登録が終わったことを待つ
-	if got := eventsOfType(owner.sync(), "presence.changed"); len(got) != 1 || string(got[0].Data) != `{"user_id":"`+f.bob.id+`","presence":"active"}` {
+	// 接続は「見ていない」から始まるので、まず idle（ADR 0049 決定 3）
+	if got := eventsOfType(owner.sync(), "presence.changed"); len(got) != 1 || string(got[0].Data) != `{"user_id":"`+f.bob.id+`","presence":"idle"}` {
 		t.Errorf("presence.changed = %v", got)
+	}
+	// クライアントはつないだ直後に今の値を送る
+	bob.request(map[string]any{"type": "activity", "active": true})
+	if got := eventsOfType(owner.sync(), "presence.changed"); len(got) != 1 || string(got[0].Data) != `{"user_id":"`+f.bob.id+`","presence":"active"}` {
+		t.Errorf("presence.changed after activity = %v", got)
 	}
 	if !online(f.bob.id) {
 		t.Error("bob is not online in REST")
@@ -951,15 +958,15 @@ func TestWSNoGoroutineLeak(t *testing.T) {
 	waitUntil(t, func() bool { return runtime.NumGoroutine() <= baseline+5 })
 }
 
-// online は userID が presence でオンラインか（すべての接続の登録が外れたかを待つのに使う）。
+// online は userID が presence で接続を持っているか（すべての接続の登録が外れたかを待つのに使う）。
 func (c *apiClient) online(userID string) bool {
 	c.t.Helper()
 	id := ulid.MustParse(userID)
-	got, err := c.presence.Online(context.Background(), []ulid.ULID{id})
+	got, err := c.presence.States(context.Background(), []ulid.ULID{id})
 	if err != nil {
 		c.t.Fatal(err)
 	}
-	return got[id]
+	return got[id] != presence.StateOffline
 }
 
 func waitUntil(t *testing.T, cond func() bool) {

@@ -84,7 +84,8 @@ func TestWSPresenceAcrossInstances(t *testing.T) {
 		}
 		return out
 	}
-	onlineEvent := `{"user_id":"` + f.bob.id + `","presence":"active"}`
+	// 接続は「見ていない」から始まるので、最初の接続では idle（ADR 0049 決定 3）
+	onlineEvent := `{"user_id":"` + f.bob.id + `","presence":"idle"}`
 	offlineEvent := `{"user_id":"` + f.bob.id + `","presence":"offline"}`
 
 	bobOnA, bobOnB := a.dialWS(f.bob), b.dialWS(f.bob)

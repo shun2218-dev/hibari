@@ -1,9 +1,21 @@
+import {
+  type Activity,
+  createActivity,
+  watchWindowInput,
+  watchWindowVisibility,
+  windowVisible,
+} from "./activity";
 import { type ConnectionOptions, type ConnectionState, createConnection } from "./connection";
 import type { ChatState, ChatStore, ConnectionView } from "./store";
 
 export type RealtimeOptions = Pick<ConnectionOptions, "url" | "createSocket" | "revalidateSession" | "issueTicket"> &
   Partial<Pick<ConnectionOptions, "now" | "random" | "isOnline" | "watchNetwork">> & {
     store: ChatStore;
+    /**
+     * 「画面を見ているか」の見張りを作る（ADR 0049 決定 3）。既定はブラウザの visibility / focus / 操作を見る。
+     * テストでは偽物を渡す（`createSocket` と同じ形）。
+     */
+    createActivity?: (onChange: (active: boolean) => void) => Activity;
   };
 
 /** 「接続が復帰しました」を出しておく時間。 */
@@ -45,7 +57,7 @@ function desiredTargets(state: ChatState): Target[] {
  *   新しく購読したルームも、同じく ack の後に取り直す
  * - 再接続では購読がすべて外れているので、全部を購読し直して取り直す。その間は「同期しています」を出す
  */
-export function createRealtime({ store, ...connectionOptions }: RealtimeOptions) {
+export function createRealtime({ store, createActivity: makeActivity, ...connectionOptions }: RealtimeOptions) {
   // いまの接続で購読できたもの / 購読中のもの / 購読できなかったもの（同じ接続では試し直さない）
   let subscribed = new Set<string>();
   let subscribing = new Set<string>();
@@ -68,12 +80,28 @@ export function createRealtime({ store, ...connectionOptions }: RealtimeOptions)
     onStateChange: handleConnectionState,
   });
 
+  // 画面を見ているかは、変わったときだけ送る（ADR 0049 決定 3）。つながっていなければ落としてよい
+  // （次につないだときに、接続直後の 1 回で今の値が届く）。
+  const activity = (makeActivity ?? defaultActivity)((active) => connection.notify({ type: "activity", active }));
+
+  function defaultActivity(onChange: (active: boolean) => void): Activity {
+    return createActivity({
+      onChange,
+      isVisible: windowVisible,
+      watchVisibility: watchWindowVisibility,
+      watchInput: watchWindowInput,
+      now,
+    });
+  }
+
   function setBanner(view: ConnectionView) {
     store.setConnection(view);
   }
 
   function handleConnectionState(next: ConnectionState) {
     connectionState = next;
+    // 接続が切れたら、サーバー側の「見ているか」も消える。次の接続でまた送り直す
+    if (next.status !== "open") activity.reset();
     if (next.status === "open") return; // 同期の状態は handleOpen が決める
     clearTimeout(restoredTimer);
     syncingAfterReconnect = false;
@@ -94,6 +122,8 @@ export function createRealtime({ store, ...connectionOptions }: RealtimeOptions)
 
   function handleOpen() {
     clearTimeout(restoredTimer);
+    // サーバーの接続は「見ていない」から始まるので、つないだ直後に今の値を送る（ADR 0049 決定 3）
+    connection.notify({ type: "activity", active: activity.current() });
     // 最初の接続では、ページが REST で読み込んでいる最中なので、バナーを出さない
     syncingAfterReconnect = everOpened;
     everOpened = true;
@@ -184,6 +214,9 @@ export function createRealtime({ store, ...connectionOptions }: RealtimeOptions)
     const state = store.getSnapshot();
     // 参加中のスレッドの一覧（サイドバーのバッジ）も、購読より前の変更を取り直す（ADR 0036）
     const tasks: Promise<void>[] = [store.reloadRooms(workspaceId), store.reloadThreads(workspaceId)];
+    // presence / away / status は change_seq に乗らないので、取りこぼしは取り直しで回復する（ADR 0049 決定 9）。
+    // 名前の横のステータスは、ルームのメンバー一覧に載らない人のぶんも要るので、ワークスペースの一覧を取り直す
+    if (state.members[workspaceId]) tasks.push(store.loadMembers(workspaceId));
     for (const { kind, id } of targets) {
       if (kind !== "room") continue;
       if (state.timelines[id]?.status === "ready") tasks.push(store.syncTimeline(id));
@@ -205,6 +238,7 @@ export function createRealtime({ store, ...connectionOptions }: RealtimeOptions)
   return {
     start() {
       unsubscribeStore ??= store.subscribe(scheduleReconcile);
+      activity.start();
       connection.start();
     },
 
@@ -212,6 +246,7 @@ export function createRealtime({ store, ...connectionOptions }: RealtimeOptions)
       unsubscribeStore?.();
       unsubscribeStore = undefined;
       clearTimeout(restoredTimer);
+      activity.stop();
       connection.stop();
     },
 
