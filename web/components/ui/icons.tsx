@@ -15,6 +15,7 @@ import {
   CircleAlert,
   CircleCheck,
   Clock,
+  Copy,
   Code,
   Download,
   Ellipsis,
@@ -25,15 +26,18 @@ import {
   List,
   ListOrdered,
   Lock,
+  LogOut,
   type LucideIcon,
   type LucideProps,
   Mail,
   Megaphone,
   MessagesSquare,
+  Pencil,
   Monitor,
   Paperclip,
   Plus,
   Reply,
+  RotateCw,
   Search,
   SendHorizontal,
   Settings,
@@ -44,6 +48,7 @@ import {
   TextQuote,
   Trash2,
   Underline,
+  UserMinus,
   Users,
   X,
   Eye,
@@ -102,3 +107,10 @@ export const BulletListIcon = withDefaults(List);
 export const MegaphoneIcon = withDefaults(Megaphone);
 /** 送信のボタン。 */
 export const SendIcon = withDefaults(SendHorizontal);
+
+// ---- メニューとボタンの操作（Slack のメニューと同じく、文字の前にアイコンを置く） ----
+export const CopyIcon = withDefaults(Copy);
+export const LogOutIcon = withDefaults(LogOut);
+export const PencilIcon = withDefaults(Pencil);
+export const RetryIcon = withDefaults(RotateCw);
+export const UserMinusIcon = withDefaults(UserMinus);

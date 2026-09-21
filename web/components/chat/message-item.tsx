@@ -9,12 +9,17 @@ import { Button, IconButton, TextButton } from "@/components/ui/button";
 import {
   ChevronRightIcon,
   ClockIcon,
+  DownloadIcon,
   FileIcon,
+  LinkIcon,
   MoreIcon,
+  PencilIcon,
   ReplyIcon,
   SmilePlusIcon,
   ThreadIcon,
+  TrashIcon,
 } from "@/components/ui/icons";
+import { MenuItem } from "@/components/ui/menu-item";
 import { Popover } from "@/components/ui/popover";
 import type { MentionCandidate } from "@/lib/chat/mentions";
 import { cx } from "@/lib/cx";
@@ -433,31 +438,19 @@ export function MessageItem({
       {menuOpen && hasMenu && (
         <Popover label="メッセージの操作" className="top-6 right-4 w-52">
           {copyLink && (
-            <button
-              type="button"
-              onClick={copyLink.onClick}
-              className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
-            >
+            <MenuItem icon={LinkIcon} onClick={copyLink.onClick}>
               {copyLink.label}
-            </button>
+            </MenuItem>
           )}
           {canEdit && (
-            <button
-              type="button"
-              onClick={onEdit}
-              className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
-            >
+            <MenuItem icon={PencilIcon} onClick={onEdit}>
               メッセージを編集
-            </button>
+            </MenuItem>
           )}
           {canDelete && (
-            <button
-              type="button"
-              onClick={onDelete}
-              className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base font-medium text-danger hover:bg-surface-muted"
-            >
+            <MenuItem icon={TrashIcon} onClick={onDelete} danger>
               メッセージを削除
-            </button>
+            </MenuItem>
           )}
         </Popover>
       )}
@@ -583,9 +576,10 @@ function Attachment({
         <p className="truncate text-sm font-medium text-text">{attachment.fileName}</p>
         <p className="font-mono text-2xs text-text-muted">{attachment.sizeLabel}</p>
       </div>
-      <TextButton onClick={() => onDownload?.(attachment.id)} className="text-xs font-semibold">
-        ダウンロード
-      </TextButton>
+      {/* 拡大表示の中のダウンロードと同じアイコン（ADR 0045）。文字のボタンより行が軽くなる（オーナーの要望、2026-09-21） */}
+      <IconButton label="ダウンロード" title="ダウンロード" onClick={() => onDownload?.(attachment.id)} className="size-7">
+        <DownloadIcon className="size-4" />
+      </IconButton>
       {/* 画像でない添付の削除は、この行の「…」から（画像は拡大表示の中にある。ADR 0045 決定 9） */}
       {onDelete && (
         <IconButton
@@ -599,13 +593,9 @@ function Attachment({
       )}
       {menuOpen && onDelete && (
         <Popover label="ファイルの操作" className="top-11 right-0 w-44">
-          <button
-            type="button"
-            onClick={() => onDelete(attachment.id)}
-            className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base font-medium text-danger hover:bg-surface-muted"
-          >
+          <MenuItem icon={TrashIcon} onClick={() => onDelete(attachment.id)} danger>
             ファイルを削除
-          </button>
+          </MenuItem>
         </Popover>
       )}
     </div>

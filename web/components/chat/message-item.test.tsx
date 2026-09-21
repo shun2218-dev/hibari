@@ -218,7 +218,11 @@ describe("MessageItem", () => {
     expect(screen.getByText("type-scale.pdf")).toBeInTheDocument();
     expect(screen.getByText("248 KB")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "ダウンロード" }));
+    // ダウンロードはアイコンのボタン（文字は出さず、名前は読み上げと title に残す）
+    const download = screen.getByRole("button", { name: "ダウンロード" });
+    expect(download).not.toHaveTextContent("ダウンロード");
+    expect(download).toHaveAttribute("title", "ダウンロード");
+    await userEvent.click(download);
     expect(onDownload).toHaveBeenCalledWith("a2");
   });
 
@@ -260,6 +264,8 @@ describe("MessageItem actions", () => {
     const menu = screen.getByRole("dialog", { name: "メッセージの操作" });
     expect(within(menu).getByRole("button", { name: "メッセージを編集" })).toBeInTheDocument();
     expect(within(menu).getByRole("button", { name: "メッセージを削除" })).toBeInTheDocument();
+    // Slack のメニューと同じく、どの行も文字の前にアイコンがある
+    for (const item of within(menu).getAllByRole("button")) expect(item.querySelector("svg")).not.toBeNull();
 
     // 他人のメッセージを管理者として消すだけのとき、編集は出さない
     rerender(<MessageItem message={message()} canDelete menuOpen onDelete={onDelete} />);

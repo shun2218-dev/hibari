@@ -1,4 +1,5 @@
-import { SmilePlusIcon } from "@/components/ui/icons";
+import { LogOutIcon, SettingsIcon, SmilePlusIcon, UsersIcon } from "@/components/ui/icons";
+import { MenuItem } from "@/components/ui/menu-item";
 import { Popover } from "@/components/ui/popover";
 
 import type { UserRef } from "./types";
@@ -38,18 +39,20 @@ export function AccountMenu({
       <button
         type="button"
         onClick={onOpenStatus}
-        className="flex h-9.5 w-full cursor-pointer items-center gap-2 rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
+        className="flex h-9.5 w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
       >
         {user.status ? (
           <>
-            <span role="img" aria-hidden>
+            <span role="img" aria-hidden className="flex w-4 shrink-0 justify-center">
               {user.status.emoji}
             </span>
             <span className="truncate">{user.status.text ?? "ステータスを変更"}</span>
           </>
         ) : (
           <>
-            <SmilePlusIcon className="size-4 text-text-secondary" />
+            <span aria-hidden className="flex w-4 shrink-0 justify-center text-text-secondary">
+              <SmilePlusIcon className="size-4" />
+            </span>
             ステータスを設定
           </>
         )}
@@ -57,34 +60,25 @@ export function AccountMenu({
       <button
         type="button"
         onClick={onToggleAway}
-        className="flex h-9.5 w-full cursor-pointer items-center gap-2 rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
+        className="flex h-9.5 w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
       >
-        <span aria-hidden className="size-2 rounded-full border-2 border-text-muted bg-surface" />
+        {/* メニューのほかの行（MenuItem）とアイコンの幅をそろえ、文字の頭を合わせる */}
+        <span aria-hidden className="flex w-4 shrink-0 justify-center">
+          <span className="size-2 rounded-full border-2 border-text-muted bg-surface" />
+        </span>
         {away ? "離席を解除する" : "離席中にする"}
       </button>
       <div className="my-1.5 h-px bg-border" />
-      <button
-        type="button"
-        onClick={onOpenWorkspaceSettings}
-        className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
-      >
+      <MenuItem icon={UsersIcon} onClick={onOpenWorkspaceSettings}>
         ワークスペース設定
-      </button>
-      <button
-        type="button"
-        onClick={onOpenSettings}
-        className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
-      >
+      </MenuItem>
+      <MenuItem icon={SettingsIcon} onClick={onOpenSettings}>
         設定
-      </button>
+      </MenuItem>
       <div className="my-1.5 h-px bg-border" />
-      <button
-        type="button"
-        onClick={onLogout}
-        className="flex h-9.5 w-full items-center rounded-sm px-2.5 text-left text-base font-medium text-danger hover:bg-surface-muted"
-      >
+      <MenuItem icon={LogOutIcon} onClick={onLogout} danger>
         ログアウト
-      </button>
+      </MenuItem>
     </Popover>
   );
 }

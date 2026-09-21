@@ -1,9 +1,10 @@
 "use client";
 
-import { type ReactNode, useRef } from "react";
+import { useRef } from "react";
 
 import { Button, IconButton } from "@/components/ui/button";
-import { CheckIcon, ChevronLeftIcon, CloseIcon, MailIcon, MoreIcon } from "@/components/ui/icons";
+import { CheckIcon, ChevronLeftIcon, CloseIcon, CopyIcon, MailIcon, MoreIcon, UserMinusIcon } from "@/components/ui/icons";
+import { MenuItem } from "@/components/ui/menu-item";
 import { Popover } from "@/components/ui/popover";
 import { ResizeHandle } from "@/components/ui/resize-handle";
 import { roleLabel, type WorkspaceRole } from "@/components/workspace/types";
@@ -158,8 +159,14 @@ function ProfileMenu({
   return (
     // 操作の行は大きな写真の下にあり、下に開くと画面の下で切れる。上（写真の側）に開く
     <Popover label="その他の操作" className="right-5 bottom-full w-58">
-      <MenuItem onClick={onCopyHandle}>ハンドルをコピー</MenuItem>
-      {profile.email.state === "ready" && <MenuItem onClick={onCopyEmail}>メールアドレスをコピー</MenuItem>}
+      <MenuItem icon={CopyIcon} onClick={onCopyHandle}>
+        ハンドルをコピー
+      </MenuItem>
+      {profile.email.state === "ready" && (
+        <MenuItem icon={MailIcon} onClick={onCopyEmail}>
+          メールアドレスをコピー
+        </MenuItem>
+      )}
       {profile.manage && (
         <>
           <div className="my-1 h-px bg-border" />
@@ -174,7 +181,7 @@ function ProfileMenu({
                     aria-pressed={current}
                     onClick={() => onChangeRole?.(role)}
                     className={cx(
-                      "flex h-9.5 w-full cursor-pointer items-center gap-2 rounded-sm px-2.5 text-left text-base text-text",
+                      "flex h-9.5 w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-left text-base text-text",
                       current ? "bg-primary-subtle font-semibold" : "hover:bg-surface-muted",
                     )}
                   >
@@ -190,7 +197,7 @@ function ProfileMenu({
           {profile.manage.canRemove && (
             <>
               <div className="my-1 h-px bg-border" />
-              <MenuItem onClick={onRemove} danger>
+              <MenuItem icon={UserMinusIcon} onClick={onRemove} danger>
                 ワークスペースから削除
               </MenuItem>
             </>
@@ -198,20 +205,5 @@ function ProfileMenu({
         </>
       )}
     </Popover>
-  );
-}
-
-function MenuItem({ children, onClick, danger = false }: { children: ReactNode; onClick?: () => void; danger?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cx(
-        "flex h-9.5 w-full cursor-pointer items-center rounded-sm px-2.5 text-left text-base hover:bg-surface-muted",
-        danger ? "font-medium text-danger" : "text-text",
-      )}
-    >
-      {children}
-    </button>
   );
 }
