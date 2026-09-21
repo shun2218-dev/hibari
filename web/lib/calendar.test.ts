@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { dateLabel, fromISODate, halfHourTimes, monthGrid, monthLabel, shiftDate, shiftMonth, toISODate } from "./calendar";
+import {
+  dateLabel,
+  fromISODate,
+  halfHourTimes,
+  matchTimes,
+  monthGrid,
+  monthLabel,
+  normalizeTime,
+  shiftDate,
+  shiftMonth,
+  toISODate,
+} from "./calendar";
 
 describe("カレンダーの日付の計算（ADR 0049 の追記）", () => {
   it("ローカルの日付として往復する（UTC でずらさない）", () => {
@@ -47,5 +58,33 @@ describe("カレンダーの日付の計算（ADR 0049 の追記）", () => {
     expect(times[0]).toBe("00:00");
     expect(times[1]).toBe("00:30");
     expect(times.at(-1)).toBe("23:30");
+  });
+});
+
+describe("時刻の自由入力（Slack と同じ「一覧 + 自由入力」）", () => {
+  it("打った文字を HH:MM にする", () => {
+    expect(normalizeTime("17")).toBe("17:00");
+    expect(normalizeTime("17:5")).toBe("17:05");
+    expect(normalizeTime("1705")).toBe("17:05");
+    expect(normalizeTime("930")).toBe("09:30");
+    expect(normalizeTime(" 9:30 ")).toBe("09:30");
+    expect(normalizeTime("17：30")).toBe("17:30");
+  });
+
+  it("時刻にならない文字は undefined", () => {
+    expect(normalizeTime("24:00")).toBeUndefined();
+    expect(normalizeTime("12:60")).toBeUndefined();
+    expect(normalizeTime("あ")).toBeUndefined();
+    expect(normalizeTime("")).toBeUndefined();
+  });
+
+  it("打った文字で候補を絞る", () => {
+    const times = halfHourTimes();
+
+    expect(matchTimes(times, "")).toHaveLength(48);
+    expect(matchTimes(times, "17")).toEqual(["17:00", "17:30"]);
+    expect(matchTimes(times, "173")).toEqual(["17:30"]);
+    expect(matchTimes(times, "17:3")).toEqual(["17:30"]);
+    expect(matchTimes(times, "99")).toEqual([]);
   });
 });

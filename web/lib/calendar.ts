@@ -78,7 +78,40 @@ export function monthGrid(month: string): (string | undefined)[][] {
   return Array.from({ length: 6 }, (_, row) => cells.slice(row * 7, row * 7 + 7));
 }
 
-/** 30 分刻みの時刻（`HH:MM`）。Slack と同じ刻み。 */
+/** 候補に出す時刻（`HH:MM`）。30 分ごとに並べる。ここに無い時刻は打って入れられる（下の `normalizeTime`）。 */
 export function halfHourTimes(): string[] {
   return Array.from({ length: 48 }, (_, i) => `${pad(Math.floor(i / 2))}:${i % 2 === 0 ? "00" : "30"}`);
+}
+
+/**
+ * 打った文字を `HH:MM` にする。解釈できなければ undefined。
+ *
+ * Slack のデスクトップの時刻の入力は「候補の一覧 + 自由入力」なので、候補に無い時刻も受け取れるようにする。
+ * `17` → `17:00`、`1705` / `17:5` → `17:05`。全角のコロンと空白も受ける（日本語入力のまま打てるように）。
+ */
+export function normalizeTime(input: string): string | undefined {
+  const cleaned = input.trim().replace(/[：]/g, ":").replace(/\s/g, "");
+  let hour: number;
+  let minute: number;
+  if (cleaned.includes(":")) {
+    const [h, m = "0"] = cleaned.split(":");
+    if (!/^\d{1,2}$/.test(h) || !/^\d{1,2}$/.test(m)) return undefined;
+    [hour, minute] = [Number(h), Number(m)];
+  } else if (/^\d{1,2}$/.test(cleaned)) {
+    // 「17」は 17:00 のつもり
+    [hour, minute] = [Number(cleaned), 0];
+  } else if (/^\d{3,4}$/.test(cleaned)) {
+    // 「930」「1705」はまとめて打たれた形。後ろ 2 桁が分
+    [hour, minute] = [Number(cleaned.slice(0, -2)), Number(cleaned.slice(-2))];
+  } else {
+    return undefined;
+  }
+  return hour < 24 && minute < 60 ? `${pad(hour)}:${pad(minute)}` : undefined;
+}
+
+/** 打った文字で候補を絞る（`17` → 17:00 / 17:30、`173` → 17:30）。空なら全部。 */
+export function matchTimes(times: readonly string[], input: string): string[] {
+  const digits = input.replace(/[^\d]/g, "");
+  if (digits === "") return [...times];
+  return times.filter((t) => t.replace(":", "").startsWith(digits));
 }

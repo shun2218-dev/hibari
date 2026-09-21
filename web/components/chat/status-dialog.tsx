@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useId, useRef } from "react";
 
 import { AnchoredPanel } from "@/components/ui/anchored-panel";
 import { Calendar } from "@/components/ui/calendar";
@@ -9,7 +9,7 @@ import { ChoiceChip } from "@/components/ui/choice";
 import { Dialog } from "@/components/ui/dialog";
 import { TextField } from "@/components/ui/field";
 import { Portal } from "@/components/ui/portal";
-import { dateLabel, halfHourTimes } from "@/lib/calendar";
+import { dateLabel, halfHourTimes, matchTimes, normalizeTime } from "@/lib/calendar";
 import { cx } from "@/lib/cx";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 
@@ -103,15 +103,25 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// 日付・時刻を開くボタン。入力欄と同じ高さ・枠にして、並べたときに段差が出ないようにする。
+// 日付を開くボタンと時刻の入力。高さと枠をそろえて、並べたときに段差が出ないようにする。
 const pickerButtonClass =
-  "flex h-11 cursor-pointer items-center rounded-md border border-border bg-surface px-3 text-lg text-text hover:bg-surface-muted";
+  "flex h-11 cursor-pointer items-center rounded-md border border-border bg-surface px-3 text-lg text-text hover:bg-surface-muted focus-visible:-outline-offset-2";
 
 /**
- * 30 分刻みの時刻の一覧。開いたときに、選んでいる時刻が見える位置まで送る
- * （48 個あるので、いつも 00:00 から始まると選び直すたびにスクロールが要る）。
+ * 時刻の候補の一覧（30 分ごと）。打った文字で絞った結果を受け取る。
+ * 開いたときは、選んでいる時刻が見える位置まで送る（48 個あるので、いつも 00:00 から始まると毎回スクロールが要る）。
  */
-function TimeList({ times, value, onSelect }: { times: string[]; value?: string; onSelect: (time: string) => void }) {
+function TimeList({
+  id,
+  times,
+  value,
+  onSelect,
+}: {
+  id: string;
+  times: string[];
+  value?: string;
+  onSelect: (time: string) => void;
+}) {
   const selected = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     // jsdom には scrollIntoView が無いので、あるときだけ呼ぶ（無くても一覧は出る）
@@ -119,15 +129,15 @@ function TimeList({ times, value, onSelect }: { times: string[]; value?: string;
   }, []);
 
   return (
-    // 一覧から 1 つ選ぶので、押せる要素はラジオにする（button に aria-selected は付けられない）
-    <ul role="radiogroup" aria-label="削除する時刻" className="max-h-64 overflow-y-auto p-1.5">
+    // 入力欄（combobox）に紐づく候補の一覧なので listbox / option にする
+    <ul role="listbox" id={id} aria-label="時刻の候補" className="max-h-64 overflow-y-auto p-1.5">
       {times.map((time) => (
         <li key={time}>
           <button
             ref={time === value ? selected : undefined}
             type="button"
-            role="radio"
-            aria-checked={time === value}
+            role="option"
+            aria-selected={time === value}
             onClick={() => onSelect(time)}
             className={cx(
               "flex h-9 w-full cursor-pointer items-center rounded-sm px-2.5 text-left text-base",
@@ -176,11 +186,16 @@ export function StatusDialog({
 }: StatusDialogProps) {
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const dateButtonRef = useRef<HTMLButtonElement>(null);
-  const timeButtonRef = useRef<HTMLButtonElement>(null);
+  const timeInputRef = useRef<HTMLInputElement>(null);
+  const timeListId = useId();
   const desktopPicker = useMediaQuery(DESKTOP_QUERY);
   const picker = <EmojiPicker onPick={(picked) => onPickEmoji?.(picked)} theme={theme} />;
-  // 今日を選んだときは、過ぎた時刻を出さない（設定した瞬間に消えるステータスを作らせない）
-  const times = halfHourTimes().filter((t) => custom?.date !== today || minTime === undefined || t > minTime);
+  // 今日を選んだときは過ぎた時刻を出さず（設定した瞬間に消えるステータスを作らせない）、
+  // 打った文字があればそれで絞る（Slack と同じ「一覧 + 自由入力」）
+  const times = matchTimes(
+    halfHourTimes().filter((t) => custom?.date !== today || minTime === undefined || t > minTime),
+    custom?.time ?? "",
+  );
 
   return (
     <Dialog
@@ -303,16 +318,35 @@ export function StatusDialog({
                 >
                   {custom?.date ? dateLabel(custom.date) : "日付を選ぶ"}
                 </button>
-                <button
-                  ref={timeButtonRef}
-                  type="button"
-                  aria-label="削除する時刻"
-                  aria-expanded={openPicker === "time"}
-                  onClick={() => onToggleCustomPicker?.("time")}
-                  className={pickerButtonClass}
-                >
-                  {custom?.time || "時刻を選ぶ"}
-                </button>
+                {/*
+                  時刻は「候補の一覧 + 自由入力」にする（Slack のデスクトップと同じ）。
+                  候補に無い時刻（17:05 など）も打って入れられる。モバイルは OS 標準の時刻入力に任せる
+                */}
+                {desktopPicker ? (
+                  <input
+                    ref={timeInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    role="combobox"
+                    aria-label="削除する時刻"
+                    aria-autocomplete="list"
+                    aria-controls={timeListId}
+                    aria-expanded={openPicker === "time"}
+                    placeholder="17:00"
+                    value={custom?.time ?? ""}
+                    onChange={(e) => onChangeCustom?.({ date: custom?.date ?? "", time: e.target.value })}
+                    onFocus={() => openPicker !== "time" && onToggleCustomPicker?.("time")}
+                    className={cx(pickerButtonClass, "w-28")}
+                  />
+                ) : (
+                  <input
+                    type="time"
+                    aria-label="削除する時刻"
+                    value={normalizeTime(custom?.time ?? "") ?? ""}
+                    onChange={(e) => onChangeCustom?.({ date: custom?.date ?? "", time: e.target.value })}
+                    className={pickerButtonClass}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -337,17 +371,18 @@ export function StatusDialog({
           </AnchoredPanel>
         )}
 
-        {openPicker === "time" && (
+        {openPicker === "time" && desktopPicker && times.length > 0 && (
           <AnchoredPanel
-            anchorRef={timeButtonRef}
+            anchorRef={timeInputRef}
             align="start"
             label="時刻を選ぶ"
             onDismiss={() => onToggleCustomPicker?.("time")}
             className="w-32 rounded-md border border-border bg-surface shadow-overlay"
           >
             <TimeList
+              id={timeListId}
               times={times}
-              value={custom?.time}
+              value={normalizeTime(custom?.time ?? "")}
               onSelect={(time) => onChangeCustom?.({ date: custom?.date ?? "", time })}
             />
           </AnchoredPanel>

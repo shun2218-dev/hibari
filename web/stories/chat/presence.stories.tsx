@@ -86,9 +86,9 @@ export const StatusDialogCalendar: Story = {
   render: () => chat({ presence: true, statusDialog: "calendar" }),
 };
 
-/** 時刻も自由入力ではなく、30 分刻みの一覧から選ぶ（Slack と同じ刻み）。 */
+/** 時刻は「候補の一覧 + 自由入力」。打った文字（`17`）で候補が絞られる。 */
 export const StatusDialogTime: Story = {
-  name: "ステータスを設定（時刻の一覧）",
+  name: "ステータスを設定（時刻の候補）",
   tags: ["since:6.8"],
   render: () => chat({ presence: true, statusDialog: "time" }),
 };

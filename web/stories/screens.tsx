@@ -386,7 +386,8 @@ export function chat({
                 ? "custom"
                 : "today"
           }
-          custom={{ date: "2026-09-25", time: "17:00" }}
+          // 時刻の一覧は「打った文字で絞る」ところを見せる（`17` → 17:00 / 17:30）
+          custom={{ date: "2026-09-25", time: statusDialog === "time" ? "17" : "17:00" }}
           calendarMonth="2026-09"
           today="2026-09-21"
           minTime="11:00"
