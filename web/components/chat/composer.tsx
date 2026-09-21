@@ -2,8 +2,8 @@
 
 import { useMemo, useRef } from "react";
 
-import { IconButton, TextButton } from "@/components/ui/button";
-import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon, SendIcon } from "@/components/ui/icons";
+import { IconButton } from "@/components/ui/button";
+import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon, RetryIcon, SendIcon } from "@/components/ui/icons";
 import type { MentionCandidate } from "@/lib/chat/mentions";
 import { cx } from "@/lib/cx";
 
@@ -238,12 +238,13 @@ export function AttachmentChip({
               アップロードできませんでした
             </p>
           </div>
-          <TextButton onClick={onRetry} className="text-xs font-semibold">
-            再試行
-          </TextButton>
-          <TextButton onClick={onRemove} className="text-xs text-text-secondary">
-            取り消し
-          </TextButton>
+          {/* アップロード中・済みの取り消しと同じくアイコンにする（オーナーの要望、2026-09-21）。名前は読み上げと title に残す */}
+          <IconButton label="再試行" title="再試行" onClick={onRetry}>
+            <RetryIcon className="size-4" />
+          </IconButton>
+          <IconButton label="取り消し" title="取り消し" onClick={onRemove}>
+            <CloseIcon className="size-4" />
+          </IconButton>
         </div>
       );
     case "uploaded":

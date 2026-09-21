@@ -421,6 +421,8 @@ describe("AttachmentChip", () => {
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent("アップロードできませんでした");
+    // 再試行と取り消しはアイコンのボタン
+    expect(screen.getByRole("button", { name: "再試行" })).not.toHaveTextContent("再試行");
     await userEvent.click(screen.getByRole("button", { name: "再試行" }));
     await userEvent.click(screen.getByRole("button", { name: "取り消し" }));
 
