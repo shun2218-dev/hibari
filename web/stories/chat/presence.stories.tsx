@@ -72,11 +72,18 @@ export const StatusDialogPicker: Story = {
   render: () => chat({ presence: true, statusDialog: "picker" }),
 };
 
-/** 「日時を選択」を選ぶと、日付と時刻の入力が下に出る（カレンダーはブラウザのもの）。 */
+/** 「日時を選択」を選ぶと、日付と時刻のボタンが下に出る。 */
 export const StatusDialogCustom: Story = {
   name: "ステータスを設定（日時を選択）",
   tags: ["since:6.8"],
   render: () => chat({ presence: true, statusDialog: "custom" }),
+};
+
+/** 日付のボタンを押すと、自前のカレンダーが開く（ブラウザ標準の入力は使わない）。 */
+export const StatusDialogCalendar: Story = {
+  name: "ステータスを設定（カレンダー）",
+  tags: ["since:6.8"],
+  render: () => chat({ presence: true, statusDialog: "calendar" }),
 };
 
 export const MobileStatusDialog: Story = {

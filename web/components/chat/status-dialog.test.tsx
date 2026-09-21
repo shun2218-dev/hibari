@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -55,26 +55,57 @@ describe("StatusDialog（ADR 0049）", () => {
     expect(onChangeExpiry).toHaveBeenCalledWith("1h");
   });
 
-  it("「日時を選択」のときだけ、日付と時刻の入力を出す", async () => {
-    const onChangeCustom = vi.fn();
+  it("「日時を選択」のときだけ、日付と時刻のボタンを出す", () => {
     const { rerender } = render(<StatusDialog open text="休憩中" expiry="today" />);
-    expect(screen.queryByLabelText("削除する日付")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "削除する日付" })).not.toBeInTheDocument();
 
-    rerender(
+    rerender(<StatusDialog open text="休憩中" expiry="custom" custom={{ date: "2026-09-25", time: "17:00" }} />);
+
+    // ブラウザ標準の入力ではなく、押すと自前のカレンダー / 一覧が開くボタン（ADR 0049 の追記）
+    expect(screen.getByRole("button", { name: "削除する日付" })).toHaveTextContent("2026年9月25日（金）");
+    expect(screen.getByRole("button", { name: "削除する時刻" })).toHaveTextContent("17:00");
+  });
+
+  it("カレンダーで選んだ日付を、時刻を保ったまま返す", async () => {
+    const onChangeCustom = vi.fn();
+    render(
       <StatusDialog
         open
         text="休憩中"
         expiry="custom"
         custom={{ date: "2026-09-25", time: "17:00" }}
+        calendarMonth="2026-09"
+        today="2026-09-21"
+        openPicker="date"
         onChangeCustom={onChangeCustom}
       />,
     );
 
-    expect(screen.getByLabelText("削除する日付")).toHaveValue("2026-09-25");
-    expect(screen.getByLabelText("削除する時刻")).toHaveValue("17:00");
-    // 片方を変えても、もう片方は保たれる（props で値を持つので、1 回の change で確かめる）
-    fireEvent.change(screen.getByLabelText("削除する時刻"), { target: { value: "18:30" } });
-    expect(onChangeCustom).toHaveBeenLastCalledWith({ date: "2026-09-25", time: "18:30" });
+    await userEvent.click(screen.getByRole("gridcell", { name: "2026年9月28日（月）" }));
+
+    expect(onChangeCustom).toHaveBeenCalledWith({ date: "2026-09-28", time: "17:00" });
+  });
+
+  it("時刻は 30 分刻みで、今日なら過ぎた時刻を出さない", async () => {
+    const onChangeCustom = vi.fn();
+    render(
+      <StatusDialog
+        open
+        text="休憩中"
+        expiry="custom"
+        custom={{ date: "2026-09-21", time: "" }}
+        today="2026-09-21"
+        minTime="17:00"
+        openPicker="time"
+        onChangeCustom={onChangeCustom}
+      />,
+    );
+
+    expect(screen.queryByRole("radio", { name: "16:30" })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "17:30" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "17:30" }));
+
+    expect(onChangeCustom).toHaveBeenCalledWith({ date: "2026-09-21", time: "17:30" });
   });
 
   it("絵文字のボタンでピッカーを開け閉めする", async () => {

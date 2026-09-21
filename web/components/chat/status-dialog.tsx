@@ -3,11 +3,14 @@
 import { type ReactNode, useRef } from "react";
 
 import { AnchoredPanel } from "@/components/ui/anchored-panel";
+import { Calendar } from "@/components/ui/calendar";
 import { Button, TextButton } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice";
 import { Dialog } from "@/components/ui/dialog";
 import { TextField } from "@/components/ui/field";
 import { Portal } from "@/components/ui/portal";
+import { dateLabel, halfHourTimes } from "@/lib/calendar";
+import { cx } from "@/lib/cx";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 
 import { EmojiPicker } from "./emoji-picker";
@@ -47,7 +50,10 @@ export const STATUS_TEXT_MAX = 100;
 /** 文言だけを書いたときに添える絵文字。サーバーは絵文字を必須にしているので、クライアントが入れる。 */
 export const DEFAULT_STATUS_EMOJI = "💬";
 
-/** 「日時を選択」で入れる値。`<input type="date" / "time">` の形式のまま持ち、絶対の時刻にするのはデータ層。 */
+/**
+ * 「日時を選択」で入れる値。日付は `YYYY-MM-DD`、時刻は `HH:MM`（30 分刻み）。
+ * 絶対の時刻にするのはデータ層で、端末のタイムゾーンで解釈する。
+ */
 export type StatusExpiryCustom = { date: string; time: string };
 
 type StatusDialogProps = {
@@ -58,6 +64,13 @@ type StatusDialogProps = {
   expiry: StatusExpiry;
   /** `expiry` が custom のときに出す日付と時刻。 */
   custom?: StatusExpiryCustom;
+  /** カレンダーが出している月（`YYYY-MM`）と今日（`YYYY-MM-DD`）。時刻は `Clock` を持つ側が決める。 */
+  calendarMonth?: string;
+  today?: string;
+  /** いまの時刻（`HH:MM`）。今日を選んだときに、これより後の時刻だけを出す。 */
+  minTime?: string;
+  /** 開いている選択（カレンダー / 時刻の一覧）。 */
+  openPicker?: "date" | "time";
   /** 絵文字のピッカーを開いている。 */
   pickerOpen?: boolean;
   /** すでに設定してある（「削除」を出すか）。 */
@@ -68,6 +81,8 @@ type StatusDialogProps = {
   onChangeText?: (text: string) => void;
   onChangeExpiry?: (expiry: StatusExpiry) => void;
   onChangeCustom?: (custom: StatusExpiryCustom) => void;
+  onChangeCalendarMonth?: (month: string) => void;
+  onToggleCustomPicker?: (picker: "date" | "time") => void;
   onSelectPreset?: (preset: UserStatusView) => void;
   onSave?: () => void;
   onClear?: () => void;
@@ -88,8 +103,9 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// 日付・時刻の入力。カレンダーはブラウザのものが開く（自前のカレンダーは作らない）。
-const dateInputClass = "h-11 rounded-md border border-border bg-surface px-3 text-lg text-text focus-visible:-outline-offset-2";
+// 日付・時刻を開くボタン。入力欄と同じ高さ・枠にして、並べたときに段差が出ないようにする。
+const pickerButtonClass =
+  "flex h-11 cursor-pointer items-center rounded-md border border-border bg-surface px-3 text-lg text-text hover:bg-surface-muted";
 
 /**
  * カスタムステータスを設定するダイアログ（ADR 0049）。文言と選択肢は Slack に合わせる。
@@ -104,6 +120,10 @@ export function StatusDialog({
   text,
   expiry,
   custom,
+  calendarMonth,
+  today,
+  minTime,
+  openPicker,
   pickerOpen = false,
   canClear = false,
   onClose,
@@ -112,14 +132,20 @@ export function StatusDialog({
   onChangeText,
   onChangeExpiry,
   onChangeCustom,
+  onChangeCalendarMonth,
+  onToggleCustomPicker,
   onSelectPreset,
   onSave,
   onClear,
   theme = "light",
 }: StatusDialogProps) {
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
+  const dateButtonRef = useRef<HTMLButtonElement>(null);
+  const timeButtonRef = useRef<HTMLButtonElement>(null);
   const desktopPicker = useMediaQuery(DESKTOP_QUERY);
   const picker = <EmojiPicker onPick={(picked) => onPickEmoji?.(picked)} theme={theme} />;
+  // 今日を選んだときは、過ぎた時刻を出さない（設定した瞬間に消えるステータスを作らせない）
+  const times = halfHourTimes().filter((t) => custom?.date !== today || minTime === undefined || t > minTime);
 
   return (
     <Dialog
@@ -229,27 +255,82 @@ export function StatusDialog({
               ))}
             </div>
             {expiry === "custom" && (
-              // カレンダーはブラウザのものが開く（自前のカレンダーは作らない）。
+              // 日付も時刻も自前で出す（ブラウザ標準の入力はブラウザごとに見た目が変わるため。ADR 0049 の追記）。
               // 入れた日時を絶対の時刻にするのはデータ層で、端末のタイムゾーンで解釈する
               <div className="flex flex-wrap gap-2">
-                <input
-                  type="date"
+                <button
+                  ref={dateButtonRef}
+                  type="button"
                   aria-label="削除する日付"
-                  value={custom?.date ?? ""}
-                  onChange={(e) => onChangeCustom?.({ date: e.target.value, time: custom?.time ?? "" })}
-                  className={dateInputClass}
-                />
-                <input
-                  type="time"
+                  aria-expanded={openPicker === "date"}
+                  onClick={() => onToggleCustomPicker?.("date")}
+                  className={pickerButtonClass}
+                >
+                  {custom?.date ? dateLabel(custom.date) : "日付を選ぶ"}
+                </button>
+                <button
+                  ref={timeButtonRef}
+                  type="button"
                   aria-label="削除する時刻"
-                  value={custom?.time ?? ""}
-                  onChange={(e) => onChangeCustom?.({ date: custom?.date ?? "", time: e.target.value })}
-                  className={dateInputClass}
-                />
+                  aria-expanded={openPicker === "time"}
+                  onClick={() => onToggleCustomPicker?.("time")}
+                  className={pickerButtonClass}
+                >
+                  {custom?.time || "時刻を選ぶ"}
+                </button>
               </div>
             )}
           </div>
         </Section>
+
+        {openPicker === "date" && (
+          <AnchoredPanel
+            anchorRef={dateButtonRef}
+            align="start"
+            label="日付を選ぶ"
+            onDismiss={() => onToggleCustomPicker?.("date")}
+            className="rounded-md border border-border bg-surface shadow-overlay"
+          >
+            <Calendar
+              month={calendarMonth ?? custom?.date?.slice(0, 7) ?? today?.slice(0, 7) ?? ""}
+              value={custom?.date}
+              min={today}
+              today={today}
+              onChangeMonth={onChangeCalendarMonth}
+              onSelect={(date) => onChangeCustom?.({ date, time: custom?.time ?? "" })}
+            />
+          </AnchoredPanel>
+        )}
+
+        {openPicker === "time" && (
+          <AnchoredPanel
+            anchorRef={timeButtonRef}
+            align="start"
+            label="時刻を選ぶ"
+            onDismiss={() => onToggleCustomPicker?.("time")}
+            className="max-h-64 w-32 overflow-y-auto rounded-md border border-border bg-surface p-1.5 shadow-overlay"
+          >
+            {/* 一覧から 1 つ選ぶので、押せる要素はラジオにする（button に aria-selected は付けられない） */}
+            <ul role="radiogroup" aria-label="削除する時刻">
+              {times.map((time) => (
+                <li key={time}>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={time === custom?.time}
+                    onClick={() => onChangeCustom?.({ date: custom?.date ?? "", time })}
+                    className={cx(
+                      "flex h-9 w-full cursor-pointer items-center rounded-sm px-2.5 text-left text-base",
+                      time === custom?.time ? "bg-primary-subtle font-semibold text-primary" : "text-text hover:bg-surface-muted",
+                    )}
+                  >
+                    {time}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </AnchoredPanel>
+        )}
       </div>
     </Dialog>
   );
