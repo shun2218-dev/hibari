@@ -59,4 +59,23 @@ describe("ThreadList", () => {
     expect(screen.getByText("参加しているスレッドはありません")).toBeInTheDocument();
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
   });
+
+  it("親の本文は書式を解釈し、行のリンクの中なのでリンクもチップも押せない要素で描く（ADR 0051）", () => {
+    const withFormat: ThreadListItemView = {
+      ...threads[0],
+      root: {
+        ...threads[0].root,
+        body: `*確認* お願いします <@${naoki.id}> https://example.com`,
+        mentionNames: { [naoki.id]: naoki.name },
+      },
+    };
+    render(<ThreadList threads={[withFormat]} threadHref={() => "/threads/t1"} />);
+
+    const row = screen.getByRole("link");
+    expect(within(row).getByText("確認").tagName).toBe("STRONG");
+    expect(within(row).getByText(`@${naoki.name}`)).toBeInTheDocument();
+    // 行の中にリンクやボタンを入れ子にしない
+    expect(within(row).queryByRole("link")).not.toBeInTheDocument();
+    expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+  });
 });

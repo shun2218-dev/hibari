@@ -581,9 +581,10 @@ describe("threads (ADR 0036)", () => {
         unread_count: 2,
       },
       new Date("2026-09-13T03:00:00Z"),
-      { timeZone: tz },
+      { timeZone: tz, memberNames: { [naoki.id]: "佐藤 直樹" } },
     );
 
+    expect(view.root.mentionNames).toEqual({ [naoki.id]: "佐藤 直樹" });
     expect(view).toMatchObject({
       key: "m-1",
       room: { kind: "dm", name: "佐藤 直樹" },
@@ -662,6 +663,16 @@ describe("permalinksIn", () => {
 });
 
 describe("toTimelineItems のリンクのカード", () => {
+  it("カードの本文のメンションには、ワークスペースのメンバーの名前を渡す（ADR 0051）", () => {
+    const names = { [naoki.id]: "佐藤 直樹" };
+    const [card] = cardsOf([message(1, { body: PERMALINK })], { [LINK_KEY]: linkResult() }, { workspaceMemberNames: names }) ?? [];
+    expect(card).toMatchObject({ state: "ok", mentionNames: names });
+  });
+
+  it("コードの中のパーマリンクはカードにしない（ADR 0051 決定 4）", () => {
+    expect(cardsOf([message(1, { body: `\`${PERMALINK}\`` })], {})).toBeUndefined();
+  });
+
   it("まだ取れていないリンクは loading にする", () => {
     expect(cardsOf([message(1, { body: PERMALINK })], {})).toEqual([{ key: LINK_KEY, state: "loading" }]);
   });

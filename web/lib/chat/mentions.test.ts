@@ -56,6 +56,18 @@ describe("toWireBody", () => {
   });
 });
 
+describe("toWireBody のコード（ADR 0051 決定 5）", () => {
+  it("インラインコードとコードブロックの中の @ハンドルは変換しない", () => {
+    expect(toWireBody("`@alice` と\n```\n@channel\n```\n@alice", candidates)).toBe(
+      `\`@alice\` と\n\`\`\`\n@channel\n\`\`\`\n<@${ALICE}>`,
+    );
+  });
+
+  it("閉じていないバッククォートの後ろは変換する", () => {
+    expect(toWireBody("` @alice", candidates)).toBe(`\` <@${ALICE}>`);
+  });
+});
+
 describe("toInputBody", () => {
   it("ID をハンドルに戻す", () => {
     expect(toInputBody(`<@${ALICE}> と <!here>`, handles)).toBe("@alice と @here");
@@ -69,6 +81,12 @@ describe("toInputBody", () => {
   it("送る形に戻すと元の本文になる", () => {
     const body = `<@${ALICE}> <!channel> ありがとう`;
     expect(toWireBody(toInputBody(body, handles), candidates)).toBe(body);
+  });
+});
+
+describe("toInputBody のコード（ADR 0051 決定 5）", () => {
+  it("コードの中のトークンは戻さずに残す（戻すと、保存し直したときにメンションになる）", () => {
+    expect(toInputBody(`\`<@${ALICE}>\` <@${ALICE}>`, handles)).toBe(`\`<@${ALICE}>\` @alice`);
   });
 });
 
@@ -158,6 +176,13 @@ describe("mentionAll", () => {
   it("両方あれば、飛ぶ範囲が広い channel", () => {
     expect(mentionAll("<!here> と <!channel>")).toBe("channel");
     expect(mentionAll("<!channel> と <!here>")).toBe("channel");
+  });
+});
+
+describe("mentionAll のコード（ADR 0051 決定 5）", () => {
+  it("コードの中の全員宛てでは確認を出さない", () => {
+    expect(mentionAll("`<!channel>` と ```<!here>```")).toBeNull();
+    expect(mentionAll("`<!channel>` と <!here>")).toBe("here");
   });
 });
 

@@ -6,10 +6,14 @@
  *   保存: `<@01J8…>` / `<!channel>` / `<!here>`
  *   入力: `@tanaka`  / `@channel`   / `@here`
  *
- * 表示のための解釈は format.ts（ADR 0051）に移した。ここに残るのは入力欄との変換と補完。
+ * 表示のための解釈は body-format.ts（ADR 0051）に移した。ここに残るのは入力欄との変換と補完。
+ * **コードの中は変換しない**（ADR 0051 決定 5）。コードの中のトークンはサーバーも数えず、表示もチップにしないので、
+ * 変換すると「書いたとおりに出したいコードが ID に化ける」だけになる。
  * ULID の厳密な検証はしない。サーバーが検証済みの本文しか返さず、表示に使うのは `mentions` に入っている ID だけなので、
  * 引けなければそのままの文字列として出せば足りる。
  */
+
+import { codeRanges, inCode } from "./body-format";
 
 /** 補完に出す候補。individual はルームのメンバー、それ以外は全員宛て。 */
 export type MentionCandidate =
@@ -40,7 +44,9 @@ export function toWireBody(
   candidates: readonly MentionCandidate[],
 ): string {
   const byHandle = handleIndex(candidates);
-  return text.replace(TYPED, (whole, lead: string, handle: string) => {
+  const code = codeRanges(text);
+  return text.replace(TYPED, (whole, lead: string, handle: string, offset: number) => {
+    if (inCode(code, offset + lead.length)) return whole;
     const lower = handle.toLowerCase();
     if (lower === "channel" || lower === "here") return `${lead}<!${lower}>`;
     const user = byHandle.get(lower);
@@ -56,9 +62,11 @@ export function toInputBody(
   body: string,
   handles: ReadonlyMap<string, string>,
 ): string {
+  const code = codeRanges(body);
   return body.replace(
     TOKEN,
-    (token, id: string | undefined, all: string | undefined) => {
+    (token, id: string | undefined, all: string | undefined, offset: number) => {
+      if (inCode(code, offset)) return token;
       if (!id) return `@${all}`;
       const handle = handles.get(id);
       return handle ? `@${handle}` : token;
@@ -129,7 +137,10 @@ export function candidateKey(candidate: MentionCandidate): string {
  */
 export function mentionAll(body: string): "channel" | "here" | null {
   let here = false;
+  const code = codeRanges(body);
   for (const m of body.matchAll(TOKEN)) {
+    // コードの中の全員宛てはサーバーも数えないので、確認を出さない
+    if (inCode(code, m.index)) continue;
     if (m[2] === "channel") return "channel";
     if (m[2] === "here") here = true;
   }

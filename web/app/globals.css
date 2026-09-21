@@ -84,6 +84,11 @@
 
   --tracking-tight: -0.015em;
 
+  /* ---- リストの記号。本文の箇条書きは段ごとに • → ◦ → ▪ と変える（Slack と同じ。ADR 0051。オーナーの確認: 2026-09-21）。
+     1 段目は Tailwind の既定の list-disc を使い、2・3 段目のためにこの 2 つを足す（list-circle / list-square になる） ---- */
+  --list-style-type-circle: circle;
+  --list-style-type-square: square;
+
   /* ---- 余白・サイズ。p-2 = 8px のように 4px 刻みで数える ---- */
   --spacing: 0.25rem;
 

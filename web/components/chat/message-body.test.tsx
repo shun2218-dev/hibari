@@ -130,4 +130,35 @@ describe("MessageBody の書式（ADR 0051）", () => {
     expect(container.querySelector("pre")).not.toHaveTextContent("（編集済み）");
     expect(screen.getByText("（編集済み）")).toBeInTheDocument();
   });
+
+  it("箇条書きの記号は段ごとに • → ◦ → ▪ にする", () => {
+    const { container } = render(<MessageBody body={"- 1\n  - 2\n    - 3"} />);
+
+    expect([...container.querySelectorAll("ul")].map((ul) => ul.className.split(" ")[0])).toEqual([
+      "list-disc",
+      "list-circle",
+      "list-square",
+    ]);
+  });
+
+  it("パーマリンクは同じタブで、アプリの中のパスへ飛ぶ（ADR 0051 決定 4）", () => {
+    const ids = "01J9ZQZQZQZQZQZQZQZQZQZQZ";
+    const url = `${window.location.origin}/w/${ids}A/r/${ids}B?m=${ids}C`;
+    render(<MessageBody body={`これ ${url}`} />);
+
+    const link = screen.getByRole("link", { name: url });
+    expect(link).toHaveAttribute("href", `/w/${ids}A/r/${ids}B?m=${ids}C`);
+    expect(link).not.toHaveAttribute("target");
+  });
+
+  it("interactive={false} では、リンクもチップも押せない要素で描く（行全体がリンクの所に置くため）", () => {
+    render(
+      <MessageBody body={`<@${ALICE}> https://example.com`} mentionNames={names} onOpenProfile={vi.fn()} interactive={false} />,
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByText("@田中 あおい")).toHaveClass("text-primary");
+    expect(screen.getByText("https://example.com")).toHaveClass("text-primary");
+  });
 });

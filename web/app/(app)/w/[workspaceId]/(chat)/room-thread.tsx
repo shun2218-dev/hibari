@@ -78,6 +78,7 @@ export function RoomThread({
   const thread = useChatState((s) => s.threads[rootId]);
   const outgoing = useChatState((s) => s.outgoing[roomId]);
   const typing = useChatState((s) => s.threadTyping[rootId]);
+  const workspaceMembers = useChatState((s) => s.members[workspaceId]);
   const myRole = useChatState((s) => s.workspaces.list.find((w) => w.id === workspaceId)?.my_role);
   const members = useChatState((s) => s.roomMembers[roomId]?.members);
   const visible = useDocumentVisible();
@@ -162,6 +163,8 @@ export function RoomThread({
 
   const broadcastDoneLabel = room ? alsoInChannelDoneLabel(room.kind) : undefined;
   const memberNames = useMemo(() => toMemberNames(members), [members]);
+  // リンクのカードの本文のメンションは、ワークスペースのメンバーから引く（ADR 0051。チャンネルと同じ）
+  const workspaceMemberNames = useMemo(() => toMemberNames(workspaceMembers?.list), [workspaceMembers]);
   const mentionCandidates = useMemo(
     () => toMentionCandidates(members, { kind: room?.kind ?? "public", avatarUrls }),
     [members, room?.kind, avatarUrls],
@@ -180,6 +183,7 @@ export function RoomThread({
           origin,
           currentWorkspaceId: workspaceId,
           memberNames,
+          workspaceMemberNames,
         },
       ),
     [
@@ -194,6 +198,7 @@ export function RoomThread({
       origin,
       workspaceId,
       memberNames,
+      workspaceMemberNames,
     ],
   );
   const { timelineProps, overlays } = useMessageActions({
