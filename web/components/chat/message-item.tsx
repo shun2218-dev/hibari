@@ -7,6 +7,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Portal } from "@/components/ui/portal";
 import { Button, IconButton, TextButton } from "@/components/ui/button";
 import {
+  BookmarkIcon,
   ChevronRightIcon,
   ClockIcon,
   DownloadIcon,
@@ -14,6 +15,8 @@ import {
   LinkIcon,
   MoreIcon,
   PencilIcon,
+  PinIcon,
+  PinOffIcon,
   ReplyIcon,
   SmilePlusIcon,
   ThreadIcon,
@@ -91,6 +94,17 @@ type MessageItemProps = {
    * label は「リンクをコピー」/「コピーしました」/「コピーできませんでした」を呼ぶ側が決める。
    */
   copyLink?: { label: string; onClick: () => void };
+  /**
+   * 「…」のピン留めの付け外し（ADR 0054）。出せるのは投稿できる人だけ（`authz.CanPinMessage`。判定は呼ぶ側）。
+   * label は「チャンネルへピン留めする」/「チャンネルからピンを外す」（DM では「この会話に…」）を呼ぶ側が決める。
+   * どちらかは message.pinnedBy の有無で見分ける。
+   */
+  pin?: { label: string; onClick: () => void };
+  /**
+   * ホバーの「後で」（ADR 0054）。読める人なら誰でも保存できる（参加していない public ルームも）。
+   * saved は見る人ごとの値で、REST から来る（決定 10）。保存済みはアイコンを塗って緑にする。
+   */
+  save?: { saved: boolean; onClick: () => void };
   menuOpen?: boolean;
   onToggleMenu?: () => void;
   onEdit?: () => void;
@@ -145,6 +159,8 @@ export function MessageItem({
   canEdit = false,
   canDelete = false,
   copyLink,
+  pin,
+  save,
   menuOpen = false,
   onToggleMenu,
   onEdit,
@@ -187,11 +203,15 @@ export function MessageItem({
   // ホバーのカードはポインタのある md 以上でだけ出す（モバイルは押せば全画面のパネルが開く）
   const hoverCardShown = profileHoverCard !== undefined && desktopPicker && (hover.open || forceProfileHover);
   // 削除済みには操作の対象がなく、送信失敗には専用の操作（再送・削除）があるので、ホバーの操作を出さない
-  const hasMenu = canEdit || canDelete || copyLink !== undefined;
+  const hasMenu = canEdit || canDelete || copyLink !== undefined || pin !== undefined;
+  // 送信中・失敗にはまだメッセージの ID がなく、保存の対象にならない
+  const canSave = save !== undefined && !deleted && status === "sent";
   // リアクションは行が増減するだけで本文が変わらない（ADR 0044）。送信中・失敗・削除済みには付けられない
   const reactions = deleted || status !== "sent" ? [] : (message.reactions ?? []);
   const canReact = onTogglePicker !== undefined && !deleted && status === "sent" && editing === null;
-  const actionable = status !== "failed" && !deleted && editing === null && (canReply || canReact || hasMenu);
+  const actionable = status !== "failed" && !deleted && editing === null && (canReply || canReact || canSave || hasMenu);
+  // 削除したらピンも外れる（ADR 0054 決定 4）ので、削除済みには出さない
+  const pinnedBy = deleted ? undefined : message.pinnedBy;
   // 自分宛ては「いま起きていること」なので琥珀（ADR 0043）。既読になっても消さない。
   // スレッドで開いている親は、どれを開いているかの方が先に要るので、そちらの色を優先する
   const mentionsMe = Boolean(message.mentionsMe) && !deleted;
@@ -238,6 +258,13 @@ export function MessageItem({
       )}
 
       <div className="min-w-0 flex-1">
+        {pinnedBy && (
+          // 本文より先に「誰がピン留めしたか」を読ませる（Slack と同じ位置）。押せないので緑にしない
+          <p className="flex items-center gap-1 pb-0.5 text-2xs font-medium text-text-secondary">
+            <PinIcon className="size-3" />
+            {pinnedBy} がピン留め
+          </p>
+        )}
         {!message.grouped && (
           <header className="flex items-baseline gap-2">
             {/* カスタムステータスは絵文字だけ（ADR 0049 決定 10）。文言はホバーで読める。
@@ -384,6 +411,17 @@ export function MessageItem({
               <ReplyIcon className="size-4" />
             </IconButton>
           )}
+          {canSave && (
+            <IconButton
+              label={save.saved ? "「後で」から外す" : "「後で」に保存"}
+              aria-pressed={save.saved}
+              onClick={save.onClick}
+              className="size-7"
+            >
+              {/* IconButton の文字色（text-secondary）より後に効かせるため、色はアイコンの側に付ける */}
+              <BookmarkIcon className={cx("size-4", save.saved && "text-primary")} fill={save.saved ? "currentColor" : "none"} />
+            </IconButton>
+          )}
           {hasMenu && (
             <IconButton
               label="その他の操作"
@@ -436,10 +474,15 @@ export function MessageItem({
         ))}
 
       {menuOpen && hasMenu && (
-        <Popover label="メッセージの操作" className="top-6 right-4 w-52" onDismiss={onToggleMenu}>
+        <Popover label="メッセージの操作" className="top-6 right-4 w-60" onDismiss={onToggleMenu}>
           {copyLink && (
             <MenuItem icon={LinkIcon} onClick={copyLink.onClick}>
               {copyLink.label}
+            </MenuItem>
+          )}
+          {pin && (
+            <MenuItem icon={pinnedBy ? PinOffIcon : PinIcon} onClick={pin.onClick}>
+              {pin.label}
             </MenuItem>
           )}
           {canEdit && (

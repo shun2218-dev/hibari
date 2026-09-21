@@ -262,3 +262,47 @@ describe("Timeline の添付ファイル（ADR 0045）", () => {
     expect(onDeleteAttachment).toHaveBeenCalledWith("b", "a2");
   });
 });
+
+describe("Timeline のピン留めのログ（ADR 0054 決定 3）", () => {
+  it("ピン留めのログから、対象のメッセージへのリンクを出す", () => {
+    render(
+      <Timeline
+        items={[
+          {
+            type: "system",
+            key: "s1",
+            text: "あなた がこのチャンネルにメッセージをピン留めしました",
+            timeLabel: "10:45",
+            link: { label: "メッセージを表示", href: "/w/w1/r/r1?m=m1" },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "メッセージを表示" })).toHaveAttribute("href", "/w/w1/r/r1?m=m1");
+  });
+
+  it("対象が読めない・削除済みならリンクを出さない", () => {
+    render(
+      <Timeline items={[{ type: "system", key: "s1", text: "あなた がこのチャンネルにメッセージをピン留めしました", timeLabel: "10:45" }]} />,
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("key ごとにピン留めと「後で」の操作を渡す", async () => {
+    const pin = vi.fn();
+    render(
+      <Timeline
+        items={[msg("a", "一番目"), msg("b", "二番目")]}
+        pinFor={(key) => (key === "b" ? { label: "チャンネルへピン留めする", onClick: () => pin(key) } : undefined)}
+        saveFor={(key) => (key === "a" ? { saved: true, onClick: () => {} } : undefined)}
+        openMenuKey="b"
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "チャンネルへピン留めする" }));
+    expect(pin).toHaveBeenCalledWith("b");
+    expect(screen.getAllByRole("button", { name: "「後で」から外す" })).toHaveLength(1);
+  });
+});

@@ -9,6 +9,7 @@ import {
   DeleteAttachmentDialog,
   DeleteMessageDialog,
   LeaveRoomDialog,
+  RemoveSavedItemDialog,
   RoomSettingsDialog,
   StartDmDialog,
 } from "./room-dialogs";
@@ -200,5 +201,19 @@ describe("ConfirmMentionAllDialog", () => {
     render(<ConfirmMentionAllDialog open={false} kind="channel" memberCount={12} />);
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("RemoveSavedItemDialog（ADR 0054 決定 8）", () => {
+  it("読めない理由を区別せずに伝え、「外す」で確定する", async () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(<RemoveSavedItemDialog open onConfirm={onConfirm} onCancel={onCancel} />);
+
+    expect(screen.getByRole("dialog", { name: "「後で」から外しますか？" })).toHaveTextContent("削除されたか、読めなくなりました");
+    await userEvent.click(screen.getByRole("button", { name: "外す" }));
+    await userEvent.click(screen.getByRole("button", { name: "キャンセル" }));
+    expect(onConfirm).toHaveBeenCalledOnce();
+    expect(onCancel).toHaveBeenCalledOnce();
   });
 });

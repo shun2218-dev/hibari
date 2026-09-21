@@ -233,3 +233,31 @@ describe("Sidebar empty states", () => {
     expect(screen.queryByRole("link", { name: /スレッド/ })).not.toBeInTheDocument();
   });
 });
+
+describe("Sidebar の「後で」（ADR 0054）", () => {
+  it("渡したときだけ「後で」への入口を出し、件数のバッジは出さない", () => {
+    renderSidebar({ saved: { href: "/saved", selected: false } });
+
+    const link = screen.getByRole("link", { name: "後で" });
+    expect(link).toHaveAttribute("href", "/saved");
+    expect(link).not.toHaveAttribute("aria-current");
+  });
+
+  it("開いているときは選択中にする", () => {
+    renderSidebar({ saved: { href: "/saved", selected: true }, selectedRoomId: undefined });
+
+    expect(screen.getByRole("link", { name: "後で" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("渡さなければ出さない", () => {
+    renderSidebar();
+
+    expect(screen.queryByRole("link", { name: "後で" })).not.toBeInTheDocument();
+  });
+
+  it("チャンネルを検索している間は出さない", () => {
+    renderSidebar({ saved: { href: "/saved", selected: false }, search: "デザ" });
+
+    expect(screen.queryByRole("link", { name: "後で" })).not.toBeInTheDocument();
+  });
+});

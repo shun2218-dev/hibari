@@ -10,8 +10,10 @@ import type {
   MessageReactionView,
   ProfileView,
   MessageView,
+  PinnedMessageView,
   RoomMemberView,
   RoomSummaryView,
+  SavedItemView,
   ThreadListItemView,
   TimelineItem,
   UserRef,
@@ -726,3 +728,149 @@ export const profiles = {
   /** 外された人。メッセージが持っている名前・handle・アバターだけ（決定 5）。 */
   former: { kind: "former", user: { id: users.kei.id, name: users.kei.name, handle: users.kei.handle } },
 } satisfies Record<string, ProfileView>;
+
+// ---- ピン留めと「後で」（ADR 0054）----
+
+/** 「…」を開いて「チャンネルへピン留めする」を見せるメッセージ（chat/pin/menu.png）。 */
+export const pinCandidateKey = "m-1030";
+
+/** ピン留めされたメッセージ（chat/pin/menu-pinned.png で「チャンネルからピンを外す」を見せる）。 */
+export const pinnedMessageKey = "m-1041";
+
+/** ピン留めした人。key → 表示名。 */
+const pinnedByKey: Readonly<Record<string, string>> = {
+  [pinnedMessageKey]: users.you.name,
+  "m-1012": users.ryo.name,
+};
+
+/**
+ * ピン留めのあるタイムライン（chat/pin/timeline.png）。本文の上に「〜がピン留め」、
+ * ピン留めした時刻にチャンネルのログ（ADR 0054 決定 3）。m-1012 のログはこのページより前にある。
+ */
+export const timelineWithPins: TimelineItem[] = timeline.flatMap((item): TimelineItem[] => {
+  if (item.type !== "message") return [item];
+  const pinnedBy = pinnedByKey[item.message.key];
+  const withPin: TimelineItem = pinnedBy ? { ...item, message: { ...item.message, pinnedBy } } : item;
+  if (item.message.key !== pendingMessageKey) return [withPin];
+  // 送信中のメッセージの直前に、ピン留めのログを挟む（10:45 にピン留めした）
+  return [
+    {
+      type: "system",
+      key: "s-pinned",
+      text: `${users.you.name} がこのチャンネルにメッセージをピン留めしました`,
+      timeLabel: "10:45",
+      link: { label: "メッセージを表示", href: "#" },
+    },
+    withPin,
+  ];
+});
+
+/** ピン留めの一覧（chat/pin/panel.png）。ピン留めした新しい順。 */
+export const pinnedMessages: PinnedMessageView[] = [
+  {
+    key: pinnedMessageKey,
+    href: "#",
+    sender: miyuki,
+    timeLabel: "今日 10:41",
+    body: "行送りは 1.75 で確定にしましょう。半日開きっぱなしでも目が疲れませんでした。",
+    attachmentCount: 1,
+    pinnedBy: users.you.name,
+    inThread: false,
+  },
+  {
+    key: "m-1012",
+    href: "#",
+    sender: naoki,
+    timeLabel: "今日 10:12",
+    body: "賛成です。あとサイドバーの選択中の行、左の縦バーは 2px で十分でした。",
+    attachmentCount: 0,
+    pinnedBy: users.ryo.name,
+    inThread: false,
+  },
+  {
+    key: "r-0948",
+    href: "#",
+    sender: ryo,
+    timeLabel: "今日 09:48",
+    body: "*色の決まり*\n- 緑: 押せるもの（ボタン・リンク・選択中）\n- 琥珀: いま起きていること（未読・入力中・接続）",
+    attachmentCount: 0,
+    pinnedBy: users.miyuki.name,
+    inThread: true,
+  },
+  {
+    key: "m-0905",
+    href: "#",
+    sender: you,
+    timeLabel: "9月5日",
+    body: "デザインレビューの進め方: 月曜に論点を出して、水曜までにこのチャンネルで結論を出します。決まったことは `docs/ui/` に残してください。",
+    attachmentCount: 0,
+    pinnedBy: users.you.name,
+    inThread: false,
+  },
+];
+
+/** ホバーで「後で」を見せるメッセージ（chat/saved/hover.png / hover-saved.png）。 */
+export const saveCandidateKey = "m-1030";
+
+/** 「後で」の進行中（chat/saved/list.png）。保存した新しい順。読めない行を 1 つ混ぜる。 */
+export const savedInProgress: SavedItemView[] = [
+  {
+    key: "m-1030",
+    status: "ok",
+    href: "#",
+    room: { kind: "public", name: "デザインレビュー" },
+    sender: ryo,
+    timeLabel: "今日 10:30",
+    body: "タイムスタンプを等幅にしたの、地味に効いてますね。数字が揃うと視線が上下に動かない。",
+    attachmentCount: 0,
+  },
+  {
+    key: "m-release-1612",
+    status: "ok",
+    href: "#",
+    room: { kind: "private", name: "リリース準備" },
+    sender: naoki,
+    timeLabel: "昨日",
+    body: "金曜のリリース手順です。`make migrate` の前に、必ずバックアップの取得を確認してください。",
+    attachmentCount: 1,
+  },
+  { key: "m-gone", status: "unavailable" },
+  {
+    key: "m-dm-0911",
+    status: "ok",
+    href: "#",
+    room: { kind: "dm", name: users.miyuki.name },
+    sender: miyuki,
+    timeLabel: "9月11日",
+    body: "来週の打ち合わせ、火曜の 15 時でどうでしょう？",
+    attachmentCount: 0,
+  },
+];
+
+/** 「後で」のアーカイブ済み（chat/saved/archived.png）。 */
+export const savedArchived: SavedItemView[] = [
+  {
+    key: "m-0905",
+    status: "ok",
+    href: "#",
+    room: { kind: "public", name: "デザインレビュー" },
+    sender: you,
+    timeLabel: "9月5日",
+    body: "デザインレビューの進め方: 月曜に論点を出して、水曜までにこのチャンネルで結論を出します。",
+    attachmentCount: 0,
+  },
+];
+
+/** 「後で」の完了済み（chat/saved/completed.png）。 */
+export const savedCompleted: SavedItemView[] = [
+  {
+    key: "m-chat-0930",
+    status: "ok",
+    href: "#",
+    room: { kind: "public", name: "雑談" },
+    sender: miyuki,
+    timeLabel: "9月10日",
+    body: "近所に新しい喫茶店ができたらしい。今度の金曜、誰か一緒に行きませんか？",
+    attachmentCount: 0,
+  },
+];
