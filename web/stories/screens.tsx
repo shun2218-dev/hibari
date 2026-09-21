@@ -84,6 +84,7 @@ import {
   roomsWithMentions,
   timelineWithBroadcast,
   timelineWithMentions,
+  timelineWithFormatting,
   timelineWithThreads,
   unreadThreadCount,
   typingNames,
@@ -151,6 +152,8 @@ type ChatOptions = {
   jump?: "unread-bar" | "highlight" | "not-found";
   /** 本文に貼られたパーマリンクのカードのあるタイムライン（ADR 0040）。 */
   linkCards?: boolean;
+  /** 書式（太字・コード・引用・リスト・リンク）のあるタイムライン（ADR 0051）。 */
+  formatting?: boolean;
   /**
    * 絵文字のリアクション（ADR 0044）。
    * - row: 付いた絵文字の行
@@ -281,6 +284,7 @@ export function chat({
   mentionQuery,
   jump,
   linkCards,
+  formatting,
   reactions,
   messageAttachments,
   presence,
@@ -389,6 +393,8 @@ export function chat({
                 ? timelineWithReactions
                 : linkCards
                 ? timelineWithLinkCards
+                : formatting
+                ? timelineWithFormatting
                 : jump
                 ? timelineJumped
                 : thread

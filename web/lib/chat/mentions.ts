@@ -6,7 +6,7 @@
  *   保存: `<@01J8…>` / `<!channel>` / `<!here>`
  *   入力: `@tanaka`  / `@channel`   / `@here`
  *
- * Phase 6.10（本文の書式）が入ったら、この解釈はそちらへ吸収する。
+ * 表示のための解釈は format.ts（ADR 0051）に移した。ここに残るのは入力欄との変換と補完。
  * ULID の厳密な検証はしない。サーバーが検証済みの本文しか返さず、表示に使うのは `mentions` に入っている ID だけなので、
  * 引けなければそのままの文字列として出せば足りる。
  */
@@ -22,12 +22,6 @@ export type MentionCandidate =
     }
   | { kind: "channel" | "here"; description: string };
 
-/** 本文を分けた断片。text はそのまま出す文字列、mention はチップにする。 */
-export type BodySegment =
-  | { type: "text"; text: string }
-  | { type: "mention"; kind: "user"; id: string; name: string }
-  | { type: "mention"; kind: "channel" | "here" };
-
 /** 保存されている本文の中のトークン。個人は 26 文字（ULID）。 */
 const TOKEN = /<@([0-9A-Za-z]{26})>|<!(channel|here)>/g;
 
@@ -36,35 +30,6 @@ const TYPED = /(^|\s)@([A-Za-z0-9_]{1,32})/g;
 
 /** ハンドルに使える文字（`internal/auth/validate.go` の handlePattern と同じ）。 */
 const HANDLE_CHAR = /[A-Za-z0-9_]/;
-
-/**
- * 保存されている本文を、そのまま出す文字列とチップに分ける。
- * names は ID から表示名を引く表（API の `mentions` から作る）。引けない ID はトークンのまま文字列にする。
- */
-export function splitBody(
-  body: string,
-  names: ReadonlyMap<string, string>,
-): BodySegment[] {
-  const segments: BodySegment[] = [];
-  let last = 0;
-  for (const m of body.matchAll(TOKEN)) {
-    const [token, id, all] = m;
-    const name = id ? names.get(id) : undefined;
-    // 引けない ID はチップにしない。誰か分からないまま `@` を出すより、書かれたままの方が読める
-    if (id && name === undefined) continue;
-    if (m.index > last)
-      segments.push({ type: "text", text: body.slice(last, m.index) });
-    segments.push(
-      id
-        ? { type: "mention", kind: "user", id, name: name as string }
-        : { type: "mention", kind: all as "channel" | "here" },
-    );
-    last = m.index + token.length;
-  }
-  if (last < body.length)
-    segments.push({ type: "text", text: body.slice(last) });
-  return segments;
-}
 
 /**
  * 入力欄の本文を、サーバーへ送る形にする。解決できるハンドルだけを変換し、残りはそのまま送る。
