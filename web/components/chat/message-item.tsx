@@ -16,11 +16,12 @@ import {
   ThreadIcon,
 } from "@/components/ui/icons";
 import { Popover } from "@/components/ui/popover";
+import type { MentionCandidate } from "@/lib/chat/mentions";
 import { cx } from "@/lib/cx";
-import { useAutosizeTextarea } from "@/lib/use-autosize-textarea";
 import { useHoverIntent } from "@/lib/use-hover-intent";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 
+import { RichTextInput } from "./editor/rich-text-input";
 import { MessageBody } from "./message-body";
 import { MessageLinkCard } from "./message-link-card";
 import { MessageReactions } from "./message-reactions";
@@ -30,7 +31,10 @@ import { StatusEmoji } from "./user-status";
 
 /** 編集中の本文。null（既定）なら編集していない。編集できるのは自分のメッセージだけ（ADR 0012）。 */
 export type MessageEditingView = {
+  /** 送る形の本文（ADR 0051 の記法。メンションはトークン。ADR 0052 決定 3）。 */
   value: string;
+  /** 編集中の `@` の補完の候補（ルームのメンバーと全員宛て）。 */
+  mentionCandidates?: readonly MentionCandidate[];
   onChange?: (value: string) => void;
   onSave?: () => void;
   onCancel?: () => void;
@@ -267,7 +271,7 @@ export function MessageItem({
         )}
 
         {editing ? (
-          <MessageEditor editing={editing} />
+          <MessageEditor editing={editing} mentionNames={message.mentionNames} />
         ) : deleted ? (
           <p className="text-lg leading-relaxed text-text-muted italic">このメッセージは削除されました</p>
         ) : (
@@ -480,29 +484,25 @@ function ThreadSummary({ thread, onOpen }: { thread: NonNullable<MessageView["th
 }
 
 /** 本文をその場で書き換える。Enter で保存、Esc で取りやめ（改行は Shift + Enter）。 */
-function MessageEditor({ editing }: { editing: MessageEditingView }) {
-  const textarea = useRef<HTMLTextAreaElement>(null);
-  // 編集を開いた時点で複数行のことが多いので、開いた直後から中身のぶんだけ広げる（上限は 16 行）
-  useAutosizeTextarea(textarea, editing.value);
-
+function MessageEditor({ editing, mentionNames }: { editing: MessageEditingView; mentionNames?: Readonly<Record<string, string>> }) {
   return (
     <div className="flex flex-col gap-1.5 pt-0.5">
-      <textarea
-        ref={textarea}
-        aria-label="メッセージを編集"
-        autoFocus
-        rows={1}
-        value={editing.value}
-        onChange={(e) => editing.onChange?.(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") editing.onCancel?.();
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
+      {/* 入力欄と同じリッチテキストの欄（ADR 0052）。編集ではツールバーを出さず、記号の入力とショートカットで書式を付ける */}
+      <div className="rounded-md border border-border bg-surface px-1.5 py-1 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-primary">
+        <RichTextInput
+          value={editing.value}
+          onChange={editing.onChange}
+          onSubmit={() => {
             if (editing.value.trim() !== "") editing.onSave?.();
-          }
-        }}
-        className="composer-lines min-h-11 w-full resize-none overflow-y-auto rounded-md border border-border bg-surface px-3 py-2 text-lg leading-relaxed text-text focus-visible:-outline-offset-2"
-      />
+          }}
+          onEscape={editing.onCancel}
+          mentionNames={mentionNames}
+          mentionCandidates={editing.mentionCandidates}
+          toolbar={false}
+          label="メッセージを編集"
+          autoFocus
+        />
+      </div>
       <div className="flex items-center justify-between gap-3">
         <span className="text-2xs text-text-muted">Enter で保存 / Esc でキャンセル</span>
         <div className="flex gap-2">

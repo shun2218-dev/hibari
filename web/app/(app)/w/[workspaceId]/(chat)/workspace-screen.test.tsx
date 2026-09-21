@@ -7,6 +7,7 @@ import { lastRoomId, lastWorkspaceId, rememberLocation } from "@/lib/chat/last-l
 import { kei, member, message, miyuki, naoki, room, roomMember, workspace } from "@/test/chat-data";
 import { type Handler, json, problem, testUser } from "@/test/fake-api";
 import { renderWithChat } from "@/test/render-with-chat";
+import { clearEditor, typeInEditor, valueOf } from "@/components/chat/editor/test-utils";
 
 import { WorkspaceScreen } from "./workspace-screen";
 
@@ -525,11 +526,11 @@ describe("WorkspaceScreen", () => {
           },
         });
 
-        await userEvent.type(composer(), "こんにちは");
+        await typeInEditor(composer(), "こんにちは");
         expect(sockets.last().messages()).toContainEqual({ type: "typing", room_id: "r-design" });
         await userEvent.keyboard("{Enter}");
 
-        expect(composer()).toHaveValue("");
+        expect(valueOf(composer())).toBe("");
         const pending = history().getByRole("article", { name: /佐藤 直樹/ });
         expect(within(pending).getByText("こんにちは")).toBeInTheDocument();
         expect(within(pending).getByRole("img", { name: "送信中" })).toBeInTheDocument();
@@ -546,7 +547,8 @@ describe("WorkspaceScreen", () => {
         const route = sendRoute({ reachable: () => online });
         const { sockets } = await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
 
-        await userEvent.type(composer(), "切断中に送信{Enter}");
+        await typeInEditor(composer(), "切断中に送信");
+        await userEvent.keyboard("{Enter}");
         expect(await history().findByText("送信できませんでした")).toBeInTheDocument();
 
         online = true;
@@ -566,7 +568,8 @@ describe("WorkspaceScreen", () => {
         vi.spyOn(console, "error").mockImplementation(() => {});
         await connected({ "POST /api/v1/rooms/r-design/messages": sendRoute({ reachable: () => false }).handler });
 
-        await userEvent.type(composer(), "やめる{Enter}");
+        await typeInEditor(composer(), "やめる");
+        await userEvent.keyboard("{Enter}");
         await userEvent.click(await history().findByRole("button", { name: "削除" }));
 
         expect(history().queryByText("やめる")).not.toBeInTheDocument();
@@ -584,12 +587,15 @@ describe("WorkspaceScreen", () => {
           const route = sendRoute();
           await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
 
-          await userEvent.type(composer(), "@miy");
-          const list = within(await screen.findByRole("list", { name: "メンションの候補" }));
+          await typeInEditor(composer(), "@miy");
+          const list = within(await screen.findByRole("listbox", { name: "メンションの候補" }));
           await userEvent.click(list.getByRole("button", { name: /高橋 みゆき/ }));
-          expect(composer()).toHaveValue("@miyuki ");
+          // 入力欄には名前のチップ、値はトークン（ADR 0052 決定 3 / 4）
+          expect(within(composer()).getByText("@高橋 みゆき")).toBeInTheDocument();
+          expect(valueOf(composer())).toBe(`<@${miyuki.id}> `);
 
-          await userEvent.type(composer(), "おはよう{Enter}");
+          await typeInEditor(composer(), "おはよう");
+          await userEvent.keyboard("{Enter}");
           await waitFor(() => expect(route.sent).toHaveLength(1));
           expect(route.sent[0]!.body).toBe(`<@${miyuki.id}> おはよう`);
         });
@@ -598,7 +604,8 @@ describe("WorkspaceScreen", () => {
           const route = sendRoute();
           await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
 
-          await userEvent.type(composer(), "@dareka よろしく{Enter}");
+          await typeInEditor(composer(), "@dareka よろしく");
+          await userEvent.keyboard("{Enter}");
           await waitFor(() => expect(route.sent).toHaveLength(1));
           expect(route.sent[0]!.body).toBe("@dareka よろしく");
         });
@@ -607,26 +614,30 @@ describe("WorkspaceScreen", () => {
           const route = sendRoute();
           await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
 
-          await userEvent.type(composer(), "@channel 明日は休みます{Enter}");
+          await typeInEditor(composer(), "@channel 明日は休みます");
+          await userEvent.keyboard("{Enter}");
           const dialog = within(await screen.findByRole("dialog", { name: "@channel を送りますか？" }));
           expect(screen.getByText("このチャンネルのメンバー 2 人に知らせが飛びます。")).toBeInTheDocument();
 
           await userEvent.click(dialog.getByRole("button", { name: "キャンセル" }));
           expect(route.sent).toHaveLength(0);
-          expect(composer()).toHaveValue("@channel 明日は休みます");
+          // 手で打った @channel も、空白を打った時点でチップになっている（ADR 0043）
+          expect(valueOf(composer())).toBe("<!channel> 明日は休みます");
 
+          await typeInEditor(composer(), "");
           await userEvent.keyboard("{Enter}");
           await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "送信する" }));
           await waitFor(() => expect(route.sent).toHaveLength(1));
           expect(route.sent[0]!.body).toBe("<!channel> 明日は休みます");
-          expect(composer()).toHaveValue("");
+          expect(valueOf(composer())).toBe("");
         });
 
         it("does not ask for a mention to one person", async () => {
           const route = sendRoute();
           await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
 
-          await userEvent.type(composer(), "@miyuki ありがとう{Enter}");
+          await typeInEditor(composer(), "@miyuki ありがとう");
+          await userEvent.keyboard("{Enter}");
           await waitFor(() => expect(route.sent).toHaveLength(1));
           expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         });
@@ -668,7 +679,7 @@ describe("WorkspaceScreen", () => {
           expect(within(row).getByLabelText("メンション 1 件")).toHaveTextContent("@1");
         });
 
-        it("edits with handles and saves ids", async () => {
+        it("edits with the chips and saves ids, and turns a typed handle into a mention", async () => {
           const body = `<@${miyuki.id}> よろしく`;
           const mine = message(3, { sender: naoki, body, mentions: [{ kind: "user", user: miyuki }] });
           const sent: string[] = [];
@@ -685,11 +696,13 @@ describe("WorkspaceScreen", () => {
           await userEvent.click(within(article).getByRole("button", { name: "その他の操作" }));
           await userEvent.click(screen.getByRole("button", { name: "メッセージを編集" }));
 
-          // 編集のときは ID ではなくハンドルで見せる（ADR 0043）
+          // 編集のときは ID ではなく名前のチップで見せる（ADR 0052 決定 2）
           const editor = screen.getByRole("textbox", { name: "メッセージを編集" });
-          expect(editor).toHaveValue("@miyuki よろしく");
-          await userEvent.clear(editor);
-          await userEvent.type(editor, "@miyuki ありがとう{Enter}");
+          expect(valueOf(editor)).toBe(body);
+          expect(within(editor).getByText("@高橋 みゆき")).toBeInTheDocument();
+          await clearEditor(editor);
+          await typeInEditor(editor, "@miyuki ありがとう");
+          await userEvent.keyboard("{Enter}");
 
           await waitFor(() => expect(sent).toEqual([`<@${miyuki.id}> ありがとう`]));
         });
@@ -773,7 +786,8 @@ describe("WorkspaceScreen", () => {
           });
           await panel().findByText("返信 2");
 
-          await userEvent.type(screen.getByRole("textbox", { name: "スレッドに返信" }), "スレッドで答えます{Enter}");
+          await typeInEditor(screen.getByRole("textbox", { name: "スレッドに返信" }), "スレッドで答えます");
+          await userEvent.keyboard("{Enter}");
 
           expect(await panel().findByText("スレッドで答えます")).toBeInTheDocument();
           expect(sent).toEqual([expect.objectContaining({ body: "スレッドで答えます", thread_root_id: "m-2" })]);
@@ -801,7 +815,8 @@ describe("WorkspaceScreen", () => {
             await panel().findByText("返信 2");
 
             await userEvent.click(screen.getByRole("checkbox", { name: "チャンネルにも投稿する" }));
-            await userEvent.type(screen.getByRole("textbox", { name: "スレッドに返信" }), "みんなにも伝えます{Enter}");
+            await typeInEditor(screen.getByRole("textbox", { name: "スレッドに返信" }), "みんなにも伝えます");
+            await userEvent.keyboard("{Enter}");
 
             await waitFor(() => expect(sent).toEqual([expect.objectContaining({ thread_root_id: "m-2", also_in_channel: true })]));
             expect(await history().findByText("みんなにも伝えます")).toBeInTheDocument();
@@ -817,7 +832,8 @@ describe("WorkspaceScreen", () => {
             await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute(), ...sendRouteWithFlag(sent) });
             await panel().findByText("返信 2");
 
-            await userEvent.type(screen.getByRole("textbox", { name: "スレッドに返信" }), "スレッドだけ{Enter}");
+            await typeInEditor(screen.getByRole("textbox", { name: "スレッドに返信" }), "スレッドだけ");
+            await userEvent.keyboard("{Enter}");
 
             await waitFor(() => expect(sent).toEqual([expect.objectContaining({ also_in_channel: false })]));
             expect(await panel().findByText("スレッドだけ")).toBeInTheDocument();
@@ -831,13 +847,15 @@ describe("WorkspaceScreen", () => {
             await panel().findByText("返信 2");
 
             // スレッドだけの返信では @channel は誰にも飛ばないので、確認を出さずにそのまま送る
-            await userEvent.type(screen.getByRole("textbox", { name: "スレッドに返信" }), "@channel スレッドだけ{Enter}");
+            await typeInEditor(screen.getByRole("textbox", { name: "スレッドに返信" }), "@channel スレッドだけ");
+            await userEvent.keyboard("{Enter}");
             await waitFor(() => expect(sent).toHaveLength(1));
             expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
             expect(sent[0]).toMatchObject({ body: "<!channel> スレッドだけ", also_in_channel: false });
 
             await userEvent.click(screen.getByRole("checkbox", { name: "チャンネルにも投稿する" }));
-            await userEvent.type(screen.getByRole("textbox", { name: "スレッドに返信" }), "@channel みんなにも{Enter}");
+            await typeInEditor(screen.getByRole("textbox", { name: "スレッドに返信" }), "@channel みんなにも");
+            await userEvent.keyboard("{Enter}");
             await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "送信する" }));
 
             await waitFor(() => expect(sent).toHaveLength(2));
@@ -941,8 +959,9 @@ describe("WorkspaceScreen", () => {
         await userEvent.click(within(article).getByRole("button", { name: "その他の操作" }));
         await userEvent.click(screen.getByRole("button", { name: "メッセージを編集" }));
         const editor = screen.getByRole("textbox", { name: "メッセージを編集" });
-        await userEvent.clear(editor);
-        await userEvent.type(editor, "書き直し{Enter}");
+        await clearEditor(editor);
+        await typeInEditor(editor, "書き直し");
+        await userEvent.keyboard("{Enter}");
 
         expect(await history().findByText("（編集済み）")).toBeInTheDocument();
         expect(history().getByText(/書き直し/)).toBeInTheDocument();

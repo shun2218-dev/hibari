@@ -152,6 +152,13 @@ type ChatOptions = {
   jump?: "unread-bar" | "highlight" | "not-found";
   /** 本文に貼られたパーマリンクのカードのあるタイムライン（ADR 0040）。 */
   linkCards?: boolean;
+  /**
+   * リッチテキストの入力欄（ADR 0052）。
+   * - formatted: 書式とメンションのチップを入れた下書き
+   * - toolbar-hidden: 書式のツールバーを隠したところ
+   * - link-dialog: リンクを入れる画面を開いたところ
+   */
+  composer?: "formatted" | "toolbar-hidden" | "link-dialog";
   /** 書式（太字・コード・引用・リスト・リンク）のあるタイムライン（ADR 0051）。 */
   formatting?: boolean;
   /**
@@ -259,6 +266,9 @@ function threadTimeline(thread: NonNullable<ChatOptions["thread"]>) {
   return [date, { type: "message" as const, message: deletedThreadRoot }, ...rest];
 }
 
+/** 書式とメンションを入れた下書き（ADR 0052）。入力欄の値は送る形のテキスト。 */
+const composerDraft = `金曜のリリースは *17 時* からです。__遅れる人は__事前に連絡してください。\n- 手順は<https://example.com/runbook|手順書>に\n- 確認は <@${users.miyuki.id}> さん、\`make migrate\` まで`;
+
 export function chat({
   avatars,
   systemMessages,
@@ -284,6 +294,7 @@ export function chat({
   mentionQuery,
   jump,
   linkCards,
+  composer,
   formatting,
   reactions,
   messageAttachments,
@@ -444,12 +455,14 @@ export function chat({
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
         {footer === "composer" && !threads && (
           <Composer
-            value={mentionQuery === undefined ? "" : `金曜の件、@${mentionQuery}`}
-            canSend={mentionQuery !== undefined}
-            typingNames={mentions ? [] : typingNames}
+            value={composer === "formatted" || composer === "link-dialog" ? composerDraft : mentionQuery === undefined ? "" : "金曜の件、"}
+            canSend={mentionQuery !== undefined || composer === "formatted" || composer === "link-dialog"}
+            typingNames={mentions || composer ? [] : typingNames}
             attachments={attachments}
             mentionCandidates={mentionCandidates}
             forceMentionQuery={mentionQuery}
+            toolbarVisible={composer !== "toolbar-hidden"}
+            forceLinkDialog={composer === "link-dialog" ? { text: "手順書", url: "" } : undefined}
           />
         )}
         {footer === "join" && <JoinRoomBar />}

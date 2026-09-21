@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { placeBeside, placePanel } from "./anchored-position";
+import { placeBeside, placePanel, placeAboveCaret } from "./anchored-position";
 
 const viewport = { width: 1280, height: 800 };
 const panel = { width: 352, height: 440 };
@@ -85,5 +85,22 @@ describe("placeBeside", () => {
     const got = placeBeside({ top: 200, bottom: 240, left: 100, right: 1200 }, card, viewport);
 
     expect(got.left).toBe(8);
+  });
+});
+
+describe("placeAboveCaret（ADR 0052 決定 4）", () => {
+  const viewport = { width: 1280, height: 800 };
+  const panel = { width: 288, height: 200 };
+
+  it("キャレットの上に、キャレットの左端にそろえて出す", () => {
+    expect(placeAboveCaret({ top: 700, bottom: 720, left: 400, right: 400 }, panel, viewport)).toEqual({ top: 496, left: 400, below: false });
+  });
+
+  it("上に入らなければ下に出す", () => {
+    expect(placeAboveCaret({ top: 100, bottom: 120, left: 400, right: 400 }, panel, viewport)).toEqual({ top: 124, left: 400, below: true });
+  });
+
+  it("右にはみ出すなら画面の中まで寄せる", () => {
+    expect(placeAboveCaret({ top: 700, bottom: 720, left: 1200, right: 1200 }, panel, viewport).left).toBe(1280 - 8 - 288);
   });
 });

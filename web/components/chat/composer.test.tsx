@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { MentionCandidate } from "@/lib/chat/mentions";
 
 import { AttachmentChip, Composer, TypingIndicator } from "./composer";
+import { pasteInEditor, typeInEditor, valueOf } from "./editor/test-utils";
 
 const ALICE = "01J8ZZZZZZZZZZZZZZZZZZZZZA";
 const candidates: MentionCandidate[] = [
@@ -29,14 +30,13 @@ describe("Composer", () => {
     expect(onSend).toHaveBeenCalledOnce();
   });
 
-  it("grows with the text it holds", () => {
-    // jsdom はレイアウトを持たないので、中身の高さだけ差し替えて、入力欄に入れ直されるかを見る
-    vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(72);
-    const { rerender } = render(<Composer value="1 行目" canSend />);
+  it("grows with the text and scrolls past 16 lines（ADR 0048 のトークンを引き継ぐ）", () => {
+    // 中身に合わせて伸びるのは contenteditable の性質。上限だけ --composer-max-lines のユーティリティで決める
+    render(<Composer value="1 行目" canSend />);
 
-    rerender(<Composer value={"1 行目\n2 行目\n3 行目"} canSend />);
-
-    expect(screen.getByRole("textbox", { name: "メッセージ" })).toHaveStyle({ height: "72px" });
+    const box = screen.getByRole("textbox", { name: "メッセージ" });
+    expect(box).toHaveClass("composer-lines");
+    expect(box).toHaveClass("overflow-y-auto");
   });
 
   it("does not send on Shift+Enter", async () => {
@@ -75,7 +75,7 @@ describe("Composer", () => {
     const onChange = vi.fn();
     render(<Composer value="" canSend={false} onChange={onChange} />);
 
-    await userEvent.type(screen.getByRole("textbox", { name: "メッセージ" }), "a");
+    await typeInEditor(screen.getByRole("textbox", { name: "メッセージ" }), "a");
 
     expect(onChange).toHaveBeenCalledWith("a");
   });
@@ -114,44 +114,41 @@ describe("Composer", () => {
   });
 });
 
-describe("Composer の @ 補完（ADR 0043）", () => {
+describe("Composer の @ 補完（ADR 0043 / 0052 決定 4）", () => {
   /** 親が本文を持つので、テストの中でも同じように持ち回る。 */
   function Harness({ onSend }: { onSend?: () => void } = {}) {
     const [value, setValue] = useState("");
     return <Composer value={value} onChange={setValue} canSend onSend={onSend} mentionCandidates={candidates} />;
   }
 
-  it("@ を打つと候補が出て、選ぶとハンドルが入る", async () => {
+  const candidatesList = () => screen.getByRole("listbox", { name: "メンションの候補" });
+  const queryCandidates = () => screen.queryByRole("listbox", { name: "メンションの候補" });
+
+  it("@ を打つと候補が出て、選ぶとチップが入り、値はトークンになる", async () => {
     render(<Harness />);
     const input = screen.getByRole("textbox", { name: "メッセージ" });
 
-    await userEvent.type(input, "やあ @ali");
+    await typeInEditor(input, "やあ @ali");
 
-    const list = screen.getByRole("list", { name: "メンションの候補" });
-    expect(within(list).getByText("田中 あおい")).toBeInTheDocument();
-    expect(within(list).queryByText("佐藤 直樹")).not.toBeInTheDocument();
+    expect(within(candidatesList()).getByText("田中 あおい")).toBeInTheDocument();
+    expect(within(candidatesList()).queryByText("佐藤 直樹")).not.toBeInTheDocument();
 
-    await userEvent.click(within(list).getByText("田中 あおい"));
-    expect(input).toHaveValue("やあ @alice ");
-    expect(screen.queryByRole("list", { name: "メンションの候補" })).not.toBeInTheDocument();
+    await userEvent.click(within(candidatesList()).getByText("田中 あおい"));
+    // 入力欄には名前のチップ、送る値はトークン（ADR 0052 決定 3）
+    expect(within(input).getByText("@田中 あおい")).toHaveClass("text-primary");
+    expect(valueOf(input)).toBe(`やあ <@${ALICE}> `);
+    expect(queryCandidates()).not.toBeInTheDocument();
   });
 
-  it("確定したあとに打った文字は、ハンドルの後ろに続く（遅れて来るフレームで戻らない）", async () => {
-    // キャレットを「描き直しの次のフレーム」で置き直していたころは、フレームが来る前に打ち続けると
-    // そこでキャレットがハンドルの直後に戻り、続きの文字が割り込んだ。フレームを手で進めて確かめる
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+  it("確定したあとに打った文字は、チップの後ろに続く", async () => {
     render(<Harness />);
     const input = screen.getByRole("textbox", { name: "メッセージ" });
 
-    await userEvent.type(input, "@ali");
-    await userEvent.click(within(screen.getByRole("list", { name: "メンションの候補" })).getByText("田中 あおい"));
-    // 打ち続けるだけ（type は押す前に click するので、キャレットが末尾に戻ってしまう）
-    await userEvent.keyboard("おはよ");
-    for (const frame of frames.splice(0)) frame(0);
-    await userEvent.keyboard("う");
+    await typeInEditor(input, "@ali");
+    await userEvent.click(within(candidatesList()).getByText("田中 あおい"));
+    await typeInEditor(input, "おはよう");
 
-    expect(input).toHaveValue("@alice おはよう");
+    expect(valueOf(input)).toBe(`<@${ALICE}> おはよう`);
   });
 
   it("↑↓ で選び、Enter で確定する（送信しない）", async () => {
@@ -159,10 +156,10 @@ describe("Composer の @ 補完（ADR 0043）", () => {
     render(<Harness onSend={onSend} />);
     const input = screen.getByRole("textbox", { name: "メッセージ" });
 
-    await userEvent.type(input, "@");
+    await typeInEditor(input, "@");
     await userEvent.keyboard("{ArrowDown}{Enter}");
 
-    expect(input).toHaveValue("@bob ");
+    expect(valueOf(input)).toBe("<@01J8ZZZZZZZZZZZZZZZZZZZZZB> ");
     expect(onSend).not.toHaveBeenCalled();
   });
 
@@ -171,9 +168,9 @@ describe("Composer の @ 補完（ADR 0043）", () => {
     render(<Harness onSend={onSend} />);
     const input = screen.getByRole("textbox", { name: "メッセージ" });
 
-    await userEvent.type(input, "@ali");
+    await typeInEditor(input, "@ali");
     await userEvent.keyboard("{Escape}");
-    expect(screen.queryByRole("list", { name: "メンションの候補" })).not.toBeInTheDocument();
+    expect(queryCandidates()).not.toBeInTheDocument();
 
     await userEvent.keyboard("{Enter}");
     expect(onSend).toHaveBeenCalledOnce();
@@ -182,27 +179,167 @@ describe("Composer の @ 補完（ADR 0043）", () => {
   it("@channel と @here も候補に出る", async () => {
     render(<Harness />);
 
-    await userEvent.type(screen.getByRole("textbox", { name: "メッセージ" }), "@ch");
+    await typeInEditor(screen.getByRole("textbox", { name: "メッセージ" }), "@ch");
 
-    const list = screen.getByRole("list", { name: "メンションの候補" });
-    expect(within(list).getByText("@channel")).toBeInTheDocument();
-    expect(within(list).queryByText("@here")).not.toBeInTheDocument();
+    expect(within(candidatesList()).getByText("@channel")).toBeInTheDocument();
+    expect(within(candidatesList()).queryByText("@here")).not.toBeInTheDocument();
   });
 
-  it("誰にも当たらなければ閉じたままにする", async () => {
+  it("誰にも当たらなければ閉じたままにし、Enter は送信になる", async () => {
+    const onSend = vi.fn();
+    render(<Harness onSend={onSend} />);
+
+    await typeInEditor(screen.getByRole("textbox", { name: "メッセージ" }), "@zzz");
+    expect(queryCandidates()).not.toBeInTheDocument();
+
+    await userEvent.keyboard("{Enter}");
+    expect(onSend).toHaveBeenCalledOnce();
+  });
+
+  it("メールアドレスの @ では開かない", async () => {
     render(<Harness />);
 
-    await userEvent.type(screen.getByRole("textbox", { name: "メッセージ" }), "@zzz");
+    await typeInEditor(screen.getByRole("textbox", { name: "メッセージ" }), "mail@ali");
 
-    expect(screen.queryByRole("list", { name: "メンションの候補" })).not.toBeInTheDocument();
+    expect(queryCandidates()).not.toBeInTheDocument();
+  });
+
+  it("コードの中では開かない（ADR 0051 決定 5）", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await typeInEditor(input, "前 ");
+    await userEvent.click(screen.getByRole("button", { name: /^コード（/ }));
+    await typeInEditor(input, "@ali");
+
+    expect(queryCandidates()).not.toBeInTheDocument();
   });
 
   it("候補を渡さなければ補完は開かない", async () => {
-    render(<Composer value="@ali" canSend />);
+    render(<Composer value="" canSend />);
 
-    await userEvent.click(screen.getByRole("textbox", { name: "メッセージ" }));
+    await typeInEditor(screen.getByRole("textbox", { name: "メッセージ" }), "@ali");
 
-    expect(screen.queryByRole("list", { name: "メンションの候補" })).not.toBeInTheDocument();
+    expect(queryCandidates()).not.toBeInTheDocument();
+  });
+});
+
+describe("Composer の書式（ADR 0052 決定 5）", () => {
+  function Harness({ toolbarVisible = true, onToggleToolbar }: { toolbarVisible?: boolean; onToggleToolbar?: (v: boolean) => void }) {
+    const [value, setValue] = useState("");
+    return <Composer value={value} onChange={setValue} canSend toolbarVisible={toolbarVisible} onToggleToolbar={onToggleToolbar} />;
+  }
+
+  it("記号を打つとその場で書式になり、続けて打つ文字は書式なし", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await typeInEditor(input, "これは*太字*です");
+
+    expect(within(input).getByText("太字").tagName).toBe("STRONG");
+    expect(valueOf(input)).toBe("これは*太字*です");
+  });
+
+  it.each([
+    ["_斜体_", "EM", "_斜体_"],
+    ["__下線__", "SPAN", "__下線__"],
+    ["~取り消し~", "SPAN", "~取り消し~"],
+    ["`code`", "CODE", "`code`"],
+  ])("%s も書式になる", async (typed, _tag, want) => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await typeInEditor(input, typed);
+
+    expect(valueOf(input)).toBe(want);
+    expect(input.textContent).not.toContain(typed.slice(0, 1));
+  });
+
+  it("識別子の _ は斜体にしない（ADR 0051 の境界の規則）", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await typeInEditor(input, "snake_case_name");
+
+    expect(input.textContent).toBe("snake_case_name");
+  });
+
+  it("ツールバーの太字を押してから打つと太字になる", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await typeInEditor(input, "前 ");
+    await userEvent.click(screen.getByRole("button", { name: /^太字（/ }));
+    await typeInEditor(input, "太字");
+
+    expect(valueOf(input)).toBe("前 *太字*");
+    expect(screen.getByRole("button", { name: /^太字（/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("ツールバーは Slack と同じ並びで、ショートカットを添える", () => {
+    render(<Harness />);
+
+    const toolbar = screen.getByRole("toolbar", { name: "書式" });
+    expect(within(toolbar).getAllByRole("button").map((b) => b.getAttribute("aria-label")?.replace(/（.*）/u, ""))).toEqual([
+      "太字",
+      "斜体",
+      "下線",
+      "取り消し線",
+      "リンク",
+      "コード",
+      "引用",
+      "コードブロック",
+      "番号付きリスト",
+      "箇条書き",
+    ]);
+    // サーバーでの描画に合わせて、最初は Ctrl で描く（jsdom は Mac ではない）
+    expect(within(toolbar).getByRole("button", { name: "取り消し線（Ctrl Shift X）" })).toBeInTheDocument();
+  });
+
+  it("ツールバーを隠せる。隠しても記号の入力は効く", async () => {
+    const onToggleToolbar = vi.fn();
+    const { rerender } = render(<Harness onToggleToolbar={onToggleToolbar} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "書式のツールバーを隠す" }));
+    expect(onToggleToolbar).toHaveBeenCalledWith(false);
+
+    rerender(<Harness toolbarVisible={false} onToggleToolbar={onToggleToolbar} />);
+    expect(screen.queryByRole("toolbar", { name: "書式" })).not.toBeInTheDocument();
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+    await typeInEditor(input, "*太字*");
+    expect(valueOf(input)).toBe("*太字*");
+    expect(within(input).getByText("太字").tagName).toBe("STRONG");
+  });
+
+  it("ほかのページから貼ると、記法で書ける書式が残る", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await pasteInEditor(input, {
+      html: '<p><strong>太字</strong>と<a href="https://example.com/docs">手順書</a></p><ul><li>a</li><li>b</li></ul><pre><code>x = 1</code></pre><h2>見出し</h2>',
+      text: "太字と手順書",
+    });
+
+    expect(valueOf(input)).toBe("*太字*と<https://example.com/docs|手順書>\n- a\n- b\n```\nx = 1\n```\n見出し");
+  });
+
+  it("http / https でないリンクを貼ると、文字だけが残る", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await pasteInEditor(input, { html: '<a href="javascript:alert(1)">押して</a>', text: "押して" });
+
+    expect(valueOf(input)).toBe("押して");
+  });
+
+  it("テキストだけを貼ると、記号は解釈しない", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await pasteInEditor(input, { text: "2 *3* 4" });
+
+    expect(input.querySelector("strong")).toBeNull();
+    expect(input.textContent).toBe("2 *3* 4");
   });
 });
 

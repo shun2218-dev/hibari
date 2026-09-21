@@ -77,3 +77,22 @@ export function placeBeside(
   const top = Math.max(MARGIN, Math.min(anchor.top, maxTop));
   return { top, left, below: top >= anchor.top };
 }
+
+/** キャレットと候補の間隔。 */
+const CARET_GAP = 4;
+
+/**
+ * 入力欄の `@` の補完を、キャレットの**上**に出す（ADR 0052 決定 4）。上に入らなければ下に出す。
+ *
+ * 入力欄は画面の下にあるので、下に出すと画面の外に切れる。横はキャレットの左端にそろえ、右にはみ出すなら画面の中まで寄せる。
+ */
+export function placeAboveCaret(
+  caret: AnchorRect,
+  panel: { width: number; height: number },
+  viewport: { width: number; height: number },
+): PanelPlacement {
+  const left = Math.max(MARGIN, Math.min(caret.left, viewport.width - MARGIN - panel.width));
+  const above = caret.top - CARET_GAP - panel.height;
+  if (above >= MARGIN) return { top: above, left, below: false };
+  return { top: Math.min(caret.bottom + CARET_GAP, Math.max(MARGIN, viewport.height - MARGIN - panel.height)), left, below: true };
+}
