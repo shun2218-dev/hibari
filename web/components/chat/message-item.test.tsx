@@ -600,3 +600,55 @@ describe("MessageItem のプロフィール（ADR 0050）", () => {
     expect(screen.queryByRole("button", { name: /佐藤 直樹/ })).not.toBeInTheDocument();
   });
 });
+
+describe("MessageItem のピン留めと「後で」（ADR 0054）", () => {
+  it("ピン留めされていれば、本文の上に誰がピン留めしたかを出す", () => {
+    render(<MessageItem message={message({ pinnedBy: "中村 涼" })} />);
+
+    expect(screen.getByText("中村 涼 がピン留め")).toBeInTheDocument();
+  });
+
+  it("削除済みのメッセージには、ピン留めの印を出さない（削除でピンも外れる）", () => {
+    render(<MessageItem message={message({ pinnedBy: "中村 涼", deleted: true })} />);
+
+    expect(screen.queryByText("中村 涼 がピン留め")).not.toBeInTheDocument();
+  });
+
+  it("「…」にピン留めの操作を出し、押すと呼ぶ", async () => {
+    const onClick = vi.fn();
+    render(<MessageItem message={message()} pin={{ label: "チャンネルへピン留めする", onClick }} menuOpen />);
+
+    await userEvent.click(screen.getByRole("button", { name: "チャンネルへピン留めする" }));
+
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("ピン留めの操作だけでも「…」を出す", () => {
+    render(<MessageItem message={message()} pin={{ label: "チャンネルへピン留めする", onClick: () => {} }} />);
+
+    expect(screen.getByRole("button", { name: "その他の操作" })).toBeInTheDocument();
+  });
+
+  it.each([
+    { saved: false, name: "「後で」に保存" },
+    { saved: true, name: "「後で」から外す" },
+  ])("ホバーの「後で」は保存済みかで名前と押している状態が変わる（saved: $saved）", async ({ saved, name }) => {
+    const onClick = vi.fn();
+    render(<MessageItem message={message()} canReply={false} save={{ saved, onClick }} />);
+
+    const button = screen.getByRole("button", { name });
+    expect(button).toHaveAttribute("aria-pressed", String(saved));
+    await userEvent.click(button);
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { label: "送信中", overrides: { status: "pending" } as const },
+    { label: "送信失敗", overrides: { status: "failed" } as const },
+    { label: "削除済み", overrides: { deleted: true } },
+  ])("$label のメッセージには「後で」を出さない（まだ ID がない・対象がない）", ({ overrides }) => {
+    render(<MessageItem message={message(overrides)} save={{ saved: false, onClick: () => {} }} />);
+
+    expect(screen.queryByRole("button", { name: "「後で」に保存" })).not.toBeInTheDocument();
+  });
+});

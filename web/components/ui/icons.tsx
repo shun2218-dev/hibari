@@ -7,7 +7,10 @@
  */
 import {
   AppWindow,
+  Archive,
+  ArchiveRestore,
   Bold,
+  Bookmark,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -33,6 +36,8 @@ import {
   Megaphone,
   MessagesSquare,
   Pencil,
+  Pin,
+  PinOff,
   Monitor,
   Paperclip,
   Plus,
@@ -114,3 +119,12 @@ export const LogOutIcon = withDefaults(LogOut);
 export const PencilIcon = withDefaults(Pencil);
 export const RetryIcon = withDefaults(RotateCw);
 export const UserMinusIcon = withDefaults(UserMinus);
+
+// ---- ピン留めと「後で」（ADR 0054） ----
+export const PinIcon = withDefaults(Pin);
+export const PinOffIcon = withDefaults(PinOff);
+/** 「後で」（Slack のブックマーク）。保存済みは塗りつぶして見分ける（`fill="currentColor"`）。 */
+export const BookmarkIcon = withDefaults(Bookmark);
+export const ArchiveIcon = withDefaults(Archive);
+/** 「進行中に移動する」（アーカイブ済み・完了済みから戻す）。 */
+export const RestoreIcon = withDefaults(ArchiveRestore);

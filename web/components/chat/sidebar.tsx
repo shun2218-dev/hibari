@@ -1,10 +1,10 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { UnreadBadge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
-import { ChevronDownIcon, HashIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon } from "@/components/ui/icons";
+import { BookmarkIcon, ChevronDownIcon, HashIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
 
 import type { RoomSummaryView, UserRef, WorkspaceRef } from "./types";
@@ -34,6 +34,11 @@ type SidebarProps = {
    * 渡さなければ出さない。
    */
   threads?: { href: string; unreadCount: number; selected: boolean };
+  /**
+   * 「後で」の一覧への入口（ADR 0054）。Phase 6.14.5 でサイドバーの左のメニューができたら、そちらへ移る。
+   * 件数は出さない（未読ではないので、琥珀のバッジで呼ばない）。渡さなければ出さない。
+   */
+  saved?: { href: string; selected: boolean };
 };
 
 export function Sidebar({
@@ -53,6 +58,7 @@ export function Sidebar({
   onCreateRoom,
   onStartDm,
   threads,
+  saved,
 }: SidebarProps) {
   const channels = rooms.filter((room) => room.kind !== "dm");
   const dms = rooms.filter((room) => room.kind === "dm");
@@ -121,7 +127,20 @@ export function Sidebar({
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
           {/* 検索はチャンネルを探すためのものなので、検索している間は出さない */}
-          {threads && !searching && <ThreadsRow {...threads} />}
+          {(threads || saved) && !searching && (
+            <div className="pt-3">
+              {threads && (
+                <NavRow href={threads.href} selected={threads.selected} icon={ThreadIcon} unreadCount={threads.unreadCount}>
+                  スレッド
+                </NavRow>
+              )}
+              {saved && (
+                <NavRow href={saved.href} selected={saved.selected} icon={BookmarkIcon}>
+                  後で
+                </NavRow>
+              )}
+            </div>
+          )}
           {/* 片方が 0 件でも見出しは出す。「+」がそのまま作成・DM の入口になっている */}
           <RoomSection title="チャンネル" first action={{ label: "チャンネルを作成", onClick: onCreateRoom }}>
             {channels.map((room) => (
@@ -144,26 +163,35 @@ export function Sidebar({
 }
 
 /**
- * ルームの一覧の上に置く「スレッド」の行。未読は、チャンネルと同じ琥珀のバッジで「未読のあるスレッドの数」を出す。
+ * ルームの一覧の上に置く行（「スレッド」と「後で」）。
+ * スレッドの未読は、チャンネルと同じ琥珀のバッジで「未読のあるスレッドの数」を出す。
  * スレッドの返信はチャンネルの未読に数えないので（ADR 0036）、ここが返信に気づく唯一の場所になる。
+ * 「後で」は未読ではないので、バッジを出さない（ADR 0054）。
  */
-function ThreadsRow({ href, unreadCount, selected }: { href: string; unreadCount: number; selected: boolean }) {
+function NavRow({
+  href,
+  selected,
+  icon: Icon,
+  unreadCount = 0,
+  children,
+}: {
+  href: string;
+  selected: boolean;
+  icon: ComponentType<{ className?: string }>;
+  unreadCount?: number;
+  children: ReactNode;
+}) {
   return (
-    <div className="pt-3">
-      <Link
-        href={href}
-        aria-current={selected ? "page" : undefined}
-        className={cx(
-          "relative flex h-9 items-center gap-3 px-4",
-          selected ? "bg-primary-subtle" : "hover:bg-surface-muted",
-        )}
-      >
-        {selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-primary" />}
-        <ThreadIcon className="size-4 shrink-0 text-text-secondary" />
-        <span className={cx("flex-1 text-base text-text", unreadCount > 0 ? "font-bold" : "font-semibold")}>スレッド</span>
-        <UnreadBadge count={unreadCount} />
-      </Link>
-    </div>
+    <Link
+      href={href}
+      aria-current={selected ? "page" : undefined}
+      className={cx("relative flex h-9 items-center gap-3 px-4", selected ? "bg-primary-subtle" : "hover:bg-surface-muted")}
+    >
+      {selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-primary" />}
+      <Icon className="size-4 shrink-0 text-text-secondary" />
+      <span className={cx("flex-1 text-base text-text", unreadCount > 0 ? "font-bold" : "font-semibold")}>{children}</span>
+      <UnreadBadge count={unreadCount} />
+    </Link>
   );
 }
 

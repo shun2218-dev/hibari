@@ -25,10 +25,12 @@ import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import { MembersPanel } from "@/components/chat/members-panel";
+import { PinsPanel } from "@/components/chat/pins-panel";
 import { ProfileHoverCard } from "@/components/chat/profile-card";
 import { ProfilePanel } from "@/components/chat/profile-panel";
 import { RoomHeader } from "@/components/chat/room-header";
-import { RoomSettingsDialog } from "@/components/chat/room-dialogs";
+import { RemoveSavedItemDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
+import { SavedList } from "@/components/chat/saved-list";
 import { Sidebar } from "@/components/chat/sidebar";
 import { StatusDialog } from "@/components/chat/status-dialog";
 import { ThreadList } from "@/components/chat/thread-list";
@@ -90,6 +92,14 @@ import {
   typingNames,
   users,
   workspaces,
+  pinCandidateKey,
+  pinnedMessageKey,
+  pinnedMessages,
+  saveCandidateKey,
+  savedArchived,
+  savedCompleted,
+  savedInProgress,
+  timelineWithPins,
 } from "./fixtures";
 
 export const noHref = "#";
@@ -202,6 +212,33 @@ type ChatOptions = {
     | "panel-unknown"
     | "panel-from-members";
   /**
+   * ピン留め（ADR 0054）。
+   * - timeline: 本文の上の「〜がピン留め」とチャンネルのログ
+   * - menu / menu-pinned: 「…」の「チャンネルへピン留めする」/「チャンネルからピンを外す」
+   * - panel / panel-empty: ヘッダーの「ピン留め」から開く右のパネル（モバイルは全画面）
+   */
+  pins?: "timeline" | "menu" | "menu-pinned" | "panel" | "panel-empty";
+  /**
+   * 「後で」（ADR 0054）。
+   * - hover / hover-saved: メッセージのホバーのブックマーク（保存前・保存済み）
+   * - in_progress / archived / completed: サイドバーの「後で」から開く一覧の各タブ
+   * - menu: 進行中の行の「その他」を開いたところ（archived-menu はアーカイブ済みの行）
+   * - row-hover: 進行中の行にポインタを乗せたところ
+   * - empty: 何も保存していない
+   * - confirm: 読めない行を押して、外すかどうかを確かめるところ
+   */
+  saved?:
+    | "hover"
+    | "hover-saved"
+    | "in_progress"
+    | "row-hover"
+    | "menu"
+    | "archived"
+    | "archived-menu"
+    | "completed"
+    | "empty"
+    | "confirm";
+  /**
    * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
    */
@@ -301,6 +338,8 @@ export function chat({
   presence,
   statusDialog,
   profile,
+  pins,
+  saved,
   dark,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
@@ -310,6 +349,18 @@ export function chat({
   const profilePanel = profile?.startsWith("panel-") ? profilePanelContent(profile) : undefined;
   // ステータスの出ている画面の上に出す（名前の横の絵文字とカードの中身をそろえて見せる）
   const withStatus = presence || profile !== undefined;
+  // 「後で」の一覧はスレッドの一覧と同じく、ルームの代わりにメインの領域に出す
+  const savedList = saved !== undefined && saved !== "hover" && saved !== "hover-saved";
+  const savedTab = saved === "archived" || saved === "archived-menu" ? "archived" : saved === "completed" ? "completed" : "in_progress";
+  const savedItems =
+    saved === "empty"
+      ? []
+      : savedTab === "archived"
+        ? savedArchived
+        : savedTab === "completed"
+          ? savedCompleted
+          : savedInProgress;
+  const pinsPanel = pins === "panel" || pins === "panel-empty";
   return (
     <>
       <ChatLayout
@@ -329,12 +380,13 @@ export function chat({
                       ? roomsWithStatus
                       : rooms
             }
-            selectedRoomId={roomRemoved || threads ? undefined : selectedRoom.id}
+            selectedRoomId={roomRemoved || threads || savedList ? undefined : selectedRoom.id}
             threads={
               thread || threads
                 ? { href: noHref, unreadCount: threads === "empty" ? 0 : unreadThreadCount, selected: Boolean(threads) }
                 : undefined
             }
+            saved={pins || saved ? { href: noHref, selected: savedList } : undefined}
             roomHref={roomHref}
             search={search}
             onCreateRoom={noop}
@@ -358,6 +410,12 @@ export function chat({
               members={withStatus ? roomMembersWithPresence : roomMembers}
               onOpenProfile={profile ? noop : undefined}
             />
+          ) : pinsPanel ? (
+            <PinsPanel
+              room={{ kind: selectedRoom.kind, name: selectedRoom.name }}
+              pins={pins === "panel-empty" ? [] : pinnedMessages}
+              onUnpin={noop}
+            />
           ) : profilePanel ? (
             profilePanel
           ) : threadContent ? (
@@ -379,25 +437,39 @@ export function chat({
         }
       >
         {threads && <ThreadList threads={threads === "empty" ? [] : threadList} threadHref={roomHref} />}
-        {!roomRemoved && !threads && (
+        {savedList && (
+          <SavedList
+            tab={savedTab}
+            inProgressCount={saved === "empty" ? 0 : savedInProgress.length}
+            items={savedItems}
+            hoveredKey={saved === "row-hover" ? savedInProgress[0].key : undefined}
+            openMenuKey={
+              saved === "menu" ? savedInProgress[0].key : saved === "archived-menu" ? savedArchived[0].key : undefined
+            }
+          />
+        )}
+        {!roomRemoved && !threads && !savedList && (
           <RoomHeader
             kind={selectedRoom.kind}
             name={selectedRoom.name}
             memberCount={selectedRoom.memberCount}
             membersOpen={members}
             onOpenSettings={noop}
+            pins={pins ? { count: pins === "panel-empty" ? 0 : pinnedMessages.length, open: pinsPanel } : undefined}
           />
         )}
         <ConnectionBanner status={banner ?? null} />
         {jump === "unread-bar" && <UnreadJumpBar count={12} onJump={noop} />}
         {jump === "not-found" && <MessageNotFoundNotice onClose={noop} />}
-        {body === "timeline" && !threads && (
+        {body === "timeline" && !threads && !savedList && (
           <Timeline
             items={
               profile === "hover-former" || profile === "panel-former"
                 ? timelineWithFormerMember
                 : withStatus
                 ? timelineWithStatus
+                : pins
+                ? timelineWithPins
                 : messageAttachments
                 ? timelineWithImages
                 : reactions
@@ -422,7 +494,18 @@ export function chat({
             }
             openThreadKey={thread === "root-deleted" ? deletedThreadRoot.key : thread ? threadContent?.root.key : undefined}
             highlightedKey={jump === "highlight" ? jumpTargetKey : undefined}
-            hoveredKey={hoveredKey}
+            hoveredKey={
+              pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : saved ? saveCandidateKey : hoveredKey
+            }
+            pinFor={
+              pins
+                ? (key) => ({
+                    label: key === pinnedMessageKey || key === "m-1012" ? "チャンネルからピンを外す" : "チャンネルへピン留めする",
+                    onClick: noop,
+                  })
+                : undefined
+            }
+            saveFor={saved ? () => ({ saved: saved === "hover-saved", onClick: noop }) : undefined}
             onToggleReaction={noop}
             onTogglePicker={noop}
             openPickerKey={
@@ -445,7 +528,7 @@ export function chat({
               // 添付だけを削除できるのは、メッセージを削除できる人と同じ（ADR 0045 決定 5）
               canDelete: key === pendingMessageKey || (messageAttachments !== undefined && key === attachmentMessageKey),
             })}
-            openMenuKey={menuKey}
+            openMenuKey={pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : menuKey}
             editingKey={editingKey}
             editing={{ value: "了解です。今日の夕方までに一覧を更新して、また共有します。" }}
           />
@@ -453,7 +536,7 @@ export function chat({
         {body === "empty" && <EmptyMessages kind={selectedRoom.kind} name={selectedRoom.name} />}
         {roomRemoved && <RoomUnavailable />}
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
-        {footer === "composer" && !threads && (
+        {footer === "composer" && !threads && !savedList && (
           <Composer
             value={composer === "formatted" || composer === "link-dialog" ? composerDraft : mentionQuery === undefined ? "" : "金曜の件、"}
             canSend={mentionQuery !== undefined || composer === "formatted" || composer === "link-dialog"}
@@ -468,6 +551,7 @@ export function chat({
         {footer === "join" && <JoinRoomBar />}
       </ChatLayout>
       {dialog}
+      <RemoveSavedItemDialog open={saved === "confirm"} />
       {statusDialog && (
         <StatusDialog
           open

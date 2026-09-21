@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { type ReactNode, useEffectEvent, useLayoutEffect, useRef } from "react";
 
 import { TextButton } from "@/components/ui/button";
@@ -49,6 +50,10 @@ type TimelineProps = {
    * 文言は押したあとに変わる（「コピーしました」）ので、呼ぶ側が持つ。
    */
   copyLinkFor?: (key: string) => { label: string; onClick: () => void } | undefined;
+  /** key ごとのピン留めの付け外し（ADR 0054）。ピン留めできないメッセージ・人には undefined を返す。 */
+  pinFor?: (key: string) => { label: string; onClick: () => void } | undefined;
+  /** key ごとの「後で」（ADR 0054）。保存できないメッセージには undefined を返す。 */
+  saveFor?: (key: string) => { saved: boolean; onClick: () => void } | undefined;
   /** 「…」を開いているメッセージ。 */
   openMenuKey?: string;
   onToggleMenu?: (key: string) => void;
@@ -147,6 +152,8 @@ export function Timeline({
   onMarkAllRead,
   actionsFor,
   copyLinkFor,
+  pinFor,
+  saveFor,
   openMenuKey,
   onToggleMenu,
   onEdit,
@@ -280,6 +287,12 @@ export function Timeline({
                   className="flex items-center justify-center gap-2 px-4 py-1.5 text-xs text-text-muted"
                 >
                   <span>{item.text}</span>
+                  {/* ピン留めのログから、対象のメッセージへ飛ぶ（ADR 0054 決定 3。飛ぶ仕組みは ADR 0042） */}
+                  {item.link && (
+                    <Link href={item.link.href} className="font-medium text-primary hover:underline">
+                      {item.link.label}
+                    </Link>
+                  )}
                   <span className="font-mono text-2xs">{item.timeLabel}</span>
                 </li>
               );
@@ -317,6 +330,8 @@ export function Timeline({
                     canEdit={actions?.canEdit}
                     canDelete={actions?.canDelete}
                     copyLink={copyLinkFor?.(key)}
+                    pin={pinFor?.(key)}
+                    save={saveFor?.(key)}
                     menuOpen={openMenuKey === key}
                     onToggleMenu={() => onToggleMenu?.(key)}
                     onEdit={() => onEdit?.(key)}

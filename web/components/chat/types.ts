@@ -81,6 +81,8 @@ export type MessageView = {
   mentionNames?: Readonly<Record<string, string>>;
   /** 自分宛てのメンションがある（`@channel` / `@here` を含む）。行の背景を琥珀にする。 */
   mentionsMe?: boolean;
+  /** ピン留めした人の表示名（ADR 0054）。ピン留めされていなければ持たない。本文の上に「〜がピン留め」を出す。 */
+  pinnedBy?: string;
 };
 
 /**
@@ -149,13 +151,56 @@ export type ThreadListItemView = {
   unreadCount: number;
 };
 
+/**
+ * ピン留めの一覧の 1 行（ADR 0054）。並びはピン留めした時刻の新しい順（並べるのはデータ層）。
+ * 押すと 6.11b の仕組みでそのメッセージへ飛ぶ（href はパーマリンク）。
+ */
+export type PinnedMessageView = {
+  key: string;
+  href: string;
+  sender: UserRef;
+  timeLabel: string;
+  body: string;
+  mentionNames?: Readonly<Record<string, string>>;
+  attachmentCount: number;
+  /** ピン留めした人の表示名。 */
+  pinnedBy: string;
+  /** スレッドの返信をピン留めしたもの。 */
+  inThread: boolean;
+};
+
+/** 「後で」のタブ（ADR 0054 決定 6）。`removed` は一覧に出さないので含めない。 */
+export type SavedTab = "in_progress" | "archived" | "completed";
+
+/**
+ * 「後で」の一覧の 1 行（ADR 0054）。読めない・削除済みは区別せずに unavailable にする（決定 8）。
+ * 並びは保存した新しい順（並べるのはデータ層）。
+ */
+export type SavedItemView =
+  | { key: string; status: "unavailable" }
+  | {
+      key: string;
+      status: "ok";
+      /** 押したときの行き先（パーマリンク）。 */
+      href: string;
+      room: { kind: RoomKind; name: string };
+      sender: UserRef;
+      timeLabel: string;
+      body: string;
+      mentionNames?: Readonly<Record<string, string>>;
+      attachmentCount: number;
+    };
+
 export type TimelineItem =
   | { type: "date"; key: string; label: string }
   | { type: "unread"; key: string }
   /** スレッドのパネルで、親と返信の間に置く「N 件の返信」（0 件なら「まだ返信はありません」。ADR 0036）。 */
   | { type: "thread-divider"; key: string; replyCount: number }
-  /** 参加・退出・作成・名前の変更のログ（ADR 0033）。文言はデータ層が作る。 */
-  | { type: "system"; key: string; text: string; timeLabel: string }
+  /**
+   * 参加・退出・作成・名前の変更・ピン留めのログ（ADR 0033）。文言はデータ層が作る。
+   * `link` はピン留めのログの「メッセージを表示」（ADR 0054 決定 3）。対象が読めない・削除済みなら持たない。
+   */
+  | { type: "system"; key: string; text: string; timeLabel: string; link?: { label: string; href: string } }
   | { type: "message"; message: MessageView };
 
 /**

@@ -664,3 +664,58 @@ ADR 0053 のとおり、email を検証するまで chat の API と WebSocket �
 | `settings/devices/devices.png`（ログイン中のデバイスの一覧・個別のログアウト・他のすべてのログアウト） | セッションの一覧と失効（ADR 0019） |
 | `settings/profile/profile.png`（表示名・ハンドルの変更） | プロフィールの更新（ADR 0019） |
 | `settings/profile-avatar*.png`（画像の変更・削除） | アバター画像のアップロードと配布（ADR 0020） |
+
+### Phase 6.12 で足した画面（ピン留めと「後で」）
+
+ADR 0054 のとおり、既存の部品とトークンのまま足した（新しいトークンは要らなかった。ピン留めのパネルの幅はスレッドの `--pane-thread` を共有する）。
+タブの部品（`components/ui/tabs.tsx`）だけは新しく作った（それまでタブのある画面がなかった）。
+
+| 画面 | スクリーンショット | 関連する API |
+|---|---|---|
+| ピン留めしたメッセージとチャンネルのログ | `chat/pin/timeline.png` | メッセージの `pinned`、システムメッセージの `message_pinned` |
+| 同（ダーク） | `chat/pin/timeline-dark.png` | — |
+| 同（モバイル） | `chat/pin/mobile-timeline.png` | — |
+| 「…」の「チャンネルへピン留めする」 | `chat/pin/menu.png` | `PUT /rooms/{id}/messages/{messageID}/pin` |
+| 「…」の「チャンネルからピンを外す」 | `chat/pin/menu-pinned.png` | `DELETE /rooms/{id}/messages/{messageID}/pin` |
+| ピン留めの一覧 | `chat/pin/panel.png` | `GET /rooms/{id}/pins` |
+| 同（ダーク） | `chat/pin/panel-dark.png` | — |
+| 同（まだない） | `chat/pin/panel-empty.png` | 同上（空） |
+| 同（モバイル） | `chat/pin/mobile-panel.png` | — |
+| メッセージのホバーの「後で」 | `chat/saved/hover.png` | `PUT /rooms/{id}/messages/{messageID}/saved` |
+| 同（保存済み） | `chat/saved/hover-saved.png` | `DELETE /workspaces/{id}/saved/{messageID}` |
+| 「後で」の進行中 | `chat/saved/list.png` | `GET /workspaces/{id}/saved?state=in_progress` |
+| 同（行のホバー） | `chat/saved/row-hover.png` | `PATCH /workspaces/{id}/saved/{messageID}`（`completed`） |
+| 同（「その他」） | `chat/saved/menu.png` | 同上（`archived`）/ `DELETE` |
+| 同（ダーク） | `chat/saved/list-dark.png` | — |
+| 同（モバイル） | `chat/saved/mobile-list.png` | — |
+| アーカイブ済み | `chat/saved/archived.png` | `GET /workspaces/{id}/saved?state=archived` |
+| 同（「その他」） | `chat/saved/archived-menu.png` | `PATCH`（`in_progress`）/ `DELETE` |
+| 完了済み | `chat/saved/completed.png` | `GET /workspaces/{id}/saved?state=completed` |
+| 何も保存していない | `chat/saved/empty.png` | 同上（空） |
+| 読めない行を外すときの確認 | `chat/saved/confirm.png` | `DELETE /workspaces/{id}/saved/{messageID}` |
+
+- **ピン留めの印**: 本文の上に、ピンのアイコンと「〜がピン留め」を小さく出す（Slack と同じ位置）。押せないので緑にしない。
+  削除したメッセージには出さない（削除でピンも外れる。ADR 0054 決定 4）。
+- **ピン留めの操作は「…」の中**（Slack と同じ）。文言は Slack の公式ヘルプのとおり「チャンネルへピン留めする」/「チャンネルからピンを外す」。
+  DM では「この会話にピン留めする」（公式）/「この会話からピンを外す」（外す方は公式の表記を確かめられていない）。
+  メニューの幅を `w-52` から `w-60` に広げた（「チャンネルへピン留めする」が折り返したため）。
+- **チャンネルのログ**は、ほかのシステムメッセージと同じ中央寄せの 1 行に、対象へ飛ぶ「メッセージを表示」のリンクを添える。
+  対象が読めない・削除済みならリンクを出さない（ADR 0054 決定 3）。
+- **ピン留めの一覧はヘッダーの「ピン留め N」から開く右のパネル**（スレッド・プロフィールと同じ枠。モバイルは全画面）。
+  行を押すとそのメッセージへ飛ぶ。本文は 3 行で畳み、全文はタイムラインで読む。「ピンを外す」は行に乗せたときだけ出す（モバイルは常に出す）。
+- **「後で」はサイドバーの「スレッド」の下の行から開く**（Phase 6.14.5 で左のメニューができたら、そちらへ移る）。
+  スレッドの一覧と同じく、ルームの代わりにメインの領域に出す。件数のバッジは出さない（未読ではないので琥珀で呼ばない）。
+- **「後で」の画面は Slack と同じく 3 つのタブ**で、件数は「進行中」にだけ付ける。行のホバーは「完了にする」（進行中だけ）と「その他」。
+  その他はいまのタブ以外への移動（「進行中に移動する」「アーカイブ」）と「「後で」から外す」。リマインダーは 6.14 の後（ADR 0054）。
+- **読めない行はゴミ箱のアイコンと「このメッセージは表示できません」**。押すと外すかどうかを確かめる（Slack と同じ流れ）。
+
+#### デザインで決めた点（オーナーに確認する）
+
+- **ピン留めしたメッセージに地の色を敷かなかった。** Slack は薄い黄色の地を敷くが、このアプリの琥珀は「いま起きていること」
+  （自分宛てのメンション・飛んできた先）に使っていて、同じ地にすると見分けがつかなくなる。印の 1 行だけにした。
+- **読めない行の文言は「このメッセージは表示できません」**にした。Slack は「保存したメッセージは削除されました」だが、
+  読めないのか削除されたのかを区別しない（ADR 0054 決定 8）。確認のダイアログでは「削除されたか、読めなくなりました」と両方を書いた。
+- **確認のボタンは「外す」**にした（Slack は「削除」）。消えるのは保存の行だけで、メッセージは消えないため。
+- **ホバーの「後で」のアイコンは、保存済みで塗りつぶした緑**にした（押している状態。リアクションの自分のチップと同じ考え方）。
+  名前は保存前が「「後で」に保存」、保存後が「「後で」から外す」（後者は Slack の公式の表記。前者は確かめられていない）。
+- **ヘッダーのピン留めのボタンは件数を出す**（「メンバー」のように文字にすると、モバイルでヘッダーに入りきらない）。0 件でも出す。
