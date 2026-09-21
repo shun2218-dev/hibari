@@ -20,6 +20,7 @@ import { MyStatusDialog } from "./my-status";
 import { CreateWorkspace } from "../../../create-workspace";
 import { CreateRoom } from "./create-room";
 import { StartDm } from "./start-dm";
+import { type ProfileSender, RoomProfile } from "./profile";
 import { RoomMembers } from "./room-members";
 import { RoomThread } from "./room-thread";
 import { RoomView } from "./room-view";
@@ -32,6 +33,8 @@ export function WorkspaceScreen() {
   const searchParams = useSearchParams();
   const threadId = searchParams.get("t") ?? undefined;
   const jumpMessageId = searchParams.get("m") ?? undefined;
+  // 開いているプロフィール（ADR 0050 決定 6 の追記）。スレッドと同じく URL に持ち、モバイルの全画面を「戻る」で閉じられるようにする
+  const profileId = searchParams.get("p") ?? undefined;
   const threadsView = usePathname() === `/w/${workspaceId}/threads`;
   const router = useRouter();
   const session = useSession();
@@ -59,6 +62,9 @@ export function WorkspaceScreen() {
   const [startingDm, setStartingDm] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
+  // プロフィールをどこから開いたか。メンバーパネルからなら「メンバーに戻る」を出し、メッセージからなら送信者の値を
+  // 一覧にいない人（外された人）の名前の手がかりにする。URL には持たない（開き直すと「戻る」と手がかりは消える）
+  const [profileOrigin, setProfileOrigin] = useState<{ userId: string; fromMembers: boolean; sender?: ProfileSender }>();
   // モバイルで「一覧に戻る」を押した。URL はルームのままにして、別のルームを開いたら詳細に戻す
   const [listShownFor, setListShownFor] = useState<string>();
 
@@ -142,6 +148,8 @@ export function WorkspaceScreen() {
     // 飛び先（?m=）は残す。リンクで開いた返信のスレッドを、パネルの中でも同じ所に合わせるため（ADR 0042）
     const params = new URLSearchParams(searchParams);
     params.set("t", rootId);
+    // 右の枠は 1 つ。スレッドを開くならプロフィールを閉じる
+    params.delete("p");
     router.push(`/w/${workspaceId}/r/${roomId}?${params}`);
   }
 
@@ -153,9 +161,32 @@ export function WorkspaceScreen() {
   }
 
   function toggleMembers() {
-    // 右のパネルは 1 つ。メンバーを開くならスレッドを閉じる
-    if (threadId) closeThread();
-    setMembersOpen((open) => !open || threadId !== undefined);
+    // 右のパネルは 1 つ。メンバーを開くならスレッドとプロフィールを閉じる
+    if (threadId || profileId) {
+      const params = new URLSearchParams(searchParams);
+      params.delete("t");
+      params.delete("p");
+      const query = params.toString();
+      router.replace(`/w/${workspaceId}/r/${roomId}${query === "" ? "" : `?${query}`}`);
+    }
+    setMembersOpen((open) => !open || threadId !== undefined || profileId !== undefined);
+  }
+
+  function openProfile(userId: string, origin: { fromMembers: boolean; sender?: ProfileSender }) {
+    setMembersOpen(false);
+    setProfileOrigin({ userId, ...origin });
+    // スレッドと同じく push にして、モバイルの全画面をブラウザの「戻る」で閉じられるようにする
+    const params = new URLSearchParams(searchParams);
+    params.delete("t");
+    params.set("p", userId);
+    router.push(`/w/${workspaceId}/r/${roomId}?${params}`);
+  }
+
+  function closeProfile() {
+    const params = new URLSearchParams(searchParams);
+    params.delete("p");
+    const query = params.toString();
+    router.replace(`/w/${workspaceId}/r/${roomId}${query === "" ? "" : `?${query}`}`);
   }
 
   function leaveRemovedWorkspace() {
@@ -250,7 +281,23 @@ export function WorkspaceScreen() {
           />
         }
         panel={
-          roomId && threadId && !roomRemoved ? (
+          roomId && profileId && !roomRemoved ? (
+            <RoomProfile
+              key={profileId}
+              workspaceId={workspaceId}
+              userId={profileId}
+              fallback={profileOrigin?.userId === profileId ? profileOrigin.sender : undefined}
+              onClose={closeProfile}
+              onBack={
+                profileOrigin?.userId === profileId && profileOrigin.fromMembers
+                  ? () => {
+                      closeProfile();
+                      setMembersOpen(true);
+                    }
+                  : undefined
+              }
+            />
+          ) : roomId && threadId && !roomRemoved ? (
             <RoomThread
               key={threadId}
               workspaceId={workspaceId}
@@ -258,9 +305,14 @@ export function WorkspaceScreen() {
               rootId={threadId}
               jumpMessageId={jumpMessageId}
               onClose={closeThread}
+              onOpenProfile={(userId, sender) => openProfile(userId, { fromMembers: false, sender })}
             />
           ) : roomId && membersOpen && !roomRemoved ? (
-            <RoomMembers roomId={roomId} onClose={() => setMembersOpen(false)} />
+            <RoomMembers
+              roomId={roomId}
+              onClose={() => setMembersOpen(false)}
+              onOpenProfile={(userId) => openProfile(userId, { fromMembers: true })}
+            />
           ) : undefined
         }
       >
@@ -269,13 +321,14 @@ export function WorkspaceScreen() {
             key={roomId}
             workspaceId={workspaceId}
             roomId={roomId}
-            membersOpen={membersOpen && !threadId}
+            membersOpen={membersOpen && !threadId && !profileId}
             onToggleMembers={toggleMembers}
             openThreadId={threadId}
             onOpenThread={openThread}
             jumpMessageId={jumpMessageId}
             onBack={() => setListShownFor(roomId)}
             onLeaveRemovedWorkspace={leaveRemovedWorkspace}
+            onOpenProfile={(userId, sender) => openProfile(userId, { fromMembers: false, sender })}
           />
         )}
         {threadsView && !removedFromWorkspace && (

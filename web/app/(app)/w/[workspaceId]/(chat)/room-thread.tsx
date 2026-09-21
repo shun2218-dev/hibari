@@ -36,6 +36,7 @@ import {
 import { useDocumentVisible } from "@/lib/use-document-visible";
 
 import { useMessageActions } from "./message-actions";
+import { type ProfileSender, useProfileHoverCard, useSenders } from "./profile";
 
 /** 本文の上限（rune。ADR 0012）。チャンネルの入力欄と同じ。 */
 const MAX_BODY_LENGTH = 4000;
@@ -57,6 +58,7 @@ export function RoomThread({
   rootId,
   jumpMessageId,
   onClose,
+  onOpenProfile,
 }: {
   workspaceId: string;
   roomId: string;
@@ -64,6 +66,8 @@ export function RoomThread({
   /** リンク（`?m=`）で指された返信。パネルの中でもそこまで飛んで強調する（ADR 0042）。 */
   jumpMessageId?: string;
   onClose: () => void;
+  /** 送信者のアバターか名前、メンションを押した（右の枠がプロフィールのパネルに入れ替わる。ADR 0050）。 */
+  onOpenProfile: (userId: string, sender: ProfileSender | undefined) => void;
 }) {
   const store = useChatStore();
   const realtime = useRealtime();
@@ -142,6 +146,8 @@ export function RoomThread({
 
   const messages = useMemo(() => (root ? [root, ...(replies ?? [])] : (replies ?? [])), [root, replies]);
   const senderIds = useMemo(() => [...messages.map((m) => m.sender.id), ...(me ? [me.id] : [])], [messages, me]);
+  const senderOf = useSenders(messages);
+  const profileHoverCardFor = useProfileHoverCard({ workspaceId, senderOf });
   const avatarUrls = useAvatarUrls(senderIds);
   const attachmentUrls = useMediaState((s) => s.attachments);
   const imageIds = useMemo(() => previewImageIds(messages).join(" "), [messages]);
@@ -295,6 +301,8 @@ export function RoomThread({
             onDiscard={(key) => store.discardMessage(roomId, key)}
             onImageError={(id, url) => media.attachmentImageFailed(id, url)}
             {...timelineProps}
+            onOpenProfile={(userId) => onOpenProfile(userId, senderOf(userId))}
+            profileHoverCardFor={profileHoverCardFor}
           />
         )}
       </ThreadPanel>

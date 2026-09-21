@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1589,6 +1589,189 @@ describe("WorkspaceScreen", () => {
       await userEvent.keyboard("{Escape}");
 
       expect(history().queryByRole("button", { name: "ファイルの操作" })).not.toBeInTheDocument();
+    });
+  });
+
+  // プロフィール（ADR 0050）。md 以上はホバーでカード、押すと右のパネル（?p=）
+  describe("プロフィール（ADR 0050）", () => {
+    const gone = { id: "01J8ZK3X5R8Q2W4E6T8Y0U2I6C", handle: "gone", display_name: "退会 太郎" };
+    const profilePanel = () => within(screen.getByRole("complementary", { name: "プロフィール" }));
+    const openedPanel = async () => within(await screen.findByRole("complementary", { name: "プロフィール" }));
+    const profileOf = (user: typeof naoki, email: string | null, overrides = {}) => () =>
+      json(200, { ...member(user, overrides), email });
+
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+      // 画面が URL を変えたら、次の描画で useSearchParams がその値を返すようにする
+      const follow = (url: string) => {
+        nav.search = new URL(url, "http://app.test").search.slice(1);
+      };
+      nav.router.push.mockImplementation(follow);
+      nav.router.replace.mockImplementation(follow);
+    });
+
+    it("opens the panel from a sender's avatar and name", async () => {
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(design, [message(1, { sender: naoki })])));
+      const history = within(await screen.findByRole("list", { name: "メッセージ" }));
+
+      await userEvent.click(history.getByRole("button", { name: "佐藤 直樹 のプロフィール" }));
+      expect(nav.router.push).toHaveBeenLastCalledWith(`/w/ws-1/r/r-design?p=${naoki.id}`);
+    });
+
+    it("shows the member from the list and the verified email from the profile API", async () => {
+      nav.search = `p=${miyuki.id}`;
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          [`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`]: profileOf(miyuki, "miyuki@example.com"),
+        }),
+      );
+
+      expect(await (await openedPanel()).findByText("miyuki@example.com")).toBeInTheDocument();
+      expect(profilePanel().getByText("高橋 みゆき")).toBeInTheDocument();
+      expect(profilePanel().getByText("メンバー")).toBeInTheDocument();
+      expect(api.paths().filter((p) => p.endsWith(`/members/${miyuki.id}`))).toHaveLength(1);
+
+      await userEvent.click(profilePanel().getByRole("button", { name: "プロフィールを閉じる" }));
+      expect(nav.router.replace).toHaveBeenLastCalledWith("/w/ws-1/r/r-design");
+    });
+
+    it("shows no contact section when the email is unverified", async () => {
+      nav.search = `p=${miyuki.id}`;
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(design), [`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`]: profileOf(miyuki, null) }),
+      );
+
+      await waitFor(() => expect(api.paths()).toContain(`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`));
+      await openedPanel();
+      await waitFor(() => expect(profilePanel().queryByRole("status", { name: "メールアドレスを読み込み中" })).not.toBeInTheDocument());
+      expect(profilePanel().queryByRole("region", { name: "連絡先" })).not.toBeInTheDocument();
+      expect(profilePanel().getByText("高橋 みゆき")).toBeInTheDocument();
+    });
+
+    it("opens the DM once even when 'DM を送る' is pressed twice", async () => {
+      nav.search = `p=${miyuki.id}`;
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          [`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`]: profileOf(miyuki, null),
+          "POST /api/v1/workspaces/ws-1/rooms": () => json(200, dm),
+        }),
+      );
+      const button = await (await openedPanel()).findByRole("button", { name: "DM を送る" });
+
+      button.click();
+      button.click();
+
+      await waitFor(() => expect(nav.router.push).toHaveBeenLastCalledWith("/w/ws-1/r/r-dm"));
+      const created = api.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/workspaces/ws-1/rooms");
+      expect(created.map((c) => JSON.parse(c.init.body as string))).toEqual([{ kind: "dm", user_id: miyuki.id }]);
+    });
+
+    it("changes the role from the panel when the member can be managed", async () => {
+      nav.search = `p=${miyuki.id}`;
+      const changed: unknown[] = [];
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "GET /api/v1/workspaces": () => json(200, { workspaces: [workspace("ws-1", "hibari 開発", { my_role: "admin" })] }),
+          [`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`]: profileOf(miyuki, null),
+          [`PATCH /api/v1/workspaces/ws-1/members/${miyuki.id}`]: (_url, init) => {
+            changed.push(JSON.parse(init.body as string));
+            return json(200, member(miyuki, { role: "admin" }));
+          },
+        }),
+      );
+
+      await userEvent.click(await (await openedPanel()).findByRole("button", { name: "その他の操作" }));
+      await userEvent.click(profilePanel().getByRole("button", { name: "管理者" }));
+
+      expect(changed).toEqual([{ role: "admin" }]);
+      expect(await (await openedPanel()).findByText("管理者")).toBeInTheDocument();
+    });
+
+    it("hides the management entries for a member who cannot be managed", async () => {
+      // 自分（テストのユーザーは佐藤 直樹）は member。同格の相手は操作できない
+      nav.search = `p=${kei.id}`;
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(design), [`GET /api/v1/workspaces/ws-1/members/${kei.id}`]: profileOf(kei, null) }),
+      );
+
+      await userEvent.click(await (await openedPanel()).findByRole("button", { name: "その他の操作" }));
+      expect(profilePanel().queryByText("ロールの変更")).not.toBeInTheDocument();
+      expect(profilePanel().queryByRole("button", { name: "ワークスペースから削除" })).not.toBeInTheDocument();
+    });
+
+    it("offers 'プロフィールを編集' instead of a DM on your own panel", async () => {
+      // テストのユーザーは佐藤 直樹
+      nav.search = `p=${naoki.id}`;
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(design), [`GET /api/v1/workspaces/ws-1/members/${naoki.id}`]: profileOf(naoki, null, { role: "owner" }) }),
+      );
+
+      await userEvent.click(await (await openedPanel()).findByRole("button", { name: "プロフィールを編集" }));
+      expect(profilePanel().queryByRole("button", { name: "DM を送る" })).not.toBeInTheDocument();
+      expect(nav.router.push).toHaveBeenLastCalledWith("/settings/profile");
+    });
+
+    it("swaps the members panel for the profile and goes back to the members", async () => {
+      renderWithChat(<WorkspaceScreen />, routes({
+        ...openRoom(design),
+        [`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`]: profileOf(miyuki, null),
+      }));
+
+      await userEvent.click(await screen.findByRole("button", { name: /メンバー/ }));
+      const members = within(await screen.findByRole("complementary", { name: "メンバー" }));
+      await userEvent.click(await members.findByRole("button", { name: /高橋 みゆき/ }));
+
+      expect(nav.router.push).toHaveBeenLastCalledWith(`/w/ws-1/r/r-design?p=${miyuki.id}`);
+      expect(screen.queryByRole("complementary", { name: "メンバー" })).not.toBeInTheDocument();
+      await userEvent.click(await (await openedPanel()).findByRole("button", { name: "メンバーに戻る" }));
+
+      expect(await screen.findByRole("complementary", { name: "メンバー" })).toBeInTheDocument();
+      expect(screen.queryByRole("complementary", { name: "プロフィール" })).not.toBeInTheDocument();
+    });
+
+    it("shows only the name and handle for someone no longer in the workspace", async () => {
+      const { api } = renderWithChat(<WorkspaceScreen />, routes(openRoom(design, [message(1, { sender: gone })])));
+      const history = within(await screen.findByRole("list", { name: "メッセージ" }));
+
+      await userEvent.click(history.getByRole("button", { name: "退会 太郎 のプロフィール" }));
+
+      expect(await (await openedPanel()).findByText("このワークスペースのメンバーではありません")).toBeInTheDocument();
+      expect(profilePanel().getByText("@gone")).toBeInTheDocument();
+      expect(profilePanel().queryByRole("button", { name: "DM を送る" })).not.toBeInTheDocument();
+      // 一覧にいない人は API も 404 なので呼ばない（ADR 0050 決定 5）
+      expect(api.paths().some((p) => p.includes(`/members/${gone.id}`))).toBe(false);
+    });
+
+    it("shows the hover card without calling the profile API", async () => {
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        matches: true,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+      try {
+        const { api } = renderWithChat(<WorkspaceScreen />, routes(openRoom(design, [message(1, { sender: miyuki })])));
+        const history = within(await screen.findByRole("list", { name: "メッセージ" }));
+        await waitFor(() => expect(api.paths()).toContain("GET /api/v1/workspaces/ws-1/members?limit=200"));
+
+        fireEvent.pointerEnter(history.getByRole("button", { name: "高橋 みゆき のプロフィール" }), { pointerType: "mouse" });
+
+        const card = within(await screen.findByRole("dialog", { name: "高橋 みゆき のプロフィール" }, { timeout: 2_000 }));
+        expect(card.getByText("メンバー")).toBeInTheDocument();
+        expect(card.getByRole("button", { name: "DM を送る" })).toBeInTheDocument();
+        expect(api.paths().some((p) => p.endsWith(`/members/${miyuki.id}`))).toBe(false);
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
   });
 });

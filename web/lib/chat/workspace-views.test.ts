@@ -11,6 +11,7 @@ import {
   inviteUrl,
   toInviteRowView,
   toMemberRowView,
+  toProfileView,
   toTransferCandidates,
 } from "./workspace-views";
 
@@ -121,5 +122,58 @@ describe("toInviteRowView", () => {
 describe("inviteUrl", () => {
   it("points at the accept page of the same origin", () => {
     expect(inviteUrl("https://hibari.test", "7Qv2xkR8mA")).toBe("https://hibari.test/j/7Qv2xkR8mA");
+  });
+});
+
+describe("toProfileView（ADR 0050）", () => {
+  const naokiMember = member(naoki, { role: "owner", status: { emoji: "📅", text: "会議中", expires_at: null } });
+  const miyukiMember = member(miyuki);
+
+  it("一覧にいる人は、一覧の値に email を足した member にする", () => {
+    const view = toProfileView(naokiMember, {
+      userId: miyuki.id,
+      myRole: "member",
+      email: { state: "ready", value: "naoki@example.com" },
+      avatarUrls: { [naoki.id]: "https://storage.test/naoki.png" },
+    });
+
+    expect(view).toEqual({
+      kind: "member",
+      user: {
+        id: naoki.id,
+        name: naoki.display_name,
+        handle: naoki.handle,
+        avatarUrl: "https://storage.test/naoki.png",
+        status: { emoji: "📅", text: "会議中", expiresLabel: undefined },
+      },
+      presence: "offline",
+      role: "owner",
+      email: { state: "ready", value: "naoki@example.com" },
+      isSelf: false,
+      manage: undefined,
+    });
+  });
+
+  it("管理の入口は、管理画面と同じ写しで操作できる相手のときだけ出す", () => {
+    expect(toProfileView(miyukiMember, { userId: naoki.id, myRole: "owner" })).toMatchObject({
+      manage: { grantableRoles: ["admin", "member"], canRemove: true },
+    });
+    // 同格・上のロール・自分・ロールがまだ分からないとき
+    expect(toProfileView(miyukiMember, { userId: naoki.id, myRole: "member" })).toMatchObject({ manage: undefined });
+    expect(toProfileView(naokiMember, { userId: miyuki.id, myRole: "admin" })).toMatchObject({ manage: undefined });
+    expect(toProfileView(naokiMember, { userId: naoki.id, myRole: "owner" })).toMatchObject({ isSelf: true, manage: undefined });
+    expect(toProfileView(miyukiMember, { userId: naoki.id, myRole: undefined })).toMatchObject({ manage: undefined });
+  });
+
+  it("email は渡されるまで読み込み中", () => {
+    expect(toProfileView(miyukiMember, { userId: naoki.id, myRole: "member" })).toMatchObject({ email: { state: "loading" } });
+  });
+
+  it("一覧にいない人は、メッセージの送信者の値で former にし、手がかりもなければ unknown", () => {
+    expect(toProfileView(undefined, { userId: naoki.id, myRole: "member", fallback: miyuki })).toEqual({
+      kind: "former",
+      user: { id: miyuki.id, name: miyuki.display_name, handle: miyuki.handle, avatarUrl: undefined },
+    });
+    expect(toProfileView(undefined, { userId: naoki.id, myRole: "member" })).toEqual({ kind: "unknown" });
   });
 });

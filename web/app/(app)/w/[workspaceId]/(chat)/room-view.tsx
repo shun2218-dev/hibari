@@ -15,6 +15,7 @@ import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
 import { useMessageActions } from "./message-actions";
+import { type ProfileSender, useProfileHoverCard, useSenders } from "./profile";
 import { RoomSettings } from "./room-settings";
 import { RoomHeader } from "@/components/chat/room-header";
 import { Timeline } from "@/components/chat/timeline";
@@ -68,6 +69,11 @@ type RoomViewProps = {
   onOpenThread: (rootId: string) => void;
   /** リンク（`?m=`）で指されたメッセージ。そこまで飛んで強調する（ADR 0042）。 */
   jumpMessageId?: string;
+  /**
+   * 送信者のアバターか名前、メンションを押した（右のプロフィールのパネル。ADR 0050）。
+   * sender は一覧にいない人（外された人）の名前の手がかり。
+   */
+  onOpenProfile: (userId: string, sender: ProfileSender | undefined) => void;
 };
 
 /**
@@ -84,6 +90,7 @@ export function RoomView({
   openThreadId,
   onOpenThread,
   jumpMessageId,
+  onOpenProfile,
 }: RoomViewProps) {
   const router = useRouter();
   const store = useChatStore();
@@ -189,6 +196,9 @@ export function RoomView({
   // アバターと画像の URL は、chat のレスポンスに載らないので、画面に出すものの ID を集めて引く（ADR 0013 / 0020 / 0028）
   const senderIds = useMemo(() => [...(messages ?? []).map((m) => m.sender.id), ...(me ? [me.id] : [])], [messages, me]);
   const avatarUrls = useAvatarUrls(senderIds);
+  // 一覧にいない人（外された人）のカードとパネルの名前は、メッセージの送信者の値から引く（ADR 0050 決定 5）
+  const senderOf = useSenders(messages);
+  const profileHoverCardFor = useProfileHoverCard({ workspaceId, senderOf });
   const attachmentUrls = useMediaState((s) => s.attachments);
   const imageIds = useMemo(() => previewImageIds(messages ?? []).join(" "), [messages]);
   useEffect(() => {
@@ -394,6 +404,8 @@ export function RoomView({
               if (rootId) onOpenThread(rootId);
             }}
             openThreadKey={openThreadId}
+            onOpenProfile={(userId) => onOpenProfile(userId, senderOf(userId))}
+            profileHoverCardFor={profileHoverCardFor}
           />
         ))}
       {room.kind === "public" && !room.is_member ? (
