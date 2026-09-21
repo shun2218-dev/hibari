@@ -33,12 +33,14 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | `unsubscribe` | `room_id` または `workspace_id` | 購読をやめる。購読していなくても成功 |
 | `typing` | `room_id`、`thread_root_id`（任意） | 入力中であることを知らせる。購読中のルームだけ。入力している間、数秒ごとに送ってよい（サーバーが 5 秒に 1 回に間引く）。スレッドで入力しているときは親の ID を付ける（チャンネルとは別に間引く。ADR 0036） |
 | `ping` | — | アプリケーションの疎通確認（ブラウザは WebSocket の ping フレームを送れないため）。`ack` が返る |
+| `activity` | `active` | この接続が画面を見ているか（ADR 0049）。**変わったときだけ**送る。接続は「見ていない」から始まるので、つないだ直後に 1 回送る |
 
 ```json
 { "type": "subscribe", "id": "c1", "room_id": "01J8..." }
 { "type": "subscribe", "id": "c2", "workspace_id": "01J8..." }
 { "type": "typing", "room_id": "01J8..." }
 { "type": "typing", "room_id": "01J8...", "thread_root_id": "01J8..." }
+{ "type": "activity", "active": true }
 ```
 
 ## サーバー → クライアント
@@ -83,7 +85,8 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | `workspace.updated` | workspace | 名前や `invite_policy` が変わった |
 | `workspace.member_removed` | workspace、本人 | ワークスペースから退出した、またはキックされた |
 | `workspace.role_changed` | workspace、本人 | ロールが変わった（owner の譲渡では 2 件） |
-| `presence.changed` | そのユーザーが所属する workspace | オンライン / オフラインが変わった |
+| `presence.changed` | そのユーザーが所属する workspace | オンライン（`active`）/ 離席（`idle`）/ オフラインが変わった（ADR 0049） |
+| `member.status_changed` | そのユーザーが所属する workspace、本人 | 手動の離席かカスタムステータスが変わった（ADR 0049） |
 | `typing.started` | room（入力した本人の接続を除く） | 入力中になった |
 | `thread.read` | 本人 | 自分のスレッドの既読位置が進んだ（別の端末を含む。ADR 0036） |
 | `thread.followed` | 本人 | 自分がスレッドに参加した（自分の返信、自分の投稿への最初の返信、スレッドの中でのメンション。ADR 0041） |
@@ -245,11 +248,46 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 #### `presence.changed`
 
 ```json
-{ "user_id": "01J8...", "online": true }
+{ "user_id": "01J8...", "presence": "active" }
 ```
 
-初期値は REST で取る（`GET /api/v1/rooms/{id}/members` の `online`、ルームの `dm_peer.online`）。
-同じユーザーが複数の端末（複数のサーバー）に接続していても、最初の接続で `true`、最後の切断で `false` を 1 回ずつ送る（ADR 0016）。
+`presence` は **自動で決まる状態だけ**（ADR 0049）。
+
+| 値 | 意味 |
+|---|---|
+| `active` | どこか 1 つの接続が画面を見ている |
+| `idle` | 接続はあるが、どれも画面を見ていない（別のタブ・10 分操作なし） |
+| `offline` | 接続がない |
+
+初期値は REST で取る（`GET /api/v1/rooms/{id}/members` の `presence`、ルームの `dm_peer.presence`）。
+同じユーザーが複数の端末（複数のサーバー）に接続していても、状態が変わったときに 1 回だけ送る（ADR 0016）。
+
+**画面に出す 3 つの状態は、これと本人の設定（`away`）を合わせて決める**（合わせるのは読む側。ADR 0049 決定 1）。
+
+```
+offline                → ドットなし
+idle または away       → 離席（色なしのアウトライン）
+それ以外               → オンライン（緑）
+```
+
+#### `member.status_changed`
+
+```json
+{
+  "workspace_id": "01J8...",
+  "user_id": "01J8...",
+  "away": true,
+  "status": { "emoji": "🍵", "text": "休憩中", "expires_at": "2026-09-21T12:00:00Z" }
+}
+```
+
+本人が選んだ設定（ADR 0049）。`away` は手動の離席で**ユーザーごと**なので、所属するすべてのワークスペースに同じ値が飛ぶ。
+`status` は**ワークスペースごと**で、設定していなければ `null`。`expires_at` が `null` なら消えない。
+
+**期限切れのイベントは飛ばない。** クライアントが `expires_at` にタイマーを置いて自分で消す。
+サーバーは期限を過ぎたステータスを返さない（読むときに `Clock` で落とす）。
+
+本人のすべての接続にも届くので、別のタブの表示もこれで揃う。
 
 #### `typing.started`
 
@@ -287,7 +325,8 @@ WebSocket の配信は落ちうるので、クライアントはルームごと�
 3. ルーム一覧（未読数・最終メッセージ）を REST で取り直す
 4. メッセージを表示・キャッシュしているルームごとに、`GET /api/v1/rooms/{id}/messages?after_change_seq=<change_seq>` を `has_more` が false になるまで呼ぶ
    - 受け取ったメッセージは `id` で上書きし、表示は `seq` で並べる
-5. 開いているパネルのメンバー一覧（presence を含む）を REST で取り直す
+5. 開いているパネルのルームのメンバー一覧（`presence` を含む）を REST で取り直す
+6. ワークスペースのメンバー一覧を REST で取り直す（`presence` / `away` / `status` は `change_seq` に乗らないので、取りこぼしは取り直しで回復する。ADR 0049）
 
 接続中にメッセージのイベントを受け取ったら:
 
