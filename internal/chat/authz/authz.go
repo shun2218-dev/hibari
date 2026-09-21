@@ -82,6 +82,12 @@ func CanLeaveWorkspace(actor Role) bool {
 	return actor.IsMember() && actor != RoleOwner
 }
 
+// CanViewMemberProfile は、同じワークスペースのメンバーのプロフィール（email を含む）を見られるかを返す。
+// メンバーなら誰でも見られる（email を同じワークスペースの全員に見せるのはオーナーの判断。ADR 0050）。
+func CanViewMemberProfile(actor Role) bool {
+	return actor.IsMember()
+}
+
 // CanUpdateWorkspace は名前と invite_policy を変更できるかを返す。
 func CanUpdateWorkspace(actor Role) bool {
 	return actor.rank() >= RoleAdmin.rank()

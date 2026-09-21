@@ -53,6 +53,39 @@ func (s *Service) ListMembers(ctx context.Context, actor, workspaceID ulid.ULID,
 	return result, nil
 }
 
+// GetMemberProfile は target のプロフィールを返す（ADR 0050 決定 1）。
+// actor がメンバーでない、target がメンバーでない（外された・別のワークスペース）、退会済み、はどれも ErrNotFound
+// （一覧と同じく、存在するかどうかを区別させない）。
+func (s *Service) GetMemberProfile(ctx context.Context, actor, workspaceID, target ulid.ULID) (MemberProfile, error) {
+	q := store.New(s.db)
+	// ListMembers と同じく、確認と読み取りの間はロックしない。直後にキックされても書き込みは起きない
+	role, err := q.GetWorkspaceRole(ctx, store.GetWorkspaceRoleParams{WorkspaceID: workspaceID, UserID: actor})
+	if err != nil {
+		return MemberProfile{}, notFoundIfNoRows(err, "get role")
+	}
+	if !authz.CanViewMemberProfile(Role(role)) {
+		return MemberProfile{}, ErrNotFound
+	}
+	r, err := q.GetWorkspaceMemberProfile(ctx, store.GetWorkspaceMemberProfileParams{WorkspaceID: workspaceID, UserID: target})
+	if err != nil {
+		return MemberProfile{}, notFoundIfNoRows(err, "get member profile")
+	}
+	p := MemberProfile{Member: Member{
+		User:     UserProfile{ID: r.UserID, Handle: r.Handle, DisplayName: r.DisplayName},
+		Role:     Role(r.Role),
+		JoinedAt: r.JoinedAt,
+		Presence: presenceOf(s.online(ctx, []ulid.ULID{r.UserID})[r.UserID]),
+		Away:     r.ManualAway,
+		Status:   statusOf(r.StatusEmoji, r.StatusText, r.StatusExpiresAt, s.clock.Now()),
+	}}
+	// 未検証の email は返さない。誰でも他人のアドレスで登録できるので、出すとカードがそのアドレスを
+	// 本人のものとして保証しているように見える（決定 2）
+	if r.EmailVerifiedAt != nil {
+		p.Email = &r.Email
+	}
+	return p, nil
+}
+
 // lockedRoles は LockWorkspaceMembers でロックした行のロール。メンバーでない userID はキーに含まれない。
 type lockedRoles map[ulid.ULID]Role
 

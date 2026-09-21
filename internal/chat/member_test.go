@@ -378,3 +378,92 @@ func TestMemberOperationsConcurrent(t *testing.T) {
 		t.Fatalf("owners = %d, want exactly 1", n)
 	}
 }
+
+// TestGetMemberProfile はプロフィールのパネルの 1 人分（ADR 0050 決定 1 / 2）。
+func TestGetMemberProfile(t *testing.T) {
+	env := chattest.New(t)
+	r := setupRoles(t, env)
+	env.VerifyEmail(t, r.admin)
+	var email string
+	if err := env.Pool.QueryRow(t.Context(), `SELECT email FROM users WHERE id = $1`, r.admin).Scan(&email); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("一覧の 1 行と同じ値に、検証済みの email を足して返す", func(t *testing.T) {
+		if _, err := env.Service.SetStatus(t.Context(), r.admin, r.ws.ID, chat.UserStatus{Emoji: "📅", Text: "会議中"}); err != nil {
+			t.Fatal(err)
+		}
+		got, err := env.Service.GetMemberProfile(t.Context(), r.member, r.ws.ID, r.admin)
+		if err != nil {
+			t.Fatalf("GetMemberProfile: %v", err)
+		}
+		want := memberOf(t, env, r.member, r.ws.ID, r.admin)
+		if got.User != want.User || got.Role != authz.RoleAdmin || !got.JoinedAt.Equal(want.JoinedAt) ||
+			got.Presence != want.Presence || got.Away != want.Away || got.Status == nil || *got.Status != *want.Status {
+			t.Errorf("profile = %+v, want the same as the list row %+v", got.Member, want)
+		}
+		if got.Email == nil || *got.Email != email {
+			t.Errorf("email = %v, want %q", got.Email, email)
+		}
+	})
+
+	t.Run("未検証の email は返さない", func(t *testing.T) {
+		got, err := env.Service.GetMemberProfile(t.Context(), r.admin, r.ws.ID, r.member)
+		if err != nil {
+			t.Fatalf("GetMemberProfile: %v", err)
+		}
+		if got.Email != nil {
+			t.Errorf("email = %q, want nil（未検証）", *got.Email)
+		}
+	})
+
+	t.Run("自分のプロフィールも同じ規則で読める", func(t *testing.T) {
+		got, err := env.Service.GetMemberProfile(t.Context(), r.admin, r.ws.ID, r.admin)
+		if err != nil || got.Email == nil {
+			t.Fatalf("GetMemberProfile(self) = %+v, %v", got, err)
+		}
+	})
+
+	// 別のワークスペースだけに居る人
+	other := env.CreateUser(t)
+	env.VerifyEmail(t, other)
+	otherWS := env.CreateWorkspace(t, other)
+	env.AddMember(t, otherWS.ID, r.admin, authz.RoleMember)
+
+	// 外された人（検証済み）
+	kicked := env.CreateUser(t)
+	env.VerifyEmail(t, kicked)
+	env.AddMember(t, r.ws.ID, kicked, authz.RoleMember)
+	if err := env.Service.RemoveMember(t.Context(), r.owner, r.ws.ID, kicked); err != nil {
+		t.Fatal(err)
+	}
+
+	// 退会した人（検証済み）
+	gone := env.CreateUser(t)
+	env.VerifyEmail(t, gone)
+	env.AddMember(t, r.ws.ID, gone, authz.RoleMember)
+	if _, err := env.Pool.Exec(t.Context(), `UPDATE users SET deleted_at = $2 WHERE id = $1`, gone, env.Clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	// どれも「居ない」と同じ 404 にして、存在するかどうかを区別させない
+	for _, tc := range []struct {
+		name          string
+		actor, target ulid.ULID
+		workspaceID   ulid.ULID
+	}{
+		{"メンバーでない人は読めない", r.outsider, r.admin, r.ws.ID},
+		{"別のワークスペースのユーザーは返らない", r.member, other, r.ws.ID},
+		{"別のワークスペースの人は、共通のメンバーが居ても読めない", other, r.admin, r.ws.ID},
+		{"外されたユーザーの email は返らない", r.member, kicked, r.ws.ID},
+		{"退会したユーザーは返らない", r.member, gone, r.ws.ID},
+		{"外された本人は、元のワークスペースを読めない", kicked, r.admin, r.ws.ID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := env.Service.GetMemberProfile(t.Context(), tc.actor, tc.workspaceID, tc.target)
+			if !errors.Is(err, chat.ErrNotFound) {
+				t.Errorf("err = %v (profile %+v), want ErrNotFound", err, got)
+			}
+		})
+	}
+}

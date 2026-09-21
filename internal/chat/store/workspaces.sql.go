@@ -213,6 +213,60 @@ func (q *Queries) GetWorkspaceMember(ctx context.Context, arg GetWorkspaceMember
 	return i, err
 }
 
+const getWorkspaceMemberProfile = `-- name: GetWorkspaceMemberProfile :one
+SELECT wm.user_id, wm.role, wm.joined_at, u.handle, u.display_name,
+       COALESCE(ps.manual_away, false)::boolean AS manual_away,
+       wm.status_emoji, wm.status_text, wm.status_expires_at,
+       u.email::text AS email, u.email_verified_at
+  FROM workspace_members wm
+  JOIN users u ON u.id = wm.user_id
+  LEFT JOIN user_presence_settings ps ON ps.user_id = wm.user_id
+ WHERE wm.workspace_id = $1
+   AND wm.user_id = $2
+   AND u.deleted_at IS NULL
+`
+
+type GetWorkspaceMemberProfileParams struct {
+	WorkspaceID ulid.ULID
+	UserID      ulid.ULID
+}
+
+type GetWorkspaceMemberProfileRow struct {
+	UserID          ulid.ULID
+	Role            string
+	JoinedAt        time.Time
+	Handle          string
+	DisplayName     string
+	ManualAway      bool
+	StatusEmoji     *string
+	StatusText      *string
+	StatusExpiresAt *time.Time
+	Email           string
+	EmailVerifiedAt *time.Time
+}
+
+// プロフィールのパネルの 1 人分（ADR 0050 決定 1）。一覧の 1 行と同じ列に email を足す。
+// email を読むのはこのクエリだけにする（一覧・UserProfile・イベントには載せない）。
+// 検証済みかどうかで落とすのは Go の側（期限切れのステータスと同じく、CASE 式は sqlc が型を推せないため）。
+func (q *Queries) GetWorkspaceMemberProfile(ctx context.Context, arg GetWorkspaceMemberProfileParams) (GetWorkspaceMemberProfileRow, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceMemberProfile, arg.WorkspaceID, arg.UserID)
+	var i GetWorkspaceMemberProfileRow
+	err := row.Scan(
+		&i.UserID,
+		&i.Role,
+		&i.JoinedAt,
+		&i.Handle,
+		&i.DisplayName,
+		&i.ManualAway,
+		&i.StatusEmoji,
+		&i.StatusText,
+		&i.StatusExpiresAt,
+		&i.Email,
+		&i.EmailVerifiedAt,
+	)
+	return i, err
+}
+
 const getWorkspaceMemberRoles = `-- name: GetWorkspaceMemberRoles :many
 SELECT wm.user_id, wm.role
   FROM workspace_members wm

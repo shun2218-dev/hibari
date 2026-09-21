@@ -117,6 +117,14 @@ type Member struct {
 	Status *UserStatus
 }
 
+// MemberProfile はプロフィールのパネルの 1 人分（ADR 0050 決定 1）。
+// email を持つ型はこれだけにする（Member・UserProfile に足すと、一覧やイベントに乗って広く流れる）。
+type MemberProfile struct {
+	Member
+	// Email は検証済みのときだけ入る（決定 2）。未検証なら nil。
+	Email *string
+}
+
 // 一覧のページングの既定値と上限（ADR 0011）。
 const (
 	DefaultPageLimit = 100
