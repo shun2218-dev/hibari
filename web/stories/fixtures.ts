@@ -478,6 +478,27 @@ export const timelineWithMentions: TimelineItem[] = [
   message("m-m05", naoki, "10:27", "確認だけお願いします。", { grouped: true }),
 ];
 
+/**
+ * 書式のあるタイムライン（ADR 0051）。本文は保存される形（mrkdwn 寄りの記法）のまま持ち、表示のときに解釈する。
+ * 最後の行は、HTML を書いても文字のまま出ることを見せる。
+ */
+export const timelineWithFormatting: TimelineItem[] = [
+  { type: "date", key: "d-0914f", label: "2026年9月14日" },
+  message(
+    "m-f01",
+    naoki,
+    "10:02",
+    "金曜のリリースの手順です。*本番の前に必ずステージングで確認*してください。\n1. `make migrate` を流す\n2. ステージングで確認する\n  - ログイン・送信・_再接続_\n  - 添付のアップロード\n3. 本番に出す",
+  ),
+  message("m-f02", naoki, "10:03", "手順書は https://example.com/runbook/release にまとめてあります。~木曜~ 金曜の 17 時からです。", {
+    grouped: true,
+  }),
+  message("m-f03", miyuki, "10:10", "> 本番の前に必ずステージングで確認\n了解です。マイグレーションはこれで合っていますか？\n```\nmake migrate\ngo run ./cmd/server -check\n```", {
+    edited: true,
+  }),
+  message("m-f04", ryo, "10:15", "ドキュメントに `<script>` と書いたら消えないか試します: <script>alert(1)</script>"),
+];
+
 /** メンションの未読があるサイドバー（バッジが `@N` になる。ADR 0043）。 */
 export const roomsWithMentions: RoomSummaryView[] = rooms.map((room) =>
   room.id === "room-chat"

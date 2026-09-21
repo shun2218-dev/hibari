@@ -6,7 +6,6 @@ import {
   findMentionQuery,
   mentionAll,
   mentionHandles,
-  splitBody,
   toInputBody,
   toWireBody,
   type MentionCandidate,
@@ -22,58 +21,10 @@ const candidates: MentionCandidate[] = [
   { kind: "here", description: "いまオンラインの人" },
 ];
 
-const names = new Map([
-  [ALICE, "田中 あおい"],
-  [BOB, "佐藤 けん"],
-]);
 const handles = new Map([
   [ALICE, "alice"],
   [BOB, "bob_2"],
 ]);
-
-describe("splitBody", () => {
-  it("メンションがなければ 1 つの文字列", () => {
-    expect(splitBody("こんにちは", names)).toEqual([{ type: "text", text: "こんにちは" }]);
-  });
-
-  it("空の本文は断片なし", () => {
-    expect(splitBody("", names)).toEqual([]);
-  });
-
-  it("個人のトークンを名前のチップにする", () => {
-    expect(splitBody(`<@${ALICE}> おはよう`, names)).toEqual([
-      { type: "mention", kind: "user", id: ALICE, name: "田中 あおい" },
-      { type: "text", text: " おはよう" },
-    ]);
-  });
-
-  it("channel と here をチップにする", () => {
-    expect(splitBody("<!channel> と <!here>", names)).toEqual([
-      { type: "mention", kind: "channel" },
-      { type: "text", text: " と " },
-      { type: "mention", kind: "here" },
-    ]);
-  });
-
-  it("前後に文字があっても切り出す", () => {
-    expect(splitBody(`（<@${BOB}>）`, names)).toEqual([
-      { type: "text", text: "（" },
-      { type: "mention", kind: "user", id: BOB, name: "佐藤 けん" },
-      { type: "text", text: "）" },
-    ]);
-  });
-
-  it("名前を引けない ID は文字列のまま出す", () => {
-    const body = "<@01J8YYYYYYYYYYYYYYYYYYYYYY> だれ";
-    expect(splitBody(body, names)).toEqual([{ type: "text", text: body }]);
-  });
-
-  it("トークンに見えない文字列はそのまま", () => {
-    expect(splitBody("@alice <@01J8> <!everyone>", names)).toEqual([
-      { type: "text", text: "@alice <@01J8> <!everyone>" },
-    ]);
-  });
-});
 
 describe("toWireBody", () => {
   it("解決できるハンドルを ID にする", () => {

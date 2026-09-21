@@ -272,15 +272,17 @@ export function MessageItem({
           <p className="text-lg leading-relaxed text-text-muted italic">このメッセージは削除されました</p>
         ) : (
           <div className="flex items-start gap-2">
-            <p
+            {/* 本文はコードブロックやリストを含むので <p> では囲めない（ADR 0051）。段落の改行は MessageBody が保つ */}
+            <MessageBody
+              body={message.body}
+              mentionNames={message.mentionNames}
+              onOpenProfile={onOpenProfile}
+              trailing={message.edited ? <span className="ml-1.5 text-2xs text-text-muted">（編集済み）</span> : undefined}
               className={cx(
-                "min-w-0 flex-1 text-lg leading-relaxed break-words whitespace-pre-wrap",
+                "min-w-0 flex-1 text-lg leading-relaxed break-words",
                 status === "pending" ? "text-text-muted" : "text-text",
               )}
-            >
-              <MessageBody body={message.body} mentionNames={message.mentionNames} onOpenProfile={onOpenProfile} />
-              {message.edited && <span className="ml-1.5 text-2xs text-text-muted">（編集済み）</span>}
-            </p>
+            />
             {status === "pending" && (
               <span role="img" aria-label="送信中" className="mt-1.5 shrink-0 text-text-muted">
                 <ClockIcon className="size-3.5" />

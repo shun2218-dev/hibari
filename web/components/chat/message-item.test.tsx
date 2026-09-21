@@ -121,8 +121,8 @@ describe("MessageItem", () => {
     render(<MessageItem message={message({ status: "pending" })} />);
 
     expect(screen.getByRole("img", { name: "送信中" })).toBeInTheDocument();
-    // 本文はメンションのチップに分かれうるので、色は段落に付く（ADR 0043）
-    expect(screen.getByText("賛成です。").closest("p")).toHaveClass("text-text-muted");
+    // 本文はブロックとチップに分かれうるので、色は本文全体の囲いに付ける（ADR 0043 / 0051）
+    expect(screen.getByText("賛成です。").closest(".text-text-muted")).not.toBeNull();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 

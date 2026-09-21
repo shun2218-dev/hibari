@@ -53,4 +53,16 @@ describe("design rules", () => {
 
     expect(offenders).toEqual([]);
   });
+
+  // チャットの画面は、ユーザーが書いた文字列を出す。HTML として埋め込まず、React のテキストとして出せば <script> は文字のまま見える
+  // （ADR 0051 決定 3）。app/layout.tsx の head のスクリプト（固定の文字列）は対象の外
+  const chatFiles = files.filter((file) => file.startsWith(path.join(webRoot, "components", "chat") + path.sep));
+
+  it("finds chat components to check for HTML strings", () => {
+    expect(chatFiles.length).toBeGreaterThan(10);
+  });
+
+  it.each(chatFiles.map((file) => [path.relative(webRoot, file), file]))("%s embeds no HTML strings", (_name, file) => {
+    expect(readFileSync(file, "utf8")).not.toMatch(/dangerouslySetInnerHTML|\.innerHTML\s*=/);
+  });
 });
