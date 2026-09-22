@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { AppearanceSettings } from "@/components/settings/settings-sections";
+import { AppearanceSettings } from "@/components/settings/appearance-settings";
 
 import { userSettings } from "@/stories/screens";
 

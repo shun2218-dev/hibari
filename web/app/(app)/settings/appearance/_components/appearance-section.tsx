@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-import { AppearanceSettings } from "@/components/settings/settings-sections";
+import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { currentTheme, saveTheme, serverTheme, subscribeTheme } from "@/lib/theme";
 
 /**

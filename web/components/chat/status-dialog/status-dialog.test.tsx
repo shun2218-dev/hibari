@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { STATUS_TEXT_MAX, StatusDialog } from "./status-dialog";
 
 // 絵文字のピッカー（emoji-mart）は外のライブラリなので描かない。開いたかどうかだけを見る（ADR 0044 決定 7）
-vi.mock("./emoji-picker", () => ({ EmojiPicker: () => <div data-testid="emoji-picker" /> }));
+vi.mock("@/components/chat/emoji-picker", () => ({ EmojiPicker: () => <div data-testid="emoji-picker" /> }));
 
 describe("StatusDialog（ADR 0049）", () => {
   // jsdom には matchMedia が無く、そのままだとモバイル扱いになる。

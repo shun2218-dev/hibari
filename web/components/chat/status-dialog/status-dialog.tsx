@@ -1,7 +1,9 @@
 "use client";
 
-import { type ReactNode, useEffect, useId, useRef } from "react";
+import { type ReactNode, useId, useRef } from "react";
 
+import { EmojiPicker } from "@/components/chat/emoji-picker";
+import type { UserStatusView } from "@/components/chat/types";
 import { AnchoredPanel } from "@/components/ui/anchored-panel";
 import { Button, TextButton } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -13,8 +15,8 @@ import { DESKTOP_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { dateLabel, halfHourTimes, matchTimes, normalizeTime } from "@/lib/calendar";
 import { cx } from "@/lib/cx";
 
-import { EmojiPicker } from "./emoji-picker";
-import type { UserStatusView } from "./types";
+import { statusExpiryLabel, statusPresets } from "./status-presets";
+import { pickerButtonClass, TimeList } from "./time-list";
 
 /**
  * ステータスを消す時刻の選び方（ADR 0049 決定 10）。文言も並びも Slack の「次の時間の経過後に削除」に合わせる。
@@ -25,36 +27,17 @@ import type { UserStatusView } from "./types";
  */
 export type StatusExpiry = "none" | "30m" | "1h" | "4h" | "today" | "week" | "custom";
 
-export const statusExpiryLabel: Record<StatusExpiry, string> = {
-  none: "削除しない",
-  "30m": "30 分",
-  "1h": "1 時間",
-  "4h": "4 時間",
-  today: "今日",
-  week: "今週",
-  custom: "日時を選択",
-};
-
-/** よく使うステータスの候補。Slack と同じく、押すと絵文字と文言がそのまま入る。 */
-export const statusPresets: readonly UserStatusView[] = [
-  { emoji: "📅", text: "会議中" },
-  { emoji: "🚃", text: "移動中" },
-  { emoji: "🍽️", text: "食事中" },
-  { emoji: "🎧", text: "集中しています" },
-  { emoji: "🌴", text: "休暇中" },
-];
+/**
+ * 「日時を選択」で入れる値。日付は `YYYY-MM-DD`、時刻は `HH:MM`（30 分刻み）。
+ * 絶対の時刻にするのはデータ層で、端末のタイムゾーンで解釈する。
+ */
+export type StatusExpiryCustom = { date: string; time: string };
 
 /** 文言の上限（ADR 0049 決定 5。Slack と同じ）。超える入力は受け付けない。 */
 export const STATUS_TEXT_MAX = 100;
 
 /** 文言だけを書いたときに添える絵文字。サーバーは絵文字を必須にしているので、クライアントが入れる。 */
 export const DEFAULT_STATUS_EMOJI = "💬";
-
-/**
- * 「日時を選択」で入れる値。日付は `YYYY-MM-DD`、時刻は `HH:MM`（30 分刻み）。
- * 絶対の時刻にするのはデータ層で、端末のタイムゾーンで解釈する。
- */
-export type StatusExpiryCustom = { date: string; time: string };
 
 type StatusDialogProps = {
   open: boolean;
@@ -100,55 +83,6 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
       <p className="text-xs font-medium text-text">{label}</p>
       {children}
     </div>
-  );
-}
-
-// 日付を開くボタンと時刻の入力。高さと枠をそろえて、並べたときに段差が出ないようにする。
-const pickerButtonClass =
-  "flex h-11 cursor-pointer items-center rounded-md border border-border bg-surface px-3 text-lg text-text hover:bg-surface-muted focus-visible:-outline-offset-2";
-
-/**
- * 時刻の候補の一覧（30 分ごと）。打った文字で絞った結果を受け取る。
- * 開いたときは、選んでいる時刻が見える位置まで送る（48 個あるので、いつも 00:00 から始まると毎回スクロールが要る）。
- */
-function TimeList({
-  id,
-  times,
-  value,
-  onSelect,
-}: {
-  id: string;
-  times: string[];
-  value?: string;
-  onSelect: (time: string) => void;
-}) {
-  const selected = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    // jsdom には scrollIntoView が無いので、あるときだけ呼ぶ（無くても一覧は出る）
-    selected.current?.scrollIntoView?.({ block: "center" });
-  }, []);
-
-  return (
-    // 入力欄（combobox）に紐づく候補の一覧なので listbox / option にする
-    <ul role="listbox" id={id} aria-label="時刻の候補" className="max-h-64 overflow-y-auto p-1.5">
-      {times.map((time) => (
-        <li key={time}>
-          <button
-            ref={time === value ? selected : undefined}
-            type="button"
-            role="option"
-            aria-selected={time === value}
-            onClick={() => onSelect(time)}
-            className={cx(
-              "flex h-9 w-full cursor-pointer items-center rounded-sm px-2.5 text-left text-base",
-              time === value ? "bg-primary-subtle font-semibold text-primary" : "text-text hover:bg-surface-muted",
-            )}
-          >
-            {time}
-          </button>
-        </li>
-      ))}
-    </ul>
   );
 }
 

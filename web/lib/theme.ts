@@ -1,4 +1,4 @@
-import type { Theme } from "@/components/settings/settings-sections";
+import type { Theme } from "@/components/settings/appearance-settings";
 
 /**
  * ライト / ダークの切り替え（`settings/appearance/appearance.png`）。

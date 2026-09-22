@@ -4,7 +4,7 @@ import {
   type BrowserNotificationPermission,
   type BrowserNotificationView,
   NotificationSettings,
-} from "@/components/settings/settings-sections";
+} from "@/components/settings/notification-settings";
 
 import { workspaces } from "@/stories/fixtures";
 import { noop, userSettings } from "@/stories/screens";
