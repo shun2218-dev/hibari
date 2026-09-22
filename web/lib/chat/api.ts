@@ -11,6 +11,7 @@ import type {
   FollowedThread,
   Invite,
   InviteAcceptance,
+  PinList,
   InviteList,
   InvitePreview,
   ManualAwayRequest,
@@ -60,8 +61,12 @@ export const LINK_BATCH_SIZE = 20;
 const PAGE_SIZE = 200;
 
 /** リアクションの PUT / DELETE のパス。絵文字はパーセントエンコードして置く（ADR 0044 決定 4）。 */
+function messagePath(roomId: string, messageId: string): string {
+  return `/api/v1/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}`;
+}
+
 function reactionPath(roomId: string, messageId: string, emoji: string): string {
-  return `/api/v1/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(emoji)}`;
+  return `${messagePath(roomId, messageId)}/reactions/${encodeURIComponent(emoji)}`;
 }
 
 /**
@@ -212,6 +217,17 @@ export function createChatApi(request: Session["request"]) {
 
     removeReaction: (roomId: string, messageId: string, emoji: string) =>
       request<Message>("DELETE", reactionPath(roomId, messageId, emoji)),
+
+    /** ピン留め（ADR 0054 決定 5）。ピン留め済みでも 200 で、更新後のメッセージを返す（冪等）。 */
+    pinMessage: (roomId: string, messageId: string) =>
+      request<Message>("PUT", `${messagePath(roomId, messageId)}/pin`),
+
+    /** ピンを外す。ピン留めされていなくても 200（冪等）。 */
+    unpinMessage: (roomId: string, messageId: string) =>
+      request<Message>("DELETE", `${messagePath(roomId, messageId)}/pin`),
+
+    /** ピン留めした新しい順。上限が 100 件なのでページングしない（ADR 0054 決定 5）。 */
+    listPins: (roomId: string) => request<PinList>("GET", `/api/v1/rooms/${encodeURIComponent(roomId)}/pins`),
 
     /** 削除済みでも 204（冪等。ADR 0012）。 */
     deleteMessage: (roomId: string, messageId: string) =>

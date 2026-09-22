@@ -4,6 +4,7 @@ import type {
   MessageLinkCardView,
   MessageReactionView,
   MessageView,
+  PinnedMessageView,
   RoleLabel,
   RoomKind,
   RoomMemberView,
@@ -60,6 +61,9 @@ export function systemMessageText(message: Pick<Message, "sender" | "system">): 
       return `${name} がチャンネルから外されました`;
     case "room_renamed":
       return `${name} がチャンネル名を ${message.system.old_name} から ${message.system.new_name} に変更しました`;
+    case "message_pinned":
+      // DM にはログを残さないので、文言はチャンネルのものだけ（ADR 0054 決定 3）
+      return `${name} がこのチャンネルにメッセージをピン留めしました`;
     default:
       // 知らない種類（サーバーが先に増えた）。行を落とすより、何かが起きたことだけ出す
       return `${name} がチャンネルを更新しました`;
@@ -192,6 +196,13 @@ type TimelineOptions = {
    * 省くと注記を出さない。チャンネルのタイムラインでは使わない。
    */
   broadcastDoneLabel?: string;
+  /**
+   * ピン留めのログ（ADR 0054 決定 3）から、対象のメッセージへ飛ぶリンクを作るためのルーム。省くとリンクを出さない。
+   * 対象がスレッドの返信かは、messages とピン留めの一覧（pinnedMessages）から引く。どちらにも無ければチャンネルの投稿として作る。
+   */
+  room?: { workspaceId: string; roomId: string };
+  /** ルームのピン留めの一覧。ピン留めのログの対象を引くのに使う。 */
+  pinnedMessages?: readonly Message[];
 };
 
 /** タイムラインに並べる 1 件。確定したメッセージと、確定していない自分のメッセージを同じ形にそろえる。 */
@@ -200,6 +211,10 @@ type Entry = {
   seq: number | null;
   /** システムメッセージ（ADR 0033）なら、その文言。人の発言では undefined。 */
   systemText?: string;
+  /** ピン留めのログなら、対象のメッセージの ID（ADR 0054 決定 3）。 */
+  systemTarget?: string;
+  /** ピン留めした人の表示名（ADR 0054）。ピン留めされていなければ undefined。 */
+  pinnedBy?: string;
   sender: UserProfile;
   createdAt: Date;
   body: string;
@@ -277,6 +292,8 @@ function fromMessage(message: Message, broadcast: MessageView["broadcast"]): Ent
     key: message.id,
     seq: message.seq,
     systemText: message.kind === "system" ? systemMessageText(message) : undefined,
+    systemTarget: message.system?.type === "message_pinned" ? message.system.message_id : undefined,
+    pinnedBy: message.pinned?.by.display_name,
     sender: message.sender,
     createdAt: new Date(message.created_at),
     body: message.body,
@@ -338,6 +355,8 @@ export function toTimelineItems(
     now = new Date(),
     threadRootId,
     broadcastDoneLabel,
+    room,
+    pinnedMessages = [],
   }: TimelineOptions,
 ): TimelineItem[] {
   const inThread = threadRootId !== undefined;
@@ -390,11 +409,13 @@ export function toTimelineItems(
 
     if (entry.systemText !== undefined) {
       // ログは人の発言ではないので、続けて表示（grouped）の基準にもしない
+      const link = room && entry.systemTarget ? pinnedLogLink(entry.systemTarget, room, messages, pinnedMessages) : undefined;
       items.push({
         type: "system",
         key: entry.key,
         text: entry.systemText,
         timeLabel: formatTime(entry.createdAt, timeZone),
+        ...(link ? { link } : {}),
       });
       previous = undefined;
       continue;
@@ -426,6 +447,7 @@ export function toTimelineItems(
           : undefined,
         broadcast: entry.broadcast,
         mentionNames: mentionNamesFor(entry, memberNames),
+        pinnedBy: entry.deleted ? undefined : entry.pinnedBy,
         // 自分の発言では自分に知らせない（ADR 0041）
         mentionsMe: me !== undefined && entry.sender.id !== me.id && mentionsUser(entry.mentions, me.id),
         attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
@@ -438,6 +460,63 @@ export function toTimelineItems(
     previous = entry.broadcast?.in === "channel" ? undefined : entry;
   }
   return items;
+}
+
+/**
+ * ピン留めのログから対象へ飛ぶリンク（ADR 0054 決定 3）。対象が手元にあって削除済みなら出さない（ADR 0040 と同じ）。
+ * スレッドの返信なら、パネルも開くように親の ID を付ける（ADR 0042）。
+ */
+function pinnedLogLink(
+  targetId: string,
+  room: { workspaceId: string; roomId: string },
+  messages: readonly Message[],
+  pinnedMessages: readonly Message[],
+): { label: string; href: string } | undefined {
+  const target = messages.find((m) => m.id === targetId) ?? pinnedMessages.find((m) => m.id === targetId);
+  if (target?.deleted_at) return undefined;
+  const threadRootId = target?.thread_root_id ?? undefined;
+  return {
+    label: "メッセージを表示",
+    href: permalinkPath({ ...room, messageId: targetId, ...(threadRootId ? { threadRootId } : {}) }),
+  };
+}
+
+/**
+ * ピン留めの一覧の 1 行（ADR 0054）。押すと 6.11b の仕組みでそのメッセージへ飛ぶ（href はパーマリンクのパス）。
+ * 本文のメンションはルームのメンバーから名前を引き、メッセージ自身の mentions で補う（タイムラインと同じ）。
+ */
+export function toPinnedMessageView(
+  message: Message,
+  {
+    workspaceId,
+    now = new Date(),
+    timeZone,
+    avatarUrls = {},
+    memberNames,
+  }: {
+    workspaceId: string;
+    now?: Date;
+    timeZone?: string;
+    avatarUrls?: UrlTable;
+    memberNames?: Readonly<Record<string, string>>;
+  },
+): PinnedMessageView {
+  const threadRootId = message.thread_root_id ?? undefined;
+  return {
+    key: message.id,
+    href: permalinkPath({ workspaceId, roomId: message.room_id, messageId: message.id, ...(threadRootId ? { threadRootId } : {}) }),
+    sender: {
+      id: message.sender.id,
+      name: message.sender.display_name,
+      avatarUrl: avatarUrls[message.sender.id] ?? undefined,
+    },
+    timeLabel: formatListTime(new Date(message.created_at), now, timeZone),
+    body: message.body,
+    mentionNames: mentionNamesFor(fromMessage(message, undefined), memberNames),
+    attachmentCount: message.attachments.length,
+    pinnedBy: message.pinned?.by.display_name ?? "",
+    inThread: message.thread_root_id !== null,
+  };
 }
 
 /**

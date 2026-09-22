@@ -15,6 +15,7 @@ import {
   toDmCandidates,
   toMemberNames,
   toMentionCandidates,
+  toPinnedMessageView,
   toRoomMemberRows,
   toRoomMemberView,
   toRoomSummaryView,
@@ -1049,5 +1050,64 @@ describe("toTimelineItems の絵文字のリアクション（ADR 0044）", () =
     });
 
     expect(first(items).reactions).toEqual([]);
+  });
+});
+
+describe("ピン留め（ADR 0054）", () => {
+  const pin = { by: { id: naoki.id, handle: "naoki", display_name: "佐藤 直樹" }, at: "2026-09-22T01:00:00Z" };
+  const room = { workspaceId: "ws-1", roomId: "room-1" };
+  const pinnedLog = (target: string) => systemMessage(3, { type: "message_pinned", message_id: target }, { sender: miyuki });
+  const systemItem = (items: TimelineItem[]) => items.find((i) => i.type === "system") as Extract<TimelineItem, { type: "system" }>;
+
+  it("writes the pin log and links it to the pinned message", () => {
+    const items = toTimelineItems([message(1, { pinned: pin }), pinnedLog("m-1")], { unreadAfterSeq: null, timeZone: tz, room });
+
+    expect(systemItem(items)).toMatchObject({
+      text: "高橋 みゆき がこのチャンネルにメッセージをピン留めしました",
+      link: { label: "メッセージを表示", href: "/w/ws-1/r/room-1?m=m-1" },
+    });
+  });
+
+  it("opens the thread when the pinned message is a reply found in the pin list", () => {
+    const reply = message(2, { thread_root_id: "m-1", pinned: pin });
+    const items = toTimelineItems([message(1), pinnedLog("m-2")], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+      room,
+      pinnedMessages: [reply],
+    });
+
+    expect(systemItem(items).link?.href).toBe("/w/ws-1/r/room-1?m=m-2&t=m-1");
+  });
+
+  it("does not link to a deleted message, nor without a room", () => {
+    const deleted = message(1, { deleted_at: "2026-09-22T02:00:00Z", body: "" });
+    const log = pinnedLog("m-1");
+
+    expect(systemItem(toTimelineItems([deleted, message(2), log], { unreadAfterSeq: null, timeZone: tz, room })).link).toBeUndefined();
+    expect(systemItem(toTimelineItems([message(1), log], { unreadAfterSeq: null, timeZone: tz })).link).toBeUndefined();
+  });
+
+  it("marks who pinned a message on the message itself", () => {
+    const items = toTimelineItems([message(1, { pinned: pin }), message(2)], { unreadAfterSeq: null, timeZone: tz });
+    const messages = items.flatMap((i) => (i.type === "message" ? [i.message] : []));
+
+    expect(messages.map((m) => m.pinnedBy)).toEqual(["佐藤 直樹", undefined]);
+  });
+
+  it("makes a pin list row that jumps to the message (and its thread)", () => {
+    const view = toPinnedMessageView(message(2, { thread_root_id: "m-1", pinned: pin, attachments: [png] }), {
+      workspaceId: "ws-1",
+      now: new Date("2026-09-22T12:00:00Z"),
+      timeZone: tz,
+    });
+
+    expect(view).toMatchObject({
+      key: "m-2",
+      href: "/w/ws-1/r/room-1?m=m-2&t=m-1",
+      pinnedBy: "佐藤 直樹",
+      attachmentCount: 1,
+      inThread: true,
+    });
   });
 });

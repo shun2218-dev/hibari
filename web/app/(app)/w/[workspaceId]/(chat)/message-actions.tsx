@@ -44,6 +44,7 @@ export function useMessageActions({
   members,
   mentionCandidates = [],
   canReact = false,
+  canPin = false,
 }: {
   workspaceId: string;
   roomId: string;
@@ -61,10 +62,16 @@ export function useMessageActions({
    * 参加していない public ルームは読めるだけなので false にする。
    */
   canReact?: boolean;
+  /**
+   * ピン留めを付け外しできるか（ADR 0054 決定 4。authz.CanPinMessage の写し）。いまは投稿できる人と同じ。
+   * 参加していない public ルームは読めるだけなので false にする。
+   */
+  canPin?: boolean;
 }): {
   timelineProps: {
     actionsFor: (key: string) => MessageActions;
     copyLinkFor: (key: string) => { label: string; onClick: () => void } | undefined;
+    pinFor: (key: string) => { label: string; onClick: () => void } | undefined;
     openMenuKey: string | undefined;
     onToggleMenu: (key: string) => void;
     onEdit: (key: string) => void;
@@ -179,6 +186,32 @@ export function useMessageActions({
     };
   }
 
+  /**
+   * 「…」のピン留めの付け外し（ADR 0054）。文言は Slack と同じく、チャンネルと DM で変える。
+   * 送信中のメッセージ（まだ ID がない）と削除済みには出さない。失敗の表示はデザインにないので、戻らないまま閉じる。
+   */
+  function pinFor(key: string): { label: string; onClick: () => void } | undefined {
+    const message = findMessage(key);
+    if (!canPin || !message || !room || message.deleted_at !== null || message.kind === "system") return undefined;
+    const dm = room.kind === "dm";
+    const pinned = message.pinned !== null;
+    return {
+      label: pinned
+        ? dm
+          ? "この会話からピンを外す"
+          : "チャンネルからピンを外す"
+        : dm
+          ? "この会話にピン留めする"
+          : "チャンネルへピン留めする",
+      onClick: () => {
+        setOpenMenuKey(undefined);
+        void store.togglePin(roomId, message.id).catch((err: unknown) => {
+          console.error("failed to toggle a pin", err);
+        });
+      },
+    };
+  }
+
   async function saveEdit() {
     if (!activeEditing || !editingMessage) return;
     // 編集欄の値は送る形のテキスト（ADR 0052 決定 3）
@@ -277,6 +310,7 @@ export function useMessageActions({
     timelineProps: {
       actionsFor,
       copyLinkFor,
+      pinFor,
       openMenuKey,
       onToggleMenu: (key) => setOpenMenuKey((current) => (current === key ? undefined : key)),
       onEdit: (key) => {
