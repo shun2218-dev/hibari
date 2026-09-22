@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { DevicesSettings } from "@/components/settings/settings-sections";
+import { DevicesSettings } from "@/components/settings/devices-settings";
 import { useSession } from "@/hooks/auth/use-session";
 import type { Session } from "@/lib/api/types.gen";
 import { toDeviceView } from "@/lib/auth/devices";

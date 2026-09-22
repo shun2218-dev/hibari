@@ -40,7 +40,7 @@ import { RoomTabs } from "@/components/chat/room-tabs";
 import { SavedList } from "@/components/chat/saved-list";
 import { SideNavBar, type SideNavItems, type SideNavKey, SideNavRail } from "@/components/chat/side-nav";
 import { Sidebar } from "@/components/chat/sidebar";
-import { StatusDialog } from "@/components/chat/status-dialog";
+import { StatusDialog } from "@/components/chat/status-dialog/status-dialog";
 import { ThreadList } from "@/components/chat/thread-list";
 import { ThreadPanel } from "@/components/chat/thread-panel";
 import { Timeline } from "@/components/chat/timeline";

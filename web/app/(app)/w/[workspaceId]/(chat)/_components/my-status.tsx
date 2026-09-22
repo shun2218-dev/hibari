@@ -4,10 +4,10 @@ import { useState } from "react";
 
 import {
   DEFAULT_STATUS_EMOJI,
+  StatusDialog,
   type StatusExpiry,
   type StatusExpiryCustom,
-  StatusDialog,
-} from "@/components/chat/status-dialog";
+} from "@/components/chat/status-dialog/status-dialog";
 import type { UserStatusView } from "@/components/chat/types";
 import { useChatStore } from "@/hooks/chat/use-chat-store";
 import { fromISODate, monthOf, normalizeTime, toISODate } from "@/lib/calendar";

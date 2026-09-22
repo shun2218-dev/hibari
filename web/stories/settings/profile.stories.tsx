@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { ProfileSettings } from "@/components/settings/settings-sections";
+import { ProfileSettings } from "@/components/settings/profile-settings";
 
 import { mockAvatars, users } from "@/stories/fixtures";
 import { userSettings } from "@/stories/screens";

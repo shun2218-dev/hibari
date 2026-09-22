@@ -1,4 +1,4 @@
-import type { BrowserNotificationPermission } from "@/components/settings/settings-sections";
+import type { BrowserNotificationPermission } from "@/components/settings/notification-settings";
 
 /**
  * ブラウザ通知の、端末ごとの状態（ADR 0057 決定 5・6）。サーバーには持たない。

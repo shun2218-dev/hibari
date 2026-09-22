@@ -2,7 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 
-import { NotificationSettings } from "@/components/settings/settings-sections";
+import { NotificationSettings } from "@/components/settings/notification-settings";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import {
   notificationPermission,

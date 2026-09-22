@@ -1,4 +1,4 @@
-import type { DeviceKind, DeviceView } from "@/components/settings/settings-sections";
+import type { DeviceKind, DeviceView } from "@/components/settings/devices-settings";
 import type { Session } from "@/lib/api/types.gen";
 
 /**

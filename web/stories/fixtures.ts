@@ -24,7 +24,7 @@ import type {
 } from "@/components/chat/types";
 import type { TransferCandidate } from "@/components/workspace/member-dialogs";
 import type { InviteRowView, MemberRowView, WorkspaceRole } from "@/components/workspace/types";
-import type { DeviceView } from "@/components/settings/settings-sections";
+import type { DeviceView } from "@/components/settings/devices-settings";
 import type { MentionCandidate } from "@/lib/chat/format/mentions";
 import type { PresenceView } from "@/lib/chat/presence";
 

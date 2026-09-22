@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 
-import { type AvatarUploadState, ProfileSettings } from "@/components/settings/settings-sections";
+import { type AvatarUploadState, ProfileSettings } from "@/components/settings/profile-settings";
 import { useSession, useSessionState } from "@/hooks/auth/use-session";
 import { putFileWithXhr } from "@/lib/chat/media/put-file";
 
