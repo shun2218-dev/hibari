@@ -36,7 +36,7 @@ import type {
 import { type PresenceView, displayPresence } from "@/lib/chat/presence";
 
 import type { AttachmentDraft } from "@/lib/chat/media/uploads";
-import type { OutgoingMessage, ThreadState } from "@/lib/chat/store/chat-store";
+import type { OutgoingMessage, ThreadState } from "@/lib/chat/store/state";
 
 import { type Permalink, clampCardBody, findPermalinks, linkKey, permalinkPath, withSide } from "@/lib/chat/format/links";
 import { type MentionCandidate } from "@/lib/chat/format/mentions";
