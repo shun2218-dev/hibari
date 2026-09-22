@@ -1,6 +1,7 @@
 import type { MessageLink } from "@/lib/api/types.gen";
 
-import { LINK_BATCH_SIZE, type ChatApi } from "@/lib/chat/api";
+import type { ChatApi } from "@/lib/chat/api/chat-api";
+import { LINK_BATCH_SIZE } from "@/lib/chat/api/messages";
 import { type LinkTarget, linkKey } from "./links";
 
 /**

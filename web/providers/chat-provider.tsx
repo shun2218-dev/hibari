@@ -5,7 +5,7 @@ import { type ReactNode, createContext, useEffect, useState } from "react";
 import { useSession } from "@/hooks/auth/use-session";
 import { getApiBaseUrl } from "@/lib/api/base-url";
 import type { ServerEvent } from "@/lib/api/types.gen";
-import { createChatApi } from "@/lib/chat/api";
+import { createChatApi } from "@/lib/chat/api/chat-api";
 import { type LinkCardStore, createLinkCardStore } from "@/lib/chat/format/link-cards";
 import { type MediaStore, createMediaStore } from "@/lib/chat/media/media";
 import { type AttachmentUploader, type UploaderOptions, createAttachmentUploader } from "@/lib/chat/media/uploads";

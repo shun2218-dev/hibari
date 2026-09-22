@@ -1,7 +1,7 @@
 import { ApiError } from "@/lib/api/error";
 import type { CreateAttachmentResponse, MessageAttachment } from "@/lib/api/types.gen";
 
-import type { ChatApi } from "@/lib/chat/api";
+import type { ChatApi } from "@/lib/chat/api/chat-api";
 import { type PutFile, UploadAbortedError, putFileWithXhr } from "./put-file";
 
 /** 1 メッセージに付けられる添付の数（ADR 0013）。 */

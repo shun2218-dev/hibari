@@ -1,4 +1,4 @@
-import type { ChatApi } from "@/lib/chat/api";
+import type { ChatApi } from "@/lib/chat/api/chat-api";
 import type { ChatStoreOptions } from "@/lib/chat/store/state";
 
 import { createWorkspaces } from "./slices/workspaces";
