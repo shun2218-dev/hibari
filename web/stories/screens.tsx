@@ -29,6 +29,7 @@ import { PinsList } from "@/components/chat/pins-list";
 import { ProfileHoverCard } from "@/components/chat/profile-card";
 import { ProfilePanel } from "@/components/chat/profile-panel";
 import { NotificationMenu } from "@/components/chat/notification-menu";
+import { NotificationPermissionBanner } from "@/components/chat/notification-permission-banner";
 import { RoomHeader } from "@/components/chat/room-header";
 import { RoomTabs } from "@/components/chat/room-tabs";
 import { RemoveSavedItemDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
@@ -265,6 +266,8 @@ type ChatOptions = {
    * - sidebar: ミュートしたルームの混ざったサイドバー（開いているルームはミュートしていない）
    */
   notifications?: "menu" | "menu-muted" | "menu-temporary" | "menu-dm" | "sidebar";
+  /** サイドバーの上の「デスクトップ通知を有効にしますか？」の帯（ADR 0057）。 */
+  permissionBanner?: boolean;
   /**
    * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
@@ -369,6 +372,7 @@ export function chat({
   pins,
   saved,
   notifications,
+  permissionBanner,
   dark,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
@@ -447,6 +451,7 @@ export function chat({
             }
             saved={pins || saved ? { href: noHref, selected: savedList } : undefined}
             roomHref={roomHref}
+            notice={permissionBanner ? <NotificationPermissionBanner onEnable={noop} onDismiss={noop} /> : undefined}
             search={search}
             onCreateRoom={noop}
             onStartDm={noop}

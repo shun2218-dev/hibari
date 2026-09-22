@@ -77,3 +77,24 @@ export const MobileSidebar: Story = {
   globals: { viewport: { value: "mobile" } },
   render: () => chat({ notifications: "sidebar", mobileView: "list" }),
 };
+
+export const PermissionBanner: Story = {
+  name: "デスクトップ通知を有効にする帯",
+  tags: ["since:6.14"],
+  render: () => chat({ permissionBanner: true }),
+};
+
+export const PermissionBannerDark: Story = {
+  name: "デスクトップ通知を有効にする帯（ダーク）",
+  tags: ["since:6.14"],
+  parameters: { theme: "dark" },
+  render: () => chat({ permissionBanner: true, dark: true }),
+};
+
+export const MobilePermissionBanner: Story = {
+  name: "デスクトップ通知を有効にする帯（モバイル）",
+  tags: ["since:6.14"],
+  parameters: { screenshot: { size: "390x844" } },
+  globals: { viewport: { value: "mobile" } },
+  render: () => chat({ permissionBanner: true, mobileView: "list" }),
+};
