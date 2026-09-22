@@ -210,6 +210,19 @@ ADR 0046 でこの出力を Fly に配ると決めているので、壊れたら
 - 作らない: `Timeline` / `Sidebar` / `ChatLayout` のような大きい部品（画面の story とほぼ同じものが二重になり、画面を直すたびに両方を直すことになる）
 - 作らない: `Portal` / `AnchoredPanel` / `Popover`（単体では見た目を持たない土台。使っている部品の story で見える）
 
+### 追記（2026-09-23）: story を作る条件をルールにする
+
+移行のときに数えた一覧だけを頼りにしていたため、後から足した部品（`MenuItem` / `Switch` / `Tabs`）に story がないまま気づけなかった。
+一覧ではなく**条件**にし、検査で守る。
+
+- **`components/ui/` の部品は story を作る**（基礎部品なので既定を「作る」にする）。
+  作らないものは `stories/stories.test.tsx` の `uiWithoutStory` に**理由を書く**。入れてよいのは、単体では見た目を持たない土台
+  （`Portal` / `AnchoredPanel` / `Popover`）だけ。
+- `components/` のそれ以外は、**その部品だけが持つ状態の軸があるもの**に作る（`MessageItem` の送信の状態、`Composer` の添付と補完など）。
+  画面の story とほぼ同じになる大きい部品（`Timeline` / `Sidebar` / `ChatLayout`）には作らない。
+- `stories/stories.test.tsx` が「`components/ui/` のソース 1 つにつき story が 1 つ（または除外の理由）ある」ことを検査する。
+  部品を足して story を忘れると CI が落ちる。除外の一覧に、story を作ったものや、もう無いファイルが残っていても落ちる。
+
 ## 理由
 
 - **一覧の道具を自前で持たない。** 検索・絞り込み・畳み・ダーク・幅の切り替えは、Storybook の標準の機能。

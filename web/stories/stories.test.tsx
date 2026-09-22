@@ -106,9 +106,41 @@ describe("画面の story", () => {
   });
 });
 
+/**
+ * story を作らない `components/ui/` の部品と、その理由（ADR 0047 決定 12 の追記）。
+ * 単体では見た目を持たない土台だけを入れる。ここに書かずに story を作らないと、下の検査が落ちる。
+ */
+const uiWithoutStory: Record<string, string> = {
+  "portal.tsx": "描く場所を移すだけで、自分の見た目を持たない",
+  "anchored-panel.tsx": "位置を決めるだけの入れ物。中身は使う側が渡す",
+  "popover.tsx": "位置を決めるだけの入れ物。中身は使う側が渡す",
+};
+
 describe("部品の story", () => {
   it("1 つ以上ある", () => {
     expect(parts.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * `components/ui/` は基礎部品なので、story を作るのを既定にする（ADR 0047 決定 12 の追記）。
+   * 作らないものは uiWithoutStory に理由を書く。書き忘れたまま部品を足すと、ここで落ちる。
+   */
+  it("components/ui/ の部品には story がある（作らないものは理由を書く）", () => {
+    const dir = path.join(import.meta.dirname, "../components/ui");
+    const sources = readdirSync(dir)
+      .filter((name) => name.endsWith(".tsx") && !name.endsWith(".test.tsx") && !name.endsWith(".stories.tsx"))
+      .sort();
+    const withStory = new Set(
+      readdirSync(dir)
+        .filter((name) => name.endsWith(".stories.tsx"))
+        .map((name) => name.replace(".stories.tsx", ".tsx")),
+    );
+
+    const missing = sources.filter((name) => !withStory.has(name) && !(name in uiWithoutStory));
+    expect(missing, "story を作るか、uiWithoutStory に理由を書く").toEqual([]);
+    // 逆に、story を作ったものが除外の一覧に残っていないこと
+    expect(Object.keys(uiWithoutStory).filter((name) => withStory.has(name))).toEqual([]);
+    expect(Object.keys(uiWithoutStory).filter((name) => !sources.includes(name))).toEqual([]);
   });
 
   it("撮影の対象にしない（PNG と対にならないため）", () => {
