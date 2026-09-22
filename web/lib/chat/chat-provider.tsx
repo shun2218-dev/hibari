@@ -2,14 +2,20 @@
 
 import { type ReactNode, createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
 
+import type { ServerEvent } from "@/lib/api/types.gen";
 import { getApiBaseUrl } from "@/lib/api-base-url";
 import { useSession } from "@/lib/auth/session-provider";
+import { soundEnabled } from "@/lib/notification-prefs";
+import { ulid } from "@/lib/ulid";
 
+import { watchWindowInput, watchWindowVisibility, windowVisible } from "./activity";
 import { createChatApi } from "./api";
 import { type SocketLike, webSocketUrl } from "./connection";
 import { type LinkCardState, type LinkCardStore, createLinkCardStore } from "./link-cards";
 import { type LinkTarget, linkKey, parseLinkKey } from "./links";
 import { type MediaState, type MediaStore, createMediaStore } from "./media";
+import { notificationContent, shouldNotify } from "./desktop-notification";
+import { type DesktopNotifier, createChime, createDesktopNotifier } from "./desktop-notifier";
 import { type Realtime, createRealtime } from "./realtime";
 import { type ChatState, type ChatStore, createChatStore } from "./store";
 import { type AttachmentDraft, type AttachmentUploader, type UploaderOptions, createAttachmentUploader } from "./uploads";
@@ -17,6 +23,11 @@ import { type AttachmentDraft, type AttachmentUploader, type UploaderOptions, cr
 type ChatContextValue = {
   store: ChatStore;
   realtime: Realtime;
+  /**
+   * ブラウザ通知（ADR 0057）。押したときの移動は画面（ルーター）が決めるので、あとから setOpen で渡す。
+   * テストや Notification のない環境では null。
+   */
+  desktop: { notifier: DesktopNotifier; setOpen: (open: (url: string) => void) => void } | null;
   media: MediaStore;
   linkCards: LinkCardStore;
   createUploader: (roomId: string) => AttachmentUploader;
@@ -54,6 +65,8 @@ export function ChatProvider({
     const api = createChatApi(session.request);
     const store = createChatStore(api, { userId });
     const { url, createSocket, random } = transport ?? browserTransport();
+    // 偽のソケットで描くテストでは、ブラウザ通知の係を作らない（本物の Notification と Web Locks を使うため）
+    const desktop = transport ? null : createDesktop();
     const realtime = createRealtime({
       store,
       url,
@@ -61,21 +74,91 @@ export function ChatProvider({
       random,
       issueTicket: api.issueTicket,
       revalidateSession: () => session.revalidate(),
+      onEvent: desktop ? (event) => notifyOf(event, store, userId, desktop.notifier) : undefined,
     });
     const media = createMediaStore(api);
     const linkCards = createLinkCardStore(api);
-    return { store, realtime, media, linkCards, createUploader: (roomId) => createAttachmentUploader(api, roomId, upload) };
+    return {
+      store,
+      realtime,
+      desktop,
+      media,
+      linkCards,
+      createUploader: (roomId) => createAttachmentUploader(api, roomId, upload),
+    };
   });
 
   useEffect(() => {
     value.realtime.start();
+    value.desktop?.notifier.start();
     return () => {
       value.realtime.stop();
+      value.desktop?.notifier.stop();
       value.store.dispose();
     };
   }, [value]);
 
   return <ChatContext value={value}>{children}</ChatContext>;
+}
+
+/**
+ * ブラウザ通知の係を作る（ADR 0057）。Notification のない環境では null。
+ * 音は、このタブで操作があったときに鳴らせるようにしておく（自動再生の制限。決定 6）。
+ */
+function createDesktop(): ChatContextValue["desktop"] {
+  if (typeof window === "undefined" || !("Notification" in window)) return null;
+  const chime = createChime();
+  watchWindowInput(() => chime.unlock());
+  let open = (url: string) => window.location.assign(url);
+  const notifier = createDesktopNotifier({
+    tabId: ulid(),
+    permission: () => window.Notification.permission,
+    show: (content, onClick) => {
+      // アイコンは指定しない（ブラウザがサイトのアイコンを出す）。アプリのアイコンの画像はまだない
+      const n = new window.Notification(content.title, { body: content.body, tag: content.tag });
+      n.onclick = () => {
+        window.focus();
+        onClick();
+        n.close();
+      };
+    },
+    locks: navigator.locks,
+    createChannel: typeof BroadcastChannel === "undefined" ? undefined : () => new BroadcastChannel("hibari:visibility"),
+    visible: windowVisible,
+    onVisibilityChange: watchWindowVisibility,
+    playSound: () => chime.play(),
+    soundEnabled,
+    open: (url) => open(url),
+  });
+  return {
+    notifier,
+    setOpen: (next) => {
+      open = next;
+    },
+  };
+}
+
+/** 届いたメッセージを、規則（desktop-notification.ts）に当てて通知する。値はストアに当てた後のものを読む。 */
+function notifyOf(event: ServerEvent, store: ChatStore, userId: string, notifier: DesktopNotifier) {
+  if (event.type !== "message.created") return;
+  const state = store.getSnapshot();
+  const message = event.data;
+  const room = state.rooms[message.room_id];
+  if (!room) return;
+  const thread =
+    message.thread_root_id === null
+      ? undefined
+      : state.threadLists[room.workspace_id]?.list.find((t) => t.root.id === message.thread_root_id);
+  const input = { message, userId, room, level: state.notificationLevels[room.workspace_id], thread, now: Date.now() };
+  if (shouldNotify(input)) notifier.notify(notificationContent(message, room));
+}
+
+/** ブラウザ通知を押したときの移動を、画面のルーターに任せる（ページを読み込み直さない）。 */
+export function useDesktopNotificationOpen(open: (url: string) => void): void {
+  const { desktop } = useChatContext();
+  useEffect(() => {
+    desktop?.setOpen(open);
+  }, [desktop, open]);
 }
 
 function useChatContext(): ChatContextValue {
