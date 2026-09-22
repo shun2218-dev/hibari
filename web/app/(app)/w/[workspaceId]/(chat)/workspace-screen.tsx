@@ -24,6 +24,7 @@ import { type ProfileSender, RoomProfile } from "./profile";
 import { RoomMembers } from "./room-members";
 import { RoomThread } from "./room-thread";
 import { RoomView } from "./room-view";
+import { WorkspaceSaved } from "./workspace-saved";
 import { WorkspaceThreads } from "./workspace-threads";
 
 export function WorkspaceScreen() {
@@ -35,7 +36,10 @@ export function WorkspaceScreen() {
   const jumpMessageId = searchParams.get("m") ?? undefined;
   // 開いているプロフィール（ADR 0050 決定 6 の追記）。スレッドと同じく URL に持ち、モバイルの全画面を「戻る」で閉じられるようにする
   const profileId = searchParams.get("p") ?? undefined;
-  const threadsView = usePathname() === `/w/${workspaceId}/threads`;
+  const pathname = usePathname();
+  const threadsView = pathname === `/w/${workspaceId}/threads`;
+  // 「後で」（ADR 0054）。スレッドの一覧と同じく、ルームの代わりにメインの領域に出す
+  const savedView = pathname === `/w/${workspaceId}/saved`;
   const router = useRouter();
   const session = useSession();
   const { state: sessionState } = useSessionState();
@@ -94,6 +98,8 @@ export function WorkspaceScreen() {
     store.loadRooms(workspaceId);
     // サイドバーの「スレッド」のバッジは、参加しているスレッドの一覧から数える（ADR 0037）
     store.loadThreads(workspaceId);
+    // 「後で」の差分のカーソルを決め、メッセージの印の変化を取りこぼさないようにする（ADR 0054 決定 7）
+    void store.loadSaved(workspaceId, "in_progress");
   }, [store, workspaceId]);
 
   // メンバーではない（URL を直接開いた、キックされた）ワークスペースは覚えている場所から外して、入口に戻す。
@@ -112,14 +118,14 @@ export function WorkspaceScreen() {
 
   // ルームを選んでいなければ、最後に開いたルーム → is_default のルーム → 一覧の先頭の順に開く
   useEffect(() => {
-    if (roomId || threadsView || roomList?.status !== "ready" || roomList.ids.length === 0) return;
+    if (roomId || threadsView || savedView || roomList?.status !== "ready" || roomList.ids.length === 0) return;
     const remembered = lastRoomId(workspaceId);
     const target =
       roomList.ids.find((id) => id === remembered) ??
       roomList.ids.find((id) => rooms[id]?.is_default && rooms[id]?.is_member) ??
       roomList.ids[0];
     router.replace(`/w/${workspaceId}/r/${target}`);
-  }, [roomId, threadsView, roomList, rooms, workspaceId, router]);
+  }, [roomId, threadsView, savedView, roomList, rooms, workspaceId, router]);
 
   // サイドバーに出す人（自分と DM の相手）のアバター。自分の avatar_url もログインの応答にあるが、1 時間で切れるので同じ経路で取り直す
   const me = sessionState.status === "signed_in" ? sessionState.user : undefined;
@@ -216,7 +222,13 @@ export function WorkspaceScreen() {
   return (
     <>
       <ChatLayout
-        mobileView={(roomId && listShownFor !== roomId) || (threadsView && listShownFor !== "threads") ? "room" : "list"}
+        mobileView={
+          (roomId && listShownFor !== roomId) ||
+          (threadsView && listShownFor !== "threads") ||
+          (savedView && listShownFor !== "saved")
+            ? "room"
+            : "list"
+        }
         sidebar={
           <Sidebar
             workspace={{ id: workspace.id, name: workspace.name }}
@@ -283,6 +295,7 @@ export function WorkspaceScreen() {
               unreadCount: threadList?.status === "ready" ? countUnreadThreads(threadList.list) : (unreadThreadCount ?? 0),
               selected: threadsView,
             }}
+            saved={{ href: `/w/${workspaceId}/saved`, selected: savedView }}
           />
         }
         panel={
@@ -338,6 +351,9 @@ export function WorkspaceScreen() {
         )}
         {threadsView && !removedFromWorkspace && (
           <WorkspaceThreads workspaceId={workspaceId} onBack={() => setListShownFor("threads")} />
+        )}
+        {savedView && !removedFromWorkspace && (
+          <WorkspaceSaved workspaceId={workspaceId} onBack={() => setListShownFor("saved")} />
         )}
         {!roomId && removedFromWorkspace && (
           <RemovedFromWorkspace workspaceName={workspace.name} onMove={leaveRemovedWorkspace} />

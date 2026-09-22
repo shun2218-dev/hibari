@@ -18,7 +18,7 @@ export function inChannel(message: Pick<Message, "thread_root_id" | "also_in_cha
  * - 並びは seq の昇順だけで決める（created_at を使わない。CLAUDE.md ルール 3）
  * - 同じメッセージが 2 回届いたら、change_seq の大きい方（新しい編集・削除を反映した方）を残す。
  *   REST のページと WebSocket のイベントが前後して届いても、古い内容で上書きしない
- * - リアクションの `me` だけは、届いた側に無ければ手元の値を引き継ぐ（WebSocket の配信には載らない。ADR 0044）
+ * - リアクションの `me` と「後で」の `saved` は、届いた側に無ければ手元の値を引き継ぐ（WebSocket の配信には載らない。ADR 0044 / 0054）
  *
  * 入力の配列は変更せず、新しい配列を返す（useSyncExternalStore のスナップショットとして比較できるように）。
  */
@@ -33,7 +33,12 @@ export function mergeMessages(current: readonly Message[], incoming: readonly Me
     }
     if (existing.change_seq > message.change_seq) continue;
     const reactions = keepMyReactions(existing.reactions, message.reactions);
-    byId.set(message.id, reactions === message.reactions ? message : { ...message, reactions });
+    // 「後で」の saved も WebSocket の配信には載らない（ADR 0054 決定 10）。無ければ手元の値を引き継ぐ
+    const saved = message.saved === undefined && existing.saved !== undefined ? { saved: existing.saved } : {};
+    byId.set(
+      message.id,
+      reactions === message.reactions && !("saved" in saved) ? message : { ...message, reactions, ...saved },
+    );
   }
   return [...byId.values()].sort((a, b) => a.seq - b.seq);
 }

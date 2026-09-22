@@ -52,10 +52,11 @@ const (
 // SavedItem は保存の 1 件。Status が ok のときだけ Room と Message が入る。
 type SavedItem struct {
 	// ID は保存し直すたびに振り直す ULID。一覧の並びとカーソルに使う。
-	ID        ulid.ULID
-	MessageID ulid.ULID
-	RoomID    ulid.ULID
-	State     SavedState
+	ID          ulid.ULID
+	WorkspaceID ulid.ULID
+	MessageID   ulid.ULID
+	RoomID      ulid.ULID
+	State       SavedState
 	// ChangeSeq は本人ごとの変更番号。再接続の差分のカーソルに使う（決定 7）。
 	ChangeSeq int64
 	SavedAt   time.Time
@@ -363,7 +364,7 @@ func (s *Service) hydrateSaved(ctx context.Context, q *store.Queries, actor ulid
 	byRoom := map[ulid.ULID][]int{}
 	for i, r := range rows {
 		items[i] = SavedItem{
-			ID: r.ID, MessageID: r.MessageID, RoomID: r.RoomID, State: SavedState(r.State),
+			ID: r.ID, WorkspaceID: r.WorkspaceID, MessageID: r.MessageID, RoomID: r.RoomID, State: SavedState(r.State),
 			ChangeSeq: r.ChangeSeq, SavedAt: r.SavedAt, Status: SavedItemUnavailable,
 		}
 		if items[i].State != SavedRemoved {

@@ -950,14 +950,14 @@ ADR 0050 の宿題（オーナーの指摘。2026-09-21）。6.10 の後に回�
 3. DB と API: ピン留め（列・システムメッセージ・上限）と保存（テーブル・本人ごとの `change_seq`・イベント）
    ← 完了（ピン留めは `internal/chat/pin.go`、保存は `internal/chat/saved.go`）
 4. Web: ピン留めと「後で」をつなぎ、再接続の同期に保存の差分を足す
-   ← ピン留めは済み（`room-pins.tsx`、`lib/chat/pins.ts`）。「後で」は次の PR
+   ← 完了（ピン留めは `room-pins.tsx` と `lib/chat/pins.ts`、「後で」は `workspace-saved.tsx` と `lib/chat/saved.ts`）
 
 **DoD**
 - [x] ピン留めがルームの全員にリアルタイムに反映され、切断中の変化も同期で揃う（サーバーは `internal/chat/pin_test.go` の `TestPinAndUnpinMessage`（`message.updated` と差分）。Web は `store.test.ts` の「ピン留め（ADR 0054）」（イベントと差分で一覧を直す）と `workspace-screen.test.tsx` の同名の節）
 - [x] 同じルームで多数の goroutine が同時にピン留めしても、100 件を超えない（`internal/chat/pin_test.go` の `TestConcurrentPinsRespectLimit`。95 件の状態から 20 本の goroutine が同時に付けて、成功は 5 件だけ）
 - [x] 保存は本人にだけ見え、読めなくなったルームのメッセージは中身を返さない（`internal/chat/saved_test.go` の `TestSavedBecomesUnavailable`（外された private・削除済みを区別せずに伏せ、入り直すと戻る）、`TestSaveMessage`（`saved.updated` は本人だけ・`saved` は本人から見たときだけ））
-- [ ] 保存の状態の変更（タブの移動・外す）が、切断中の別の端末にも同期で揃う（サーバーは `TestSavedChangesSync` と `TestConcurrentSavesKeepChangeSeq`。Web の同期は構築順 4）
-- [ ] 一覧から元のメッセージへ飛べる
+- [x] 保存の状態の変更（タブの移動・外す）が、切断中の別の端末にも同期で揃う（サーバーは `TestSavedChangesSync` と `TestConcurrentSavesKeepChangeSeq`。Web は `store.test.ts` の「「後で」（ADR 0054）」（番号の飛びで差分を取る・`syncSaved`）と `realtime.test.ts` の再接続の節）
+- [x] 一覧から元のメッセージへ飛べる（ピン留めの一覧と「後で」の行の遷移先がパーマリンクのパス（`views.test.ts` の `toPinnedMessageView` / `toSavedItemView`、`workspace-screen.test.tsx`）。そのパスを開いたときに飛ぶのは Phase 6.11b の DoD）
 
 ---
 

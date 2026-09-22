@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Room } from "@/lib/api/types.gen";
 import { lastRoomId, lastWorkspaceId, rememberLocation } from "@/lib/chat/last-location";
-import { kei, member, message, miyuki, naoki, room, roomMember, workspace } from "@/test/chat-data";
+import { kei, member, message, miyuki, naoki, room, roomMember, savedItem, workspace } from "@/test/chat-data";
 import { type Handler, json, problem, testUser } from "@/test/fake-api";
 import { renderWithChat } from "@/test/render-with-chat";
 import { clearEditor, typeInEditor, valueOf } from "@/components/chat/editor/test-utils";
@@ -46,6 +46,9 @@ function routes(overrides: Record<string, Handler> = {}): Record<string, Handler
     // 名前の横のステータスと DM の相手の presence に使う（ADR 0049 決定 7 の追記）
     "GET /api/v1/workspaces/ws-1/members?limit=200": () =>
       json(200, { members: [member(naoki, { role: "owner" }), member(miyuki), member(kei)], next_cursor: null }),
+    // 「後で」の差分のカーソルを決めるために、ワークスペースを開いたときに進行中を取る（ADR 0054 決定 7）
+    "GET /api/v1/workspaces/ws-1/saved?state=in_progress&limit=50": () =>
+      json(200, { items: [], in_progress_count: 0, last_change_seq: 0, has_more: false }),
     ...overrides,
   };
 }
@@ -1574,6 +1577,78 @@ describe("WorkspaceScreen", () => {
 
       await screen.findByRole("list", { name: "ピン留めしたメッセージ" });
       expect(screen.queryByRole("button", { name: "ピンを外す" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("「後で」（ADR 0054）", () => {
+    const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+    const savedList = (items: ReturnType<typeof savedItem>[], count = items.length) =>
+      json(200, { items, in_progress_count: count, last_change_seq: 3, has_more: false });
+
+    it("メッセージのホバーの「後で」で PUT が飛び、保存済みになる", async () => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "PUT /api/v1/rooms/r-design/messages/m-3/saved": () =>
+            json(200, savedItem(3, { room_id: "r-design", change_seq: 1, message: message(3, { room_id: "r-design", saved: true }) })),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      const row = history().getAllByRole("article").at(-1)!;
+      await userEvent.click(within(row).getByRole("button", { name: "「後で」に保存" }));
+
+      expect(within(row).getByRole("button", { name: "「後で」から外す" })).toHaveAttribute("aria-pressed", "true");
+      await waitFor(() => expect(api.paths()).toContain("PUT /api/v1/rooms/r-design/messages/m-3/saved"));
+    });
+
+    it("サイドバーの「後で」から一覧を開き、完了にすると完了済みへ移る", async () => {
+      nav.pathname = "/w/ws-1/saved";
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/saved?state=in_progress&limit=50": () => savedList([savedItem(2), savedItem(1)]),
+          // 完了にした後に開くので、サーバーはその 1 件を返す
+          "GET /api/v1/workspaces/ws-1/saved?state=completed&limit=50": () =>
+            savedList([savedItem(2, { state: "completed", change_seq: 4 })], 1),
+          "PATCH /api/v1/workspaces/ws-1/saved/m-2": () => json(200, savedItem(2, { state: "completed", change_seq: 4 })),
+        }),
+      );
+
+      const list = await screen.findByRole("list", { name: "進行中" });
+      expect(sidebar().getByRole("link", { name: "後で" })).toHaveAttribute("aria-current", "page");
+      expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+      expect(screen.getByRole("tab", { name: "進行中2" })).toHaveAttribute("aria-selected", "true");
+
+      await userEvent.click(within(list).getAllByRole("button", { name: "完了にする" })[0]);
+      await waitFor(() => expect(api.paths()).toContain("PATCH /api/v1/workspaces/ws-1/saved/m-2"));
+      expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+      expect(screen.getByRole("tab", { name: "進行中1" })).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("tab", { name: "完了済み" }));
+      const completed = await screen.findByRole("list", { name: "完了済み" });
+      expect(within(completed).getByRole("link", { name: /のメッセージへ移動/ })).toHaveAttribute("href", "/w/ws-1/r/room-1?m=m-2");
+    });
+
+    it("読めない行を押すと確かめてから外す", async () => {
+      nav.pathname = "/w/ws-1/saved";
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/saved?state=in_progress&limit=50": () =>
+            savedList([savedItem(2, { status: "unavailable", room: null, message: null })]),
+          "DELETE /api/v1/workspaces/ws-1/saved/m-2": () => new Response(null, { status: 204 }),
+        }),
+      );
+
+      await userEvent.click(await screen.findByRole("button", { name: "このメッセージは表示できません" }));
+      const dialog = screen.getByRole("dialog", { name: "「後で」から外しますか？" });
+      await userEvent.click(within(dialog).getByRole("button", { name: "外す" }));
+
+      await waitFor(() => expect(api.paths()).toContain("DELETE /api/v1/workspaces/ws-1/saved/m-2"));
+      expect(await screen.findByText("「後で」に保存したメッセージはありません")).toBeInTheDocument();
     });
   });
 

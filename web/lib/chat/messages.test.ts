@@ -246,3 +246,22 @@ describe("newestChannelSeq", () => {
     expect(newestChannelSeq([])).toBeUndefined();
   });
 });
+
+describe("mergeMessages の「後で」（ADR 0054 決定 10）", () => {
+  it("keeps the local saved flag when an update from WebSocket does not carry it", () => {
+    const current = [message(1, { saved: true })];
+    // message() は saved を持たない（WebSocket の配信と同じ形）
+    const broadcast = message(1, { change_seq: 5, body: "編集後" });
+    expect("saved" in broadcast).toBe(false);
+
+    const merged = mergeMessages(current, [broadcast]);
+
+    expect(merged[0]).toMatchObject({ body: "編集後", saved: true });
+  });
+
+  it("takes the saved flag from REST when it is there", () => {
+    const merged = mergeMessages([message(1, { saved: true })], [message(1, { change_seq: 5, saved: false })]);
+
+    expect(merged[0].saved).toBe(false);
+  });
+});

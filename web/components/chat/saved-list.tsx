@@ -46,6 +46,8 @@ type SavedListProps = {
   hoveredKey?: string;
   /** モバイルで一覧に戻る。md 以上では出さない。 */
   onBack?: () => void;
+  /** いちばん下の近くまでスクロールした（続きを読み込むきっかけ）。続きがあるか・取得中かの判断は呼ぶ側が行う。 */
+  onReachEnd?: () => void;
 };
 
 const TABS: readonly { value: SavedTab; label: string }[] = [
@@ -71,6 +73,9 @@ const EMPTY: Record<SavedTab, { title: string; hint: string }> = {
 
 const PANEL_ID = "saved-panel";
 
+/** いちばん下からこの距離より近づいたら、続きを読み込む（タイムラインと同じ考え方）。 */
+const REACH_END_PX = 400;
+
 /**
  * 「後で」（ADR 0054。Slack の「後で」）。サイドバーの「後で」から開き、スレッドの一覧と同じくルームの代わりにメインの領域に出す。
  * 行を押すと、そのメッセージへ飛ぶ（ADR 0042）。
@@ -87,6 +92,7 @@ export function SavedList({
   onToggleMenu,
   hoveredKey,
   onBack,
+  onReachEnd,
 }: SavedListProps) {
   return (
     <>
@@ -118,7 +124,14 @@ export function SavedList({
             <p className="max-w-88 text-sm leading-relaxed text-text-muted">{EMPTY[tab].hint}</p>
           </div>
         ) : (
-          <ul aria-label={TABS.find((item) => item.value === tab)?.label} className="min-h-0 flex-1 overflow-y-auto">
+          <ul
+            aria-label={TABS.find((item) => item.value === tab)?.label}
+            className="min-h-0 flex-1 overflow-y-auto"
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              if (el.scrollHeight - el.scrollTop - el.clientHeight < REACH_END_PX) onReachEnd?.();
+            }}
+          >
             {items.map((item) => (
               <li key={item.key} className="border-b border-border">
                 {item.status === "unavailable" ? (
