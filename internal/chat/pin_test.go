@@ -16,7 +16,7 @@ import (
 
 // ピン留め（ADR 0054）。
 
-// pinnedLogs はルームのピン留めのログ（message_pinned）を古い順に返す。
+// pinnedLogs はルームのピン留めのログ（message_pinned）を古い順に返す。いまは書かないので、常に空になるはず。
 func pinnedLogs(t *testing.T, env *chattest.Env, actor, roomID ulid.ULID) []chat.Message {
 	t.Helper()
 	page, err := env.Service.ListMessages(t.Context(), actor, roomID, chat.MessageQuery{})
@@ -62,26 +62,17 @@ func TestPinAndUnpinMessage(t *testing.T) {
 		}
 	})
 
-	t.Run("message.updated と、チャンネルのログの message.created を番号の順に配る", func(t *testing.T) {
-		if len(evs) != 2 || evs[0].Type != chat.EventMessageUpdated || evs[1].Type != chat.EventMessageCreated {
-			t.Fatalf("events = %+v, want message.updated → message.created", evs)
+	t.Run("message.updated だけを配り、チャンネルにログは残さない", func(t *testing.T) {
+		if len(evs) != 1 || evs[0].Type != chat.EventMessageUpdated {
+			t.Fatalf("events = %+v, want 1 件の message.updated", evs)
 		}
-		log := evs[1].Data.(chat.Message)
-		if log.Sender.ID != r.member2 || log.System == nil || log.System.Type != chat.SystemMessagePinned ||
-			log.System.MessageID == nil || *log.System.MessageID != msg.ID {
-			t.Errorf("log = %+v, want member2 が msg をピン留めしたログ", log)
-		}
-		// ログはメッセージの更新の後の番号（再接続の差分で同じ順に並ぶ）
-		if log.ChangeSeq != got.ChangeSeq+1 {
-			t.Errorf("log.change_seq = %d, want %d", log.ChangeSeq, got.ChangeSeq+1)
-		}
-		// ログは未読に数えない（ADR 0033）
-		if log.UserSeq != got.UserSeq {
-			t.Errorf("log.user_seq = %d, want %d（進まない）", log.UserSeq, got.UserSeq)
+		// Slack の実物にログがなかったので改めた（ADR 0054 決定 3 の追記）
+		if logs := pinnedLogs(t, env, r.member, room.ID); len(logs) != 0 {
+			t.Errorf("ピン留めのログ = %d 件, want 0", len(logs))
 		}
 	})
 
-	t.Run("外すと消え、ログは残さない", func(t *testing.T) {
+	t.Run("外すと消える", func(t *testing.T) {
 		after, err := env.Service.UnpinMessage(t.Context(), r.member, room.ID, msg.ID)
 		if err != nil {
 			t.Fatalf("UnpinMessage: %v", err)
@@ -91,9 +82,6 @@ func TestPinAndUnpinMessage(t *testing.T) {
 		}
 		if evs := env.Deliveries.Take(); len(evs) != 1 || evs[0].Type != chat.EventMessageUpdated {
 			t.Errorf("events = %+v, want 1 件の message.updated", evs)
-		}
-		if logs := pinnedLogs(t, env, r.member, room.ID); len(logs) != 1 {
-			t.Errorf("ピン留めのログ = %d 件, want 1（外したときは残さない）", len(logs))
 		}
 	})
 
@@ -119,7 +107,7 @@ func TestPinIsIdempotent(t *testing.T) {
 	}
 	env.Deliveries.Take()
 
-	t.Run("ピン留め済みをもう一度ピン留めしても、番号も配信もログも使わない", func(t *testing.T) {
+	t.Run("ピン留め済みをもう一度ピン留めしても、番号も配信も使わない", func(t *testing.T) {
 		second, err := env.Service.PinMessage(t.Context(), r.member2, room.ID, msg.ID)
 		if err != nil {
 			t.Fatalf("PinMessage: %v", err)
@@ -129,9 +117,6 @@ func TestPinIsIdempotent(t *testing.T) {
 		}
 		if evs := env.Deliveries.Take(); len(evs) != 0 {
 			t.Errorf("events = %+v, want なし", evs)
-		}
-		if logs := pinnedLogs(t, env, r.member, room.ID); len(logs) != 1 {
-			t.Errorf("ピン留めのログ = %d 件, want 1", len(logs))
 		}
 	})
 
@@ -196,7 +181,7 @@ func TestPinAuthorization(t *testing.T) {
 		}
 	})
 
-	t.Run("スレッドの返信はピン留めでき、ログはチャンネルに出る", func(t *testing.T) {
+	t.Run("スレッドの返信はピン留めできる", func(t *testing.T) {
 		rep := reply(t, env, r.member2, room.ID, msg.ID, "返信")
 		got, err := env.Service.PinMessage(t.Context(), r.member, room.ID, rep.ID)
 		if err != nil {
@@ -205,14 +190,10 @@ func TestPinAuthorization(t *testing.T) {
 		if got.Pinned == nil {
 			t.Fatal("pinned = nil")
 		}
-		logs := pinnedLogs(t, env, r.member, room.ID)
-		if len(logs) == 0 || *logs[len(logs)-1].System.MessageID != rep.ID {
-			t.Errorf("チャンネルのログに返信のピン留めが無い: %+v", logs)
-		}
 	})
 }
 
-func TestPinInDMLeavesNoLog(t *testing.T) {
+func TestPinInDM(t *testing.T) {
 	env := chattest.New(t)
 	r := setupRoles(t, env)
 	dm, _ := createDM(t, env, r.member, r.ws.ID, r.member2)
@@ -225,7 +206,6 @@ func TestPinInDMLeavesNoLog(t *testing.T) {
 	if got.Pinned == nil {
 		t.Fatal("pinned = nil")
 	}
-	// DM にはシステムメッセージを書かない（ADR 0033）
 	if logs := pinnedLogs(t, env, r.member, dm.ID); len(logs) != 0 {
 		t.Errorf("DM のピン留めのログ = %d 件, want 0", len(logs))
 	}

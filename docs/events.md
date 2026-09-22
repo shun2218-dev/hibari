@@ -141,8 +141,8 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 "pinned": { "by": { "id": "01J8...", "handle": "miyuki", "display_name": "高橋 みゆき" }, "at": "2026-09-22T01:00:00Z" }
 ```
 
-**ピン留めしたときだけ**、チャンネルにログ（`kind: system`、`system.type: message_pinned`、`system.message_id` に対象の ID）が
-`message.created` で続けて届く。番号は「ピン留めしたメッセージの更新 → ログ」の順。外したときと、DM では残さない。
+チャンネルにログ（システムメッセージ）は残さない（ADR 0054 決定 3 の追記。Slack の実物に合わせた）。
+改める前に書かれた `system.type: message_pinned` の行は残りうるので、クライアントは読めるようにしておく。
 メッセージを削除すると、ピンも一緒に外れる（`message.deleted` の tombstone の `pinned` は `null`）。
 
 #### 添付ファイルだけの削除（`attachments`。ADR 0045）

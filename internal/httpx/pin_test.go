@@ -71,23 +71,16 @@ func TestPinFlow(t *testing.T) {
 		expectStatus(t, c.as(alice, http.MethodPut, path, nil), http.StatusOK)
 	})
 
-	t.Run("チャンネルにピン留めのログが残る", func(t *testing.T) {
+	t.Run("チャンネルにピン留めのログは残らない", func(t *testing.T) {
 		r := c.as(alice, http.MethodGet, "/api/v1/rooms/"+room.ID+"/messages", nil)
 		expectStatus(t, r, http.StatusOK)
 		page := decode[struct {
 			Messages []messageWithPinBody `json:"messages"`
 		}](t, r)
-		logs := 0
 		for _, m := range page.Messages {
 			if m.System != nil && m.System.Type == "message_pinned" {
-				logs++
-				if m.System.MessageID != msg.ID {
-					t.Errorf("log.message_id = %q, want %q", m.System.MessageID, msg.ID)
-				}
+				t.Errorf("ピン留めのログがある: %s", r.body)
 			}
-		}
-		if logs != 1 {
-			t.Errorf("ピン留めのログ = %d 件, want 1（2 回目の PUT では増えない）", logs)
 		}
 	})
 
