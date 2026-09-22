@@ -3,13 +3,14 @@
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { SettingsLayout, type SettingsSection } from "@/components/settings/settings-layout";
+import { type SettingsHrefs, SettingsLayout, type SettingsSection } from "@/components/settings/settings-layout";
 
-export const settingsHrefs: Record<SettingsSection, string> = {
+// 「通知」（ADR 0055）は、ページをつなぐまで行き先を持たせない（ナビに出さない。Phase 6.14a の構築順 4 で足す）
+export const settingsHrefs = {
   profile: "/settings/profile",
   devices: "/settings/devices",
   appearance: "/settings/appearance",
-};
+} satisfies SettingsHrefs;
 
 /**
  * 設定の枠。`/settings`（モバイルの項目の一覧）はこの枠に入れず、各項目だけを枠に入れる。

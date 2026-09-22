@@ -28,6 +28,7 @@ import { MembersPanel } from "@/components/chat/members-panel";
 import { PinsList } from "@/components/chat/pins-list";
 import { ProfileHoverCard } from "@/components/chat/profile-card";
 import { ProfilePanel } from "@/components/chat/profile-panel";
+import { NotificationMenu } from "@/components/chat/notification-menu";
 import { RoomHeader } from "@/components/chat/room-header";
 import { RoomTabs } from "@/components/chat/room-tabs";
 import { RemoveSavedItemDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
@@ -40,6 +41,7 @@ import { Timeline } from "@/components/chat/timeline";
 import type { AttachmentDraftView, ConnectionBannerStatus } from "@/components/chat/types";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { SettingsLayout, type SettingsSection } from "@/components/settings/settings-layout";
+import { notificationLevelLabels } from "@/components/settings/settings-sections";
 import { type AdminSection, WorkspaceAdminLayout } from "@/components/workspace/admin-layout";
 import { InviteList } from "@/components/workspace/invites";
 import { type MemberMenuState, MemberList } from "@/components/workspace/member-list";
@@ -85,6 +87,9 @@ import {
   roomsWithStatus,
   timelineWithStatus,
   roomsWithMentions,
+  roomsWithMuted,
+  dmRoom,
+  dmTimeline,
   timelineWithBroadcast,
   timelineWithMentions,
   timelineWithFormatting,
@@ -240,6 +245,15 @@ type ChatOptions = {
     | "empty"
     | "confirm";
   /**
+   * ミュートと通知の設定（ADR 0055）。
+   * - menu: チャンネルのヘッダーの「通知」を開いたところ（全体の設定に従っている）
+   * - menu-muted: ミュートしているチャンネルで開いたところ（期限なし・「すべての新しい投稿」を選んである）
+   * - menu-temporary: 一時的にミュートしているチャンネルで開いたところ
+   * - menu-dm: DM で開いたところ（ミュートだけ）
+   * - sidebar: ミュートしたルームの混ざったサイドバー（開いているルームはミュートしていない）
+   */
+  notifications?: "menu" | "menu-muted" | "menu-temporary" | "menu-dm" | "sidebar";
+  /**
    * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
    */
@@ -341,6 +355,7 @@ export function chat({
   profile,
   pins,
   saved,
+  notifications,
   dark,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
@@ -363,6 +378,26 @@ export function chat({
           : savedInProgress;
   // 「ピン」のタブでは、タイムラインと入力欄の代わりに一覧を出す（Slack と同じ。ADR 0054）
   const pinsTab = pins === "list" || pins === "list-hover" || pins === "list-empty";
+  // 通知のメニューを DM で開くときだけ、DM のルームを出す
+  const room = notifications === "menu-dm" ? dmRoom : selectedRoom;
+  // サイドバーの画面では、開いているルームはミュートしない（薄いルームとそうでないルームを見比べるため）
+  const roomMuted = notifications === "menu-muted" || notifications === "menu-temporary";
+  // 参加していない public ルームは設定を持てないので、「通知」のアイコンを出さない（ADR 0055 決定 3）
+  const roomNotifications =
+    footer === "join"
+      ? undefined
+      : {
+          muted: roomMuted,
+          open: notifications !== undefined && notifications !== "sidebar",
+          menu: (
+            <NotificationMenu
+              kind={room.kind}
+              level={notifications === "menu-muted" ? "all" : null}
+              defaultLevelLabel={notificationLevelLabels.mentions}
+              mute={notifications === "menu-muted" ? {} : notifications === "menu-temporary" ? { untilLabel: "今日 18:30 まで" } : null}
+            />
+          ),
+        };
   return (
     <>
       <ChatLayout
@@ -376,13 +411,17 @@ export function chat({
                 ? []
                 : roomRemoved
                   ? rooms.filter((r) => r.id !== selectedRoom.id)
+                  : notifications
+                    ? notifications === "sidebar"
+                      ? roomsWithMuted
+                      : rooms.map((r) => (r.id === room.id ? { ...r, muted: roomMuted } : r))
                   : mentions
                     ? roomsWithMentions
                     : presence
                       ? roomsWithStatus
                       : rooms
             }
-            selectedRoomId={roomRemoved || threads || savedList ? undefined : selectedRoom.id}
+            selectedRoomId={roomRemoved || threads || savedList ? undefined : room.id}
             threads={
               thread || threads
                 ? { href: noHref, unreadCount: threads === "empty" ? 0 : unreadThreadCount, selected: Boolean(threads) }
@@ -446,11 +485,12 @@ export function chat({
         )}
         {!roomRemoved && !threads && !savedList && (
           <RoomHeader
-            kind={selectedRoom.kind}
-            name={selectedRoom.name}
-            memberCount={selectedRoom.memberCount}
+            kind={room.kind}
+            name={room.name}
+            memberCount={room.memberCount}
             membersOpen={members}
-            onOpenSettings={noop}
+            onOpenSettings={room.kind === "dm" ? undefined : noop}
+            notifications={roomNotifications}
           />
         )}
         {/* ルームのヘッダーの下には、いつも「メッセージ / ピン」のタブがある（ADR 0054） */}
@@ -469,7 +509,9 @@ export function chat({
         {body === "timeline" && !threads && !savedList && !pinsTab && (
           <Timeline
             items={
-              profile === "hover-former" || profile === "panel-former"
+              notifications === "menu-dm"
+                ? dmTimeline
+                : profile === "hover-former" || profile === "panel-former"
                 ? timelineWithFormerMember
                 : withStatus
                 ? timelineWithStatus
@@ -664,7 +706,12 @@ export function invitesPage(role: WorkspaceRole, policy: "admins_only" | "all_me
 
 // ---- ユーザー設定 ----
 
-export const settingsHrefs: Record<SettingsSection, string> = { profile: noHref, devices: noHref, appearance: noHref };
+export const settingsHrefs: Record<SettingsSection, string> = {
+  profile: noHref,
+  notifications: noHref,
+  devices: noHref,
+  appearance: noHref,
+};
 
 export function userSettings(section: SettingsSection, children: ReactNode) {
   return (

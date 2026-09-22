@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { AppearanceSettings, type DeviceView, DevicesSettings, ProfileSettings } from "./settings-sections";
+import { AppearanceSettings, type DeviceView, DevicesSettings, NotificationSettings, ProfileSettings } from "./settings-sections";
 
 const devices: DeviceView[] = [
   { id: "s1", kind: "browser", name: "Chrome · macOS", lastActiveLabel: "現在アクティブ", current: true },
@@ -39,6 +39,17 @@ describe("AppearanceSettings", () => {
     expect(screen.getByRole("radio", { name: /ライト/ })).toBeChecked();
     await userEvent.click(screen.getByRole("radio", { name: /ダーク/ }));
     expect(onThemeChange).toHaveBeenCalledWith("dark");
+  });
+});
+
+describe("NotificationSettings", () => {
+  it("reflects and changes what to be notified about (ADR 0055)", async () => {
+    const onLevelChange = vi.fn();
+    render(<NotificationSettings level="mentions" onLevelChange={onLevelChange} />);
+
+    expect(screen.getByRole("radio", { name: /メンションと DM/ })).toBeChecked();
+    await userEvent.click(screen.getByRole("radio", { name: /なし/ }));
+    expect(onLevelChange).toHaveBeenCalledWith("none");
   });
 });
 

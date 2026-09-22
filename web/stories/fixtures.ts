@@ -855,3 +855,32 @@ export const savedCompleted: SavedItemView[] = [
     attachmentCount: 0,
   },
 ];
+
+// ---- ミュートと通知の設定（ADR 0055） ----
+
+/**
+ * ミュートしたルームの混ざったサイドバー。薄くなるだけで並びは変わらない（ADR 0055 決定 6）。
+ * - 雑談: 未読はあるが、太字にならない
+ * - リリース準備: 自分宛てのメンションがあるので `@1` は出る
+ * - 高橋 みゆき（DM）: 未読の数のバッジが出ない
+ */
+export const roomsWithMuted: RoomSummaryView[] = rooms.map((room) =>
+  room.id === "room-chat"
+    ? { ...room, unreadCount: 5, muted: true }
+    : room.id === "room-release"
+      ? { ...room, unreadCount: 4, mentionCount: 1, muted: true }
+      : room.id === "dm-miyuki"
+        ? { ...room, unreadCount: 2, muted: true }
+        : room,
+);
+
+/** 通知のメニューを開いた DM（佐藤 直樹）。 */
+export const dmRoom = { id: "dm-naoki", kind: "dm", name: users.naoki.name, memberCount: 2 } as const;
+
+/** DM のタイムライン。 */
+export const dmTimeline: TimelineItem[] = [
+  { type: "date", key: "d-0912", label: "2026年9月12日" },
+  message("m-dm-1010", naoki, "10:10", "サイドバーの縦バー、選択中だけ緑にする案で進めてよさそうです。"),
+  message("m-dm-1012", you, "10:12", "ありがとうございます。ホバーの色も合わせて直しておきます。"),
+  message("m-dm-1014", naoki, "10:14", "縦バーの件、あとで画面で見ます"),
+];

@@ -239,3 +239,61 @@ export function AppearanceSettings({
     </div>
   );
 }
+
+/** 全体の通知する内容（ADR 0055 決定 1）。未設定なら mentions（Slack の既定と同じ）。 */
+export type NotificationLevel = "all" | "mentions" | "none";
+
+export const notificationLevelLabels: Record<NotificationLevel, string> = {
+  all: "すべて",
+  mentions: "メンションと DM",
+  none: "なし",
+};
+
+/**
+ * ユーザー設定の「通知」。全体の設定だけを選ぶ。チャンネルごとの上書きとミュートは、ルームのヘッダーの「通知」から変える
+ * （Slack と同じ入口。ここに全ルームの一覧を並べると、ワークスペースを選ぶ場所が要る。ADR 0055 決定 2）。
+ *
+ * 設定が変えるのは「通知するか」だけで、未読とメンションの件数はどれを選んでも数える（決定 1）。
+ */
+export function NotificationSettings({
+  level,
+  onLevelChange,
+}: {
+  level: NotificationLevel;
+  onLevelChange?: (level: NotificationLevel) => void;
+}) {
+  return (
+    <div className="flex max-w-100 flex-col gap-6">
+      <fieldset className="flex flex-col gap-2">
+        <legend className="pb-2 text-xs text-text-secondary">通知する内容</legend>
+        <RadioCard
+          name="notification-level"
+          value="all"
+          checked={level === "all"}
+          onChange={() => onLevelChange?.("all")}
+          title={notificationLevelLabels.all}
+          description="参加しているチャンネルの新しい投稿をすべて通知する"
+        />
+        <RadioCard
+          name="notification-level"
+          value="mentions"
+          checked={level === "mentions"}
+          onChange={() => onLevelChange?.("mentions")}
+          title={notificationLevelLabels.mentions}
+          description="メンション、DM、参加しているスレッドの返信を通知する"
+        />
+        <RadioCard
+          name="notification-level"
+          value="none"
+          checked={level === "none"}
+          onChange={() => onLevelChange?.("none")}
+          title={notificationLevelLabels.none}
+          description="通知しない。未読とメンションの数はこれまでどおり出る"
+        />
+      </fieldset>
+      <p className="text-xs leading-relaxed text-text-muted">
+        チャンネルごとの設定とミュートは、チャンネルの上にある通知のアイコンから変えられます。
+      </p>
+    </div>
+  );
+}

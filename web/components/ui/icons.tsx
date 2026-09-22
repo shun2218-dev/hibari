@@ -8,6 +8,8 @@
 import {
   AppWindow,
   Archive,
+  Bell,
+  BellOff,
   ArchiveRestore,
   Bold,
   Bookmark,
@@ -131,3 +133,8 @@ export const BookmarkIcon = withDefaults(Bookmark);
 export const ArchiveIcon = withDefaults(Archive);
 /** 「進行中に移動する」（アーカイブ済み・完了済みから戻す）。 */
 export const RestoreIcon = withDefaults(ArchiveRestore);
+
+// ---- ミュートと通知の設定（ADR 0055） ----
+export const BellIcon = withDefaults(Bell);
+/** ミュートしている印（ヘッダーの「通知」のアイコンがこれに変わる）と「ミュートする」。 */
+export const BellOffIcon = withDefaults(BellOff);
