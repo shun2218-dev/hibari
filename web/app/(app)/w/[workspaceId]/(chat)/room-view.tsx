@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  ArchivedRoomBar,
   EmptyMessages,
   JoinRoomBar,
   MessageNotFoundNotice,
@@ -39,9 +40,11 @@ import { mentionAll } from "@/lib/chat/mentions";
 import { useComposerToolbar } from "@/lib/composer-toolbar";
 import { useOrigin } from "@/lib/chat/use-origin";
 import {
+  canPost,
   mentionAllRecipients,
   permalinksIn,
   previewImageIds,
+  roomArchiveActions,
   roomName,
   toAttachmentDraftView,
   memberSettings,
@@ -113,6 +116,7 @@ export function RoomView({
   const removal = useChatState((s) => s.removedRooms[roomId]);
   const workspaceRemoval = useChatState((s) => s.removedWorkspaces[workspaceId]);
   const [joining, setJoining] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   // 入力欄の本文。ルームごとに作り直すので、別のルームに移ると消える
   const [draft, setDraft] = useState("");
@@ -243,10 +247,11 @@ export function RoomView({
     myRole,
     members,
     mentionCandidates,
-    // 投稿できる人だけがリアクションを付けられる。参加していない public ルームは読めるだけ（ADR 0044 決定 6）
-    canReact: room !== undefined && (room.kind !== "public" || room.is_member),
+    // 投稿できる人だけがリアクションを付けられる。参加していない public ルームは読めるだけ（ADR 0044 決定 6）、
+    // アーカイブ中は誰も付けられない（ADR 0059）
+    canReact: room !== undefined && canPost(room),
     // ピン留めも同じ（ADR 0054 決定 4）
-    canPin: room !== undefined && (room.kind !== "public" || room.is_member),
+    canPin: room !== undefined && canPost(room),
   });
 
   const items = useMemo(
@@ -349,9 +354,24 @@ export function RoomView({
     }
   }
 
+  /** 入力欄の代わりの帯から復元する（ADR 0059。確認は挟まない）。 */
+  async function restore() {
+    setRestoring(true);
+    try {
+      await store.unarchiveRoom(roomId);
+    } catch (err) {
+      // 失敗の表示はデザインにない（参加と同じ）。ボタンを押せる状態に戻す
+      console.error("failed to unarchive room", err);
+    } finally {
+      setRestoring(false);
+    }
+  }
+
   const removedFromWorkspace = workspaceRemoval?.reason === "removed";
+  const archived = room.archived_at !== null;
   const header = (
     <RoomHeader
+      archived={archived}
       kind={room.kind}
       name={roomName(room)}
       memberCount={room.member_count ?? 0}
@@ -428,7 +448,13 @@ export function RoomView({
             profileHoverCardFor={profileHoverCardFor}
           />
         ))}
-      {tab !== "messages" ? null : room.kind === "public" && !room.is_member ? (
+      {tab !== "messages" ? null : archived ? (
+        // アーカイブ中は、入力欄の代わりに帯を出す。復元のボタンは復元できる人にだけ（ADR 0059）
+        <ArchivedRoomBar
+          restoring={restoring}
+          onRestore={roomArchiveActions(room, myRole).canArchive ? restore : undefined}
+        />
+      ) : room.kind === "public" && !room.is_member ? (
         <JoinRoomBar joining={joining} onJoin={join} />
       ) : (
         ready && (

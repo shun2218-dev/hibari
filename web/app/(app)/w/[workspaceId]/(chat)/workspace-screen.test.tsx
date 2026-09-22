@@ -1317,6 +1317,29 @@ describe("WorkspaceScreen", () => {
       expect(await screen.findByText("接続が復帰しました")).toBeInTheDocument();
     });
 
+    it("開いているチャンネルが削除されたら、公開チャンネルでも「アクセスできません」にして一覧から消す（ADR 0059）", async () => {
+      const { sockets } = await connected(openRoom(design));
+
+      sockets.last().receive({ type: "room.deleted", data: { workspace_id: "ws-1", room_id: "r-design" } });
+
+      expect(await screen.findByRole("heading", { name: "このチャンネルにはアクセスできません" })).toBeInTheDocument();
+      expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
+      expect(sidebar().queryByRole("link", { name: /デザインレビュー/ })).not.toBeInTheDocument();
+    });
+
+    it("ほかの人がアーカイブしたら、入力欄が帯に替わる（ADR 0059）", async () => {
+      const { sockets } = await connected(openRoom(design));
+      expect(screen.getByRole("button", { name: "送信" })).toBeInTheDocument();
+
+      sockets.last().receive({
+        type: "room.updated",
+        data: { workspace_id: "ws-1", room_id: "r-design", name: "デザインレビュー", is_default: false, archived_at: "2026-09-23T01:00:00Z" },
+      });
+
+      expect(await screen.findByText("アーカイブされたチャンネルです。投稿やリアクションはできません。")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "送信" })).not.toBeInTheDocument();
+    });
+
     it("shows only that the channel cannot be accessed when removed from a private channel, without its name", async () => {
       const secret = { ...design, kind: "private" as const };
       rememberLocation("ws-1", "r-design");
@@ -2257,6 +2280,97 @@ describe("WorkspaceScreen", () => {
       renderWithChat(<WorkspaceScreen />, routes());
 
       await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1/r/r-chat?side=later"));
+    });
+  });
+
+  describe("アーカイブと削除（ADR 0059）", () => {
+    const archivedAt = "2026-09-23T01:00:00Z";
+    const archivedDesign = { ...design, archived_at: archivedAt };
+
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    it("アーカイブしたチャンネルは、入力欄の代わりに帯を出し、サイドバーから外し、帯から復元できる", async () => {
+      const user = userEvent.setup();
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [archivedDesign, chat, dm] }),
+          ...openRoom(archivedDesign),
+          "POST /api/v1/rooms/r-design/unarchive": () => json(200, design),
+        }),
+      );
+
+      expect(await screen.findByText("アーカイブされたチャンネルです。投稿やリアクションはできません。")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "送信" })).not.toBeInTheDocument();
+      expect(sidebar().queryByRole("link", { name: /デザインレビュー/ })).not.toBeInTheDocument();
+      // 検索したときだけ、印を付けて出す
+      await user.type(sidebar().getByRole("searchbox"), "デザイン");
+      expect(within(sidebar().getByRole("link", { name: /デザインレビュー/ })).getByText("アーカイブ済み")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "チャンネルを復元" }));
+
+      await waitFor(() => expect(api.paths()).toContain("POST /api/v1/rooms/r-design/unarchive"));
+      expect(await screen.findByRole("button", { name: "送信" })).toBeInTheDocument();
+    });
+
+    it("参加していない member には、復元のボタンも参加の帯も出さない", async () => {
+      const notJoined = { ...archivedDesign, is_member: false };
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [notJoined, chat, dm] }), ...openRoom(notJoined) }),
+      );
+
+      expect(await screen.findByText("アーカイブされたチャンネルです。投稿やリアクションはできません。")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "チャンネルを復元" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "参加する" })).not.toBeInTheDocument();
+    });
+
+    it("設定から、確認を挟んでアーカイブする", async () => {
+      const user = userEvent.setup();
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(design), "POST /api/v1/rooms/r-design/archive": () => json(200, archivedDesign) }),
+      );
+
+      await user.click(await screen.findByRole("button", { name: "チャンネルの設定" }));
+      const settings = within(await screen.findByRole("dialog"));
+      // member には削除を出さない
+      expect(settings.queryByRole("button", { name: "削除する" })).not.toBeInTheDocument();
+      await user.click(settings.getByRole("button", { name: "アーカイブする" }));
+      const confirm = within(await screen.findByRole("dialog", { name: "チャンネルをアーカイブしますか？" }));
+      await user.click(confirm.getByRole("button", { name: "アーカイブする" }));
+
+      await waitFor(() => expect(api.paths()).toContain("POST /api/v1/rooms/r-design/archive"));
+      expect(await screen.findByText("アーカイブされたチャンネルです。投稿やリアクションはできません。")).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    it("admin は設定から削除でき、チェックを入れるまで押せず、消したら黙って入口に戻る", async () => {
+      const user = userEvent.setup();
+      rememberLocation("ws-1", "r-design");
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces": () => json(200, { workspaces: [workspace("ws-1", "hibari 開発", { my_role: "admin" })] }),
+          ...openRoom(design),
+          "DELETE /api/v1/rooms/r-design": () => new Response(null, { status: 204 }),
+        }),
+      );
+
+      await user.click(await screen.findByRole("button", { name: "チャンネルの設定" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "削除する" }));
+      const confirm = within(await screen.findByRole("dialog", { name: "チャンネルを削除しますか？" }));
+      const button = confirm.getByRole("button", { name: "チャンネルを削除する" });
+      expect(button).toBeDisabled();
+      await user.click(confirm.getByRole("checkbox", { name: "はい、完全に削除します" }));
+      await user.click(button);
+
+      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1"));
+      expect(api.paths()).toContain("DELETE /api/v1/rooms/r-design");
+      expect(screen.queryByRole("heading", { name: "このチャンネルにはアクセスできません" })).not.toBeInTheDocument();
+      expect(lastRoomId("ws-1")).toBeUndefined();
     });
   });
 });

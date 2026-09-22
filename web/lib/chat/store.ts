@@ -1459,6 +1459,40 @@ export function createChatStore(
     patchRoomList(workspaceId, (ids) => ids.filter((id) => id !== roomId));
   }
 
+  /**
+   * ルームが削除された（ADR 0059 決定 7）。そのルームのものを全部捨てる（一覧・メッセージ・メンバー・ピン留め・スレッド・送信中）。
+   * 「後で」とアクティビティは、行がサーバーで消えているので取り直す。
+   *
+   * reason は、開いている画面に何を出すか。自分で消した（left）なら黙って入口に戻し、ほかの人が消した（removed）なら
+   * 「アクセスできません」を出す（ADR 0035。存在しないのか読めないのかを区別しない）。自分で消した直後に自分宛ての
+   * room.deleted が届いても、left のままにする（入口に戻る途中で「アクセスできません」を挟まない）。
+   */
+  function roomDeleted(workspaceId: string, roomId: string, reason: RemovalReason) {
+    patchThreadList(workspaceId, (list) =>
+      list.some((t) => t.room.id === roomId) ? list.filter((t) => t.room.id !== roomId) : list,
+    );
+    update((s) => {
+      const threads = { ...s.threads };
+      for (const [id, t] of Object.entries(s.threads)) if (t?.roomId === roomId) threads[id] = undefined;
+      return {
+        ...s,
+        threads,
+        removedRooms: { ...s.removedRooms, [roomId]: s.removedRooms[roomId] === "left" ? "left" : reason },
+        timelines: { ...s.timelines, [roomId]: undefined },
+        roomMembers: { ...s.roomMembers, [roomId]: undefined },
+        typing: { ...s.typing, [roomId]: undefined },
+        pins: { ...s.pins, [roomId]: undefined },
+      };
+    });
+    dropOutgoing(roomId);
+    patchRoomList(workspaceId, (ids) => ids.filter((id) => id !== roomId));
+    if (state.saved[workspaceId]?.cursor != null) {
+      void reloadSavedTabs(workspaceId);
+      void refreshSavedCount(workspaceId);
+    }
+    void reloadActivity(workspaceId);
+  }
+
   function removedFromWorkspace(workspaceId: string, reason: RemovalReason) {
     update((s) => {
       const workspace = s.workspaces.list.find((w) => w.id === workspaceId);
@@ -1510,12 +1544,18 @@ export function createChatStore(
         return;
       }
       case "room.updated": {
-        const { room_id, name, is_default } = event.data;
+        // アーカイブ・復元も同じイベントで届く（ADR 0059 決定 5）。読めることは変わらないので、購読はそのまま
+        const { room_id, name, is_default, archived_at } = event.data;
         patchRoom(room_id, (room) =>
-          room.name === name && room.is_default === is_default ? room : { ...room, name, is_default },
+          room.name === name && room.is_default === is_default && room.archived_at === archived_at
+            ? room
+            : { ...room, name, is_default, archived_at },
         );
         return;
       }
+      case "room.deleted":
+        roomDeleted(event.data.workspace_id, event.data.room_id, "removed");
+        return;
       case "room.member_removed":
         removedFromRoom(event.data.workspace_id, event.data.room_id, event.data.reason);
         // 読めなくなったルームの 1 件は、取り直すと消える（決定 4）
@@ -2231,6 +2271,27 @@ export function createChatStore(
       await api.removeRoomMember(roomId, userId);
       const workspaceId = state.rooms[roomId]?.workspace_id;
       if (workspaceId) removedFromRoom(workspaceId, roomId, "left");
+    },
+
+    /** アーカイブする（ADR 0059）。失敗したら ApiError を投げる。ほかの端末には room.updated で届く。 */
+    async archiveRoom(roomId: string): Promise<void> {
+      putRoom(await api.archiveRoom(roomId));
+    },
+
+    /** アーカイブを戻す。失敗したら ApiError を投げる。 */
+    async unarchiveRoom(roomId: string): Promise<void> {
+      putRoom(await api.unarchiveRoom(roomId));
+    },
+
+    /**
+     * 削除する（ADR 0059）。失敗したら ApiError を投げる。
+     * 後始末は room.deleted と同じだが、自分で消したので開いている画面は黙って入口に戻す（退出と同じ。reason: left）。
+     * WS が切れていると room.deleted が届かないので、応答を待ってすぐに行う。
+     */
+    async deleteRoom(roomId: string): Promise<void> {
+      const workspaceId = state.rooms[roomId]?.workspace_id;
+      await api.deleteRoom(roomId);
+      if (workspaceId) roomDeleted(workspaceId, roomId, "left");
     },
 
     openRoom,

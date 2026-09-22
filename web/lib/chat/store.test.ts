@@ -1540,6 +1540,82 @@ describe("createChatStore rooms", () => {
       expect(store.getSnapshot().roomLists["ws-1"]?.ids).toEqual(["r1"]);
     });
   });
+
+  describe("アーカイブと削除（ADR 0059）", () => {
+    const archivedAt = "2026-09-23T01:00:00Z";
+
+    it("アーカイブ・復元の応答でルームを置き換える", async () => {
+      const { store } = setup({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "旧案")] }),
+        "POST /api/v1/rooms/r1/archive": () => json(200, room("r1", "旧案", { archived_at: archivedAt })),
+        "POST /api/v1/rooms/r1/unarchive": () => json(200, room("r1", "旧案")),
+      });
+      await store.loadRooms("ws-1");
+
+      await store.archiveRoom("r1");
+      expect(store.getSnapshot().rooms.r1?.archived_at).toBe(archivedAt);
+      // 一覧からは外さない（サイドバーの検索で探せるように。出し分けは Sidebar）
+      expect(store.getSnapshot().roomLists["ws-1"]?.ids).toEqual(["r1"]);
+
+      await store.unarchiveRoom("r1");
+      expect(store.getSnapshot().rooms.r1?.archived_at).toBeNull();
+    });
+
+    it("ほかの端末のアーカイブは room.updated の archived_at で届く", async () => {
+      const { store } = setup({ "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "旧案")] }) });
+      await store.loadRooms("ws-1");
+
+      store.applyEvent({
+        type: "room.updated",
+        data: { workspace_id: "ws-1", room_id: "r1", name: "旧案", is_default: false, archived_at: archivedAt },
+      });
+      expect(store.getSnapshot().rooms.r1?.archived_at).toBe(archivedAt);
+    });
+
+    it("room.deleted で、公開ルームでも一覧と中身を捨て、開いている画面は「アクセスできません」にする", async () => {
+      const { store } = setup({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "旧案"), room("r2", "設計")] }),
+        "GET /api/v1/rooms/r1": () => json(200, room("r1", "旧案")),
+        "GET /api/v1/rooms/r1/messages?limit=50": () => json(200, { messages: [message(1, { room_id: "r1" })], has_more: false, last_change_seq: 1 }),
+      });
+      await store.loadRooms("ws-1");
+      await store.openRoom("r1");
+
+      store.applyEvent({ type: "room.deleted", data: { workspace_id: "ws-1", room_id: "r1" } });
+
+      const state = store.getSnapshot();
+      expect(state.roomLists["ws-1"]?.ids).toEqual(["r2"]);
+      expect(state.timelines.r1).toBeUndefined();
+      expect(state.removedRooms.r1).toBe("removed");
+    });
+
+    it("自分で削除したら left にして、あとから自分宛ての room.deleted が届いても変えない", async () => {
+      const { store, requests } = setup({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "旧案"), room("r2", "設計")] }),
+        "DELETE /api/v1/rooms/r1": () => new Response(null, { status: 204 }),
+      });
+      await store.loadRooms("ws-1");
+
+      await store.deleteRoom("r1");
+      store.applyEvent({ type: "room.deleted", data: { workspace_id: "ws-1", room_id: "r1" } });
+
+      expect(requests()).toContain("DELETE /api/v1/rooms/r1");
+      expect(store.getSnapshot().removedRooms.r1).toBe("left");
+      expect(store.getSnapshot().roomLists["ws-1"]?.ids).toEqual(["r2"]);
+    });
+
+    it("削除を断られたら、何も変えない", async () => {
+      const { store } = setup({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "旧案")] }),
+        "DELETE /api/v1/rooms/r1": () => problem(403, "forbidden"),
+      });
+      await store.loadRooms("ws-1");
+
+      await expect(store.deleteRoom("r1")).rejects.toThrow();
+      expect(store.getSnapshot().removedRooms.r1).toBeUndefined();
+      expect(store.getSnapshot().roomLists["ws-1"]?.ids).toEqual(["r1"]);
+    });
+  });
 });
 
 describe("createChatStore workspace admin", () => {
