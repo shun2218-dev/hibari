@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { chat } from "../screens";
+import { chat } from "@/stories/screens";
 
 /**
  * チャット / サイドバーの左のメニュー（ADR 0058）。ホームと DM。アクティビティは activity.stories.tsx、「後で」は saved.stories.tsx。

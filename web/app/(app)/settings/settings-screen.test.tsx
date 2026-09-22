@@ -5,15 +5,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 import { workspace } from "@/test/chat-data";
-import { renderWithChat } from "@/test/render-with-chat";
 import { type Handler, json, problem, testUser, tokens } from "@/test/fake-api";
+import { renderWithChat } from "@/test/render-with-chat";
 import { renderWithSession } from "@/test/render-with-session";
 
-import { AppearanceSection } from "./appearance/appearance-section";
-import { DevicesSection } from "./devices/devices-section";
-import { NotificationsSection } from "./notifications/notifications-section";
-import { ProfileSection } from "./profile/profile-section";
-import { SettingsShell } from "./settings-shell";
+import { SettingsShell } from "@/app/(app)/settings/_components/settings-shell";
+import { AppearanceSection } from "@/app/(app)/settings/appearance/_components/appearance-section";
+import { DevicesSection } from "@/app/(app)/settings/devices/_components/devices-section";
+import { NotificationsSection } from "@/app/(app)/settings/notifications/_components/notifications-section";
+import { ProfileSection } from "@/app/(app)/settings/profile/_components/profile-section";
 
 const nav = vi.hoisted(() => ({ router: { replace: vi.fn(), push: vi.fn() }, pathname: "/settings/profile" }));
 vi.mock("next/navigation", () => ({ useRouter: () => nav.router, usePathname: () => nav.pathname }));
@@ -234,7 +234,7 @@ describe("the user settings screens", () => {
   });
 });
 
-/** 署名付き URL への PUT（lib/chat/put-file.ts が使う XMLHttpRequest）の代わり。 */
+/** 署名付き URL への PUT（lib/chat/media/put-file.ts が使う XMLHttpRequest）の代わり。 */
 function fakeXhr(put: (url: string) => Promise<Response>) {
   return class {
     onload: (() => void) | null = null;

@@ -3,8 +3,8 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { IconButton, TextButton } from "@/components/ui/button";
 import { CheckIcon, LockIcon, MoreIcon } from "@/components/ui/icons";
 import { Popover } from "@/components/ui/popover";
+import { presenceLabel } from "@/lib/chat/presence";
 import { cx } from "@/lib/cx";
-import { presenceLabel } from "@/lib/presence";
 
 import { roleLabel, type MemberRowView, type WorkspaceRole } from "./types";
 

@@ -4,7 +4,7 @@ import { $isListItemNode, $isListNode, type ListNode } from "@lexical/list";
 import { $isQuoteNode } from "@lexical/rich-text";
 import { $getRoot, $isElementNode, $isLineBreakNode, $isParagraphNode, $isTextNode, type LexicalNode } from "lexical";
 
-import { type Inline, parseInline } from "@/lib/chat/body-format";
+import { type Inline, parseInline } from "@/lib/chat/format/body-format";
 
 import { $isMentionNode, $mentionToken } from "./mention-node";
 

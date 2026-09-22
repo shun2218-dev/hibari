@@ -1,4 +1,4 @@
-import { ResetPasswordPage } from "./reset-password-page";
+import { ResetPasswordPage } from "@/app/(auth)/reset-password/_components/reset-password-page";
 
 export const metadata = {
   title: "新しいパスワードを設定 | hibari",

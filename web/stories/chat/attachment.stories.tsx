@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { DeleteAttachmentDialog } from "@/components/chat/room-dialogs";
 
-import { deletedAttachmentName, singleViewerImage, viewerImages } from "../fixtures";
-import { chat, imageViewer } from "../screens";
+import { deletedAttachmentName, singleViewerImage, viewerImages } from "@/stories/fixtures";
+import { chat, imageViewer } from "@/stories/screens";
 
 /**
  * チャット / 添付ファイル。

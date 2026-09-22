@@ -18,7 +18,8 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-const files = [...sourceFiles(path.join(webRoot, "components")), ...sourceFiles(path.join(webRoot, "app"))];
+// 描画するのは components/ と app/ だけでなく、要素を返すフック（hooks/）と Provider（providers/）もある（ADR 0060）
+const files = ["components", "app", "hooks", "providers"].flatMap((dir) => sourceFiles(path.join(webRoot, dir)));
 
 // className に書かれる文字列リテラルの中身を取り出す（"..." と `...` の両方）
 function classStrings(source: string): string[] {

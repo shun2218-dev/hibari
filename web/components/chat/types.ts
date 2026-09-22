@@ -6,7 +6,7 @@
  */
 
 import type { WorkspaceRole } from "@/components/workspace/types";
-import type { PresenceView } from "@/lib/presence";
+import type { PresenceView } from "@/lib/chat/presence";
 
 export type RoomKind = "public" | "private" | "dm";
 

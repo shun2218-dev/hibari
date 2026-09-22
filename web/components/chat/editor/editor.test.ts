@@ -3,7 +3,7 @@ import { $createLinkNode } from "@lexical/link";
 import { $createParagraphNode, $createTextNode, $getRoot, type LexicalEditor, type TextFormatType } from "lexical";
 import { describe, expect, it } from "vitest";
 
-import { parseBody } from "@/lib/chat/body-format";
+import { parseBody } from "@/lib/chat/format/body-format";
 
 import { $exportBody } from "./export";
 import { $importBody } from "./import";

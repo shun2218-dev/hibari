@@ -2,7 +2,7 @@ import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
 
 import { createSession } from "@/lib/auth/session";
-import { SessionProvider } from "@/lib/auth/session-provider";
+import { SessionProvider } from "@/providers/session-provider";
 
 import { type Handler, TEST_API_BASE, fakeApi } from "./fake-api";
 

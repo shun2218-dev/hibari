@@ -4,11 +4,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { NoWorkspaces } from "@/components/workspace/no-workspaces";
-import { useSession } from "@/lib/auth/session-provider";
-import { useChatState, useChatStore } from "@/lib/chat/chat-provider";
+import { useSession } from "@/hooks/auth/use-session";
+import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { lastWorkspaceId } from "@/lib/chat/last-location";
 
-import { CreateWorkspace } from "./create-workspace";
+import { CreateWorkspace } from "@/app/(app)/_components/create-workspace";
 
 /**
  * ログインした後の入口。最後に開いたワークスペース（なければ一覧の先頭）に移る。

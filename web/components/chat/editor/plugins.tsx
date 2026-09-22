@@ -36,8 +36,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { MegaphoneIcon } from "@/components/ui/icons";
 import { Portal } from "@/components/ui/portal";
 import { placeAboveCaret, type PanelPlacement } from "@/lib/anchored-position";
-import { type Inline, parseInline } from "@/lib/chat/body-format";
-import { candidateKey, filterCandidates, type MentionCandidate } from "@/lib/chat/mentions";
+import { type Inline, parseInline } from "@/lib/chat/format/body-format";
+import { candidateKey, filterCandidates, type MentionCandidate } from "@/lib/chat/format/mentions";
 import { cx } from "@/lib/cx";
 
 import { $exportBody } from "./export";

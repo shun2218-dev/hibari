@@ -1,5 +1,5 @@
 {
-  "description": "本文のどのトークンがメンションになるか（ADR 0051 決定 5）。コードの範囲の規則は Go（internal/chat/mention）と TypeScript（web/lib/chat/body-format.ts）の 2 か所にあるので、両方のテストがこのファイルを読んでずれを防ぐ。mentions は出現順・重複なし。ID は大文字の正しい ULID だけを使う（ID の検証の厳しさは両者で違ってよいため）。",
+  "description": "本文のどのトークンがメンションになるか（ADR 0051 決定 5）。コードの範囲の規則は Go（internal/chat/mention）と TypeScript（web/lib/chat/format/body-format.ts）の 2 か所にあるので、両方のテストがこのファイルを読んでずれを防ぐ。mentions は出現順・重複なし。ID は大文字の正しい ULID だけを使う（ID の検証の厳しさは両者で違ってよいため）。",
   "cases": [
     {"name": "コードのない本文", "body": "<@01J8ZZZZZZZZZZZZZZZZZZZZZA> と <!here>", "mentions": ["<@01J8ZZZZZZZZZZZZZZZZZZZZZA>", "<!here>"]},
     {"name": "インラインコードの中は数えない", "body": "`<!channel>` を送ると全員に飛びます", "mentions": []},

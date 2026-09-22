@@ -1,6 +1,6 @@
 /** ワークスペースの管理画面の表示用の型。値の意味は API（ADR 0006 / 0011）に合わせる。 */
 
-import type { PresenceView } from "@/lib/presence";
+import type { PresenceView } from "@/lib/chat/presence";
 
 export type WorkspaceRole = "owner" | "admin" | "member";
 

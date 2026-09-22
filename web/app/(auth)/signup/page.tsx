@@ -1,6 +1,6 @@
 import { safeNextPath } from "@/lib/auth/next-path";
 
-import { SignupPage } from "./signup-page";
+import { SignupPage } from "@/app/(auth)/signup/_components/signup-page";
 
 export const metadata = { title: "アカウントを作成 | hibari" };
 

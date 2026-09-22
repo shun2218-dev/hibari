@@ -15,7 +15,7 @@ import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { $createTextNode, $getSelection, $isRangeSelection, $setSelection, type BaseSelection } from "lexical";
 import { type ReactNode, useCallback, useRef, useState } from "react";
 
-import type { MentionCandidate } from "@/lib/chat/mentions";
+import type { MentionCandidate } from "@/lib/chat/format/mentions";
 
 import { $importBody } from "./import";
 import { LinkDialog } from "./link-dialog";

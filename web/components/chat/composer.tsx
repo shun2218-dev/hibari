@@ -4,7 +4,7 @@ import { useMemo, useRef } from "react";
 
 import { IconButton } from "@/components/ui/button";
 import { CheckCircleIcon, CloseIcon, FileIcon, PaperclipIcon, RetryIcon, SendIcon } from "@/components/ui/icons";
-import type { MentionCandidate } from "@/lib/chat/mentions";
+import type { MentionCandidate } from "@/lib/chat/format/mentions";
 import { cx } from "@/lib/cx";
 
 import { RichTextInput } from "./editor/rich-text-input";

@@ -1,9 +1,9 @@
 import type { Decorator, Preview } from "@storybook/nextjs-vite";
 import { type ReactNode, useLayoutEffect } from "react";
 
-import { instrumentSans, jetBrainsMono, zenKakuGothicNew } from "../app/fonts";
+import { instrumentSans, jetBrainsMono, zenKakuGothicNew } from "@/app/fonts";
 
-import "../app/globals.css";
+import "@/app/globals.css";
 
 /** app/layout.tsx が <html> に付けているもの。付けないと書体が変わり、撮り直した PNG が全部変わる。 */
 const fontVariables = `${instrumentSans.variable} ${zenKakuGothicNew.variable} ${jetBrainsMono.variable}`;

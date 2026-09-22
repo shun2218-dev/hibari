@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { reactedMessageKey } from "../fixtures";
-import { chat } from "../screens";
+import { reactedMessageKey } from "@/stories/fixtures";
+import { chat } from "@/stories/screens";
 
 /**
  * チャット / リアクション。

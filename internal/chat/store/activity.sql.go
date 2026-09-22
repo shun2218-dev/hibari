@@ -222,7 +222,7 @@ type ListActivityRow struct {
 // 行を持たない。通知の規則（ADR 0055 決定 1・ADR 0056 決定 3・ADR 0057 決定 1）と、ルーム・スレッドの既読位置から
 // 読むたびに組み立てる。@channel や「すべての新しい投稿」で人数分の行を書かないため（決定 5 の理由）。
 //
-// 規則は web/lib/chat/desktop-notification.ts の shouldNotify と同じ。違うのは次の 2 点だけ（決定 2）。
+// 規則は web/lib/chat/notifications/desktop-notification.ts の shouldNotify と同じ。違うのは次の 2 点だけ（決定 2）。
 //   - 「どのタブも見えていない」を見ない（後から見る一覧なので）
 //   - @here もメンションに数える（行があるのは送った瞬間にアクティブだった人だけ）
 //

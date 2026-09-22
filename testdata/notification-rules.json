@@ -1,8 +1,8 @@
 {
   "_comment": [
     "通知とアクティビティの規則の表（ADR 0055 決定 1・ADR 0056 決定 3・ADR 0057 決定 1・ADR 0058 決定 2）。",
-    "Go（internal/chat/activity_rules_test.go。アクティビティの理由）と Vitest（web/lib/chat/notification-rules.test.ts。shouldNotify）の両方が読む。",
-    "規則を変えたら、この表とサーバー（db/queries/chat/activity.sql）とクライアント（web/lib/chat/desktop-notification.ts）を一緒に直す。",
+    "Go（internal/chat/activity_rules_test.go。アクティビティの理由）と Vitest（web/lib/chat/notifications/notification-rules.test.ts。shouldNotify）の両方が読む。",
+    "規則を変えたら、この表とサーバー（db/queries/chat/activity.sql）とクライアント（web/lib/chat/notifications/desktop-notification.ts）を一緒に直す。",
     "入力は「メッセージが届いた時点の状態」。global が null は未設定、muted は none / forever / expired、message は channel（チャンネルの投稿）/ thread（スレッドだけの返信）/ broadcast（チャンネルにも出した返信）、thread_member は null（参加していない）か返信の通知のオン・オフ。",
     "notify は通知を出すか（どのタブも見えていないとき）、activity はアクティビティに並べる理由（空なら並べない）。違うのは @here だけ。"
   ],

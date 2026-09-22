@@ -3,15 +3,15 @@
 import { type ReactNode, useEffect, useId, useRef } from "react";
 
 import { AnchoredPanel } from "@/components/ui/anchored-panel";
-import { Calendar } from "@/components/ui/calendar";
 import { Button, TextButton } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { ChoiceChip } from "@/components/ui/choice";
 import { Dialog } from "@/components/ui/dialog";
 import { TextField } from "@/components/ui/field";
 import { Portal } from "@/components/ui/portal";
+import { DESKTOP_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { dateLabel, halfHourTimes, matchTimes, normalizeTime } from "@/lib/calendar";
 import { cx } from "@/lib/cx";
-import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 
 import { EmojiPicker } from "./emoji-picker";
 import type { UserStatusView } from "./types";
