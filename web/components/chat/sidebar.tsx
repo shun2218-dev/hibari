@@ -4,7 +4,7 @@ import type { ComponentType, ReactNode } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { UnreadBadge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
-import { BookmarkIcon, ChevronDownIcon, HashIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, HashIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
 
 import type { RoomSummaryView, UserRef, WorkspaceRef } from "./types";
@@ -34,11 +34,6 @@ type SidebarProps = {
    * 渡さなければ出さない。
    */
   threads?: { href: string; unreadCount: number; selected: boolean };
-  /**
-   * 「後で」の一覧への入口（ADR 0054）。Phase 6.14.5 でサイドバーの左のメニューができたら、そちらへ移る。
-   * 件数は出さない（未読ではないので、琥珀のバッジで呼ばない）。渡さなければ出さない。
-   */
-  saved?: { href: string; selected: boolean };
   /** 検索の下に置く帯（「デスクトップ通知を有効にする」。ADR 0057）。渡さなければ出さない。 */
   notice?: ReactNode;
   /**
@@ -65,7 +60,6 @@ export function Sidebar({
   onCreateRoom,
   onStartDm,
   threads,
-  saved,
   notice,
   railed = false,
 }: SidebarProps) {
@@ -138,18 +132,12 @@ export function Sidebar({
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
           {/* 検索はチャンネルを探すためのものなので、検索している間は出さない */}
-          {(threads || saved) && !searching && (
+          {/* 「後で」は左のメニューに移った（ADR 0058 決定 1） */}
+          {threads && !searching && (
             <div className="pt-3">
-              {threads && (
-                <NavRow href={threads.href} selected={threads.selected} icon={ThreadIcon} unreadCount={threads.unreadCount}>
-                  スレッド
-                </NavRow>
-              )}
-              {saved && (
-                <NavRow href={saved.href} selected={saved.selected} icon={BookmarkIcon}>
-                  後で
-                </NavRow>
-              )}
+              <NavRow href={threads.href} selected={threads.selected} icon={ThreadIcon} unreadCount={threads.unreadCount}>
+                スレッド
+              </NavRow>
             </div>
           )}
           {/* 片方が 0 件でも見出しは出す。「+」がそのまま作成・DM の入口になっている */}
@@ -174,10 +162,9 @@ export function Sidebar({
 }
 
 /**
- * ルームの一覧の上に置く行（「スレッド」と「後で」）。
+ * ルームの一覧の上に置く行（「スレッド」）。
  * スレッドの未読は、チャンネルと同じ琥珀のバッジで「未読のあるスレッドの数」を出す。
  * スレッドの返信はチャンネルの未読に数えないので（ADR 0036）、ここが返信に気づく唯一の場所になる。
- * 「後で」は未読ではないので、バッジを出さない（ADR 0054）。
  */
 function NavRow({
   href,

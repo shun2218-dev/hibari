@@ -1,4 +1,4 @@
-import type { FollowedThread, Message, NotifyLevel, Room } from "@/lib/api/types.gen";
+import type { ActivityReason, FollowedThread, Message, NotifyLevel, Room } from "@/lib/api/types.gen";
 
 import { type Block, type Inline, parseBody } from "./body-format";
 import { permalinkPath } from "./links";
@@ -24,41 +24,60 @@ export type NotifyInput = {
 };
 
 /**
- * 通知するか（ADR 0057 決定 1。規則は ADR 0055 決定 1 と ADR 0056 決定 3）。
+ * 通知の対象になる理由（ADR 0055 決定 1・ADR 0056 決定 3・ADR 0057 決定 1・ADR 0058 決定 2）。空なら対象ではない。
+ * ブラウザ通知（shouldNotify）とアクティビティ（activity-feed.ts）が同じ規則を使う。サーバーの db/queries/chat/activity.sql も同じで、
+ * 規則の表（testdata/notification-rules.json）を両方のテストが読む。
  *
- * - ミュートしている → 出さない（メンションでも）
- * - DM → 全体が none でなければ出す
+ * - ミュートしている → 対象にしない（メンションでも）
+ * - DM → 全体が none でなければ対象（理由は dm。メンションとスレッドも添える）
  * - それ以外は「通知する内容」（チャンネルの上書き、なければ全体の設定）で決める
- *   - all: チャンネルの投稿はすべて。スレッドだけの返信は「スレッド」に当たるときだけ
+ *   - all: チャンネルの投稿はすべて（channel）。スレッドだけの返信は、メンションかスレッドに当たるときだけ
  *   - mentions: 自分宛てのメンションか「スレッド」
- *   - none: 出さない
- * - スレッド: スレッドだけの返信で、自分宛てのメンションがあるか、参加していて返信の通知がオン
+ *   - none: 対象にしない
+ * - スレッド: 返信で、参加していて返信の通知がオン（thread）
  *
- * `@here` は理由にしない。通知を出すのはどのタブも見えていない（自分が離席の）ときで、サーバーは `@here` の対象をアクティブな人に絞っている。
+ * `countHere` は `@here` を自分宛てに数えるか。通知では数えない（出すのはどのタブも見えていない、自分が離席のときで、
+ * サーバーは `@here` の対象をアクティブな人に絞っている）。アクティビティでは数える（行があるのは送った瞬間にアクティブだった人）。
  */
-export function shouldNotify({ message, userId, room, level, thread, now }: NotifyInput): boolean {
-  if (message.kind !== "user" || message.sender.id === userId || message.deleted_at !== null) return false;
-  if (!room || !room.notifications) return false;
-  if (isMuted(room.notifications, now)) return false;
+export function notifyReasons(
+  { message, userId, room, level, thread, now }: NotifyInput,
+  { countHere }: { countHere: boolean },
+): ActivityReason[] {
+  if (message.kind !== "user" || message.sender.id === userId || message.deleted_at !== null) return [];
+  if (!room || !room.notifications) return [];
+  if (isMuted(room.notifications, now)) return [];
 
   const global = level ?? "mentions";
-  if (room.kind === "dm") return global !== "none";
+  const reasons: ActivityReason[] = [];
+  const reply = message.thread_root_id !== null;
+  const mentioned = mentionsMe(message, userId, countHere);
+  const following = reply && (thread?.notify_replies ?? false);
 
-  const effective = room.notifications.level ?? global;
-  if (effective === "none") return false;
-
-  const mentioned = mentionsMe(message, userId);
-  const threadOnly = message.thread_root_id !== null && !message.also_in_channel;
-  const threadHit = message.thread_root_id !== null && (mentioned || (thread?.notify_replies ?? false));
-  if (threadOnly) return threadHit;
-  // チャンネルにも出した返信は、チャンネルの投稿としても判定する（どちらかで対象なら出す。ADR 0056 決定 3）
-  if (effective === "all") return true;
-  return mentioned || threadHit;
+  if (room.kind === "dm") {
+    if (global === "none") return [];
+    reasons.push("dm");
+  } else {
+    const effective = room.notifications.level ?? global;
+    if (effective === "none") return [];
+    const threadOnly = reply && !message.also_in_channel;
+    // チャンネルにも出した返信は、チャンネルの投稿としても判定する（どちらかで対象なら出す。ADR 0056 決定 3）
+    if (effective === "all" && !threadOnly) reasons.push("channel");
+  }
+  if (mentioned) reasons.push("mention");
+  if (following) reasons.push("thread");
+  return reasons.sort();
 }
 
-/** 自分宛てか。`<@自分>` と `@channel`。`@here` は数えない（shouldNotify の説明）。 */
-function mentionsMe(message: Message, userId: string): boolean {
-  return message.mentions.some((m) => (m.kind === "user" ? m.user?.id === userId : m.kind === "channel"));
+/** 通知するか（ADR 0057 決定 1）。`@here` は理由にしない（notifyReasons の説明）。 */
+export function shouldNotify(input: NotifyInput): boolean {
+  return notifyReasons(input, { countHere: false }).length > 0;
+}
+
+/** 自分宛てか。`<@自分>` と `@channel`、countHere なら `@here` も。 */
+function mentionsMe(message: Message, userId: string, countHere: boolean): boolean {
+  return message.mentions.some((m) =>
+    m.kind === "user" ? m.user?.id === userId : m.kind === "channel" || (countHere && m.kind === "here"),
+  );
 }
 
 /** 通知 1 件の中身。tag は同じメッセージの通知を OS に置き換えさせるための値（メッセージの ID）。 */

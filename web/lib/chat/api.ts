@@ -1,4 +1,7 @@
 import type {
+  ActivityFilter,
+  ActivityList,
+  ActivityUnreadCount,
   Attachment,
   AvatarURLs,
   ChangeMemberRoleRequest,
@@ -66,6 +69,9 @@ export const LINK_BATCH_SIZE = 20;
 
 /** 「後で」の 1 ページの件数（サーバーの既定と同じ。ADR 0054 決定 9）。 */
 export const SAVED_PAGE_SIZE = 50;
+
+/** アクティビティの 1 ページの数（ADR 0058 決定 6。API の既定と同じ）。 */
+export const ACTIVITY_PAGE_SIZE = 50;
 
 /** メンバー・招待の一覧の 1 ページの数。API の上限（ADR 0011）にして、往復を減らす。 */
 const PAGE_SIZE = 200;
@@ -288,6 +294,18 @@ export function createChatApi(request: Session["request"]) {
       const params = new URLSearchParams({ after_change_seq: String(afterChangeSeq), limit: String(CHANGE_PAGE_SIZE) });
       return request<SavedList>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/saved?${params}`);
     },
+
+    /** アクティビティの 1 ページ（ADR 0058 決定 6）。before は前のページの next_cursor をそのまま渡す。 */
+    listActivity: (workspaceId: string, query: { filter: ActivityFilter; unreadOnly: boolean; before?: string }) => {
+      const params = new URLSearchParams({ filter: query.filter, limit: String(ACTIVITY_PAGE_SIZE) });
+      if (query.unreadOnly) params.set("unread", "true");
+      if (query.before !== undefined) params.set("before", query.before);
+      return request<ActivityList>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/activity?${params}`);
+    },
+
+    /** 未読のアクティビティの件数（メニューのバッジ）。100 で打ち切る。 */
+    activityUnreadCount: (workspaceId: string) =>
+      request<ActivityUnreadCount>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/activity/unread_count`),
 
     /** 削除済みでも 204（冪等。ADR 0012）。 */
     deleteMessage: (roomId: string, messageId: string) =>

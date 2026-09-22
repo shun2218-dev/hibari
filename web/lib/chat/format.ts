@@ -79,6 +79,16 @@ export function formatListTime(date: Date, now: Date, timeZone?: string): string
 }
 
 /**
+ * アクティビティの日付の区切り（ADR 0058）。今日・昨日は言葉にし、それ以外は月日（今年でなければ年も）。
+ * 同じ日かどうかは dayKey で決める（見る人のタイムゾーンの暦）。
+ */
+export function formatDayLabel(date: Date, now: Date, timeZone?: string): string {
+  const d = localParts(date, timeZone);
+  // 今日でなければ、サイドバーの時刻と同じ言い方（昨日・月日・年月日）になる
+  return sameDay(d, localParts(now, timeZone)) ? "今日" : formatListTime(date, now, timeZone);
+}
+
+/**
  * ステータスがいつ消えるか（`17:00 まで` / `9月25日 17:00 まで`。ADR 0049）。
  * 今日なら時刻だけにする。ホバーに出す短い文言なので、年は出さない（期限は先でもせいぜい数か月）。
  */

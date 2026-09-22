@@ -32,6 +32,8 @@ const ITEMS: readonly { key: SideNavKey; label: string; icon: ComponentType<{ cl
 type SideNavProps = {
   items: SideNavItems;
   current: SideNavKey;
+  /** メニューを押した（リンクで移る前に呼ぶ）。モバイルで、ルームを開いたまま一覧に戻すのに使う。 */
+  onNavigate?: (key: SideNavKey) => void;
 };
 
 /** ポインタを乗せてから一覧を出すまで・外してから閉じるまでの間（メニューとパネルの間を動かしたときに閉じないように）。 */
@@ -49,6 +51,7 @@ const CLOSE_DELAY_MS = 200;
 export function SideNavRail({
   items,
   current,
+  onNavigate,
   workspace,
   account,
   previews = {},
@@ -86,7 +89,8 @@ export function SideNavRail({
         {ITEMS.map((item) => (
           <li key={item.key} onMouseEnter={() => schedule(item.key)}>
             <RailItem
-              {...item}
+              label={item.label}
+              icon={item.icon}
               href={items[item.key].href}
               badge={items[item.key].badge}
               selected={item.key === current}
@@ -94,6 +98,7 @@ export function SideNavRail({
               onNavigate={() => {
                 clearTimeout(timer.current);
                 setHovered(null);
+                onNavigate?.(item.key);
               }}
             />
           </li>
@@ -102,10 +107,12 @@ export function SideNavRail({
       <div className="relative">{account}</div>
       {preview !== undefined && (
         // パネルの上ではポインタが外れても閉じない（nav の中なので mouseleave は nav を出たときだけ）。
-        // 一覧の 1 件を押したらルームを開くので、閉じる
+        // 一覧の 1 件（リンク）を押したらルームを開くので、閉じる。スイッチやタブを押しても閉じない
         <div
           onMouseEnter={() => clearTimeout(timer.current)}
-          onClick={() => setHovered(null)}
+          onClick={(e) => {
+            if (e.target instanceof Element && e.target.closest("a")) setHovered(null);
+          }}
           className="absolute top-2 bottom-2 left-full z-30 ml-1 w-96 overflow-hidden rounded-lg border border-border bg-surface shadow-overlay"
         >
           {preview}
@@ -162,7 +169,7 @@ function RailItem({
  * モバイル（768px 未満）で一覧の下に置くタブ（ADR 0058 決定 1）。ルームを開いている間は一覧ごと隠れるので、このタブも出ない。
  * ワークスペースと自分のアバターは、ホームのサイドバーの上にある（いままでどおり）。
  */
-export function SideNavBar({ items, current }: SideNavProps) {
+export function SideNavBar({ items, current, onNavigate }: SideNavProps) {
   return (
     <nav aria-label="メニュー" className="shrink-0 border-t border-border bg-surface">
       <ul className="grid grid-cols-4">
@@ -173,6 +180,7 @@ export function SideNavBar({ items, current }: SideNavProps) {
             <li key={item.key}>
               <Link
                 href={items[item.key].href}
+                onClick={() => onNavigate?.(item.key)}
                 aria-current={selected ? "page" : undefined}
                 className={cx("flex h-14 flex-col items-center justify-center gap-1", selected ? "text-primary" : "text-text-secondary")}
               >

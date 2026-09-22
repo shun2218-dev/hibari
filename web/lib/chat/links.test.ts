@@ -1,16 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  CARD_CLAMP_CHARS,
-  CARD_CLAMP_LINES,
-  MAX_LINK_CARDS,
-  buildPermalink,
-  clampCardBody,
-  findPermalinks,
-  linkKey,
-  parsePermalink,
-  permalinkPath,
-} from "./links";
+import { buildPermalink, CARD_CLAMP_CHARS, CARD_CLAMP_LINES, clampCardBody, findPermalinks, linkKey, MAX_LINK_CARDS, parsePermalink, permalinkPath, withSide } from "./links";
 
 const ORIGIN = "https://hibari.example";
 const WS = "01J9ZQZQZQZQZQZQZQZQZQZQZA";
@@ -196,3 +186,13 @@ describe("clampCardBody", () => {
     expect(clampCardBody(body).text.endsWith("行目…")).toBe(true);
   });
 });
+
+describe("withSide（ADR 0058 決定 1）", () => {
+  it("クエリに side を足し、ほかのクエリは残す。ホームは付けない", () => {
+    expect(withSide("/w/ws-1/r/r1", "activity")).toBe("/w/ws-1/r/r1?side=activity");
+    expect(withSide("/w/ws-1/r/r1?m=m-2&t=m-1", "later")).toBe("/w/ws-1/r/r1?m=m-2&t=m-1&side=later");
+    expect(withSide("/w/ws-1/r/r1?side=dms", "activity")).toBe("/w/ws-1/r/r1?side=activity");
+    expect(withSide("/w/ws-1/r/r1", "home")).toBe("/w/ws-1/r/r1");
+  });
+});
+

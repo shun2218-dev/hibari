@@ -6,12 +6,15 @@ import { useEffect, useMemo, useState } from "react";
 import { AccountMenu } from "@/components/chat/account-menu";
 import { ChatLayout } from "@/components/chat/chat-layout";
 import { RemovedFromWorkspace, ServerUnavailable } from "@/components/chat/chat-states";
+import { SideNavBar, type SideNavItems, type SideNavKey, SideNavRail } from "@/components/chat/side-nav";
 import { Sidebar } from "@/components/chat/sidebar";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
+import { Avatar } from "@/components/ui/avatar";
 import { useSession, useSessionState } from "@/lib/auth/session-provider";
 import { useAvatarUrls, useChatState, useChatStore, useRealtime } from "@/lib/chat/chat-provider";
 import { formatTime } from "@/lib/chat/format";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
+import { withSide } from "@/lib/chat/links";
 import { countUnreadThreads } from "@/lib/chat/threads";
 import { memberSettings, statusView, toRoomSummaryView } from "@/lib/chat/views";
 
@@ -25,8 +28,15 @@ import { type ProfileSender, RoomProfile } from "./profile";
 import { RoomMembers } from "./room-members";
 import { RoomThread } from "./room-thread";
 import { RoomView } from "./room-view";
-import { WorkspaceSaved } from "./workspace-saved";
+import { ActivityPane, DmPane, LaterPane } from "./side-panes";
 import { WorkspaceThreads } from "./workspace-threads";
+
+const SIDES: readonly SideNavKey[] = ["home", "dms", "activity", "later"];
+
+/** URL の `?side=`（ADR 0058 決定 1）。知らない値とホームは、ホームとして扱う。 */
+function parseSide(value: string | null): SideNavKey {
+  return SIDES.find((side) => side === value) ?? "home";
+}
 
 export function WorkspaceScreen() {
   const { workspaceId, roomId } = useParams<{ workspaceId: string; roomId?: string }>();
@@ -37,10 +47,10 @@ export function WorkspaceScreen() {
   const jumpMessageId = searchParams.get("m") ?? undefined;
   // 開いているプロフィール（ADR 0050 決定 6 の追記）。スレッドと同じく URL に持ち、モバイルの全画面を「戻る」で閉じられるようにする
   const profileId = searchParams.get("p") ?? undefined;
+  // 左のメニューで開いているもの（ADR 0058 決定 1）。ルームを開いても残すので、パスではなくクエリに持つ
+  const side = parseSide(searchParams.get("side"));
   const pathname = usePathname();
   const threadsView = pathname === `/w/${workspaceId}/threads`;
-  // 「後で」（ADR 0054）。スレッドの一覧と同じく、ルームの代わりにメインの領域に出す
-  const savedView = pathname === `/w/${workspaceId}/saved`;
   const router = useRouter();
   const notificationBanner = useDesktopNotifications();
   const session = useSession();
@@ -55,14 +65,16 @@ export function WorkspaceScreen() {
   const threadList = useChatState((s) => s.threadLists[workspaceId]);
   const members = useChatState((s) => s.members[workspaceId]);
   const unreadThreadCount = useChatState((s) => s.unreadThreadCounts[workspaceId]);
+  const unreadActivity = useChatState((s) => s.activity[workspaceId]?.unreadCount ?? 0);
   // 開いているルームを読めない（外された、URL のルームが読めない）。メンバーのパネルも閉じる（名前を見せない。ADR 0035）
   const roomRemoved = useChatState((s) =>
     roomId ? s.removedRooms[roomId] !== undefined || s.timelines[roomId]?.status === "not_found" : false,
   );
 
   const [search, setSearch] = useState("");
-  const [switcherOpen, setSwitcherOpen] = useState(false);
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  // ワークスペースの切り替えとアカウントのメニューは、サイドバーの上（header）と左のメニュー（rail）の 2 か所から開ける
+  const [switcherFrom, setSwitcherFrom] = useState<"header" | "rail" | null>(null);
+  const [accountMenuFrom, setAccountMenuFrom] = useState<"header" | "rail" | null>(null);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [startingDm, setStartingDm] = useState(false);
@@ -73,8 +85,9 @@ export function WorkspaceScreen() {
   // プロフィールをどこから開いたか。メンバーパネルからなら「メンバーに戻る」を出し、メッセージからなら送信者の値を
   // 一覧にいない人（外された人）の名前の手がかりにする。URL には持たない（開き直すと「戻る」と手がかりは消える）
   const [profileOrigin, setProfileOrigin] = useState<{ userId: string; fromMembers: boolean; sender?: ProfileSender }>();
-  // モバイルで「一覧に戻る」を押した。URL はルームのままにして、別のルームを開いたら詳細に戻す
+  // モバイルで「一覧に戻る」か下のメニューを押した。URL はルームのままにして、別のルーム（や別のメッセージ）を開いたら詳細に戻す
   const [listShownFor, setListShownFor] = useState<string>();
+  const mainKey = threadsView ? "threads" : roomId ? `${roomId}:${jumpMessageId ?? ""}` : undefined;
 
   // キックされたワークスペースは一覧から消えるが、「削除されました」を出している間は名前とサイドバーを残す
   const removedFromWorkspace = removal?.reason === "removed";
@@ -104,6 +117,8 @@ export function WorkspaceScreen() {
     void store.loadSaved(workspaceId, "in_progress");
     // ブラウザ通知の判定に使う全体の設定（ADR 0057）。ルームを開かなくても要る
     void store.loadNotificationLevel(workspaceId);
+    // 左のメニューのアクティビティのバッジ（ADR 0058 決定 5）
+    void store.loadActivityUnreadCount(workspaceId);
   }, [store, workspaceId]);
 
   // メンバーではない（URL を直接開いた、キックされた）ワークスペースは覚えている場所から外して、入口に戻す。
@@ -120,16 +135,17 @@ export function WorkspaceScreen() {
     if (workspace) rememberLocation(workspace.id, roomId);
   }, [workspace, roomId]);
 
-  // ルームを選んでいなければ、最後に開いたルーム → is_default のルーム → 一覧の先頭の順に開く
+  // ルームを選んでいなければ、最後に開いたルーム → is_default のルーム → 一覧の先頭の順に開く。
+  // 左のメニュー（?side=）は残す（「後で」の古い URL /saved からもここに来る）
   useEffect(() => {
-    if (roomId || threadsView || savedView || roomList?.status !== "ready" || roomList.ids.length === 0) return;
+    if (roomId || threadsView || roomList?.status !== "ready" || roomList.ids.length === 0) return;
     const remembered = lastRoomId(workspaceId);
     const target =
       roomList.ids.find((id) => id === remembered) ??
       roomList.ids.find((id) => rooms[id]?.is_default && rooms[id]?.is_member) ??
       roomList.ids[0];
-    router.replace(`/w/${workspaceId}/r/${target}`);
-  }, [roomId, threadsView, savedView, roomList, rooms, workspaceId, router]);
+    router.replace(withSide(`/w/${workspaceId}/r/${target}`, side));
+  }, [roomId, threadsView, roomList, rooms, workspaceId, router, side]);
 
   // サイドバーに出す人（自分と DM の相手）のアバター。自分の avatar_url もログインの応答にあるが、1 時間で切れるので同じ経路で取り直す
   const me = sessionState.status === "signed_in" ? sessionState.user : undefined;
@@ -154,6 +170,18 @@ export function WorkspaceScreen() {
       })
       .filter((view) => query === "" || view.name.toLowerCase().includes(query));
   }, [roomList, rooms, search, avatarUrls, memberTable]);
+
+  // 左のメニューの DM のバッジは、未読のある会話の数（Slack と同じ。ADR 0058 決定 1）
+  const unreadDms = useMemo(
+    () =>
+      (roomList?.ids ?? []).filter((id) => {
+        const r = rooms[id];
+        // ミュートした DM は、ルームの行と同じく知らせの数に入れない（ADR 0055 決定 6）。
+        // 期限の切れたミュートはストアがタイマーで外しているので（scheduleMuteExpiry）、時刻と比べなくてよい
+        return r?.kind === "dm" && r.unread_count > 0 && !r.notifications?.muted;
+      }).length,
+    [roomList, rooms],
+  );
 
   function openThread(rootId: string) {
     setSidePanel(null);
@@ -202,6 +230,14 @@ export function WorkspaceScreen() {
     router.replace(`/w/${workspaceId}/r/${roomId}${query === "" ? "" : `?${query}`}`);
   }
 
+  // 左のメニュー（ADR 0058 決定 1）。押すとサイドバーの中身が変わり、メインの領域（ルーム）はそのまま
+  const sideItems: SideNavItems = {
+    home: { href: pathname },
+    dms: { href: withSide(pathname, "dms"), badge: unreadDms },
+    activity: { href: withSide(pathname, "activity"), badge: unreadActivity },
+    later: { href: withSide(pathname, "later") },
+  };
+
   function leaveRemovedWorkspace() {
     forgetLocation(workspaceId);
     store.forgetRemovedWorkspace(workspaceId);
@@ -223,86 +259,149 @@ export function WorkspaceScreen() {
   const user = sessionState.user;
   const currentUser = { id: user.id, name: user.display_name, avatarUrl: avatarUrls[user.id] ?? user.avatar_url };
 
+  function toggleSwitcher(from: "header" | "rail") {
+    setAccountMenuFrom(null);
+    setSwitcherFrom((open) => (open === from ? null : from));
+  }
+
+  function toggleAccountMenu(from: "header" | "rail") {
+    setSwitcherFrom(null);
+    setAccountMenuFrom((open) => (open === from ? null : from));
+  }
+
+  const switcher = (placement: "header" | "rail") => (
+    <WorkspaceSwitcher
+      placement={placement}
+      workspaces={workspaces.list.map((w) => ({ id: w.id, name: w.name }))}
+      currentWorkspaceId={workspace.id}
+      onSelect={(id) => {
+        setSwitcherFrom(null);
+        if (id !== workspace.id) router.push(`/w/${id}`);
+      }}
+      onCreate={() => {
+        setSwitcherFrom(null);
+        setCreatingWorkspace(true);
+      }}
+      onDismiss={() => setSwitcherFrom(null)}
+    />
+  );
+
+  const accountMenu = (placement: "header" | "rail") => (
+    <AccountMenu
+      placement={placement}
+      user={{ ...currentUser, handle: user.handle, status: myStatus }}
+      away={myMember?.away ?? false}
+      onOpenStatus={() => {
+        setAccountMenuFrom(null);
+        setStatusOpen(true);
+      }}
+      onToggleAway={() => {
+        setAccountMenuFrom(null);
+        void store.setAway(!(myMember?.away ?? false));
+      }}
+      onOpenWorkspaceSettings={() => {
+        setAccountMenuFrom(null);
+        router.push(`/w/${workspaceId}/admin/settings`);
+      }}
+      onOpenSettings={() => {
+        setAccountMenuFrom(null);
+        router.push("/settings");
+      }}
+      onLogout={() => session.logout()}
+      onDismiss={() => setAccountMenuFrom(null)}
+    />
+  );
+
+  // サイドバーの列の中身（左のメニューで選んだもの）。一覧の 1 件を押しても、このメニューのまま（URL の ?side= を残す）
+  const home = (
+    <Sidebar
+      railed
+      workspace={{ id: workspace.id, name: workspace.name }}
+      currentUser={currentUser}
+      rooms={roomViews}
+      selectedRoomId={roomId}
+      roomHref={(id) => `/w/${workspaceId}/r/${id}`}
+      notice={notificationBanner}
+      search={search}
+      onSearchChange={setSearch}
+      switcherOpen={switcherFrom === "header"}
+      onToggleSwitcher={() => toggleSwitcher("header")}
+      switcher={switcher("header")}
+      accountMenuOpen={accountMenuFrom === "header"}
+      onToggleAccountMenu={() => toggleAccountMenu("header")}
+      accountMenu={accountMenu("header")}
+      onCreateRoom={() => setCreatingRoom(true)}
+      onStartDm={() => setStartingDm(true)}
+      threads={{
+        href: `/w/${workspaceId}/threads`,
+        // 一覧を取るまではルーム一覧の unread_thread_count を出す
+        unreadCount: threadList?.status === "ready" ? countUnreadThreads(threadList.list) : (unreadThreadCount ?? 0),
+        selected: threadsView,
+      }}
+    />
+  );
+  const sidePane =
+    side === "dms" ? (
+      <DmPane workspaceId={workspaceId} variant="pane" linkSide="dms" onStartDm={() => setStartingDm(true)} />
+    ) : side === "activity" ? (
+      <ActivityPane workspaceId={workspaceId} variant="pane" linkSide="activity" />
+    ) : side === "later" ? (
+      <LaterPane workspaceId={workspaceId} variant="pane" linkSide="later" />
+    ) : (
+      home
+    );
+
   return (
     <>
       <ChatLayout
-        mobileView={
-          (roomId && listShownFor !== roomId) ||
-          (threadsView && listShownFor !== "threads") ||
-          (savedView && listShownFor !== "saved")
-            ? "room"
-            : "list"
-        }
-        sidebar={
-          <Sidebar
-            workspace={{ id: workspace.id, name: workspace.name }}
-            currentUser={currentUser}
-            rooms={roomViews}
-            selectedRoomId={roomId}
-            roomHref={(id) => `/w/${workspaceId}/r/${id}`}
-            notice={notificationBanner}
-            search={search}
-            onSearchChange={setSearch}
-            switcherOpen={switcherOpen}
-            onToggleSwitcher={() => {
-              setAccountMenuOpen(false);
-              setSwitcherOpen((open) => !open);
-            }}
-            switcher={
-              <WorkspaceSwitcher
-                workspaces={workspaces.list.map((w) => ({ id: w.id, name: w.name }))}
-                currentWorkspaceId={workspace.id}
-                onSelect={(id) => {
-                  setSwitcherOpen(false);
-                  if (id !== workspace.id) router.push(`/w/${id}`);
-                }}
-                onCreate={() => {
-                  setSwitcherOpen(false);
-                  setCreatingWorkspace(true);
-                }}
-                onDismiss={() => setSwitcherOpen(false)}
-              />
+        mobileView={mainKey !== undefined && listShownFor !== mainKey ? "room" : "list"}
+        rail={
+          <SideNavRail
+            items={sideItems}
+            current={side}
+            workspace={
+              <>
+                <button
+                  type="button"
+                  aria-label="ワークスペースを切り替える"
+                  aria-expanded={switcherFrom === "rail"}
+                  aria-haspopup="dialog"
+                  onClick={() => toggleSwitcher("rail")}
+                  className="rounded-sm"
+                >
+                  <Avatar id={workspace.id} name={workspace.name} size="md" shape="square" />
+                </button>
+                {switcherFrom === "rail" && switcher("rail")}
+              </>
             }
-            accountMenuOpen={accountMenuOpen}
-            onToggleAccountMenu={() => {
-              setSwitcherOpen(false);
-              setAccountMenuOpen((open) => !open);
-            }}
-            accountMenu={
-              <AccountMenu
-                user={{ ...currentUser, handle: user.handle, status: myStatus }}
-                away={myMember?.away ?? false}
-                onOpenStatus={() => {
-                  setAccountMenuOpen(false);
-                  setStatusOpen(true);
-                }}
-                onToggleAway={() => {
-                  setAccountMenuOpen(false);
-                  void store.setAway(!(myMember?.away ?? false));
-                }}
-                onOpenWorkspaceSettings={() => {
-                  setAccountMenuOpen(false);
-                  router.push(`/w/${workspaceId}/admin/settings`);
-                }}
-                onOpenSettings={() => {
-                  setAccountMenuOpen(false);
-                  router.push("/settings");
-                }}
-                onLogout={() => session.logout()}
-                onDismiss={() => setAccountMenuOpen(false)}
-              />
+            account={
+              <>
+                <button
+                  type="button"
+                  aria-label="アカウントメニュー"
+                  aria-expanded={accountMenuFrom === "rail"}
+                  aria-haspopup="dialog"
+                  onClick={() => toggleAccountMenu("rail")}
+                  className="rounded-full"
+                >
+                  <Avatar id={currentUser.id} name={currentUser.name} imageUrl={currentUser.avatarUrl} size="sm" />
+                </button>
+                {accountMenuFrom === "rail" && accountMenu("rail")}
+              </>
             }
-            onCreateRoom={() => setCreatingRoom(true)}
-            onStartDm={() => setStartingDm(true)}
-            threads={{
-              href: `/w/${workspaceId}/threads`,
-              // 一覧を取るまではルーム一覧の unread_thread_count を出す
-              unreadCount: threadList?.status === "ready" ? countUnreadThreads(threadList.list) : (unreadThreadCount ?? 0),
-              selected: threadsView,
+            // ポインタを乗せると重ねて出す一覧（ADR 0058 の追記）。押しても今のサイドバーのまま
+            previews={{
+              dms: (
+                <DmPane workspaceId={workspaceId} variant="preview" linkSide={side} onStartDm={() => setStartingDm(true)} />
+              ),
+              activity: <ActivityPane workspaceId={workspaceId} variant="preview" linkSide={side} />,
+              later: <LaterPane workspaceId={workspaceId} variant="preview" linkSide={side} />,
             }}
-            saved={{ href: `/w/${workspaceId}/saved`, selected: savedView }}
           />
         }
+        // モバイルの下のメニュー。押したら、開いているルームはそのままにして一覧を見せる
+        tabBar={<SideNavBar items={sideItems} current={side} onNavigate={() => setListShownFor(mainKey)} />}
+        sidebar={sidePane}
         panel={
           roomId && profileId && !roomRemoved ? (
             <RoomProfile
@@ -349,16 +448,13 @@ export function WorkspaceScreen() {
             openThreadId={threadId}
             onOpenThread={openThread}
             jumpMessageId={jumpMessageId}
-            onBack={() => setListShownFor(roomId)}
+            onBack={() => setListShownFor(mainKey)}
             onLeaveRemovedWorkspace={leaveRemovedWorkspace}
             onOpenProfile={(userId, sender) => openProfile(userId, { fromMembers: false, sender })}
           />
         )}
         {threadsView && !removedFromWorkspace && (
-          <WorkspaceThreads workspaceId={workspaceId} onBack={() => setListShownFor("threads")} />
-        )}
-        {savedView && !removedFromWorkspace && (
-          <WorkspaceSaved workspaceId={workspaceId} onBack={() => setListShownFor("saved")} />
+          <WorkspaceThreads workspaceId={workspaceId} onBack={() => setListShownFor(mainKey)} />
         )}
         {!roomId && removedFromWorkspace && (
           <RemovedFromWorkspace workspaceName={workspace.name} onMove={leaveRemovedWorkspace} />

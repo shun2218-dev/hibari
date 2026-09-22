@@ -76,6 +76,7 @@ var tsEnums = []tsEnum{
 	enumOf("SavedState", chat.SavedInProgress, chat.SavedArchived, chat.SavedCompleted, chat.SavedRemoved),
 	enumOf("SavedItemStatus", chat.SavedItemOK, chat.SavedItemUnavailable),
 	enumOf("NotifyLevel", chat.NotifyAll, chat.NotifyMentions, chat.NotifyNone),
+	enumOf("ActivityFilter", chat.ActivityFilterAll, chat.ActivityFilterDM, chat.ActivityFilterMention, chat.ActivityFilterThread, chat.ActivityFilterReaction),
 	enumOf("ActivityItemType", chat.ActivityItemMessage, chat.ActivityItemReaction),
 	enumOf("ActivityReason", chat.ReasonDM, chat.ReasonMention, chat.ReasonThread, chat.ReasonChannel, chat.ReasonReaction),
 	enumOf("ProblemType",
