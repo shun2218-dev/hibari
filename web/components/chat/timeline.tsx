@@ -4,7 +4,7 @@ import { type ReactNode, useEffectEvent, useLayoutEffect, useRef } from "react";
 
 import { TextButton } from "@/components/ui/button";
 
-import { type MessageEditingView, MessageItem } from "./message-item";
+import { type MessageEditingView, MessageItem } from "@/components/chat/message-item/message-item";
 import type { TimelineItem } from "./types";
 
 /**

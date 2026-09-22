@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
+import { ConfirmMentionAllDialog } from "@/components/chat/dialogs/confirm-mention-all";
 
 import { selectedRoom } from "@/stories/fixtures";
 import { chat } from "@/stories/screens";

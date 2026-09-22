@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { users } from "@/stories/fixtures";
 
 import { MessageItem } from "./message-item";
-import type { MessageView } from "./types";
+import type { MessageView } from "@/components/chat/types";
 
 const miyuki = { id: users.miyuki.id, name: users.miyuki.name };
 const you = { id: users.you.id, name: users.you.name };

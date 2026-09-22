@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { type CreatableRoomKind, CreateRoomDialog } from "@/components/chat/room-dialogs";
+import { type CreatableRoomKind, CreateRoomDialog } from "@/components/chat/dialogs/create-room";
 import { useChatStore } from "@/hooks/chat/use-chat-store";
 
 /**

@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { HOVER_OPEN_DELAY_MS } from "@/hooks/use-hover-intent";
 
-import { typeInEditor, valueOf } from "./editor/test-utils";
+import { typeInEditor, valueOf } from "@/components/chat/editor/test-utils";
 import { MessageItem } from "./message-item";
-import type { MessageView } from "./types";
+import type { MessageView } from "@/components/chat/types";
 
 function message(overrides: Partial<MessageView> = {}): MessageView {
   return {

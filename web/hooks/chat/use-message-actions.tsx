@@ -4,8 +4,9 @@ import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react
 
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { ImageViewer } from "@/components/chat/image-viewer";
-import type { MessageEditingView } from "@/components/chat/message-item";
-import { DeleteAttachmentDialog, DeleteMessageDialog } from "@/components/chat/room-dialogs";
+import type { MessageEditingView } from "@/components/chat/message-item/message-item";
+import { DeleteAttachmentDialog } from "@/components/chat/dialogs/delete-attachment";
+import { DeleteMessageDialog } from "@/components/chat/dialogs/delete-message";
 import type { MessageActions } from "@/components/chat/timeline";
 import { ApiError } from "@/lib/api/error";
 import type { Message, Role, Room, UserProfile } from "@/lib/api/types.gen";

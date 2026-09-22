@@ -20,7 +20,11 @@ import type { MentionCandidate } from "@/lib/chat/format/mentions";
 import { $importBody } from "./import";
 import { LinkDialog } from "./link-dialog";
 import { editorNodes } from "./nodes";
-import { InlineMarkdownPlugin, KeyboardPlugin, MentionPlugin, SanitizePlugin, SyncPlugin } from "./plugins";
+import { InlineMarkdownPlugin } from "@/components/chat/editor/plugins/inline-markdown";
+import { KeyboardPlugin } from "@/components/chat/editor/plugins/keyboard";
+import { MentionPlugin } from "@/components/chat/editor/plugins/mention";
+import { SanitizePlugin } from "@/components/chat/editor/plugins/sanitize";
+import { SyncPlugin } from "@/components/chat/editor/plugins/sync";
 import { Toolbar } from "./toolbar";
 
 /**

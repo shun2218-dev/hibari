@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ArchivedRoomBar, JoinRoomBar } from "@/components/chat/chat-states";
 import { Composer } from "@/components/chat/composer";
-import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
+import { ConfirmMentionAllDialog } from "@/components/chat/dialogs/confirm-mention-all";
 import { ThreadPanel } from "@/components/chat/thread-panel";
 import { Timeline } from "@/components/chat/timeline";
 import { useSessionState } from "@/hooks/auth/use-session";

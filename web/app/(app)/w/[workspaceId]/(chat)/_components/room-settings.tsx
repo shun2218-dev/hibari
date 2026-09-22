@@ -2,13 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  AddRoomMemberDialog,
-  ArchiveRoomDialog,
-  DeleteRoomDialog,
-  LeaveRoomDialog,
-  RoomSettingsDialog,
-} from "@/components/chat/room-dialogs";
+import { AddRoomMemberDialog } from "@/components/chat/dialogs/add-room-member";
+import { ArchiveRoomDialog } from "@/components/chat/dialogs/archive-room";
+import { DeleteRoomDialog } from "@/components/chat/dialogs/delete-room";
+import { LeaveRoomDialog } from "@/components/chat/dialogs/leave-room";
+import { RoomSettingsDialog } from "@/components/chat/dialogs/room-settings";
 import { useSessionState } from "@/hooks/auth/use-session";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";

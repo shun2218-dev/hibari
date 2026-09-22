@@ -3,7 +3,8 @@
  *
  * ID はアバターの色（ID のハッシュで決まる。lib/avatar.ts）がスクリーンショットと同じになるものを選んである。
  */
-import type { DmCandidateView, RoomMemberRowView } from "@/components/chat/room-dialogs";
+import type { RoomMemberRowView } from "@/components/chat/dialogs/room-settings";
+import type { DmCandidateView } from "@/components/chat/dialogs/start-dm";
 import type {
   ActivityItemView,
   MessageAttachmentView,
