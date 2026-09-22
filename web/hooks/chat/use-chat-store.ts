@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-import type { Realtime } from "@/lib/chat/realtime/realtime";
+import type { Realtime } from "@/lib/chat/realtime/subscriptions";
 import type { ChatStore } from "@/lib/chat/store/chat-store";
 import type { ChatState } from "@/lib/chat/store/state";
 

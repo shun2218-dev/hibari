@@ -6,7 +6,7 @@ import type {
   ThreadNotifications,
   ThreadReadState,
 } from "@/lib/api/types.gen";
-import type { Session } from "@/lib/auth/session";
+import type { Session } from "@/lib/auth/session/auth-session";
 
 import { MESSAGE_PAGE_SIZE } from "./messages";
 import { listAll } from "./paging";

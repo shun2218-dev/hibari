@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createSession } from "@/lib/auth/session";
+import { createSession } from "@/lib/auth/session/auth-session";
 import { type Handler, TEST_API_BASE, fakeApi, json, problem, tokens } from "@/test/fake-api";
 
 import { createChatApi } from "@/lib/chat/api/chat-api";
-import { createMediaStore } from "./media";
+import { createMediaStore } from "./media-store";
 
 const HOUR = 60 * 60 * 1000;
 const T0 = Date.parse("2026-09-17T00:00:00Z");

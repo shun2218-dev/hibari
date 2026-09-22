@@ -1,5 +1,5 @@
 import type { WSTicket } from "@/lib/api/types.gen";
-import type { Session } from "@/lib/auth/session";
+import type { Session } from "@/lib/auth/session/auth-session";
 
 /**
  * WebSocket の ws-ticket（短命。URL に載せてよい唯一のもの。ADR 0015）。

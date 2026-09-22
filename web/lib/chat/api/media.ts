@@ -6,7 +6,7 @@ import type {
   Message,
   SignedURL,
 } from "@/lib/api/types.gen";
-import type { Session } from "@/lib/auth/session";
+import type { Session } from "@/lib/auth/session/auth-session";
 
 /** アバターの URL を 1 回で取れる人数。API の上限（ADR 0020）。 */
 export const AVATAR_BATCH_SIZE = 200;

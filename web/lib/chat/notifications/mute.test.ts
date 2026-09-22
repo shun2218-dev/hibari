@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isMuted, muteUntilLabel, nextMuteExpiry, temporaryMuteUntil } from "./notifications";
+import { isMuted, muteUntilLabel, nextMuteExpiry, temporaryMuteUntil } from "./mute";
 
 // 日付の区切りは端末のタイムゾーン。テストでは Asia/Tokyo の暦で見る
 const TZ = "Asia/Tokyo";

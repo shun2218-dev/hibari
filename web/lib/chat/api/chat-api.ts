@@ -1,4 +1,4 @@
-import type { Session } from "@/lib/auth/session";
+import type { Session } from "@/lib/auth/session/auth-session";
 
 import { createWorkspaceApi } from "./workspaces";
 import { createInviteApi } from "./invites";

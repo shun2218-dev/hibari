@@ -1,5 +1,5 @@
 import type { ActivityFilter, ActivityList, ActivityUnreadCount } from "@/lib/api/types.gen";
-import type { Session } from "@/lib/auth/session";
+import type { Session } from "@/lib/auth/session/auth-session";
 
 /** アクティビティの 1 ページの数（ADR 0058 決定 6。API の既定と同じ）。 */
 export const ACTIVITY_PAGE_SIZE = 50;

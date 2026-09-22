@@ -1,5 +1,5 @@
 import type { CreateInviteRequest, Invite, InviteAcceptance, InviteList, InvitePreview } from "@/lib/api/types.gen";
-import type { Session } from "@/lib/auth/session";
+import type { Session } from "@/lib/auth/session/auth-session";
 
 import { listAll } from "./paging";
 

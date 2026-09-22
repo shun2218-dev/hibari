@@ -7,7 +7,7 @@ import type {
   ReadState,
   SendMessageRequest,
 } from "@/lib/api/types.gen";
-import type { Session } from "@/lib/auth/session";
+import type { Session } from "@/lib/auth/session/auth-session";
 
 /** 1 ページのメッセージの数。API の既定と同じ（ADR 0012）。 */
 export const MESSAGE_PAGE_SIZE = 50;

@@ -6,7 +6,7 @@ import { NotificationMenu, type TemporaryMute } from "@/components/chat/notifica
 import type { RoomHeader } from "@/components/chat/room-header";
 import type { RoomNotifications } from "@/lib/api/types.gen";
 import { useChatState, useChatStore } from "./use-chat-store";
-import { isMuted, muteUntilLabel, notifyLevelLabels, temporaryMuteUntil } from "@/lib/chat/notifications/notifications";
+import { isMuted, muteUntilLabel, notifyLevelLabels, temporaryMuteUntil } from "@/lib/chat/notifications/mute";
 
 /**
  * ルームのヘッダーの「通知」（ADR 0055。chat/notification/menu.png）。RoomHeader の notifications に渡す値を作る。

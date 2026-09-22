@@ -11,7 +11,11 @@
 5. ストアやルーターにつないで描く → 使うルートの `app/…/_components/`（複数のルートで使うなら、共通の最も近い親のルート）
 
 - 親の階層へ上がる import（`../`）は書かない。`@/` から書く（ESLint が止める）。同じディレクトリの中は `./` でよい。
-- `index.ts` で束ね直さない。分けたディレクトリの入口は役割の名前にする（`lib/chat/store/chat-store.ts`）。
+- `index.ts` で束ね直さない。分けたディレクトリの入口の名前は次のとおり。
+  - `lib/` は「ドメイン + 役割」にする（`lib/chat/store/chat-store.ts`、`lib/chat/api/chat-api.ts`、`lib/auth/session/auth-session.ts`）。
+  - 入口でないファイルは役割の名前にする（`lib/chat/realtime/subscriptions.ts`、`lib/chat/notifications/mute.ts`）。
+  - どちらも**ディレクトリ名をそのまま繰り返さない**。繰り返したくなるのは、名前が役割を表していない合図。
+  - `components/` はディレクトリと同じ名前にする（`components/chat/message-item/message-item.tsx`）。React の慣習に合わせる。
 - **行数だけを理由にファイルを分けない。** 役割が混ざっているときに分ける（複数のダイアログ・プラグインが 1 ファイルにある、など）。
   300 行はその見直しのきっかけにするだけで、1 つの部品やコンテナが大きいのはそのままでよい。テストは実装の隣に置く。
 - リポジトリの `testdata/` は `@testdata/` で import する。

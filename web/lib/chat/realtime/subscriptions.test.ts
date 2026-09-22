@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createSession } from "@/lib/auth/session";
+import { createSession } from "@/lib/auth/session/auth-session";
 import { message, naoki, room, roomMember, savedItem } from "@/test/chat-data";
 import { type Handler, TEST_API_BASE, fakeApi, json, tokens } from "@/test/fake-api";
 import { fakeSockets } from "@/test/fake-socket";
 
 import { createChatApi } from "@/lib/chat/api/chat-api";
-import { type RealtimeOptions, createRealtime } from "./realtime";
+import { type RealtimeOptions, createRealtime } from "./subscriptions";
 import { createChatStore } from "@/lib/chat/store/chat-store";
 
 function setup(

@@ -3,7 +3,7 @@
 import { type ReactNode, createContext, useState } from "react";
 
 import { getApiBaseUrl } from "@/lib/api/base-url";
-import { type Session, createSession } from "@/lib/auth/session";
+import { createSession, type Session } from "@/lib/auth/session/auth-session";
 
 /** 値を読むフックは hooks/auth/use-session.ts に置く（ADR 0060）。 */
 export const SessionContext = createContext<Session | null>(null);

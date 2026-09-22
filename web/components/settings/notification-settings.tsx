@@ -2,7 +2,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { RadioCard } from "@/components/ui/choice";
 import type { NotifyLevel } from "@/lib/api/types.gen";
-import { notifyLevelLabels } from "@/lib/chat/notifications/notifications";
+import { notifyLevelLabels } from "@/lib/chat/notifications/mute";
 import { cx } from "@/lib/cx";
 
 /** 全体の通知する内容（ADR 0055 決定 1）。未設定なら mentions（Slack の既定と同じ）。 */
