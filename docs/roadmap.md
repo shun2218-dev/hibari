@@ -1011,13 +1011,13 @@ Push 通知（APNs / FCM）は Phase 7 以降のまま。ここで作るのは�
 
 ### Phase 6.14a — ミュートと通知の設定
 
-**ADR で決めること** ← ADR 0055（提案）
+**ADR で決めること** ← 完了（ADR 0055）
 - ミュートの意味 → 通知を全部止め、サイドバーでは薄くする。未読数とメンションの件数はこれまでどおり数える（見せ方だけを変える）
 - 設定の持ち方 → 全体はユーザーごとの `user_notification_settings`、チャンネルごとは `room_members` の `notify_level` / `muted` / `muted_until`。期限は読むときに `Clock` で落とす
 - 同期 → 本人宛ての `notifications.updated` / `room.notifications_updated`。再接続ではルームの一覧と全体の設定を取り直す
 
 **構築順**（PR を分ける）
-1. 設計: ADR 0055
+1. 設計: ADR 0055 ← 完了
 2. デザイン: ヘッダーの「通知」のメニュー（チャンネル / DM）、一時的なミュート、サイドバーの薄い表示、ユーザー設定の「通知」。story に描いて `docs/ui/` に足し、オーナーに見てもらう
 3. DB と API
 4. Web
