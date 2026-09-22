@@ -614,6 +614,17 @@ describe("MessageItem のピン留めと「後で」（ADR 0054）", () => {
     expect(screen.queryByText("中村 涼 がピン留めしました")).not.toBeInTheDocument();
   });
 
+  it("スレッドの親の「…」で返信の通知を切り替える（ADR 0056）", async () => {
+    const onClick = vi.fn();
+    const { rerender } = render(<MessageItem message={message()} threadNotify={{ notifying: true, onClick }} menuOpen />);
+
+    await userEvent.click(screen.getByRole("button", { name: "返信の通知をオフにする" }));
+    expect(onClick).toHaveBeenCalledOnce();
+
+    rerender(<MessageItem message={message()} threadNotify={{ notifying: false, onClick }} menuOpen />);
+    expect(screen.getByRole("button", { name: "新しい返信の通知を受け取る" })).toBeInTheDocument();
+  });
+
   it("「…」にピン留めの操作を出し、押すと呼ぶ", async () => {
     const onClick = vi.fn();
     render(<MessageItem message={message()} pin={{ label: "チャンネルへピン留めする", onClick }} menuOpen />);

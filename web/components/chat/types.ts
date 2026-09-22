@@ -157,6 +157,13 @@ export type ThreadListItemView = {
   replyCount: number;
   lastReplyLabel: string;
   unreadCount: number;
+  /**
+   * 返信の通知がオンか（ADR 0056 決定 1）。オフの行は強調しない（未読数を出さない）。
+   * 未読はオフでも数えているので、開けば既読になる（決定 2）。
+   */
+  notifyReplies: boolean;
+  /** このスレッドの未読の範囲にある自分宛てのメンションの数。オフでも `@N` は出す（ADR 0056 決定 2）。 */
+  mentionCount: number;
 };
 
 /**
