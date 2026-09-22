@@ -79,7 +79,7 @@ CREATE INDEX messages_room_id_pinned_at_idx ON messages (room_id, pinned_at DESC
 
 `by` をユーザーの ID だけにしないのは、`sender` と同じ理由。ピン留めした人がワークスペースを抜けていても、名前を出せるようにする。
 
-### 3. ピン留めのシステムメッセージ: `message_pinned` を足す（オーナーと確認）
+### 3. ピン留めのシステムメッセージ: `message_pinned` を足す（オーナーと確認） → **2026-09-22 に改めた（ログは残さない。末尾の「状態の履歴」）**
 
 ADR 0033 のシステムメッセージに種類を 1 つ足す。
 
