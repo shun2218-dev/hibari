@@ -1,5 +1,5 @@
 import type { FollowedThread, Invite, Member, Message, Room, RoomMember, Workspace } from "@/lib/api/types.gen";
-import type { ChatApi } from "@/lib/chat/api";
+import type { ChatApi } from "@/lib/chat/api/chat-api";
 import { isMuted, nextMuteExpiry } from "@/lib/chat/notifications/notifications";
 import { insertByActivity } from "@/lib/chat/store/messages";
 import type {

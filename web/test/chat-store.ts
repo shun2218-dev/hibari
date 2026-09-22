@@ -1,4 +1,4 @@
-import { createChatApi } from "@/lib/chat/api";
+import { createChatApi } from "@/lib/chat/api/chat-api";
 import { createChatStore } from "@/lib/chat/store/chat-store";
 import type { ChatStoreOptions } from "@/lib/chat/store/state";
 import { createSession } from "@/lib/auth/session";

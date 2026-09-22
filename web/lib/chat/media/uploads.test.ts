@@ -4,7 +4,7 @@ import { type Attachment, type CreateAttachmentRequest, PROBLEM_TYPE_PREFIX } fr
 import { createSession } from "@/lib/auth/session";
 import { type Handler, TEST_API_BASE, fakeApi, json, tokens } from "@/test/fake-api";
 
-import { createChatApi } from "@/lib/chat/api";
+import { createChatApi } from "@/lib/chat/api/chat-api";
 import { type PutFile, UploadAbortedError } from "./put-file";
 import {
   MAX_ATTACHMENTS,

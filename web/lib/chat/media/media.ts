@@ -1,6 +1,7 @@
 import { ApiError } from "@/lib/api/error";
 
-import { AVATAR_BATCH_SIZE, type ChatApi } from "@/lib/chat/api";
+import type { ChatApi } from "@/lib/chat/api/chat-api";
+import { AVATAR_BATCH_SIZE } from "@/lib/chat/api/media";
 
 /**
  * 画面に出す画像の署名付き GET URL（アバターと、メッセージに付いた画像）。

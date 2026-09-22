@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSession } from "@/lib/auth/session";
 import { type Handler, TEST_API_BASE, fakeApi, json, problem, tokens } from "@/test/fake-api";
 
-import { createChatApi } from "@/lib/chat/api";
+import { createChatApi } from "@/lib/chat/api/chat-api";
 import { createMediaStore } from "./media";
 
 const HOUR = 60 * 60 * 1000;

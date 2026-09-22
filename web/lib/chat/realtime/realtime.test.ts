@@ -5,7 +5,7 @@ import { message, naoki, room, roomMember, savedItem } from "@/test/chat-data";
 import { type Handler, TEST_API_BASE, fakeApi, json, tokens } from "@/test/fake-api";
 import { fakeSockets } from "@/test/fake-socket";
 
-import { createChatApi } from "@/lib/chat/api";
+import { createChatApi } from "@/lib/chat/api/chat-api";
 import { type RealtimeOptions, createRealtime } from "./realtime";
 import { createChatStore } from "@/lib/chat/store/chat-store";
 
