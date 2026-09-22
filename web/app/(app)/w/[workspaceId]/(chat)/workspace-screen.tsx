@@ -19,6 +19,7 @@ import { MyStatusDialog } from "./my-status";
 
 import { CreateWorkspace } from "../../../create-workspace";
 import { CreateRoom } from "./create-room";
+import { useDesktopNotifications } from "./desktop-notifications";
 import { StartDm } from "./start-dm";
 import { type ProfileSender, RoomProfile } from "./profile";
 import { RoomMembers } from "./room-members";
@@ -41,6 +42,7 @@ export function WorkspaceScreen() {
   // 「後で」（ADR 0054）。スレッドの一覧と同じく、ルームの代わりにメインの領域に出す
   const savedView = pathname === `/w/${workspaceId}/saved`;
   const router = useRouter();
+  const notificationBanner = useDesktopNotifications();
   const session = useSession();
   const { state: sessionState } = useSessionState();
   const store = useChatStore();
@@ -100,6 +102,8 @@ export function WorkspaceScreen() {
     store.loadThreads(workspaceId);
     // 「後で」の差分のカーソルを決め、メッセージの印の変化を取りこぼさないようにする（ADR 0054 決定 7）
     void store.loadSaved(workspaceId, "in_progress");
+    // ブラウザ通知の判定に使う全体の設定（ADR 0057）。ルームを開かなくても要る
+    void store.loadNotificationLevel(workspaceId);
   }, [store, workspaceId]);
 
   // メンバーではない（URL を直接開いた、キックされた）ワークスペースは覚えている場所から外して、入口に戻す。
@@ -236,6 +240,7 @@ export function WorkspaceScreen() {
             rooms={roomViews}
             selectedRoomId={roomId}
             roomHref={(id) => `/w/${workspaceId}/r/${id}`}
+            notice={notificationBanner}
             search={search}
             onSearchChange={setSearch}
             switcherOpen={switcherOpen}

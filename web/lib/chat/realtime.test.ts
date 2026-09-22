@@ -11,7 +11,11 @@ import { createChatStore } from "./store";
 
 function setup(
   routes: Record<string, Handler>,
-  { autoAck = true, createActivity }: { autoAck?: boolean; createActivity?: RealtimeOptions["createActivity"] } = {},
+  {
+    autoAck = true,
+    createActivity,
+    onEvent,
+  }: { autoAck?: boolean; createActivity?: RealtimeOptions["createActivity"]; onEvent?: RealtimeOptions["onEvent"] } = {},
 ) {
   let tickets = 0;
   const log: string[] = [];
@@ -27,6 +31,7 @@ function setup(
   const realtime = createRealtime({
     store,
     createActivity,
+    onEvent,
     url: "ws://api.test/api/v1/ws",
     createSocket: (url) => {
       const socket = sockets.createSocket(url);
@@ -331,6 +336,24 @@ describe("createRealtime", () => {
     sockets.last().receive({ type: "message.created", data: message(1, { room_id: "r1" }) });
 
     expect(store.getSnapshot().rooms.r1?.last_message_seq).toBe(1);
+    realtime.stop();
+  });
+
+  it("hands each event to onEvent after applying it to the store (ADR 0057)", async () => {
+    const seen: (number | undefined)[] = [];
+    const { store, realtime, sockets } = setup(
+      { "GET /api/v1/workspaces/ws-1/rooms": roomsOf("r1") },
+      // 通知の判定はストアに当てた後の値を読むので、受け取った時点でストアはもう進んでいる
+      { onEvent: () => seen.push(store.getSnapshot().rooms.r1?.last_message_seq) },
+    );
+    await store.loadRooms("ws-1");
+    realtime.start();
+    await vi.advanceTimersByTimeAsync(0);
+    sockets.last().open();
+
+    sockets.last().receive({ type: "message.created", data: message(1, { room_id: "r1" }) });
+
+    expect(seen).toEqual([1]);
     realtime.stop();
   });
 

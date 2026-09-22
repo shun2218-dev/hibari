@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Room } from "@/lib/api/types.gen";
 import { lastRoomId, lastWorkspaceId, rememberLocation } from "@/lib/chat/last-location";
@@ -1727,6 +1727,33 @@ describe("WorkspaceScreen", () => {
       await screen.findByRole("list", { name: "メッセージ" });
 
       expect(screen.queryByRole("button", { name: /^通知/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("デスクトップ通知の帯（ADR 0057）", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("許可がまだなら帯を出し、押したら許可を求める。「今はしない」で閉じる", async () => {
+      const requestPermission = vi.fn(async () => "granted");
+      vi.stubGlobal("Notification", Object.assign(vi.fn(), { permission: "default", requestPermission }));
+      renderWithChat(<WorkspaceScreen />, routes());
+
+      const banner = await screen.findByRole("region", { name: "デスクトップ通知" });
+      await userEvent.click(within(banner).getByRole("button", { name: "有効にする" }));
+      expect(requestPermission).toHaveBeenCalledOnce();
+
+      await userEvent.click(within(banner).getByRole("button", { name: "今はしない" }));
+      expect(screen.queryByRole("region", { name: "デスクトップ通知" })).not.toBeInTheDocument();
+    });
+
+    it("許可が決まっていれば（拒否も）帯を出さない", async () => {
+      vi.stubGlobal("Notification", Object.assign(vi.fn(), { permission: "denied", requestPermission: vi.fn() }));
+      renderWithChat(<WorkspaceScreen />, routes());
+
+      await screen.findByRole("navigation", { name: "チャンネル" });
+      expect(screen.queryByRole("region", { name: "デスクトップ通知" })).not.toBeInTheDocument();
     });
   });
 

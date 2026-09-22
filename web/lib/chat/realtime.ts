@@ -1,3 +1,5 @@
+import type { ServerEvent } from "@/lib/api/types.gen";
+
 import {
   type Activity,
   createActivity,
@@ -16,6 +18,11 @@ export type RealtimeOptions = Pick<ConnectionOptions, "url" | "createSocket" | "
      * テストでは偽物を渡す（`createSocket` と同じ形）。
      */
     createActivity?: (onChange: (active: boolean) => void) => Activity;
+    /**
+     * WebSocket で届いたイベントを、ストアに当てた後に受け取る（ブラウザ通知。ADR 0057）。
+     * 再接続の差分（REST）はここを通らないので、溜まった分をまとめて通知しない。
+     */
+    onEvent?: (event: ServerEvent) => void;
   };
 
 /** 「接続が復帰しました」を出しておく時間。 */
@@ -57,7 +64,7 @@ function desiredTargets(state: ChatState): Target[] {
  *   新しく購読したルームも、同じく ack の後に取り直す
  * - 再接続では購読がすべて外れているので、全部を購読し直して取り直す。その間は「同期しています」を出す
  */
-export function createRealtime({ store, createActivity: makeActivity, ...connectionOptions }: RealtimeOptions) {
+export function createRealtime({ store, createActivity: makeActivity, onEvent, ...connectionOptions }: RealtimeOptions) {
   // いまの接続で購読できたもの / 購読中のもの / 購読できなかったもの（同じ接続では試し直さない）
   let subscribed = new Set<string>();
   let subscribing = new Set<string>();
@@ -76,7 +83,10 @@ export function createRealtime({ store, createActivity: makeActivity, ...connect
   const connection = createConnection({
     ...connectionOptions,
     onOpen: handleOpen,
-    onEvent: (event) => store.applyEvent(event),
+    onEvent: (event) => {
+      store.applyEvent(event);
+      onEvent?.(event);
+    },
     onStateChange: handleConnectionState,
   });
 

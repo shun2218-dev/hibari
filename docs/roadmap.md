@@ -1093,12 +1093,17 @@ Push 通知（APNs / FCM）は Phase 7 以降のまま。ここで作るのは�
 **構築順**（PR を分ける）
 1. 設計: ADR 0057 ← 完了
 2. デザイン: サイドバーの上の帯、ユーザー設定の「通知」の許可の状態と「通知音」 ← 完了（`docs/ui/README.md` の「Phase 6.14b で足した画面」）
-3. Web（判定の関数、通知係のタブ、許可、音、押したときの移動。サーバーの変更はない）
+3. Web（判定の関数、通知係のタブ、許可、音、押したときの移動。サーバーの変更はない） ← 完了
+   判定は `lib/chat/desktop-notification.ts` の `shouldNotify`、通知係は `lib/chat/desktop-notifier.ts`、端末ごとの状態は `lib/notification-prefs.ts`
 
 **DoD**
-- [ ] 別のタブを見ている間にメンションされると、通知が 1 回だけ出る。押すとそのメッセージへ飛ぶ
-- [ ] 通知を許可しないと、通知を出そうとしない
-- [ ] 通知を出すときに音が鳴り、ユーザー設定で止められる
+- [x] 別のタブを見ている間にメンションされると、通知が 1 回だけ出る。押すとそのメッセージへ飛ぶ
+      （`desktop-notification.test.ts` の規則の表と中身、`desktop-notifier.test.ts` の「ロックを持つタブだけが出し…」「どれかのタブが見えていれば出さない」「押されたらそのメッセージを開く」、
+      `realtime.test.ts` の「hands each event to onEvent after applying it to the store」）
+- [x] 通知を許可しないと、通知を出そうとしない（`desktop-notifier.test.ts` の「許可されていなければ出そうとしない」、`workspace-screen.test.tsx` の「デスクトップ通知の帯」）
+- [x] 通知を出すときに音が鳴り、ユーザー設定で止められる（`desktop-notifier.test.ts`、`notification-prefs.test.ts`、`settings-sections.test.tsx`）
+
+実物では、開発サーバーで画面が崩れないこととコンソールにエラーがないこと（2 つのタブ）を確かめた。内蔵ブラウザは通知を拒否しているので、実際に通知が出るところは未確認（オーナーの Chrome で確かめる）。
 
 ---
 
