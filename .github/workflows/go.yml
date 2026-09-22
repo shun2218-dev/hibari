@@ -58,15 +58,6 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
-      redis:
-        image: redis:7.4-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 30
     env:
       # CI=true（GitHub Actions が設定する）のとき、接続先がなければテストはスキップせずに失敗する（internal/platform/testenv）。
       TEST_DATABASE_URL: postgres://hibari:hibari@localhost:5432/hibari_test?sslmode=disable
@@ -83,6 +74,18 @@ jobs:
           cache-dependency-path: |
             go.sum
             tools/go.sum
+      - name: Redis を起動する
+        # サービスコンテナは起動コマンドを渡せず、起動する前にホストのカーネルの設定も変えられないので、docker run で起動する。
+        # イメージは compose.yaml と揃える。
+        # - vm.overcommit_memory=1: 無効のままだと Redis が起動時に警告する（fork によるバックグラウンドの保存が失敗しうるため）
+        # - 引数を渡す: 何も渡さないと「設定ファイルがない」と警告する。テストのデータは残さなくてよいので保存も切る
+        run: |
+          sudo sysctl -w vm.overcommit_memory=1
+          docker run -d --name redis -p 6379:6379 redis:7.4-alpine redis-server --save "" --appendonly no
+          for _ in $(seq 30); do
+            docker exec redis redis-cli ping && break
+            sleep 1
+          done
       - name: MinIO を起動してテスト用のバケットを作る
         # サービスコンテナは起動コマンド（server /data）を渡せないので、docker run で起動する。イメージは compose.yaml と揃える。
         run: |
