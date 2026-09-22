@@ -5,7 +5,7 @@ import { useEffect, useMemo } from "react";
 import { PinsList } from "@/components/chat/pins-list";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
-import { toPinnedMessageView } from "@/lib/chat/views/lists";
+import { toPinnedMessageView } from "@/lib/chat/views/pins";
 import { toMemberNames } from "@/lib/chat/views/members";
 
 /**

@@ -12,7 +12,8 @@ import { useAvatarUrls } from "@/hooks/chat/use-media";
 import type { ActivityFilter } from "@/lib/api/types.gen";
 import { withSide } from "@/lib/chat/format/links";
 import { activityListKey } from "@/lib/chat/rules/activity-feed";
-import { toActivityItemView, toSavedItemView } from "@/lib/chat/views/lists";
+import { toActivityItemView } from "@/lib/chat/views/activity";
+import { toSavedItemView } from "@/lib/chat/views/saved";
 import { memberSettings, toMemberNames } from "@/lib/chat/views/members";
 import { toRoomSummaryView } from "@/lib/chat/views/rooms";
 
