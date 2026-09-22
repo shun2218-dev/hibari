@@ -274,3 +274,25 @@ describe("Sidebar と左のメニュー（ADR 0058）", () => {
     expect(screen.getByRole("button", { name: "アカウントメニュー" })).toHaveClass("md:hidden");
   });
 });
+
+describe("Sidebar のアーカイブしたチャンネル（ADR 0059）", () => {
+  const withArchived: RoomSummaryView[] = [
+    ...rooms,
+    { id: "r3", kind: "public", name: "デザイン旧案", unreadCount: 0, mentionCount: 0, archived: true },
+  ];
+
+  it("ふだんはチャンネルの節に出さない", () => {
+    renderSidebar({ rooms: withArchived });
+
+    expect(screen.queryByRole("link", { name: /デザイン旧案/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /デザインレビュー/ })).toBeInTheDocument();
+  });
+
+  it("検索しているときは、印を付けて出す", () => {
+    renderSidebar({ rooms: withArchived, search: "デザイン" });
+
+    const row = screen.getByRole("link", { name: /デザイン旧案/ });
+    expect(within(row).getByText("アーカイブ済み")).toBeInTheDocument();
+    expect(within(screen.getByRole("link", { name: /デザインレビュー/ })).queryByText("アーカイブ済み")).not.toBeInTheDocument();
+  });
+});

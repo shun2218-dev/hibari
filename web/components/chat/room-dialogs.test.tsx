@@ -4,10 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { DmCandidateView } from "./room-dialogs";
 import {
+  ArchiveRoomDialog,
   ConfirmMentionAllDialog,
   CreateRoomDialog,
   DeleteAttachmentDialog,
   DeleteMessageDialog,
+  DeleteRoomDialog,
   LeaveRoomDialog,
   RemoveSavedItemDialog,
   RoomSettingsDialog,
@@ -118,6 +120,77 @@ describe("RoomSettingsDialog", () => {
     render(<RoomSettingsDialog open kind="public" name="雑談" members={[]} canEdit />);
 
     expect(screen.queryByRole("button", { name: "退出する" })).not.toBeInTheDocument();
+  });
+});
+
+describe("RoomSettingsDialog のアーカイブと削除（ADR 0059）", () => {
+  const members = [{ id: "u1", name: "あなた", isSelf: true, canRemove: false }];
+
+  it("渡された操作の節だけを出す", async () => {
+    const onArchive = vi.fn();
+    const onDelete = vi.fn();
+    const { rerender } = render(
+      <RoomSettingsDialog open kind="public" name="雑談" members={members} canEdit={false} onArchive={onArchive} />,
+    );
+    expect(screen.queryByRole("heading", { name: "チャンネルを削除" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "アーカイブする" }));
+    expect(onArchive).toHaveBeenCalledOnce();
+
+    rerender(
+      <RoomSettingsDialog open kind="public" name="雑談" members={members} canEdit onArchive={onArchive} onDelete={onDelete} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "削除する" }));
+    expect(onDelete).toHaveBeenCalledOnce();
+  });
+
+  it("アーカイブ中は、admin でも名前を変えられず、復元を出す", async () => {
+    const onUnarchive = vi.fn();
+    render(
+      <RoomSettingsDialog open kind="private" name="リリース準備" members={members} canEdit archived onUnarchive={onUnarchive} onDelete={vi.fn()} />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "チャンネル名" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "保存する" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "メンバーを追加" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "アーカイブする" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "復元する" }));
+    expect(onUnarchive).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ArchiveRoomDialog（ADR 0059）", () => {
+  it("名前と、戻せることを伝えて確定する", async () => {
+    const onConfirm = vi.fn();
+    render(<ArchiveRoomDialog open name="雑談" onConfirm={onConfirm} />);
+
+    expect(screen.getByRole("dialog", { name: "チャンネルをアーカイブしますか？" })).toHaveAccessibleDescription(/雑談 をアーカイブします。.*あとで復元できます。/);
+    await userEvent.click(screen.getByRole("button", { name: "アーカイブする" }));
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+});
+
+describe("DeleteRoomDialog（ADR 0059）", () => {
+  it("「はい、完全に削除します」にチェックを入れるまで押せない", async () => {
+    const onConfirm = vi.fn();
+    render(<DeleteRoomDialog open name="雑談" onConfirm={onConfirm} />);
+
+    expect(screen.getByRole("dialog", { name: "チャンネルを削除しますか？" })).toHaveAccessibleDescription(/元に戻せません/);
+    const button = screen.getByRole("button", { name: "チャンネルを削除する" });
+    expect(button).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "はい、完全に削除します" }));
+    expect(button).toBeEnabled();
+    await userEvent.click(button);
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  it("開き直すと、チェックは外れた状態から始まる", async () => {
+    const { rerender } = render(<DeleteRoomDialog open name="雑談" />);
+    await userEvent.click(screen.getByRole("checkbox", { name: "はい、完全に削除します" }));
+
+    rerender(<DeleteRoomDialog open={false} name="雑談" />);
+    rerender(<DeleteRoomDialog open name="雑談" />);
+    expect(screen.getByRole("checkbox", { name: "はい、完全に削除します" })).not.toBeChecked();
   });
 });
 

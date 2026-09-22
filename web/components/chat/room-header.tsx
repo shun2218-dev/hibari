@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/button";
 import { BellIcon, BellOffIcon, ChevronLeftIcon, LockIcon, SettingsIcon, UsersIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
@@ -21,6 +22,8 @@ type RoomHeaderProps = {
   notifications?: { muted: boolean; open: boolean; onToggle?: () => void; menu?: ReactNode };
   /** モバイルで一覧に戻る。md 以上では出さない。 */
   onBack?: () => void;
+  /** アーカイブされている（ADR 0059）。名前の横にラベルを出す。 */
+  archived?: boolean;
 };
 
 export function RoomHeader({
@@ -32,6 +35,7 @@ export function RoomHeader({
   onOpenSettings,
   notifications,
   onBack,
+  archived = false,
 }: RoomHeaderProps) {
   return (
     <header className="relative flex h-14 shrink-0 items-center gap-1 border-b border-border px-2 md:pr-3 md:pl-4">
@@ -43,6 +47,12 @@ export function RoomHeader({
           {kind === "public" && <span aria-label="公開チャンネル">#</span>}
           {kind === "private" && <LockIcon aria-label="非公開チャンネル" aria-hidden={false} role="img" className="size-4" />}
           <span className="truncate">{name}</span>
+          {/* モバイルは幅が足りず名前が切れるので出さない。入力欄の代わりの帯（ArchivedRoomBar）で分かる */}
+          {archived && (
+            <span className="ml-1 hidden md:block">
+              <Badge>アーカイブ済み</Badge>
+            </span>
+          )}
         </h1>
         <p className="text-2xs text-text-muted">メンバー{memberCount}人</p>
       </div>

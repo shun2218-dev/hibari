@@ -37,3 +37,13 @@ describe("RoomHeader の「通知」（ADR 0055）", () => {
     expect(screen.queryByRole("button", { name: /通知/ })).not.toBeInTheDocument();
   });
 });
+
+describe("RoomHeader のアーカイブ（ADR 0059）", () => {
+  it("アーカイブされていれば、名前の横にラベルを出す", () => {
+    const { rerender } = render(<RoomHeader kind="public" name="雑談" memberCount={3} />);
+    expect(screen.queryByText("アーカイブ済み")).not.toBeInTheDocument();
+
+    rerender(<RoomHeader kind="public" name="雑談" memberCount={3} archived />);
+    expect(screen.getByRole("heading")).toHaveTextContent("雑談アーカイブ済み");
+  });
+});
