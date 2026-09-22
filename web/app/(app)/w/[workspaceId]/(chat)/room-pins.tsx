@@ -2,16 +2,24 @@
 
 import { useEffect, useMemo } from "react";
 
-import { PinsPanel } from "@/components/chat/pins-panel";
+import { PinsList } from "@/components/chat/pins-list";
 import { useAvatarUrls, useChatState, useChatStore } from "@/lib/chat/chat-provider";
-import { roomName, toMemberNames, toPinnedMessageView } from "@/lib/chat/views";
+import { toMemberNames, toPinnedMessageView } from "@/lib/chat/views";
 
 /**
- * ルームのピン留めの一覧（ADR 0054。chat/pin/panel.png）。ヘッダーの「ピン留め N」から開く。
- * 一覧はルームを開いたときに取ってあり、開いている間の変化は message.updated と差分で直る（専用のイベントはない）。
- * 行を押すと、そのメッセージへ飛ぶ（`?m=`。ADR 0042）。
+ * ルームの「ピン」のタブ（ADR 0054。chat/pin/list.png）。タイムラインの代わりにメインの領域に出す（Slack と同じ）。
+ * 開いている間の変化は message.updated と差分で直る（専用のイベントはない）。カードを押すと、そのメッセージへ飛ぶ（`?m=`）。
  */
-export function RoomPins({ workspaceId, roomId, onClose }: { workspaceId: string; roomId: string; onClose: () => void }) {
+export function RoomPins({
+  workspaceId,
+  roomId,
+  onOpen,
+}: {
+  workspaceId: string;
+  roomId: string;
+  /** カードを押した。「メッセージ」のタブに戻す。 */
+  onOpen: () => void;
+}) {
   const store = useChatStore();
   const room = useChatState((s) => s.rooms[roomId]);
   const pins = useChatState((s) => s.pins[roomId]);
@@ -34,19 +42,19 @@ export function RoomPins({ workspaceId, roomId, onClose }: { workspaceId: string
   // 外せるのは投稿できる人だけ（ADR 0054 決定 4）。参加していない public ルームは読めるだけ
   const canPin = room.kind !== "public" || room.is_member;
   return (
-    <PinsPanel
-      room={{ kind: room.kind, name: roomName(room) }}
+    <PinsList
+      roomKind={room.kind}
       // 取得中と失敗の画面はデザインにない。取れるまでは何も並べない（0 件の表示と取り違えないように）
       pins={pins?.status === "ready" ? views : undefined}
+      onOpen={onOpen}
       onUnpin={
         canPin
-          ? (key) =>
+          ? (key: string) =>
               void store.togglePin(roomId, key).catch((err: unknown) => {
                 console.error("failed to unpin a message", err);
               })
           : undefined
       }
-      onClose={onClose}
     />
   );
 }

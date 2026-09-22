@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent, useRef } from "react";
+import { type ComponentType, type KeyboardEvent, useRef } from "react";
 
 import { cx } from "@/lib/cx";
 
@@ -9,6 +9,8 @@ export type TabItem<T extends string> = {
   label: string;
   /** ラベルの後ろに添える件数。渡さなければ出さない（Slack の「後で」は「進行中」にだけ付く）。 */
   count?: number;
+  /** ラベルの前に置くアイコン（ルームの「メッセージ / ピン」。Slack と同じ）。読み上げない。 */
+  icon?: ComponentType<{ className?: string }>;
 };
 
 /**
@@ -23,12 +25,15 @@ export function Tabs<T extends string>({
   value,
   onChange,
   panelId,
+  bordered = true,
 }: {
   label: string;
   items: readonly TabItem<T>[];
   value: T;
   onChange?: (value: T) => void;
   panelId?: string;
+  /** 並びの下に線を引く。外側がすでに線を持つ（ルームのタブは画面の幅いっぱいに引く）なら false。 */
+  bordered?: boolean;
 }) {
   const list = useRef<HTMLDivElement>(null);
 
@@ -42,7 +47,7 @@ export function Tabs<T extends string>({
   }
 
   return (
-    <div ref={list} role="tablist" aria-label={label} onKeyDown={onKeyDown} className="flex gap-6 border-b border-border">
+    <div ref={list} role="tablist" aria-label={label} onKeyDown={onKeyDown} className={cx("flex gap-6", bordered && "border-b border-border")}>
       {items.map((item) => {
         const selected = item.value === value;
         return (
@@ -60,6 +65,7 @@ export function Tabs<T extends string>({
               selected ? "font-semibold text-text" : "text-text-secondary hover:text-text",
             )}
           >
+            {item.icon && <item.icon className="size-4" />}
             {item.label}
             {item.count !== undefined && <span className="font-mono text-sm font-normal">{item.count}</span>}
             {selected && <span aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-primary" />}

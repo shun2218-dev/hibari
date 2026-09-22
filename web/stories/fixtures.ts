@@ -743,29 +743,14 @@ const pinnedByKey: Readonly<Record<string, string>> = {
   "m-1012": users.ryo.name,
 };
 
-/**
- * ピン留めのあるタイムライン（chat/pin/timeline.png）。本文の上に「〜がピン留め」、
- * ピン留めした時刻にチャンネルのログ（ADR 0054 決定 3）。m-1012 のログはこのページより前にある。
- */
-export const timelineWithPins: TimelineItem[] = timeline.flatMap((item): TimelineItem[] => {
-  if (item.type !== "message") return [item];
+/** ピン留めのあるタイムライン（chat/pin/timeline.png）。本文の上に「〜がピン留めしました」、行に黄土の地（ADR 0054）。 */
+export const timelineWithPins: TimelineItem[] = timeline.map((item) => {
+  if (item.type !== "message") return item;
   const pinnedBy = pinnedByKey[item.message.key];
-  const withPin: TimelineItem = pinnedBy ? { ...item, message: { ...item.message, pinnedBy } } : item;
-  if (item.message.key !== pendingMessageKey) return [withPin];
-  // 送信中のメッセージの直前に、ピン留めのログを挟む（10:45 にピン留めした）
-  return [
-    {
-      type: "system",
-      key: "s-pinned",
-      text: `${users.you.name} がこのチャンネルにメッセージをピン留めしました`,
-      timeLabel: "10:45",
-      link: { label: "メッセージを表示", href: "#" },
-    },
-    withPin,
-  ];
+  return pinnedBy ? { ...item, message: { ...item.message, pinnedBy } } : item;
 });
 
-/** ピン留めの一覧（chat/pin/panel.png）。ピン留めした新しい順。 */
+/** ピン留めの一覧（chat/pin/list.png）。ピン留めした新しい順。 */
 export const pinnedMessages: PinnedMessageView[] = [
   {
     key: pinnedMessageKey,
@@ -774,7 +759,6 @@ export const pinnedMessages: PinnedMessageView[] = [
     timeLabel: "今日 10:41",
     body: "行送りは 1.75 で確定にしましょう。半日開きっぱなしでも目が疲れませんでした。",
     attachmentCount: 1,
-    pinnedBy: users.you.name,
     inThread: false,
   },
   {
@@ -784,7 +768,6 @@ export const pinnedMessages: PinnedMessageView[] = [
     timeLabel: "今日 10:12",
     body: "賛成です。あとサイドバーの選択中の行、左の縦バーは 2px で十分でした。",
     attachmentCount: 0,
-    pinnedBy: users.ryo.name,
     inThread: false,
   },
   {
@@ -794,7 +777,6 @@ export const pinnedMessages: PinnedMessageView[] = [
     timeLabel: "今日 09:48",
     body: "*色の決まり*\n- 緑: 押せるもの（ボタン・リンク・選択中）\n- 琥珀: いま起きていること（未読・入力中・接続）",
     attachmentCount: 0,
-    pinnedBy: users.miyuki.name,
     inThread: true,
   },
   {
@@ -804,7 +786,6 @@ export const pinnedMessages: PinnedMessageView[] = [
     timeLabel: "9月5日",
     body: "デザインレビューの進め方: 月曜に論点を出して、水曜までにこのチャンネルで結論を出します。決まったことは `docs/ui/` に残してください。",
     attachmentCount: 0,
-    pinnedBy: users.you.name,
     inThread: false,
   },
 ];

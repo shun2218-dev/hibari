@@ -16,8 +16,10 @@ import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
 import { useMessageActions } from "./message-actions";
 import { type ProfileSender, useProfileHoverCard, useSenders } from "./profile";
+import { RoomPins } from "./room-pins";
 import { RoomSettings } from "./room-settings";
 import { RoomHeader } from "@/components/chat/room-header";
+import { type RoomTab, RoomTabs } from "@/components/chat/room-tabs";
 import { Timeline } from "@/components/chat/timeline";
 import { useSessionState } from "@/lib/auth/session-provider";
 import {
@@ -62,9 +64,6 @@ type RoomViewProps = {
   roomId: string;
   membersOpen: boolean;
   onToggleMembers: () => void;
-  /** ピン留めの一覧を右に開いている（ADR 0054）。 */
-  pinsOpen: boolean;
-  onTogglePins: () => void;
   onBack: () => void;
   onLeaveRemovedWorkspace: () => void;
   /** スレッドのパネルで開いている親（ADR 0036）。タイムラインで強調する。 */
@@ -89,8 +88,6 @@ export function RoomView({
   roomId,
   membersOpen,
   onToggleMembers,
-  pinsOpen,
-  onTogglePins,
   onBack,
   onLeaveRemovedWorkspace,
   openThreadId,
@@ -114,7 +111,6 @@ export function RoomView({
   const typing = useChatState((s) => s.typing[roomId]);
   const removal = useChatState((s) => s.removedRooms[roomId]);
   const workspaceRemoval = useChatState((s) => s.removedWorkspaces[workspaceId]);
-  const pins = useChatState((s) => s.pins[roomId]);
   const [joining, setJoining] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   // 入力欄の本文。ルームごとに作り直すので、別のルームに移ると消える
@@ -131,11 +127,11 @@ export function RoomView({
   const [scrollTo, setScrollTo] = useState<{ key: string; align: "center" | "start" }>();
   const [notFound, setNotFound] = useState(false);
   const visible = useDocumentVisible();
+  // ヘッダーの下の「メッセージ / ピン」（ADR 0054 決定 11 の追記）。ルームごとに作り直すので、別のルームでは「メッセージ」から始まる
+  const [tab, setTab] = useState<RoomTab>("messages");
 
   useEffect(() => {
     store.openRoom(roomId);
-    // ヘッダーのピン留めの件数に使う（ADR 0054）。変化は message.updated と差分で直る
-    void store.loadPins(roomId);
   }, [store, roomId]);
 
   // `@` の補完にはルームのメンバーが要る（ADR 0043）。メンバーパネルを開かなくても引いておく
@@ -155,6 +151,8 @@ export function RoomView({
     if (jumpMessageId === undefined || jumpedRef.current === jumpMessageId) return;
     jumpedRef.current = jumpMessageId;
     setNotFound(false);
+    // ピンのカードから飛んだときも、タイムラインに戻して飛び先を見せる
+    setTab("messages");
     void store.jumpToMessage(roomId, jumpMessageId).then(({ found, threadRootId }) => {
       setNotFound(!found);
       if (found) {
@@ -263,12 +261,8 @@ export function RoomView({
         memberNames,
         workspaceMemberNames,
         statuses: statusEmojis,
-        room: { workspaceId, roomId },
-        pinnedMessages: pins?.messages,
       }),
     [
-      roomId,
-      pins,
       messages,
       unreadAfterSeq,
       outgoing,
@@ -365,8 +359,6 @@ export function RoomView({
       // ワークスペースから外されたら、もう読めないので出さない
       onOpenSettings={room.kind === "dm" || removedFromWorkspace ? undefined : () => setSettingsOpen(true)}
       onBack={onBack}
-      // 件数が取れるまでは出さない（0 件と取り違えないように）
-      pins={pins?.status === "ready" ? { count: pins.messages.length, open: pinsOpen, onToggle: onTogglePins } : undefined}
     />
   );
 
@@ -383,8 +375,11 @@ export function RoomView({
   return (
     <>
       {header}
+      <RoomTabs value={tab} onChange={setTab} />
       <ConnectionBanner status={banner} />
-      {unreadBarCount > 0 && (
+      {/* 「ピン」のタブではタイムラインと入力欄の代わりに一覧を出す（Slack と同じ。ADR 0054） */}
+      {tab === "pins" && <RoomPins workspaceId={workspaceId} roomId={roomId} onOpen={() => setTab("messages")} />}
+      {tab === "messages" && unreadBarCount > 0 && (
         <UnreadJumpBar
           count={unreadBarCount}
           onJump={() => {
@@ -395,7 +390,8 @@ export function RoomView({
       )}
       {notFound && <MessageNotFoundNotice onClose={() => setNotFound(false)} />}
       {/* 取得中と、取得できなかったとき（その画面はデザインにない）は、ヘッダーだけを出す */}
-      {ready &&
+      {tab === "messages" &&
+        ready &&
         (items.length === 0 ? (
           <EmptyMessages kind={room.kind} name={roomName(room)} />
         ) : (
@@ -428,7 +424,7 @@ export function RoomView({
             profileHoverCardFor={profileHoverCardFor}
           />
         ))}
-      {room.kind === "public" && !room.is_member ? (
+      {tab !== "messages" ? null : room.kind === "public" && !room.is_member ? (
         <JoinRoomBar joining={joining} onJoin={join} />
       ) : (
         ready && (

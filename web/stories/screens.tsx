@@ -25,10 +25,11 @@ import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import { MembersPanel } from "@/components/chat/members-panel";
-import { PinsPanel } from "@/components/chat/pins-panel";
+import { PinsList } from "@/components/chat/pins-list";
 import { ProfileHoverCard } from "@/components/chat/profile-card";
 import { ProfilePanel } from "@/components/chat/profile-panel";
 import { RoomHeader } from "@/components/chat/room-header";
+import { RoomTabs } from "@/components/chat/room-tabs";
 import { RemoveSavedItemDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
 import { SavedList } from "@/components/chat/saved-list";
 import { Sidebar } from "@/components/chat/sidebar";
@@ -213,11 +214,11 @@ type ChatOptions = {
     | "panel-from-members";
   /**
    * ピン留め（ADR 0054）。
-   * - timeline: 本文の上の「〜がピン留め」とチャンネルのログ
+   * - timeline: 本文の上の「〜がピン留めしました」と黄土の地
    * - menu / menu-pinned: 「…」の「チャンネルへピン留めする」/「チャンネルからピンを外す」
-   * - panel / panel-empty: ヘッダーの「ピン留め」から開く右のパネル（モバイルは全画面）
+   * - list / list-hover / list-empty: ヘッダーの下の「ピン」のタブ（タイムラインの代わりにメインの領域に出す）
    */
-  pins?: "timeline" | "menu" | "menu-pinned" | "panel" | "panel-empty";
+  pins?: "timeline" | "menu" | "menu-pinned" | "list" | "list-hover" | "list-empty";
   /**
    * 「後で」（ADR 0054）。
    * - hover / hover-saved: メッセージのホバーのブックマーク（保存前・保存済み）
@@ -360,7 +361,8 @@ export function chat({
         : savedTab === "completed"
           ? savedCompleted
           : savedInProgress;
-  const pinsPanel = pins === "panel" || pins === "panel-empty";
+  // 「ピン」のタブでは、タイムラインと入力欄の代わりに一覧を出す（Slack と同じ。ADR 0054）
+  const pinsTab = pins === "list" || pins === "list-hover" || pins === "list-empty";
   return (
     <>
       <ChatLayout
@@ -410,12 +412,6 @@ export function chat({
               members={withStatus ? roomMembersWithPresence : roomMembers}
               onOpenProfile={profile ? noop : undefined}
             />
-          ) : pinsPanel ? (
-            <PinsPanel
-              room={{ kind: selectedRoom.kind, name: selectedRoom.name }}
-              pins={pins === "panel-empty" ? [] : pinnedMessages}
-              onUnpin={noop}
-            />
           ) : profilePanel ? (
             profilePanel
           ) : threadContent ? (
@@ -455,13 +451,22 @@ export function chat({
             memberCount={selectedRoom.memberCount}
             membersOpen={members}
             onOpenSettings={noop}
-            pins={pins ? { count: pins === "panel-empty" ? 0 : pinnedMessages.length, open: pinsPanel } : undefined}
+          />
+        )}
+        {/* ルームのヘッダーの下には、いつも「メッセージ / ピン」のタブがある（ADR 0054） */}
+        {!roomRemoved && !threads && !savedList && <RoomTabs value={pinsTab ? "pins" : "messages"} />}
+        {pinsTab && (
+          <PinsList
+            roomKind={selectedRoom.kind}
+            pins={pins === "list-empty" ? [] : pinnedMessages}
+            onUnpin={noop}
+            hoveredKey={pins === "list-hover" ? pinnedMessages[0].key : undefined}
           />
         )}
         <ConnectionBanner status={banner ?? null} />
         {jump === "unread-bar" && <UnreadJumpBar count={12} onJump={noop} />}
         {jump === "not-found" && <MessageNotFoundNotice onClose={noop} />}
-        {body === "timeline" && !threads && !savedList && (
+        {body === "timeline" && !threads && !savedList && !pinsTab && (
           <Timeline
             items={
               profile === "hover-former" || profile === "panel-former"
@@ -536,7 +541,7 @@ export function chat({
         {body === "empty" && <EmptyMessages kind={selectedRoom.kind} name={selectedRoom.name} />}
         {roomRemoved && <RoomUnavailable />}
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
-        {footer === "composer" && !threads && !savedList && (
+        {footer === "composer" && !threads && !savedList && !pinsTab && (
           <Composer
             value={composer === "formatted" || composer === "link-dialog" ? composerDraft : mentionQuery === undefined ? "" : "金曜の件、"}
             canSend={mentionQuery !== undefined || composer === "formatted" || composer === "link-dialog"}

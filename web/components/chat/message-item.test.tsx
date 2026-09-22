@@ -605,13 +605,13 @@ describe("MessageItem のピン留めと「後で」（ADR 0054）", () => {
   it("ピン留めされていれば、本文の上に誰がピン留めしたかを出す", () => {
     render(<MessageItem message={message({ pinnedBy: "中村 涼" })} />);
 
-    expect(screen.getByText("中村 涼 がピン留め")).toBeInTheDocument();
+    expect(screen.getByText("中村 涼 がピン留めしました")).toBeInTheDocument();
   });
 
   it("削除済みのメッセージには、ピン留めの印を出さない（削除でピンも外れる）", () => {
     render(<MessageItem message={message({ pinnedBy: "中村 涼", deleted: true })} />);
 
-    expect(screen.queryByText("中村 涼 がピン留め")).not.toBeInTheDocument();
+    expect(screen.queryByText("中村 涼 がピン留めしました")).not.toBeInTheDocument();
   });
 
   it("「…」にピン留めの操作を出し、押すと呼ぶ", async () => {

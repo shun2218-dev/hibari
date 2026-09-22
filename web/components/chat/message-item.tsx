@@ -210,11 +210,11 @@ export function MessageItem({
   const reactions = deleted || status !== "sent" ? [] : (message.reactions ?? []);
   const canReact = onTogglePicker !== undefined && !deleted && status === "sent" && editing === null;
   const actionable = status !== "failed" && !deleted && editing === null && (canReply || canReact || canSave || hasMenu);
-  // 削除したらピンも外れる（ADR 0054 決定 4）ので、削除済みには出さない
-  const pinnedBy = deleted ? undefined : message.pinnedBy;
   // 自分宛ては「いま起きていること」なので琥珀（ADR 0043）。既読になっても消さない。
   // スレッドで開いている親は、どれを開いているかの方が先に要るので、そちらの色を優先する
   const mentionsMe = Boolean(message.mentionsMe) && !deleted;
+  // 削除したらピンも外れる（ADR 0054 決定 4）ので、削除済みには出さない
+  const pinnedBy = deleted ? undefined : message.pinnedBy;
 
   return (
     <article
@@ -232,7 +232,10 @@ export function MessageItem({
               ? "bg-surface-muted"
               : mentionsMe
                 ? "bg-attention-subtle hover:bg-surface-muted focus-within:bg-surface-muted"
-                : "hover:bg-surface-muted focus-within:bg-surface-muted",
+                : pinnedBy
+                  ? // ピン留めしたメッセージは黄土の地（Slack と同じく行ごと。ADR 0054）。自分宛ての琥珀の方を優先する
+                    "bg-pinned-subtle hover:bg-surface-muted focus-within:bg-surface-muted"
+                  : "hover:bg-surface-muted focus-within:bg-surface-muted",
       )}
     >
       {status === "failed" && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-danger" />}
@@ -259,10 +262,10 @@ export function MessageItem({
 
       <div className="min-w-0 flex-1">
         {pinnedBy && (
-          // 本文より先に「誰がピン留めしたか」を読ませる（Slack と同じ位置）。押せないので緑にしない
-          <p className="flex items-center gap-1 pb-0.5 text-2xs font-medium text-text-secondary">
-            <PinIcon className="size-3" />
-            {pinnedBy} がピン留め
+          // 本文より先に「誰がピン留めしたか」を読ませる（Slack と同じ位置と文言）。押せないので緑にしない
+          <p className="flex items-center gap-1 pb-0.5 text-xs text-text-secondary">
+            <PinIcon className="size-3.5 text-pinned" fill="currentColor" />
+            {pinnedBy} がピン留めしました
           </p>
         )}
         {!message.grouped && (
