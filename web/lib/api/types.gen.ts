@@ -24,7 +24,7 @@ export type MentionKind = "user" | "channel" | "here";
 
 export type Presence = "active" | "idle" | "offline";
 
-export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed";
+export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed" | "message_pinned";
 
 export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified";
 
@@ -420,6 +420,8 @@ export interface Message {
   mentions: Mention[];
   /** reactions は付いた絵文字のリアクション（ADR 0044）。最初に付いた順で、削除済みのメッセージでは空配列。 */
   reactions: MessageReaction[];
+  /** pinned はピン留めされているときだけ入る。されていなければ null（ADR 0054 決定 2）。 見る人によらない値なので、WebSocket の配信でもそのまま載せる。 */
+  pinned: MessagePin | null;
   created_at: string;
   edited_at: string | null;
   deleted_at: string | null;
@@ -430,6 +432,8 @@ export interface SystemEvent {
   /** old_name と NewName は room_renamed だけで入る。 */
   old_name?: string;
   new_name?: string;
+  /** message_id は message_pinned だけで入る。ピン留めした対象（ADR 0054 決定 3）。 対象が読めるか・削除されていないかは、クライアントが手元のメッセージで判断する（ここでは判定しない）。 */
+  message_id?: string;
 }
 
 export interface ThreadSummary {
@@ -454,6 +458,12 @@ export interface MessageReaction {
   me?: boolean;
   /** users は付けた人の先頭 8 人（最初に付いた順）。ホバーの「A、B 他 N 人」に使う。count より少ないことがある。 */
   users: string[];
+}
+
+export interface MessagePin {
+  /** by はピン留めした人。ID だけにしないのは sender と同じ理由（抜けた人の名前も出せるように）。 */
+  by: UserProfile;
+  at: string;
 }
 
 export interface MessageAttachment {
@@ -494,6 +504,11 @@ export interface ReadState {
   unread_count: number;
   /** mention_count は既読を進めた後の、自分宛ての未読のメンションの数（ADR 0041）。 */
   mention_count: number;
+}
+
+export interface PinList {
+  /** messages はピン留めした時刻の新しい順。 */
+  messages: Message[];
 }
 
 export interface ThreadMessageList {

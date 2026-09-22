@@ -71,7 +71,8 @@ var tsEnums = []tsEnum{
 	// 自動で決まる presence（ADR 0049）。手動の離席（away）と合わせるのはクライアント
 	enumOf("Presence", chat.PresenceActive, chat.PresenceIdle, chat.PresenceOffline),
 	enumOf("SystemEventType",
-		chat.SystemRoomCreated, chat.SystemMemberJoined, chat.SystemMemberLeft, chat.SystemMemberRemoved, chat.SystemRoomRenamed),
+		chat.SystemRoomCreated, chat.SystemMemberJoined, chat.SystemMemberLeft, chat.SystemMemberRemoved, chat.SystemRoomRenamed,
+		chat.SystemMessagePinned),
 	enumOf("ProblemType",
 		problemBadRequest, problemValidationError, problemUnauthenticated, problemForbidden, problemNotFound, problemInternal,
 		problemRateLimited, problemInvalidCredentials, problemInvalidRefreshToken, problemInvalidOneTimeToken,
@@ -164,11 +165,14 @@ var tsDecls = []tsDecl{
 	response[threadSummaryResponse]("ThreadSummary"),
 	response[mentionResponse]("Mention"),
 	response[messageReactionResponse]("MessageReaction"),
+	response[messagePinResponse]("MessagePin"),
 	response[messageAttachmentResponse]("MessageAttachment"),
 	response[messageAroundResponse]("MessageAround"),
 	response[messageListResponse]("MessageList"),
 	request[markRoomReadRequest]("MarkRoomReadRequest"),
 	response[readStateResponse]("ReadState"),
+	// ピン留め（ADR 0054）
+	response[pinListResponse]("PinList"),
 	// スレッド（ADR 0036）
 	response[threadMessageListResponse]("ThreadMessageList"),
 	response[threadReadStateResponse]("ThreadReadState"),

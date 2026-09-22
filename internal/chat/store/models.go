@@ -46,6 +46,8 @@ type Message struct {
 	ThreadReplyCount  int32
 	ThreadLastReplyAt *time.Time
 	InChannel         bool
+	PinnedAt          *time.Time
+	PinnedBy          *ulid.ULID
 }
 
 type Room struct {

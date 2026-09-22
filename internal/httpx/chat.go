@@ -50,6 +50,9 @@ type ChatService interface {
 	DeleteMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) error
 	AddReaction(ctx context.Context, actor, roomID, messageID ulid.ULID, emoji string) (chat.Message, error)
 	RemoveReaction(ctx context.Context, actor, roomID, messageID ulid.ULID, emoji string) (chat.Message, error)
+	PinMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) (chat.Message, error)
+	UnpinMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) (chat.Message, error)
+	ListPins(ctx context.Context, actor, roomID ulid.ULID) ([]chat.Message, error)
 	MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq int64) (chat.ReadState, error)
 	ListThreadMessages(ctx context.Context, actor, roomID, rootID ulid.ULID, q chat.ThreadQuery) (chat.ThreadPage, error)
 	MarkThreadRead(ctx context.Context, actor, roomID, rootID ulid.ULID, seq int64) (chat.ThreadReadState, error)
@@ -121,6 +124,10 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	// 「その行があること / ないこと」を表す（どちらも冪等）。
 	handle("PUT /api/v1/rooms/{roomID}/messages/{messageID}/reactions/{emoji}", h.addReaction)
 	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}/reactions/{emoji}", h.removeReaction)
+	// ピン留め（ADR 0054 決定 5）。リアクションと同じく PUT / DELETE が「ピンがあること / ないこと」を表す。
+	handle("PUT /api/v1/rooms/{roomID}/messages/{messageID}/pin", h.pinMessage)
+	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}/pin", h.unpinMessage)
+	handle("GET /api/v1/rooms/{roomID}/pins", h.listPins)
 	handle("POST /api/v1/rooms/{roomID}/read", h.markRoomRead)
 	handle("GET /api/v1/rooms/{roomID}/threads/{rootID}/messages", h.listThreadMessages)
 	handle("POST /api/v1/rooms/{roomID}/threads/{rootID}/read", h.markThreadRead)

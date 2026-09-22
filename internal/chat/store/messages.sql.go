@@ -323,7 +323,7 @@ func (q *Queries) FollowThreadForMentioned(ctx context.Context, arg FollowThread
 }
 
 const getMessageForUpdate = `-- name: GetMessageForUpdate :one
-SELECT id, room_id, seq, sender_id, client_msg_id, body, created_at, edited_at, deleted_at, change_seq, kind, system_type, system_data, user_seq, thread_root_id, thread_seq, last_thread_seq, thread_reply_count, thread_last_reply_at, in_channel
+SELECT id, room_id, seq, sender_id, client_msg_id, body, created_at, edited_at, deleted_at, change_seq, kind, system_type, system_data, user_seq, thread_root_id, thread_seq, last_thread_seq, thread_reply_count, thread_last_reply_at, in_channel, pinned_at, pinned_by
   FROM messages
  WHERE room_id = $1
    AND id = $2
@@ -363,6 +363,8 @@ func (q *Queries) GetMessageForUpdate(ctx context.Context, arg GetMessageForUpda
 		&i.ThreadReplyCount,
 		&i.ThreadLastReplyAt,
 		&i.InChannel,
+		&i.PinnedAt,
+		&i.PinnedBy,
 	)
 	return i, err
 }
@@ -414,9 +416,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.room_id = $1
    AND m.id = $2
 `
@@ -427,28 +431,32 @@ type GetMessageViewParams struct {
 }
 
 type GetMessageViewRow struct {
-	ID                ulid.ULID
-	RoomID            ulid.ULID
-	Seq               int64
-	ChangeSeq         int64
-	UserSeq           int64
-	SenderID          ulid.ULID
-	ClientMsgID       ulid.ULID
-	Body              string
-	Kind              string
-	SystemType        *string
-	SystemData        []byte
-	ThreadRootID      *ulid.ULID
-	ThreadSeq         *int64
-	InChannel         bool
-	LastThreadSeq     int64
-	ThreadReplyCount  int32
-	ThreadLastReplyAt *time.Time
-	CreatedAt         time.Time
-	EditedAt          *time.Time
-	DeletedAt         *time.Time
-	SenderHandle      string
-	SenderDisplayName string
+	ID                  ulid.ULID
+	RoomID              ulid.ULID
+	Seq                 int64
+	ChangeSeq           int64
+	UserSeq             int64
+	SenderID            ulid.ULID
+	ClientMsgID         ulid.ULID
+	Body                string
+	Kind                string
+	SystemType          *string
+	SystemData          []byte
+	ThreadRootID        *ulid.ULID
+	ThreadSeq           *int64
+	InChannel           bool
+	LastThreadSeq       int64
+	ThreadReplyCount    int32
+	ThreadLastReplyAt   *time.Time
+	CreatedAt           time.Time
+	EditedAt            *time.Time
+	DeletedAt           *time.Time
+	SenderHandle        string
+	SenderDisplayName   string
+	PinnedAt            *time.Time
+	PinnedBy            *ulid.ULID
+	PinnedByHandle      *string
+	PinnedByDisplayName *string
 }
 
 func (q *Queries) GetMessageView(ctx context.Context, arg GetMessageViewParams) (GetMessageViewRow, error) {
@@ -477,6 +485,10 @@ func (q *Queries) GetMessageView(ctx context.Context, arg GetMessageViewParams) 
 		&i.DeletedAt,
 		&i.SenderHandle,
 		&i.SenderDisplayName,
+		&i.PinnedAt,
+		&i.PinnedBy,
+		&i.PinnedByHandle,
+		&i.PinnedByDisplayName,
 	)
 	return i, err
 }
@@ -594,9 +606,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.room_id = $1
    AND m.in_channel
    AND m.seq > $2
@@ -611,28 +625,32 @@ type ListMessagesAfterParams struct {
 }
 
 type ListMessagesAfterRow struct {
-	ID                ulid.ULID
-	RoomID            ulid.ULID
-	Seq               int64
-	ChangeSeq         int64
-	UserSeq           int64
-	SenderID          ulid.ULID
-	ClientMsgID       ulid.ULID
-	Body              string
-	Kind              string
-	SystemType        *string
-	SystemData        []byte
-	ThreadRootID      *ulid.ULID
-	ThreadSeq         *int64
-	InChannel         bool
-	LastThreadSeq     int64
-	ThreadReplyCount  int32
-	ThreadLastReplyAt *time.Time
-	CreatedAt         time.Time
-	EditedAt          *time.Time
-	DeletedAt         *time.Time
-	SenderHandle      string
-	SenderDisplayName string
+	ID                  ulid.ULID
+	RoomID              ulid.ULID
+	Seq                 int64
+	ChangeSeq           int64
+	UserSeq             int64
+	SenderID            ulid.ULID
+	ClientMsgID         ulid.ULID
+	Body                string
+	Kind                string
+	SystemType          *string
+	SystemData          []byte
+	ThreadRootID        *ulid.ULID
+	ThreadSeq           *int64
+	InChannel           bool
+	LastThreadSeq       int64
+	ThreadReplyCount    int32
+	ThreadLastReplyAt   *time.Time
+	CreatedAt           time.Time
+	EditedAt            *time.Time
+	DeletedAt           *time.Time
+	SenderHandle        string
+	SenderDisplayName   string
+	PinnedAt            *time.Time
+	PinnedBy            *ulid.ULID
+	PinnedByHandle      *string
+	PinnedByDisplayName *string
 }
 
 // チャンネルのタイムラインで、seq が after_seq より大きいメッセージを、古い順に max_rows 件。
@@ -669,6 +687,10 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.DeletedAt,
 			&i.SenderHandle,
 			&i.SenderDisplayName,
+			&i.PinnedAt,
+			&i.PinnedBy,
+			&i.PinnedByHandle,
+			&i.PinnedByDisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -685,9 +707,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.room_id = $1
    AND m.in_channel
    AND m.seq < $2
@@ -702,28 +726,32 @@ type ListMessagesBeforeParams struct {
 }
 
 type ListMessagesBeforeRow struct {
-	ID                ulid.ULID
-	RoomID            ulid.ULID
-	Seq               int64
-	ChangeSeq         int64
-	UserSeq           int64
-	SenderID          ulid.ULID
-	ClientMsgID       ulid.ULID
-	Body              string
-	Kind              string
-	SystemType        *string
-	SystemData        []byte
-	ThreadRootID      *ulid.ULID
-	ThreadSeq         *int64
-	InChannel         bool
-	LastThreadSeq     int64
-	ThreadReplyCount  int32
-	ThreadLastReplyAt *time.Time
-	CreatedAt         time.Time
-	EditedAt          *time.Time
-	DeletedAt         *time.Time
-	SenderHandle      string
-	SenderDisplayName string
+	ID                  ulid.ULID
+	RoomID              ulid.ULID
+	Seq                 int64
+	ChangeSeq           int64
+	UserSeq             int64
+	SenderID            ulid.ULID
+	ClientMsgID         ulid.ULID
+	Body                string
+	Kind                string
+	SystemType          *string
+	SystemData          []byte
+	ThreadRootID        *ulid.ULID
+	ThreadSeq           *int64
+	InChannel           bool
+	LastThreadSeq       int64
+	ThreadReplyCount    int32
+	ThreadLastReplyAt   *time.Time
+	CreatedAt           time.Time
+	EditedAt            *time.Time
+	DeletedAt           *time.Time
+	SenderHandle        string
+	SenderDisplayName   string
+	PinnedAt            *time.Time
+	PinnedBy            *ulid.ULID
+	PinnedByHandle      *string
+	PinnedByDisplayName *string
 }
 
 // チャンネルのタイムライン（スレッドだけの返信を除き、チャンネルにも投稿した返信は含む。ADR 0036 / 0039）で、seq が before_seq より小さいメッセージを、新しい順に max_rows 件。
@@ -763,6 +791,10 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.DeletedAt,
 			&i.SenderHandle,
 			&i.SenderDisplayName,
+			&i.PinnedAt,
+			&i.PinnedBy,
+			&i.PinnedByHandle,
+			&i.PinnedByDisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -779,9 +811,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.room_id = $1
    AND m.change_seq > $2
  ORDER BY m.change_seq
@@ -795,28 +829,32 @@ type ListMessagesChangedAfterParams struct {
 }
 
 type ListMessagesChangedAfterRow struct {
-	ID                ulid.ULID
-	RoomID            ulid.ULID
-	Seq               int64
-	ChangeSeq         int64
-	UserSeq           int64
-	SenderID          ulid.ULID
-	ClientMsgID       ulid.ULID
-	Body              string
-	Kind              string
-	SystemType        *string
-	SystemData        []byte
-	ThreadRootID      *ulid.ULID
-	ThreadSeq         *int64
-	InChannel         bool
-	LastThreadSeq     int64
-	ThreadReplyCount  int32
-	ThreadLastReplyAt *time.Time
-	CreatedAt         time.Time
-	EditedAt          *time.Time
-	DeletedAt         *time.Time
-	SenderHandle      string
-	SenderDisplayName string
+	ID                  ulid.ULID
+	RoomID              ulid.ULID
+	Seq                 int64
+	ChangeSeq           int64
+	UserSeq             int64
+	SenderID            ulid.ULID
+	ClientMsgID         ulid.ULID
+	Body                string
+	Kind                string
+	SystemType          *string
+	SystemData          []byte
+	ThreadRootID        *ulid.ULID
+	ThreadSeq           *int64
+	InChannel           bool
+	LastThreadSeq       int64
+	ThreadReplyCount    int32
+	ThreadLastReplyAt   *time.Time
+	CreatedAt           time.Time
+	EditedAt            *time.Time
+	DeletedAt           *time.Time
+	SenderHandle        string
+	SenderDisplayName   string
+	PinnedAt            *time.Time
+	PinnedBy            *ulid.ULID
+	PinnedByHandle      *string
+	PinnedByDisplayName *string
 }
 
 // change_seq が after_change_seq より大きいメッセージ（作成・編集・削除）を、change_seq の古い順に max_rows 件。
@@ -854,6 +892,10 @@ func (q *Queries) ListMessagesChangedAfter(ctx context.Context, arg ListMessages
 			&i.DeletedAt,
 			&i.SenderHandle,
 			&i.SenderDisplayName,
+			&i.PinnedAt,
+			&i.PinnedBy,
+			&i.PinnedByHandle,
+			&i.PinnedByDisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -870,9 +912,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.thread_root_id = $1
    AND m.seq > $2
  ORDER BY m.seq
@@ -886,28 +930,32 @@ type ListThreadMessagesAfterParams struct {
 }
 
 type ListThreadMessagesAfterRow struct {
-	ID                ulid.ULID
-	RoomID            ulid.ULID
-	Seq               int64
-	ChangeSeq         int64
-	UserSeq           int64
-	SenderID          ulid.ULID
-	ClientMsgID       ulid.ULID
-	Body              string
-	Kind              string
-	SystemType        *string
-	SystemData        []byte
-	ThreadRootID      *ulid.ULID
-	ThreadSeq         *int64
-	InChannel         bool
-	LastThreadSeq     int64
-	ThreadReplyCount  int32
-	ThreadLastReplyAt *time.Time
-	CreatedAt         time.Time
-	EditedAt          *time.Time
-	DeletedAt         *time.Time
-	SenderHandle      string
-	SenderDisplayName string
+	ID                  ulid.ULID
+	RoomID              ulid.ULID
+	Seq                 int64
+	ChangeSeq           int64
+	UserSeq             int64
+	SenderID            ulid.ULID
+	ClientMsgID         ulid.ULID
+	Body                string
+	Kind                string
+	SystemType          *string
+	SystemData          []byte
+	ThreadRootID        *ulid.ULID
+	ThreadSeq           *int64
+	InChannel           bool
+	LastThreadSeq       int64
+	ThreadReplyCount    int32
+	ThreadLastReplyAt   *time.Time
+	CreatedAt           time.Time
+	EditedAt            *time.Time
+	DeletedAt           *time.Time
+	SenderHandle        string
+	SenderDisplayName   string
+	PinnedAt            *time.Time
+	PinnedBy            *ulid.ULID
+	PinnedByHandle      *string
+	PinnedByDisplayName *string
 }
 
 // スレッドの返信で、seq が after_seq より大きいものを古い順に max_rows 件。
@@ -943,6 +991,10 @@ func (q *Queries) ListThreadMessagesAfter(ctx context.Context, arg ListThreadMes
 			&i.DeletedAt,
 			&i.SenderHandle,
 			&i.SenderDisplayName,
+			&i.PinnedAt,
+			&i.PinnedBy,
+			&i.PinnedByHandle,
+			&i.PinnedByDisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -959,9 +1011,11 @@ SELECT m.id, m.room_id, m.seq, m.change_seq, m.user_seq, m.sender_id, m.client_m
        m.kind, m.system_type, m.system_data,
        m.thread_root_id, m.thread_seq, m.in_channel, m.last_thread_seq, m.thread_reply_count, m.thread_last_reply_at,
        m.created_at, m.edited_at, m.deleted_at,
-       u.handle AS sender_handle, u.display_name AS sender_display_name
+       u.handle AS sender_handle, u.display_name AS sender_display_name,
+       m.pinned_at, m.pinned_by, pu.handle AS pinned_by_handle, pu.display_name AS pinned_by_display_name
   FROM messages m
   JOIN users u ON u.id = m.sender_id
+  LEFT JOIN users pu ON pu.id = m.pinned_by
  WHERE m.thread_root_id = $1
    AND m.seq < $2
  ORDER BY m.seq DESC
@@ -975,28 +1029,32 @@ type ListThreadMessagesBeforeParams struct {
 }
 
 type ListThreadMessagesBeforeRow struct {
-	ID                ulid.ULID
-	RoomID            ulid.ULID
-	Seq               int64
-	ChangeSeq         int64
-	UserSeq           int64
-	SenderID          ulid.ULID
-	ClientMsgID       ulid.ULID
-	Body              string
-	Kind              string
-	SystemType        *string
-	SystemData        []byte
-	ThreadRootID      *ulid.ULID
-	ThreadSeq         *int64
-	InChannel         bool
-	LastThreadSeq     int64
-	ThreadReplyCount  int32
-	ThreadLastReplyAt *time.Time
-	CreatedAt         time.Time
-	EditedAt          *time.Time
-	DeletedAt         *time.Time
-	SenderHandle      string
-	SenderDisplayName string
+	ID                  ulid.ULID
+	RoomID              ulid.ULID
+	Seq                 int64
+	ChangeSeq           int64
+	UserSeq             int64
+	SenderID            ulid.ULID
+	ClientMsgID         ulid.ULID
+	Body                string
+	Kind                string
+	SystemType          *string
+	SystemData          []byte
+	ThreadRootID        *ulid.ULID
+	ThreadSeq           *int64
+	InChannel           bool
+	LastThreadSeq       int64
+	ThreadReplyCount    int32
+	ThreadLastReplyAt   *time.Time
+	CreatedAt           time.Time
+	EditedAt            *time.Time
+	DeletedAt           *time.Time
+	SenderHandle        string
+	SenderDisplayName   string
+	PinnedAt            *time.Time
+	PinnedBy            *ulid.ULID
+	PinnedByHandle      *string
+	PinnedByDisplayName *string
 }
 
 // スレッドの返信で、seq が before_seq より小さいものを新しい順に max_rows 件（ADR 0036）。並びはルームの seq。
@@ -1033,6 +1091,10 @@ func (q *Queries) ListThreadMessagesBefore(ctx context.Context, arg ListThreadMe
 			&i.DeletedAt,
 			&i.SenderHandle,
 			&i.SenderDisplayName,
+			&i.PinnedAt,
+			&i.PinnedBy,
+			&i.PinnedByHandle,
+			&i.PinnedByDisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -1109,7 +1171,9 @@ const softDeleteMessage = `-- name: SoftDeleteMessage :exec
 UPDATE messages
    SET body       = '',
        deleted_at = $1::timestamptz,
-       change_seq = $2
+       change_seq = $2,
+       pinned_at  = NULL,
+       pinned_by  = NULL
  WHERE id = $3
 `
 
@@ -1120,6 +1184,7 @@ type SoftDeleteMessageParams struct {
 }
 
 // 論理削除。行と seq は残し、本文だけを消す（ADR 0002 / 0004）。
+// ピンも一緒に外す（ADR 0054 決定 4）。削除済みが 100 件の枠を使い続けないように、同じ UPDATE（同じ change_seq）で済ませる。
 func (q *Queries) SoftDeleteMessage(ctx context.Context, arg SoftDeleteMessageParams) error {
 	_, err := q.db.Exec(ctx, softDeleteMessage, arg.Now, arg.ChangeSeq, arg.ID)
 	return err

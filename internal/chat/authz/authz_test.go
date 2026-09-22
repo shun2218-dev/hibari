@@ -203,6 +203,14 @@ func TestCanWriteRoom(t *testing.T) {
 	})
 }
 
+func TestCanPinMessage(t *testing.T) {
+	checkRoom(t, "CanPinMessage", CanPinMessage, func(c roomCase) bool {
+		// いまは投稿できる人と同じ（ADR 0054 決定 4）。参加していない public は読めるが付けられない。
+		known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
+		return known && isWorkspaceMember(c.role) && c.isRoomMember
+	})
+}
+
 func TestCanJoinRoom(t *testing.T) {
 	checkRoom(t, "CanJoinRoom", CanJoinRoom, func(c roomCase) bool {
 		return c.kind == RoomPublic && isWorkspaceMember(c.role)
