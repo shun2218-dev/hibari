@@ -48,6 +48,9 @@ jobs:
           POSTGRES_USER: hibari
           POSTGRES_PASSWORD: hibari
           POSTGRES_DB: hibari_test
+          # 認証方式を明示し、initdb の「trust を有効にした」警告を消す（compose.yaml と同じ）。
+          # 値は公式イメージの既定と同じで、振る舞いは変わらない。
+          POSTGRES_INITDB_ARGS: --auth-local=trust --auth-host=scram-sha-256
         ports:
           - 5432:5432
         options: >-

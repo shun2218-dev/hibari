@@ -16,6 +16,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-hibari}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hibari}
       POSTGRES_DB: ${POSTGRES_DB:-hibari}
+      # initdb は -A / --auth-local / --auth-host を省くと「trust を有効にした」と警告する。
+      # 値は公式イメージの既定と同じにして明示する（コンテナ内のソケットは trust、TCP はパスワード）。
+      # 効くのはボリュームを初期化するとき（初回の起動）だけ。
+      POSTGRES_INITDB_ARGS: --auth-local=trust --auth-host=scram-sha-256
     volumes:
       - pgdata:/var/lib/postgresql/data
       # 統合テスト用の DB（hibari_test）を初回起動時に作る。開発データとテストを混ぜないため。
