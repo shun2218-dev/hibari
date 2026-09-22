@@ -76,6 +76,8 @@ var tsEnums = []tsEnum{
 	enumOf("SavedState", chat.SavedInProgress, chat.SavedArchived, chat.SavedCompleted, chat.SavedRemoved),
 	enumOf("SavedItemStatus", chat.SavedItemOK, chat.SavedItemUnavailable),
 	enumOf("NotifyLevel", chat.NotifyAll, chat.NotifyMentions, chat.NotifyNone),
+	enumOf("ActivityItemType", chat.ActivityItemMessage, chat.ActivityItemReaction),
+	enumOf("ActivityReason", chat.ReasonDM, chat.ReasonMention, chat.ReasonThread, chat.ReasonChannel, chat.ReasonReaction),
 	enumOf("ProblemType",
 		problemBadRequest, problemValidationError, problemUnauthenticated, problemForbidden, problemNotFound, problemInternal,
 		problemRateLimited, problemInvalidCredentials, problemInvalidRefreshToken, problemInvalidOneTimeToken,
@@ -182,6 +184,11 @@ var tsDecls = []tsDecl{
 	response[savedItemResponse]("SavedItem"),
 	response[savedListResponse]("SavedList"),
 	request[moveSavedRequest]("MoveSavedRequest"),
+	// アクティビティ（ADR 0058）
+	response[activityItemResponse]("ActivityItem"),
+	response[activityReactionResponse]("ActivityReaction"),
+	response[activityListResponse]("ActivityList"),
+	response[activityUnreadCountResponse]("ActivityUnreadCount"),
 	// スレッド（ADR 0036）
 	response[threadMessageListResponse]("ThreadMessageList"),
 	response[threadReadStateResponse]("ThreadReadState"),
@@ -222,6 +229,8 @@ var tsDecls = []tsDecl{
 	response[notificationsUpdatedData]("NotificationsUpdatedData"),
 	response[roomNotificationsUpdatedData]("RoomNotificationsUpdatedData"),
 	response[threadNotificationsUpdatedData]("ThreadNotificationsUpdatedData"),
+	response[activityReactionAddedData]("ActivityReactionAddedData"),
+	response[activityReactionRemovedData]("ActivityReactionRemovedData"),
 }
 
 // tsSkipped は JSON のタグを持つが、クライアントの型にしない struct。
@@ -266,6 +275,8 @@ var tsEvents = []struct {
 	{chat.EventNotificationsUpdated, chat.NotificationsUpdated{}},
 	{chat.EventRoomNotificationsUpdated, chat.RoomNotificationsUpdated{}},
 	{chat.EventThreadNotificationsUpdated, chat.ThreadNotificationsUpdated{}},
+	{chat.EventActivityReactionAdded, chat.ActivityReactionAdded{}},
+	{chat.EventActivityReactionRemoved, chat.ActivityReactionRemoved{}},
 }
 
 func TestTypeScriptTypes(t *testing.T) {

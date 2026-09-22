@@ -87,10 +87,11 @@ func TestAddAndRemoveReaction(t *testing.T) {
 		}
 	})
 
-	t.Run("message.updated を配る", func(t *testing.T) {
+	t.Run("message.updated を配り、送信者のアクティビティにも知らせる", func(t *testing.T) {
 		evs := env.Deliveries.Take()
-		if len(evs) != 1 || evs[0].Type != chat.EventMessageUpdated {
-			t.Fatalf("events = %+v, want 1 件の message.updated", evs)
+		// 2 件目は送信者にだけ届く activity.reaction_added（ADR 0058 決定 9。中身は activity_test.go で確かめる）
+		if len(evs) != 2 || evs[0].Type != chat.EventMessageUpdated || evs[1].Type != chat.EventActivityReactionAdded {
+			t.Fatalf("events = %+v, want message.updated と activity.reaction_added", evs)
 		}
 		if !slices.Contains(evs[0].To.Rooms, room.ID) {
 			t.Errorf("宛先 = %+v, want ルーム %s", evs[0].To, room.ID)
@@ -113,8 +114,8 @@ func TestAddAndRemoveReaction(t *testing.T) {
 		if _, ok := reactionOf(after, "👍"); ok {
 			t.Errorf("reactions = %+v, want 空", after.Reactions)
 		}
-		if evs := env.Deliveries.Take(); len(evs) != 1 || evs[0].Type != chat.EventMessageUpdated {
-			t.Errorf("events = %+v, want 1 件の message.updated", evs)
+		if evs := env.Deliveries.Take(); len(evs) != 2 || evs[0].Type != chat.EventMessageUpdated || evs[1].Type != chat.EventActivityReactionRemoved {
+			t.Errorf("events = %+v, want message.updated と activity.reaction_removed", evs)
 		}
 	})
 }

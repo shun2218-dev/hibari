@@ -69,6 +69,8 @@ var dataDecoders = map[chat.EventType]func([]byte) (any, error){
 	chat.EventNotificationsUpdated:       decodeData[chat.NotificationsUpdated],
 	chat.EventRoomNotificationsUpdated:   decodeData[chat.RoomNotificationsUpdated],
 	chat.EventThreadNotificationsUpdated: decodeData[chat.ThreadNotificationsUpdated],
+	chat.EventActivityReactionAdded:      decodeData[chat.ActivityReactionAdded],
+	chat.EventActivityReactionRemoved:    decodeData[chat.ActivityReactionRemoved],
 }
 
 func decodeData[T any](b []byte) (any, error) {

@@ -1,0 +1,369 @@
+{
+  "_comment": [
+    "通知とアクティビティの規則の表（ADR 0055 決定 1・ADR 0056 決定 3・ADR 0057 決定 1・ADR 0058 決定 2）。",
+    "Go（internal/chat/activity_rules_test.go。アクティビティの理由）と Vitest（web/lib/chat/notification-rules.test.ts。shouldNotify）の両方が読む。",
+    "規則を変えたら、この表とサーバー（db/queries/chat/activity.sql）とクライアント（web/lib/chat/desktop-notification.ts）を一緒に直す。",
+    "入力は「メッセージが届いた時点の状態」。global が null は未設定、muted は none / forever / expired、message は channel（チャンネルの投稿）/ thread（スレッドだけの返信）/ broadcast（チャンネルにも出した返信）、thread_member は null（参加していない）か返信の通知のオン・オフ。",
+    "notify は通知を出すか（どのタブも見えていないとき）、activity はアクティビティに並べる理由（空なら並べない）。違うのは @here だけ。"
+  ],
+  "cases": [
+    {
+      "name": "全体が mentions: ただの投稿は対象にしない",
+      "room": "public",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "channel",
+      "thread_member": null,
+      "notify": false,
+      "activity": []
+    },
+    {
+      "name": "全体が未設定は mentions と同じ",
+      "room": "public",
+      "global": null,
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "channel",
+      "thread_member": null,
+      "notify": false,
+      "activity": []
+    },
+    {
+      "name": "全体が未設定でも、自分宛てのメンションは対象",
+      "room": "public",
+      "global": null,
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": "user",
+      "message": "channel",
+      "thread_member": null,
+      "notify": true,
+      "activity": [
+        "mention"
+      ]
+    },
+    {
+      "name": "自分宛てのメンションは対象",
+      "room": "public",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": "user",
+      "message": "channel",
+      "thread_member": null,
+      "notify": true,
+      "activity": [
+        "mention"
+      ]
+    },
+    {
+      "name": "@channel も自分宛て",
+      "room": "public",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": "channel",
+      "message": "channel",
+      "thread_member": null,
+      "notify": true,
+      "activity": [
+        "mention"
+      ]
+    },
+    {
+      "name": "@here は通知の理由にしないが、アクティビティには出す（ADR 0058 決定 2）",
+      "room": "public",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": "here",
+      "message": "channel",
+      "thread_member": null,
+      "notify": false,
+      "activity": [
+        "mention"
+      ]
+    },
+    {
+      "name": "全体が all: ただの投稿も対象",
+      "room": "public",
+      "global": "all",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "channel",
+      "thread_member": null,
+      "notify": true,
+      "activity": [
+        "channel"
+      ]
+    },
+    {
+      "name": "全体が all でメンションもあれば、理由は 2 つ",
+      "room": "public",
+      "global": "all",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": "user",
+      "message": "channel",
+      "thread_member": null,
+      "notify": true,
+      "activity": [
+        "channel",
+        "mention"
+      ]
+    },
+    {
+      "name": "全体が none: メンションでも対象にしない",
+      "room": "public",
+      "global": "none",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": "user",
+      "message": "channel",
+      "thread_member": null,
+      "notify": false,
+      "activity": []
+    },
+    {
+      "name": "チャンネルの上書き all が全体の none に勝つ",
+      "room": "public",
+      "global": "none",
+      "room_level": "all",
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "channel",
+      "thread_member": null,
+      "notify": true,
+      "activity": [
+        "channel"
+      ]
+    },
+    {
+      "name": "チャンネルの上書き mentions: ただの投稿は対象にしない",
+      "room": "public",
+      "global": "all",
+      "room_level": "mentions",
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "channel",
+      "thread_member": null,
+      "notify": false,
+      "activity": []
+    },
+    {
+      "name": "ミュートしていればメンションでも対象にしない",
+      "room": "public",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "forever",
+      "from_self": false,
+      "mention": "user",
+      "message": "channel",
+      "thread_member": null,
+      "notify": false,
+      "activity": []
+    },
+    {
+      "name": "期限の来たミュートは効かない",
+      "room": "public",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "expired",
+      "from_self": false,
+      "mention": "user",
+      "message": "channel",
+      "thread_member": null,
+      "notify": true,
+      "activity": [
+        "mention"
+      ]
+    },
+    {
+      "name": "DM は全体が none でなければ対象",
+      "room": "dm",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "channel",
+      "thread_member": null,
+      "notify": true,
+      "activity": [
+        "dm"
+      ]
+    },
+    {
+      "name": "DM でメンションされたら、理由は 2 つ",
+      "room": "dm",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": "user",
+      "message": "channel",
+      "thread_member": null,
+      "notify": true,
+      "activity": [
+        "dm",
+        "mention"
+      ]
+    },
+    {
+      "name": "DM も全体が none なら対象にしない",
+      "room": "dm",
+      "global": "none",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "channel",
+      "thread_member": null,
+      "notify": false,
+      "activity": []
+    },
+    {
+      "name": "ミュートした DM は対象にしない",
+      "room": "dm",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "forever",
+      "from_self": false,
+      "mention": null,
+      "message": "channel",
+      "thread_member": null,
+      "notify": false,
+      "activity": []
+    },
+    {
+      "name": "自分の投稿は対象にしない",
+      "room": "public",
+      "global": "all",
+      "room_level": null,
+      "muted": "none",
+      "from_self": true,
+      "mention": null,
+      "message": "channel",
+      "thread_member": null,
+      "notify": false,
+      "activity": []
+    },
+    {
+      "name": "スレッドだけの返信: 参加していて通知がオンなら対象",
+      "room": "public",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "thread",
+      "thread_member": true,
+      "notify": true,
+      "activity": [
+        "thread"
+      ]
+    },
+    {
+      "name": "スレッドだけの返信: 全体が all でも、参加していなければ対象にしない",
+      "room": "public",
+      "global": "all",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "thread",
+      "thread_member": null,
+      "notify": false,
+      "activity": []
+    },
+    {
+      "name": "スレッドだけの返信: 通知をオフにしていれば対象にしない",
+      "room": "public",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "thread",
+      "thread_member": false,
+      "notify": false,
+      "activity": []
+    },
+    {
+      "name": "スレッドだけの返信: オフでもメンションなら対象（ADR 0056 決定 3）",
+      "room": "public",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": "user",
+      "message": "thread",
+      "thread_member": false,
+      "notify": true,
+      "activity": [
+        "mention"
+      ]
+    },
+    {
+      "name": "チャンネルにも出した返信は、チャンネルの投稿としても判定する",
+      "room": "public",
+      "global": "all",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "broadcast",
+      "thread_member": null,
+      "notify": true,
+      "activity": [
+        "channel"
+      ]
+    },
+    {
+      "name": "チャンネルにも出した返信: 参加していれば、全体が mentions でも対象",
+      "room": "public",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "broadcast",
+      "thread_member": true,
+      "notify": true,
+      "activity": [
+        "thread"
+      ]
+    },
+    {
+      "name": "DM のスレッドの返信は、2 人とも参加している（ADR 0056 決定 6）",
+      "room": "dm",
+      "global": "mentions",
+      "room_level": null,
+      "muted": "none",
+      "from_self": false,
+      "mention": null,
+      "message": "thread",
+      "thread_member": true,
+      "notify": true,
+      "activity": [
+        "dm",
+        "thread"
+      ]
+    }
+  ]
+}

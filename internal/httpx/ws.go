@@ -662,6 +662,11 @@ func eventData(d any) (any, error) {
 		return roomNotificationsUpdatedData{d.WorkspaceID.String(), d.RoomID.String(), newRoomNotificationsBody(d.Notifications)}, nil
 	case chat.ThreadNotificationsUpdated:
 		return threadNotificationsUpdatedData{d.WorkspaceID.String(), d.RoomID.String(), d.ThreadRootID.String(), d.NotifyReplies}, nil
+	case chat.ActivityReactionAdded:
+		// 本人（メッセージの送信者）にしか届かないので、REST と同じ形（me を含む）で配る（ADR 0058 決定 9）。
+		return activityReactionAddedData{d.WorkspaceID.String(), newActivityItemResponse(d.Item)}, nil
+	case chat.ActivityReactionRemoved:
+		return activityReactionRemovedData{d.WorkspaceID.String(), d.Key}, nil
 	default:
 		return nil, fmt.Errorf("unknown event data %T", d)
 	}
