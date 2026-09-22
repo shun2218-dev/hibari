@@ -66,7 +66,7 @@
 | [0057](0057-browser-notifications.md) | ブラウザ通知（Phase 6.14b。WebSocket で届いたメッセージを、クライアントが設定を読んで通知に変える） | 採用 |
 | [0058](0058-sidebar-menu-and-activity.md) | サイドバーのメニューとアクティビティ（Phase 6.14.5。アクティビティは行を持たず、通知の規則と既読位置から導く） | 採用 |
 | [0059](0059-room-archive-and-delete.md) | チャンネルのアーカイブと削除（Phase 6.15。アーカイブはルームの状態として authz が見る、削除は行ごと消してオブジェクトのキーだけを掃除の列に残す） | 採用 |
-| [0060](0060-web-directory-layout.md) | web/ のディレクトリ構成（hooks と Provider を lib から出し、lib は React に依存しないものだけにする） | 提案 |
+| [0060](0060-web-directory-layout.md) | web/ のディレクトリ構成（hooks と Provider を lib から出し、lib は React に依存しないものだけにする） | 採用 |
 
 ## テンプレート
 
