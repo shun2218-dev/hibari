@@ -83,10 +83,7 @@ export function CreateRoomDialog({
   );
 }
 
-export type DmCandidateView = UserRef & {
-  handle: string;
-  presence: PresenceView;
-};
+export type DmCandidateView = UserRef & { handle: string; presence: PresenceView };
 
 /**
  * DM の相手を選ぶ。相手はワークスペースのメンバーだけで、ひとりだけ選べる
@@ -253,9 +250,7 @@ function MemberPicker({
                 />
               }
               title={candidate.name}
-              description={
-                <span className="font-mono">@{candidate.handle}</span>
-              }
+              description={<span className="font-mono">@{candidate.handle}</span>}
             />
           ))}
         </fieldset>
@@ -264,10 +259,7 @@ function MemberPicker({
   );
 }
 
-export type RoomMemberRowView = UserRef & {
-  isSelf: boolean;
-  canRemove: boolean;
-};
+export type RoomMemberRowView = UserRef & { isSelf: boolean; canRemove: boolean };
 
 /**
  * ルームの名前とメンバーを変える。変更できるのは、そのルームを読める admin 以上（ADR 0011）。
@@ -350,19 +342,12 @@ export function RoomSettingsDialog({
         見出しと操作のボタンは残す。-mx / px は、フォーカスの輪がスクロールの枠で切れないようにするため。
       */}
       <div className="-mx-1 flex min-h-0 flex-col gap-5 overflow-y-auto px-1">
-        <TextField
-          label="チャンネル名"
-          value={name}
-          onChange={(e) => onNameChange?.(e.target.value)}
-          disabled={!editable}
-        />
+        <TextField label="チャンネル名" value={name} onChange={(e) => onNameChange?.(e.target.value)} disabled={!editable} />
 
         {kind === "private" && (
           <div className="flex flex-col gap-2.5">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-xs font-medium text-text">
-                参加しているメンバー
-              </span>
+              <span className="text-xs font-medium text-text">参加しているメンバー</span>
               {editable && (
                 <button
                   type="button"
@@ -379,25 +364,14 @@ export function RoomSettingsDialog({
                   key={member.id}
                   className={`flex items-center gap-2.5 px-3.5 py-2.5 ${index > 0 ? "border-t border-border" : ""}`}
                 >
-                  <Avatar
-                    id={member.id}
-                    name={member.name}
-                    imageUrl={member.avatarUrl}
-                    size="sm"
-                  />
-                  <span className="min-w-0 flex-1 truncate text-base font-semibold text-text">
-                    {member.name}
-                  </span>
+                  <Avatar id={member.id} name={member.name} imageUrl={member.avatarUrl} size="sm" />
+                  <span className="min-w-0 flex-1 truncate text-base font-semibold text-text">{member.name}</span>
                   {member.isSelf ? (
                     <Badge tone="primary">あなた</Badge>
                   ) : (
                     editable &&
                     member.canRemove && (
-                      <TextButton
-                        tone="danger"
-                        onClick={() => onRemoveMember?.(member.id)}
-                        className="text-sm font-semibold"
-                      >
+                      <TextButton tone="danger" onClick={() => onRemoveMember?.(member.id)} className="text-sm font-semibold">
                         外す
                       </TextButton>
                     )
@@ -405,23 +379,15 @@ export function RoomSettingsDialog({
                 </li>
               ))}
             </ul>
-            <p className="text-2xs text-text-muted">
-              非公開チャンネルのメンバーだけが読めます。参加前の履歴も読めます。
-            </p>
+            <p className="text-2xs text-text-muted">非公開チャンネルのメンバーだけが読めます。参加前の履歴も読めます。</p>
           </div>
         )}
 
         {onLeave && (
           <section className="flex flex-col gap-1 border-t border-border pt-4">
             <h3 className="text-sm font-bold text-text">チャンネルを退出</h3>
-            <p className="pb-3 text-sm text-text-secondary">
-              {leaveConsequence(kind)}
-            </p>
-            <Button
-              variant="danger-outline"
-              onClick={onLeave}
-              className="self-start"
-            >
+            <p className="pb-3 text-sm text-text-secondary">{leaveConsequence(kind)}</p>
+            <Button variant="danger-outline" onClick={onLeave} className="self-start">
               退出する
             </Button>
           </section>
@@ -429,17 +395,9 @@ export function RoomSettingsDialog({
 
         {onArchive && (
           <section className="flex flex-col gap-1 border-t border-border pt-4">
-            <h3 className="text-sm font-bold text-text">
-              チャンネルをアーカイブ
-            </h3>
-            <p className="pb-3 text-sm text-text-secondary">
-              {ARCHIVE_CONSEQUENCE}
-            </p>
-            <Button
-              variant="secondary"
-              onClick={onArchive}
-              className="self-start"
-            >
+            <h3 className="text-sm font-bold text-text">チャンネルをアーカイブ</h3>
+            <p className="pb-3 text-sm text-text-secondary">{ARCHIVE_CONSEQUENCE}</p>
+            <Button variant="secondary" onClick={onArchive} className="self-start">
               アーカイブする
             </Button>
           </section>
@@ -448,14 +406,8 @@ export function RoomSettingsDialog({
         {onUnarchive && (
           <section className="flex flex-col gap-1 border-t border-border pt-4">
             <h3 className="text-sm font-bold text-text">チャンネルを復元</h3>
-            <p className="pb-3 text-sm text-text-secondary">
-              復元すると、メンバーはそのままで、また投稿できるようになります。
-            </p>
-            <Button
-              variant="primary-outline"
-              onClick={onUnarchive}
-              className="self-start"
-            >
+            <p className="pb-3 text-sm text-text-secondary">復元すると、メンバーはそのままで、また投稿できるようになります。</p>
+            <Button variant="primary-outline" onClick={onUnarchive} className="self-start">
               復元する
             </Button>
           </section>
@@ -464,14 +416,8 @@ export function RoomSettingsDialog({
         {onDelete && (
           <section className="flex flex-col gap-1 border-t border-border pt-4">
             <h3 className="text-sm font-bold text-text">チャンネルを削除</h3>
-            <p className="pb-3 text-sm text-text-secondary">
-              {DELETE_CONSEQUENCE}
-            </p>
-            <Button
-              variant="danger-outline"
-              onClick={onDelete}
-              className="self-start"
-            >
+            <p className="pb-3 text-sm text-text-secondary">{DELETE_CONSEQUENCE}</p>
+            <Button variant="danger-outline" onClick={onDelete} className="self-start">
               削除する
             </Button>
           </section>
@@ -525,7 +471,7 @@ export function ArchiveRoomDialog({
 
 /**
  * 削除の確認（ADR 0059）。戻せないので、Slack と同じく「はい、完全に削除します」にチェックを入れるまで押せない。
- * チェックは開くたびに外れた状態から始める（閉じると Dialog ごと外れるので、状態はこの中に持てば足りる）。
+ * チェックは開くたびに外れた状態から始める（閉じると中身ごと外れるので、状態はこの中に持てば足りる）。
  */
 export function DeleteRoomDialog({
   open,
@@ -580,11 +526,7 @@ function DeleteRoomDialogBody({
           <Button variant="secondary" onClick={onCancel}>
             キャンセル
           </Button>
-          <Button
-            variant="danger"
-            onClick={onConfirm}
-            disabled={!confirmed || pending}
-          >
+          <Button variant="danger" onClick={onConfirm} disabled={!confirmed || pending}>
             チャンネルを削除する
           </Button>
         </>
@@ -718,11 +660,7 @@ export function DeleteAttachmentDialog({
     <Dialog
       open={open}
       onClose={onCancel}
-      title={
-        alsoDeletesMessage
-          ? "メッセージごと削除しますか？"
-          : "ファイルを削除しますか？"
-      }
+      title={alsoDeletesMessage ? "メッセージごと削除しますか？" : "ファイルを削除しますか？"}
       description={
         alsoDeletesMessage
           ? "これがこのメッセージの最後の添付で、本文もありません。削除するとメッセージごと消えて、タイムラインからもなくなります。元には戻せません。"
@@ -741,9 +679,7 @@ export function DeleteAttachmentDialog({
     >
       <div className="flex items-center gap-3 rounded-md border border-border bg-surface-muted px-3.5 py-2.5">
         <FileIcon className="size-4.5 shrink-0 text-text-secondary" />
-        <p className="min-w-0 flex-1 truncate text-sm font-medium text-text">
-          {fileName}
-        </p>
+        <p className="min-w-0 flex-1 truncate text-sm font-medium text-text">{fileName}</p>
       </div>
     </Dialog>
   );
@@ -784,11 +720,7 @@ export function DeleteMessageDialog({
       }
     >
       <blockquote className="rounded-r-sm border-l-2 border-border bg-surface-muted px-3.5 py-2.5 text-sm leading-relaxed text-text-secondary">
-        <MessageBody
-          body={body}
-          mentionNames={mentionNames}
-          interactive={false}
-        />
+        <MessageBody body={body} mentionNames={mentionNames} interactive={false} />
       </blockquote>
     </Dialog>
   );

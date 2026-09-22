@@ -35,43 +35,22 @@ import { NotificationMenu } from "@/components/chat/notification-menu";
 import { NotificationPermissionBanner } from "@/components/chat/notification-permission-banner";
 import { RoomHeader } from "@/components/chat/room-header";
 import { RoomTabs } from "@/components/chat/room-tabs";
-import {
-  RemoveSavedItemDialog,
-  RoomSettingsDialog,
-} from "@/components/chat/room-dialogs";
+import { RemoveSavedItemDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
 import { SavedList } from "@/components/chat/saved-list";
-import {
-  SideNavBar,
-  type SideNavItems,
-  type SideNavKey,
-  SideNavRail,
-} from "@/components/chat/side-nav";
+import { SideNavBar, type SideNavItems, type SideNavKey, SideNavRail } from "@/components/chat/side-nav";
 import { Sidebar } from "@/components/chat/sidebar";
 import { StatusDialog } from "@/components/chat/status-dialog";
 import { ThreadList } from "@/components/chat/thread-list";
 import { ThreadPanel } from "@/components/chat/thread-panel";
 import { Timeline } from "@/components/chat/timeline";
-import type {
-  ActivityFilter,
-  AttachmentDraftView,
-  ConnectionBannerStatus,
-} from "@/components/chat/types";
+import type { ActivityFilter, AttachmentDraftView, ConnectionBannerStatus } from "@/components/chat/types";
 import { Avatar } from "@/components/ui/avatar";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
-import {
-  SettingsLayout,
-  type SettingsSection,
-} from "@/components/settings/settings-layout";
+import { SettingsLayout, type SettingsSection } from "@/components/settings/settings-layout";
 import { notifyLevelLabels } from "@/lib/chat/notifications";
-import {
-  type AdminSection,
-  WorkspaceAdminLayout,
-} from "@/components/workspace/admin-layout";
+import { type AdminSection, WorkspaceAdminLayout } from "@/components/workspace/admin-layout";
 import { InviteList } from "@/components/workspace/invites";
-import {
-  type MemberMenuState,
-  MemberList,
-} from "@/components/workspace/member-list";
+import { type MemberMenuState, MemberList } from "@/components/workspace/member-list";
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog";
 import type { WorkspaceRole } from "@/components/workspace/types";
 import { WorkspaceSettings } from "@/components/workspace/workspace-settings";
@@ -158,9 +137,7 @@ export function auth(children: ReactNode, footer?: ReactNode) {
 }
 
 export function login(error?: "credentials" | "rate_limited") {
-  return auth(
-    <LoginForm error={error} forgotPasswordHref={noHref} signupHref={noHref} />,
-  );
+  return auth(<LoginForm error={error} forgotPasswordHref={noHref} signupHref={noHref} />);
 }
 
 // ---- チャット ----
@@ -269,8 +246,7 @@ type ChatOptions = {
    * - menu / menu-pinned: 「…」の「チャンネルへピン留めする」/「チャンネルからピンを外す」
    * - list / list-hover / list-empty: ヘッダーの下の「ピン」のタブ（タイムラインの代わりにメインの領域に出す）
    */
-  pins?:
-    "timeline" | "menu" | "menu-pinned" | "list" | "list-hover" | "list-empty";
+  pins?: "timeline" | "menu" | "menu-pinned" | "list" | "list-hover" | "list-empty";
   /**
    * 「後で」（ADR 0054）。
    * - hover / hover-saved: メッセージのホバーのブックマーク（保存前・保存済み）
@@ -299,8 +275,7 @@ type ChatOptions = {
    * - menu-dm: DM で開いたところ（ミュートだけ）
    * - sidebar: ミュートしたルームの混ざったサイドバー（開いているルームはミュートしていない）
    */
-  notifications?:
-    "menu" | "menu-muted" | "menu-temporary" | "menu-dm" | "sidebar";
+  notifications?: "menu" | "menu-muted" | "menu-temporary" | "menu-dm" | "sidebar";
   /** サイドバーの上の「デスクトップ通知を有効にしますか？」の帯（ADR 0057）。 */
   permissionBanner?: boolean;
   /**
@@ -371,25 +346,13 @@ function profilePanelContent(profile: NonNullable<ChatOptions["profile"]>) {
 function threadPanelContent(thread: NonNullable<ChatOptions["thread"]>) {
   switch (thread) {
     case "replies":
-      return {
-        root: threadRoot,
-        replies: threadReplies,
-        typing: [users.naoki.name],
-      };
+      return { root: threadRoot, replies: threadReplies, typing: [users.naoki.name] };
     case "empty":
       return { root: threadRootWithoutReplies, replies: [], typing: [] };
     case "root-deleted":
-      return {
-        root: deletedThreadRoot,
-        replies: deletedThreadReplies,
-        typing: [],
-      };
+      return { root: deletedThreadRoot, replies: deletedThreadReplies, typing: [] };
     case "broadcast":
-      return {
-        root: threadRoot,
-        replies: threadRepliesWithBroadcast,
-        typing: [],
-      };
+      return { root: threadRoot, replies: threadRepliesWithBroadcast, typing: [] };
   }
 }
 
@@ -398,11 +361,7 @@ function threadTimeline(thread: NonNullable<ChatOptions["thread"]>) {
   if (thread === "broadcast") return timelineWithBroadcast;
   if (thread !== "root-deleted") return timelineWithThreads;
   const [date, ...rest] = timelineWithThreads;
-  return [
-    date,
-    { type: "message" as const, message: deletedThreadRoot },
-    ...rest,
-  ];
+  return [date, { type: "message" as const, message: deletedThreadRoot }, ...rest];
 }
 
 /** 書式とメンションを入れた下書き（ADR 0052）。入力欄の値は送る形のテキスト。 */
@@ -458,21 +417,12 @@ export function chat({
   // アーカイブしたルーム（ADR 0059）。archived-readonly は復元できない人（参加していない member）が見たところ
   const archivedRoom = footer === "archived" || footer === "archived-readonly";
   const threadContent = thread ? threadPanelContent(thread) : undefined;
-  const hover = profile?.startsWith("hover-")
-    ? profileHover(profile)
-    : undefined;
-  const profilePanel = profile?.startsWith("panel-")
-    ? profilePanelContent(profile)
-    : undefined;
+  const hover = profile?.startsWith("hover-") ? profileHover(profile) : undefined;
+  const profilePanel = profile?.startsWith("panel-") ? profilePanelContent(profile) : undefined;
   // ステータスの出ている画面の上に出す（名前の横の絵文字とカードの中身をそろえて見せる）
   const withStatus = presence || profile !== undefined;
   // 「後で」の一覧はスレッドの一覧と同じく、ルームの代わりにメインの領域に出す
-  const savedTab =
-    saved === "archived" || saved === "archived-menu"
-      ? "archived"
-      : saved === "completed"
-        ? "completed"
-        : "in_progress";
+  const savedTab = saved === "archived" || saved === "archived-menu" ? "archived" : saved === "completed" ? "completed" : "in_progress";
   const savedItems =
     saved === "empty"
       ? []
@@ -482,13 +432,11 @@ export function chat({
           ? savedCompleted
           : savedInProgress;
   // 「ピン」のタブでは、タイムラインと入力欄の代わりに一覧を出す（Slack と同じ。ADR 0054）
-  const pinsTab =
-    pins === "list" || pins === "list-hover" || pins === "list-empty";
+  const pinsTab = pins === "list" || pins === "list-hover" || pins === "list-empty";
   // 通知のメニューを DM で開くときだけ、DM のルームを出す
   const room = notifications === "menu-dm" ? dmRoom : selectedRoom;
   // サイドバーの画面では、開いているルームはミュートしない（薄いルームとそうでないルームを見比べるため）
-  const roomMuted =
-    notifications === "menu-muted" || notifications === "menu-temporary";
+  const roomMuted = notifications === "menu-muted" || notifications === "menu-temporary";
   // 参加していない public ルームは設定を持てないので、「通知」のアイコンを出さない（ADR 0055 決定 3）
   const roomNotifications =
     footer === "join" || footer === "archived-readonly"
@@ -501,100 +449,68 @@ export function chat({
               kind={room.kind}
               level={notifications === "menu-muted" ? "all" : null}
               defaultLevelLabel={notifyLevelLabels.mentions}
-              mute={
-                notifications === "menu-muted"
-                  ? {}
-                  : notifications === "menu-temporary"
-                    ? { untilLabel: "今日 18:30 まで" }
-                    : null
-              }
+              mute={notifications === "menu-muted" ? {} : notifications === "menu-temporary" ? { untilLabel: "今日 18:30 まで" } : null}
             />
           ),
         };
   const home = (
-    <Sidebar
-      workspace={workspaces.dev}
-      currentUser={currentUser}
-      rooms={
-        noRooms
-          ? []
-          : search !== undefined && archivedSearch
-            ? roomsSearchedWithArchived
-            : archivedRoom
-              ? rooms.map((r) =>
-                  r.id === room.id ? { ...r, archived: true } : r,
-                )
-              : roomRemoved
-                ? rooms.filter((r) => r.id !== selectedRoom.id)
-                : notifications
-                  ? notifications === "sidebar"
-                    ? roomsWithMuted
-                    : rooms.map((r) =>
-                        r.id === room.id ? { ...r, muted: roomMuted } : r,
-                      )
+          <Sidebar
+            workspace={workspaces.dev}
+            currentUser={currentUser}
+            rooms={
+              noRooms
+                ? []
+                : search !== undefined && archivedSearch
+                  ? roomsSearchedWithArchived
+                  : archivedRoom
+                    ? rooms.map((r) => (r.id === room.id ? { ...r, archived: true } : r))
+                : roomRemoved
+                  ? rooms.filter((r) => r.id !== selectedRoom.id)
+                  : notifications
+                    ? notifications === "sidebar"
+                      ? roomsWithMuted
+                      : rooms.map((r) => (r.id === room.id ? { ...r, muted: roomMuted } : r))
                   : mentions
                     ? roomsWithMentions
                     : presence
                       ? roomsWithStatus
                       : rooms
-      }
-      selectedRoomId={roomRemoved || threads ? undefined : room.id}
-      threads={
-        thread || threads || side
-          ? {
-              href: noHref,
-              unreadCount:
-                threads === "empty"
-                  ? 0
-                  : threads === "notify-off" || threads === "row-menu"
-                    ? unreadThreadCountWithNotifyOff
-                    : unreadThreadCount,
-              selected: Boolean(threads),
             }
-          : undefined
-      }
-      railed
-      roomHref={roomHref}
-      notice={
-        permissionBanner ? (
-          <NotificationPermissionBanner onEnable={noop} onDismiss={noop} />
-        ) : undefined
-      }
-      search={search}
-      onCreateRoom={noop}
-      onStartDm={noop}
-      accountMenuOpen={false}
-      accountMenu={
-        <AccountMenu
-          user={{
-            ...users.you,
-            handle: users.you.handle,
-            status: presence ? myStatus : undefined,
-          }}
-          away={presence}
-        />
-      }
-      switcherOpen={false}
-      switcher={
-        <WorkspaceSwitcher
-          workspaces={[workspaces.dev, workspaces.memo]}
-          currentWorkspaceId={workspaces.dev.id}
-        />
-      }
-    />
+            selectedRoomId={roomRemoved || threads ? undefined : room.id}
+            threads={
+              thread || threads || side
+                ? { href: noHref, unreadCount:
+                    threads === "empty"
+                      ? 0
+                      : threads === "notify-off" || threads === "row-menu"
+                        ? unreadThreadCountWithNotifyOff
+                        : unreadThreadCount, selected: Boolean(threads) }
+                : undefined
+            }
+            railed
+            roomHref={roomHref}
+            notice={permissionBanner ? <NotificationPermissionBanner onEnable={noop} onDismiss={noop} /> : undefined}
+            search={search}
+            onCreateRoom={noop}
+            onStartDm={noop}
+            accountMenuOpen={false}
+            accountMenu={
+              <AccountMenu
+                user={{ ...users.you, handle: users.you.handle, status: presence ? myStatus : undefined }}
+                away={presence}
+              />
+            }
+            switcherOpen={false}
+            switcher={
+              <WorkspaceSwitcher workspaces={[workspaces.dev, workspaces.memo]} currentWorkspaceId={workspaces.dev.id} />
+            }
+          />
   );
   return (
     <>
       <ChatLayout
         mobileView={mobileView}
-        sidebar={sidePane(side, home, {
-          activity,
-          dmsEmpty,
-          dmsUnread,
-          saved,
-          savedTab,
-          savedItems,
-        })}
+        sidebar={sidePane(side, home, { activity, dmsEmpty, dmsUnread, saved, savedTab, savedItems })}
         rail={sideRail(side, { switcher, accountMenu, presence, preview })}
         tabBar={<SideNavBar items={sideNavItems} current={side} />}
         panel={
@@ -614,29 +530,18 @@ export function chat({
                   canSend={false}
                   target="thread"
                   typingNames={threadContent.typing}
-                  alsoInChannel={{
-                    label: "チャンネルにも投稿する",
-                    checked: thread === "broadcast",
-                  }}
+                  alsoInChannel={{ label: "チャンネルにも投稿する", checked: thread === "broadcast" }}
                 />
               }
             >
-              <Timeline
-                items={threadItems(threadContent.root, threadContent.replies)}
-              />
+              <Timeline items={threadItems(threadContent.root, threadContent.replies)} />
             </ThreadPanel>
           ) : undefined
         }
       >
         {threads && (
           <ThreadList
-            threads={
-              threads === "empty"
-                ? []
-                : threads === "list"
-                  ? threadList
-                  : threadListWithNotifyOff
-            }
+            threads={threads === "empty" ? [] : threads === "list" ? threadList : threadListWithNotifyOff}
             threadHref={roomHref}
             onToggleNotify={noop}
             openMenuKey={threads === "row-menu" ? "m-chat-0930" : undefined}
@@ -654,17 +559,13 @@ export function chat({
           />
         )}
         {/* ルームのヘッダーの下には、いつも「メッセージ / ピン」のタブがある（ADR 0054） */}
-        {!roomRemoved && !threads && (
-          <RoomTabs value={pinsTab ? "pins" : "messages"} />
-        )}
+        {!roomRemoved && !threads && <RoomTabs value={pinsTab ? "pins" : "messages"} />}
         {pinsTab && (
           <PinsList
             roomKind={selectedRoom.kind}
             pins={pins === "list-empty" ? [] : pinnedMessages}
             onUnpin={noop}
-            hoveredKey={
-              pins === "list-hover" ? pinnedMessages[0].key : undefined
-            }
+            hoveredKey={pins === "list-hover" ? pinnedMessages[0].key : undefined}
           />
         )}
         <ConnectionBanner status={banner ?? null} />
@@ -676,164 +577,98 @@ export function chat({
               archivedRoom
                 ? timelineArchived
                 : notifications === "menu-dm"
-                  ? dmTimeline
-                  : profile === "hover-former" || profile === "panel-former"
-                    ? timelineWithFormerMember
-                    : withStatus
-                      ? timelineWithStatus
-                      : pins
-                        ? timelineWithPins
-                        : messageAttachments
-                          ? timelineWithImages
-                          : reactions
-                            ? timelineWithReactions
-                            : linkCards
-                              ? timelineWithLinkCards
-                              : formatting
-                                ? timelineWithFormatting
-                                : jump
-                                  ? timelineJumped
-                                  : thread || threadNotify
-                                    ? threadTimeline(thread ?? "replies")
-                                    : mentions
-                                      ? timelineWithMentions
-                                      : broadcastInChannel
-                                        ? timelineWithBroadcast
-                                        : systemMessages
-                                          ? timelineWithSystemMessages
-                                          : avatars
-                                            ? timelineWithAvatars
-                                            : timeline
+                ? dmTimeline
+                : profile === "hover-former" || profile === "panel-former"
+                ? timelineWithFormerMember
+                : withStatus
+                ? timelineWithStatus
+                : pins
+                ? timelineWithPins
+                : messageAttachments
+                ? timelineWithImages
+                : reactions
+                ? timelineWithReactions
+                : linkCards
+                ? timelineWithLinkCards
+                : formatting
+                ? timelineWithFormatting
+                : jump
+                ? timelineJumped
+                : thread || threadNotify
+                ? threadTimeline(thread ?? "replies")
+                : mentions
+                  ? timelineWithMentions
+                  : broadcastInChannel
+                  ? timelineWithBroadcast
+                  : systemMessages
+                  ? timelineWithSystemMessages
+                  : avatars
+                    ? timelineWithAvatars
+                    : timeline
             }
-            openThreadKey={
-              thread === "root-deleted"
-                ? deletedThreadRoot.key
-                : thread
-                  ? threadContent?.root.key
-                  : undefined
-            }
+            openThreadKey={thread === "root-deleted" ? deletedThreadRoot.key : thread ? threadContent?.root.key : undefined}
             highlightedKey={jump === "highlight" ? jumpTargetKey : undefined}
             hoveredKey={
               threadNotify
                 ? threadRootKey
-                : pins === "menu"
-                  ? pinCandidateKey
-                  : pins === "menu-pinned"
-                    ? pinnedMessageKey
-                    : saved === "hover" || saved === "hover-saved"
-                      ? saveCandidateKey
-                      : hoveredKey
+                : pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : saved === "hover" || saved === "hover-saved" ? saveCandidateKey : hoveredKey
             }
             pinFor={
               pins
                 ? (key) => ({
-                    label:
-                      key === pinnedMessageKey || key === "m-1012"
-                        ? "チャンネルからピンを外す"
-                        : "チャンネルへピン留めする",
+                    label: key === pinnedMessageKey || key === "m-1012" ? "チャンネルからピンを外す" : "チャンネルへピン留めする",
                     onClick: noop,
                   })
                 : undefined
             }
-            saveFor={
-              saved === "hover" || saved === "hover-saved"
-                ? () => ({ saved: saved === "hover-saved", onClick: noop })
-                : undefined
-            }
+            saveFor={saved === "hover" || saved === "hover-saved" ? () => ({ saved: saved === "hover-saved", onClick: noop }) : undefined}
             onToggleReaction={noop}
             onTogglePicker={noop}
             openPickerKey={
-              reactions === "picker"
-                ? reactionPickerKey
-                : reactions === "picker-above"
-                  ? lastMessageKey
-                  : undefined
+              reactions === "picker" ? reactionPickerKey : reactions === "picker-above" ? lastMessageKey : undefined
             }
-            reactionPicker={
-              <EmojiPicker onPick={noop} theme={dark ? "dark" : "light"} />
-            }
+            reactionPicker={<EmojiPicker onPick={noop} theme={dark ? "dark" : "light"} />}
             onOpenProfile={profile ? noop : undefined}
-            profileHoverCardFor={
-              hover
-                ? () => <ProfileHoverCard profile={hover.profile} />
-                : undefined
-            }
+            profileHoverCardFor={hover ? () => <ProfileHoverCard profile={hover.profile} /> : undefined}
             hoveredProfileKey={hover?.key}
-            hoveredReaction={
-              reactions === "names" ? hoveredReaction : undefined
-            }
+            hoveredReaction={reactions === "names" ? hoveredReaction : undefined}
             onReply={noop}
             onOpenImage={noop}
             onDeleteAttachment={noop}
             openAttachmentMenu={
-              messageAttachments === "menu"
-                ? { key: attachmentMessageKey, attachmentId: "a-2" }
-                : undefined
+              messageAttachments === "menu" ? { key: attachmentMessageKey, attachmentId: "a-2" } : undefined
             }
             onToggleAttachmentMenu={noop}
             actionsFor={(key) => ({
               canEdit: key === pendingMessageKey,
               // 添付だけを削除できるのは、メッセージを削除できる人と同じ（ADR 0045 決定 5）
-              canDelete:
-                key === pendingMessageKey ||
-                (messageAttachments !== undefined &&
-                  key === attachmentMessageKey),
+              canDelete: key === pendingMessageKey || (messageAttachments !== undefined && key === attachmentMessageKey),
             })}
             openMenuKey={
-              threadNotify
-                ? threadRootKey
-                : pins === "menu"
-                  ? pinCandidateKey
-                  : pins === "menu-pinned"
-                    ? pinnedMessageKey
-                    : menuKey
+              threadNotify ? threadRootKey : pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : menuKey
             }
             threadNotifyFor={
               threadNotify
-                ? (key) =>
-                    key === threadRootKey
-                      ? { notifying: threadNotify === "menu", onClick: noop }
-                      : undefined
+                ? (key) => (key === threadRootKey ? { notifying: threadNotify === "menu", onClick: noop } : undefined)
                 : undefined
             }
             editingKey={editingKey}
-            editing={{
-              value:
-                "了解です。今日の夕方までに一覧を更新して、また共有します。",
-            }}
+            editing={{ value: "了解です。今日の夕方までに一覧を更新して、また共有します。" }}
           />
         )}
-        {body === "empty" && (
-          <EmptyMessages kind={selectedRoom.kind} name={selectedRoom.name} />
-        )}
+        {body === "empty" && <EmptyMessages kind={selectedRoom.kind} name={selectedRoom.name} />}
         {roomRemoved && <RoomUnavailable />}
-        {body === "removed-workspace" && (
-          <RemovedFromWorkspace workspaceName={workspaces.dev.name} />
-        )}
+        {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
         {footer === "composer" && !threads && !pinsTab && (
           <Composer
-            value={
-              composer === "formatted" || composer === "link-dialog"
-                ? composerDraft
-                : mentionQuery === undefined
-                  ? ""
-                  : "金曜の件、"
-            }
-            canSend={
-              mentionQuery !== undefined ||
-              composer === "formatted" ||
-              composer === "link-dialog"
-            }
+            value={composer === "formatted" || composer === "link-dialog" ? composerDraft : mentionQuery === undefined ? "" : "金曜の件、"}
+            canSend={mentionQuery !== undefined || composer === "formatted" || composer === "link-dialog"}
             typingNames={mentions || composer ? [] : typingNames}
             attachments={attachments}
             mentionCandidates={mentionCandidates}
             forceMentionQuery={mentionQuery}
             toolbarVisible={composer !== "toolbar-hidden"}
-            forceLinkDialog={
-              composer === "link-dialog"
-                ? { text: "手順書", url: "" }
-                : undefined
-            }
+            forceLinkDialog={composer === "link-dialog" ? { text: "手順書", url: "" } : undefined}
           />
         )}
         {footer === "join" && <JoinRoomBar />}
@@ -850,27 +685,16 @@ export function chat({
           expiry={
             statusDialog === "empty"
               ? "none"
-              : statusDialog === "custom" ||
-                  statusDialog === "calendar" ||
-                  statusDialog === "time"
+              : statusDialog === "custom" || statusDialog === "calendar" || statusDialog === "time"
                 ? "custom"
                 : "today"
           }
           // 時刻の一覧は「打った文字で絞る」ところを見せる（`17` → 17:00 / 17:30）
-          custom={{
-            date: "2026-09-25",
-            time: statusDialog === "time" ? "17" : "17:00",
-          }}
+          custom={{ date: "2026-09-25", time: statusDialog === "time" ? "17" : "17:00" }}
           calendarMonth="2026-09"
           today="2026-09-21"
           minTime="11:00"
-          openPicker={
-            statusDialog === "calendar"
-              ? "date"
-              : statusDialog === "time"
-                ? "time"
-                : undefined
-          }
+          openPicker={statusDialog === "calendar" ? "date" : statusDialog === "time" ? "time" : undefined}
           pickerOpen={statusDialog === "picker"}
           canClear={statusDialog !== "empty"}
           theme={dark ? "dark" : "light"}
@@ -897,12 +721,7 @@ function sideRail(
     accountMenu,
     presence,
     preview,
-  }: {
-    switcher?: boolean;
-    accountMenu?: boolean;
-    presence?: boolean;
-    preview?: ChatOptions["preview"];
-  },
+  }: { switcher?: boolean; accountMenu?: boolean; presence?: boolean; preview?: ChatOptions["preview"] },
 ) {
   return (
     <SideNavRail
@@ -911,74 +730,26 @@ function sideRail(
       openPreview={preview}
       previews={{
         dms: <DmList variant="preview" rooms={dmRooms} roomHref={roomHref} />,
-        activity: (
-          <ActivityList
-            variant="preview"
-            filter="all"
-            unreadOnly={false}
-            items={activityItems}
-          />
-        ),
-        later: (
-          <SavedList
-            variant="preview"
-            tab="in_progress"
-            inProgressCount={savedInProgress.length}
-            items={savedInProgress}
-          />
-        ),
+        activity: <ActivityList variant="preview" filter="all" unreadOnly={false} items={activityItems} />,
+        later: <SavedList variant="preview" tab="in_progress" inProgressCount={savedInProgress.length} items={savedInProgress} />,
       }}
       workspace={
         <>
-          <button
-            type="button"
-            aria-label="ワークスペースを切り替える"
-            aria-expanded={Boolean(switcher)}
-            aria-haspopup="dialog"
-            className="rounded-sm"
-          >
-            <Avatar
-              id={workspaces.dev.id}
-              name={workspaces.dev.name}
-              size="md"
-              shape="square"
-            />
+          <button type="button" aria-label="ワークスペースを切り替える" aria-expanded={Boolean(switcher)} aria-haspopup="dialog" className="rounded-sm">
+            <Avatar id={workspaces.dev.id} name={workspaces.dev.name} size="md" shape="square" />
           </button>
           {switcher && (
-            <WorkspaceSwitcher
-              placement="rail"
-              workspaces={[workspaces.dev, workspaces.memo]}
-              currentWorkspaceId={workspaces.dev.id}
-            />
+            <WorkspaceSwitcher placement="rail" workspaces={[workspaces.dev, workspaces.memo]} currentWorkspaceId={workspaces.dev.id} />
           )}
         </>
       }
       account={
         <>
-          <button
-            type="button"
-            aria-label="アカウントメニュー"
-            aria-expanded={Boolean(accountMenu)}
-            aria-haspopup="dialog"
-            className="rounded-full"
-          >
-            <Avatar
-              id={currentUser.id}
-              name={currentUser.name}
-              imageUrl={currentUser.avatarUrl}
-              size="sm"
-            />
+          <button type="button" aria-label="アカウントメニュー" aria-expanded={Boolean(accountMenu)} aria-haspopup="dialog" className="rounded-full">
+            <Avatar id={currentUser.id} name={currentUser.name} imageUrl={currentUser.avatarUrl} size="sm" />
           </button>
           {accountMenu && (
-            <AccountMenu
-              placement="rail"
-              user={{
-                ...users.you,
-                handle: users.you.handle,
-                status: presence ? myStatus : undefined,
-              }}
-              away={presence}
-            />
+            <AccountMenu placement="rail" user={{ ...users.you, handle: users.you.handle, status: presence ? myStatus : undefined }} away={presence} />
           )}
         </>
       }
@@ -1012,13 +783,7 @@ function sidePane(
     case "dms":
       return (
         <DmList
-          rooms={
-            dmsEmpty
-              ? []
-              : dmsUnread
-                ? dmRooms.filter((room) => room.unreadCount > 0)
-                : dmRooms
-          }
+          rooms={dmsEmpty ? [] : dmsUnread ? dmRooms.filter((room) => room.unreadCount > 0) : dmRooms}
           unreadOnly={dmsUnread}
           roomHref={roomHref}
           onStartDm={noop}
@@ -1026,20 +791,13 @@ function sidePane(
       );
     case "activity": {
       const filter: ActivityFilter =
-        activity === "dm" ||
-        activity === "mention" ||
-        activity === "thread" ||
-        activity === "reaction"
-          ? activity
-          : "all";
+        activity === "dm" || activity === "mention" || activity === "thread" || activity === "reaction" ? activity : "all";
       const unreadOnly = activity === "unread" || activity === "unread-empty";
       const items =
         activity === "empty" || activity === "unread-empty"
           ? []
           : activityItems.filter(
-              (item) =>
-                (filter === "all" || item.reasons.includes(filter)) &&
-                (!unreadOnly || item.unread),
+              (item) => (filter === "all" || item.reasons.includes(filter)) && (!unreadOnly || item.unread),
             );
       return (
         <ActivityList
@@ -1056,16 +814,8 @@ function sidePane(
           tab={savedTab}
           inProgressCount={saved === "empty" ? 0 : savedInProgress.length}
           items={savedItems}
-          hoveredKey={
-            saved === "row-hover" ? savedInProgress[0].key : undefined
-          }
-          openMenuKey={
-            saved === "menu"
-              ? savedInProgress[0].key
-              : saved === "archived-menu"
-                ? savedArchived[0].key
-                : undefined
-          }
+          hoveredKey={saved === "row-hover" ? savedInProgress[0].key : undefined}
+          openMenuKey={saved === "menu" ? savedInProgress[0].key : saved === "archived-menu" ? savedArchived[0].key : undefined}
         />
       );
   }
@@ -1105,18 +855,9 @@ export function roomHeaderFrame() {
 
 // ---- ワークスペースの管理 ----
 
-const adminHrefs: Record<AdminSection, string> = {
-  settings: noHref,
-  members: noHref,
-  invites: noHref,
-};
+const adminHrefs: Record<AdminSection, string> = { settings: noHref, members: noHref, invites: noHref };
 
-function admin(
-  role: WorkspaceRole,
-  section: AdminSection,
-  children: ReactNode,
-  overlay?: ReactNode,
-) {
+function admin(role: WorkspaceRole, section: AdminSection, children: ReactNode, overlay?: ReactNode) {
   return (
     <>
       <WorkspaceAdminLayout
@@ -1136,36 +877,14 @@ function admin(
 }
 
 export function settingsPage(role: WorkspaceRole, overlay?: ReactNode) {
-  return admin(
-    role,
-    "settings",
-    <WorkspaceSettings
-      role={role}
-      name={workspaces.yama.name}
-      invitePolicy="admins_only"
-    />,
-    overlay,
-  );
+  return admin(role, "settings", <WorkspaceSettings role={role} name={workspaces.yama.name} invitePolicy="admins_only" />, overlay);
 }
 
-export function membersPage(
-  role: WorkspaceRole,
-  openMenu: MemberMenuState = null,
-  overlay?: ReactNode,
-) {
-  return admin(
-    role,
-    "members",
-    <MemberList members={membersAs(role)} openMenu={openMenu} />,
-    overlay,
-  );
+export function membersPage(role: WorkspaceRole, openMenu: MemberMenuState = null, overlay?: ReactNode) {
+  return admin(role, "members", <MemberList members={membersAs(role)} openMenu={openMenu} />, overlay);
 }
 
-export function invitesPage(
-  role: WorkspaceRole,
-  policy: "admins_only" | "all_members" = "admins_only",
-  overlay?: ReactNode,
-) {
+export function invitesPage(role: WorkspaceRole, policy: "admins_only" | "all_members" = "admins_only", overlay?: ReactNode) {
   const canCreate = role !== "member" || policy === "all_members";
   return admin(
     role,
@@ -1173,9 +892,7 @@ export function invitesPage(
     <InviteList
       invites={invitesAs(role)}
       canCreate={canCreate}
-      createLockedReason={
-        canCreate ? undefined : "管理者だけが招待リンクを作成できます。"
-      }
+      createLockedReason={canCreate ? undefined : "管理者だけが招待リンクを作成できます。"}
     />,
     overlay,
   );
@@ -1192,24 +909,14 @@ export const settingsHrefs: Record<SettingsSection, string> = {
 
 export function userSettings(section: SettingsSection, children: ReactNode) {
   return (
-    <SettingsLayout
-      section={section}
-      hrefs={settingsHrefs}
-      backHref={noHref}
-      chatHref={noHref}
-    >
+    <SettingsLayout section={section} hrefs={settingsHrefs} backHref={noHref} chatHref={noHref}>
       {children}
     </SettingsLayout>
   );
 }
 
 export const invitePreview = {
-  workspace: {
-    id: workspaces.yama.id,
-    name: workspaces.yama.name,
-    memberCount: 6,
-    publicRoomCount: 8,
-  },
+  workspace: { id: workspaces.yama.id, name: workspaces.yama.name, memberCount: 6, publicRoomCount: 8 },
   inviter: { id: users.misaki.id, name: users.misaki.name },
 };
 
@@ -1226,11 +933,7 @@ export const inviteFooter = (
  * 拡大表示（ADR 0045）。閉じる・送る・ダウンロードはどの画面でも同じなので、ここでまとめる。
  * 消せない人の画面だけ削除を出さない（決定 9）。
  */
-export function imageViewer(
-  images: ComponentProps<typeof ImageViewer>["images"],
-  index: number,
-  canDelete = true,
-) {
+export function imageViewer(images: ComponentProps<typeof ImageViewer>["images"], index: number, canDelete = true) {
   return (
     <ImageViewer
       images={images}
@@ -1270,9 +973,7 @@ export function roomSettingsDialog({
       archived={archive === "archived"}
       onArchive={archive === "member" || archive === "admin" ? noop : undefined}
       onUnarchive={archive === "archived" ? noop : undefined}
-      onDelete={
-        archive === "admin" || archive === "archived" ? noop : undefined
-      }
+      onDelete={archive === "admin" || archive === "archived" ? noop : undefined}
     />
   );
 }
