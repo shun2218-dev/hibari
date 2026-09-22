@@ -1,6 +1,6 @@
 "use client";
 
-import { type ComponentType, type KeyboardEvent, useRef } from "react";
+import { type ComponentType, type KeyboardEvent, useEffect, useRef } from "react";
 
 import { cx } from "@/lib/cx";
 
@@ -37,6 +37,28 @@ export function Tabs<T extends string>({
 }) {
   const list = useRef<HTMLDivElement>(null);
 
+  // 並びが横にスクロールする置き場所（サイドバーの列のアクティビティ・後で。ADR 0058）では、選んだタブが隠れないように見える位置へ寄せる。
+  // scrollIntoView は使わない。スクロールできる祖先を全部動かすので、画面の外枠（overflow-hidden でもスクリプトからは動く）まで
+  // 横にずれて、モバイルで画面が崩れた。動かすのは並びをじかに包む要素だけにする。
+  // 書体の読み込みでタブの幅が変わるので、読み込み後にもう一度寄せる（jsdom には document.fonts がない）
+  useEffect(() => {
+    let active = true;
+    const reveal = () => {
+      const box = list.current?.parentElement;
+      const tab = list.current?.querySelector<HTMLElement>(`[data-value="${value}"]`);
+      if (!active || !box || !tab) return;
+      const boxRect = box.getBoundingClientRect();
+      const tabRect = tab.getBoundingClientRect();
+      if (tabRect.left < boxRect.left) box.scrollLeft -= boxRect.left - tabRect.left;
+      else if (tabRect.right > boxRect.right) box.scrollLeft += tabRect.right - boxRect.right;
+    };
+    reveal();
+    void document.fonts?.ready.then(reveal);
+    return () => {
+      active = false;
+    };
+  }, [value]);
+
   function onKeyDown(event: KeyboardEvent) {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
     event.preventDefault();
@@ -61,7 +83,7 @@ export function Tabs<T extends string>({
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange?.(item.value)}
             className={cx(
-              "relative -mb-px flex h-10 cursor-pointer items-center gap-1.5 text-base",
+              "relative -mb-px flex h-10 shrink-0 cursor-pointer items-center gap-1.5 text-base whitespace-nowrap",
               selected ? "font-semibold text-text" : "text-text-secondary hover:text-text",
             )}
           >

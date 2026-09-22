@@ -170,6 +170,11 @@
   text-decoration-line: underline line-through;
 }
 
+/* 横にスクロールする並びのスクロールバーを隠す（アクティビティのタブ。サイドバーの幅に 5 つが収まらないため。ADR 0058） */
+@utility scrollbar-none {
+  scrollbar-width: none;
+}
+
 @utility composer-lines {
   max-height: calc(var(--composer-max-lines) * 1lh + var(--spacing) * 2);
 }

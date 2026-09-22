@@ -15,6 +15,11 @@ type AccountMenuProps = {
   onLogout?: () => void;
   /** 外を押す・Esc で閉じる。 */
   onDismiss?: () => void;
+  /**
+   * どこから開くか。header はサイドバーの上のアバター（右上から下へ）、rail は md 以上の左のメニューの下のアバター
+   * （メニューの右に、下端をそろえて上へ。ADR 0058）。
+   */
+  placement?: "header" | "rail";
 };
 
 /**
@@ -30,9 +35,10 @@ export function AccountMenu({
   onOpenSettings,
   onLogout,
   onDismiss,
+  placement = "header",
 }: AccountMenuProps) {
   return (
-    <Popover label="アカウント" className="top-14 right-3 w-58" onDismiss={onDismiss}>
+    <Popover label="アカウント" className={placement === "rail" ? "bottom-0 left-full ml-8 w-58" : "top-14 right-3 w-58"} onDismiss={onDismiss}>
       <div className="flex flex-col gap-0.5 px-2.5 pt-1.5 pb-2">
         <span className="text-base font-semibold text-text">{user.name}</span>
         <span className="font-mono text-2xs text-text-muted">@{user.handle}</span>

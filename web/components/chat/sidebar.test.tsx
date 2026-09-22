@@ -288,4 +288,15 @@ describe("Sidebar の「後で」（ADR 0054）", () => {
 
     expect(screen.queryByRole("link", { name: "後で" })).not.toBeInTheDocument();
   });
+
+  it("moves the account button to the left menu on md and up when railed (ADR 0058)", () => {
+    const { rerender } = renderSidebar();
+    expect(screen.getByRole("button", { name: "アカウントメニュー" })).not.toHaveClass("md:hidden");
+
+    rerender(
+      <Sidebar workspace={workspace} currentUser={currentUser} rooms={rooms} roomHref={(id) => `/rooms/${id}`} railed />,
+    );
+    // モバイルには左のメニューがないので、ボタンは残して md 以上でだけ隠す
+    expect(screen.getByRole("button", { name: "アカウントメニュー" })).toHaveClass("md:hidden");
+  });
 });

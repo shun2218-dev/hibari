@@ -92,4 +92,20 @@ describe("SavedList（ADR 0054）", () => {
 
     expect(screen.getByText(title)).toBeInTheDocument();
   });
+
+  it("戻るボタンは onBack を渡したときだけ出す（サイドバーの列では下のメニューで戻れる。ADR 0058）", () => {
+    const { rerender } = render(<SavedList tab="in_progress" inProgressCount={0} items={[]} />);
+    expect(screen.queryByRole("button", { name: "チャンネル一覧に戻る" })).not.toBeInTheDocument();
+
+    rerender(<SavedList tab="in_progress" inProgressCount={0} items={[]} onBack={() => {}} />);
+    expect(screen.getByRole("button", { name: "チャンネル一覧に戻る" })).toBeInTheDocument();
+  });
+
+  it("preview ではタブを出さずに、渡した行だけを並べる（ADR 0058 の追記）", () => {
+    render(<SavedList variant="preview" tab="in_progress" inProgressCount={2} items={items} />);
+
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "後で" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "佐藤 直樹 のメッセージへ移動" })).toBeInTheDocument();
+  });
 });

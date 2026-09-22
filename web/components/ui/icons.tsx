@@ -8,6 +8,7 @@
 import {
   AppWindow,
   Archive,
+  AtSign,
   Bell,
   BellOff,
   ArchiveRestore,
@@ -26,6 +27,7 @@ import {
   Ellipsis,
   File,
   Hash,
+  House,
   Italic,
   Link,
   List,
@@ -36,6 +38,7 @@ import {
   type LucideProps,
   Mail,
   MessageCircle,
+  MessageCircleMore,
   Megaphone,
   MessagesSquare,
   Pencil,
@@ -50,6 +53,7 @@ import {
   SendHorizontal,
   Settings,
   Smartphone,
+  Smile,
   SmilePlus,
   SquareCode,
   Strikethrough,
@@ -138,3 +142,12 @@ export const RestoreIcon = withDefaults(ArchiveRestore);
 export const BellIcon = withDefaults(Bell);
 /** ミュートしている印（ヘッダーの「通知」のアイコンがこれに変わる）と「ミュートする」。 */
 export const BellOffIcon = withDefaults(BellOff);
+
+// ---- サイドバーの左のメニューとアクティビティ（ADR 0058） ----
+export const HomeIcon = withDefaults(House);
+/** メニューの「DM」（ルームの「メッセージ」のタブの吹き出しと見分けるため、点の入った吹き出しにする）。 */
+export const DmIcon = withDefaults(MessageCircleMore);
+/** アクティビティの「メンション」。 */
+export const AtSignIcon = withDefaults(AtSign);
+/** アクティビティの「リアクション」。 */
+export const SmileIcon = withDefaults(Smile);

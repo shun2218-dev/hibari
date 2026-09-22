@@ -44,10 +44,15 @@ type SavedListProps = {
   onToggleMenu?: (key: string) => void;
   /** ホバーの見た目を固定で出す行（story で状態を再現するため）。 */
   hoveredKey?: string;
-  /** モバイルで一覧に戻る。md 以上では出さない。 */
+  /** モバイルで一覧に戻る。渡したときだけ、md 未満で出す（サイドバーの列に出すときは、下のメニューで戻れるので渡さない）。 */
   onBack?: () => void;
   /** いちばん下の近くまでスクロールした（続きを読み込むきっかけ）。続きがあるか・取得中かの判断は呼ぶ側が行う。 */
   onReachEnd?: () => void;
+  /**
+   * pane はサイドバーの列に出す形。preview は左のメニューにポインタを乗せたときに重ねて出す形（ADR 0058 の追記）で、
+   * タブを出さずに「進行中」だけを並べる。
+   */
+  variant?: "pane" | "preview";
 };
 
 const TABS: readonly { value: SavedTab; label: string }[] = [
@@ -77,7 +82,7 @@ const PANEL_ID = "saved-panel";
 const REACH_END_PX = 400;
 
 /**
- * 「後で」（ADR 0054。Slack の「後で」）。サイドバーの「後で」から開き、スレッドの一覧と同じくルームの代わりにメインの領域に出す。
+ * 「後で」（ADR 0054。Slack の「後で」）。左のメニューの「後で」から開き、アクティビティと同じくサイドバーの列に出す（ADR 0058 決定 1）。
  * 行を押すと、そのメッセージへ飛ぶ（ADR 0042）。
  */
 export function SavedList({
@@ -93,30 +98,41 @@ export function SavedList({
   hoveredKey,
   onBack,
   onReachEnd,
+  variant = "pane",
 }: SavedListProps) {
+  const preview = variant === "preview";
   return (
-    <>
-      <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border px-2 md:pr-3 md:pl-4">
-        <IconButton label="チャンネル一覧に戻る" onClick={onBack} className="md:hidden">
-          <ChevronLeftIcon className="size-5" />
-        </IconButton>
-        <div className="min-w-0 flex-1 pl-1 md:pl-0">
-          <h1 className="text-lg font-bold text-text">後で</h1>
-          <p className="text-2xs text-text-muted">自分だけに見える保存したメッセージ</p>
+    // サイドバーの列（h-full）でも、いまのメインの領域（flex-1）でも縦いっぱいに広がるように両方を当てる
+    <section aria-label="後で" className="flex h-full min-h-0 flex-1 flex-col bg-surface">
+      <header className={cx("flex shrink-0 items-center gap-1 px-4", preview ? "h-14 border-b border-border" : "h-16")}>
+        {onBack && (
+          <IconButton label="チャンネル一覧に戻る" onClick={onBack} className="-ml-2 md:hidden">
+            <ChevronLeftIcon className="size-5" />
+          </IconButton>
+        )}
+        <div className="min-w-0 flex-1">
+          <h1 className={cx("font-bold text-text", preview ? "text-lg" : "text-xl")}>後で</h1>
+          {!preview && <p className="text-2xs text-text-muted">自分だけに見える保存したメッセージ</p>}
         </div>
       </header>
 
-      <div className="shrink-0 px-4 md:px-6">
+      {!preview && (
+        <>
+      {/* サイドバーの列の幅に収まらないときは、横にスクロールさせる（アクティビティのタブと同じ） */}
+      <div className="shrink-0 overflow-x-auto border-b border-border px-4 scrollbar-none">
         <Tabs
           label="後で"
           items={TABS.map((item) => (item.value === "in_progress" ? { ...item, count: inProgressCount } : item))}
           value={tab}
           onChange={onChangeTab}
           panelId={PANEL_ID}
+          bordered={false}
         />
       </div>
+        </>
+      )}
 
-      <div id={PANEL_ID} role="tabpanel" className="flex min-h-0 flex-1 flex-col">
+      <div id={preview ? undefined : PANEL_ID} role={preview ? undefined : "tabpanel"} className="flex min-h-0 flex-1 flex-col">
         {items === undefined ? null : items.length === 0 ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
             <BookmarkIcon className="size-6 text-text-muted" />
@@ -152,7 +168,7 @@ export function SavedList({
           </ul>
         )}
       </div>
-    </>
+    </section>
   );
 }
 
@@ -165,7 +181,7 @@ function UnavailableRow({ onSelect }: { onSelect: () => void }) {
     <button
       type="button"
       onClick={onSelect}
-      className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-left hover:bg-surface-muted md:px-6"
+      className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-left hover:bg-surface-muted"
     >
       <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-sm bg-surface-muted text-text-muted">
         <TrashIcon className="size-4" />
@@ -196,7 +212,7 @@ function SavedRow({
   return (
     <div
       className={cx(
-        "group relative flex flex-col gap-1.5 px-4 py-3 md:px-6",
+        "group relative flex flex-col gap-1.5 px-4 py-3",
         forceHover || menuOpen ? "bg-surface-muted" : "hover:bg-surface-muted focus-within:bg-surface-muted",
       )}
     >
@@ -234,7 +250,7 @@ function SavedRow({
       {/* ホバーの操作（Slack と同じく「完了」と「その他」。リマインダーは 6.14 の後。ADR 0054） */}
       <div
         className={cx(
-          "absolute top-2 right-4 items-center rounded-sm border border-border bg-surface p-0.5 md:right-6",
+          "absolute top-2 right-4 items-center rounded-sm border border-border bg-surface p-0.5",
           forceHover || menuOpen ? "flex" : "hidden group-hover:flex group-focus-within:flex max-md:flex",
         )}
       >
@@ -254,7 +270,7 @@ function SavedRow({
       </div>
 
       {menuOpen && (
-        <Popover label="保存したメッセージの操作" className="top-11 right-4 w-52 md:right-6" onDismiss={onToggleMenu}>
+        <Popover label="保存したメッセージの操作" className="top-11 right-4 w-52" onDismiss={onToggleMenu}>
           {tab !== "in_progress" && (
             <MenuItem icon={RestoreIcon} onClick={() => onMove("in_progress")}>
               進行中に移動する
