@@ -48,6 +48,8 @@ const (
 	SystemMemberRemoved SystemEventType = "member_removed"
 	SystemRoomRenamed   SystemEventType = "room_renamed"
 	// SystemMessagePinned はメッセージをピン留めした（ADR 0054 決定 3）。主語はピン留めした人。
+	// **いまは書かない**（Slack の実物にログがなかったので改めた。決定 3 の追記）。
+	// 改める前に書かれた行を読めるように、種類と DB の CHECK だけを残している。
 	SystemMessagePinned SystemEventType = "message_pinned"
 )
 

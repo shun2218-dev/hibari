@@ -15,32 +15,29 @@ import (
 //
 // ピン留めはルームの状態なので、リアクション（ADR 0044）と同じく**メッセージの change_seq を 1 つ進めて
 // message.updated に乗せる**。専用のイベントも、専用の同期の経路も作らない。
-// ピン留めしたときだけ、チャンネルにログ（システムメッセージ message_pinned）を残す。
+// チャンネルにログ（システムメッセージ）は残さない。誰がピン留めしたかはメッセージの印で分かる
+// （Slack の実物に合わせた。ADR 0054 決定 3 の改め）。
 
 // MaxRoomPins はルームごとのピン留めの上限（ADR 0054 決定 4）。一覧をページングしない根拠にもなる。
 const MaxRoomPins = 100
 
 // PinMessage はメッセージをピン留めする。すでにピン留め済みなら何もせず、現在のメッセージを返す（冪等）。
-//
-// ピン留めしたら、同じトランザクションでチャンネルにログを残す（DM には残さない。ADR 0033 の方針）。
 func (s *Service) PinMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) (Message, error) {
 	return s.changePin(ctx, actor, roomID, messageID, true)
 }
 
 // UnpinMessage はピンを外す。ピン留めされていなければ何もせず、現在のメッセージを返す（冪等）。
-// 外したときはログを残さない（ADR 0054 決定 3）。
 func (s *Service) UnpinMessage(ctx context.Context, actor, roomID, messageID ulid.ULID) (Message, error) {
 	return s.changePin(ctx, actor, roomID, messageID, false)
 }
 
 // changePin は付ける / 外すの共通の流れ。
-// 「認可 → メッセージをロック → ルームの採番（rooms の行ロック）→ 上限を数える → 列を書く → ログを書く」の順にする。
+// 「認可 → メッセージをロック → ルームの採番（rooms の行ロック）→ 上限を数える → 列を書く」の順にする。
 // ロックの順序（メッセージ → rooms）は編集・削除・リアクションと同じ（ADR 0014）。
 func (s *Service) changePin(ctx context.Context, actor, roomID, messageID ulid.ULID, pin bool) (Message, error) {
 	var (
 		msg     Message
 		changed bool
-		logEv   *Event
 	)
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
@@ -107,15 +104,6 @@ func (s *Service) changePin(ctx context.Context, actor, roomID, messageID ulid.U
 			return fmt.Errorf("change pin: %d rows updated", n)
 		}
 		changed = true
-
-		// ログは付けたときだけ、チャンネルにだけ残す。DM はメンバーが固定で、ログを書かない（ADR 0033）。
-		if pin && a.kind() != authz.RoomDM {
-			ev, err := s.writeSystemMessage(ctx, q, roomID, actor, SystemEvent{Type: SystemMessagePinned, MessageID: &messageID})
-			if err != nil {
-				return err
-			}
-			logEv = &ev
-		}
 		msg, err = getMessage(ctx, q, roomID, actor, messageID)
 		return err
 	})
@@ -123,12 +111,7 @@ func (s *Service) changePin(ctx context.Context, actor, roomID, messageID ulid.U
 		return Message{}, err
 	}
 	if changed {
-		// 番号の順（ピン留めしたメッセージ → ログ）に配る。受け取る側は change_seq の欠番で取りこぼしを見つける。
-		events := []Event{messageEvent(EventMessageUpdated, msg)}
-		if logEv != nil {
-			events = append(events, *logEv)
-		}
-		s.deliver(ctx, events...)
+		s.deliver(ctx, messageEvent(EventMessageUpdated, msg))
 	}
 	return msg, nil
 }
