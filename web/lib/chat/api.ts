@@ -197,6 +197,14 @@ export function createChatApi(request: Session["request"]) {
     updateRoom: (roomId: string, body: UpdateRoomRequest) =>
       request<Room>("PATCH", `/api/v1/rooms/${encodeURIComponent(roomId)}`, body),
 
+    /** アーカイブする・戻す（ADR 0059）。できるのはルームのメンバー（admin 以上は読めれば参加していなくても）。 */
+    archiveRoom: (roomId: string) => request<Room>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/archive`),
+
+    unarchiveRoom: (roomId: string) => request<Room>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/unarchive`),
+
+    /** 行ごと削除する（ADR 0059）。元に戻せない。できるのは読める admin 以上。 */
+    deleteRoom: (roomId: string) => request<void>("DELETE", `/api/v1/rooms/${encodeURIComponent(roomId)}`),
+
     /** 非公開ルームに人を追加する。すでにメンバーでも成功する（冪等。ADR 0011）。 */
     addRoomMember: (roomId: string, userId: string) =>
       request<void>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/members`, { user_id: userId }),

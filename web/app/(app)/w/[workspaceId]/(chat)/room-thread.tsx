@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { JoinRoomBar } from "@/components/chat/chat-states";
+import { ArchivedRoomBar, JoinRoomBar } from "@/components/chat/chat-states";
 import { Composer } from "@/components/chat/composer";
 import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
 import { ThreadPanel } from "@/components/chat/thread-panel";
@@ -25,6 +25,7 @@ import { useOrigin } from "@/lib/chat/use-origin";
 import {
   alsoInChannelDoneLabel,
   alsoInChannelLabel,
+  canPost,
   mentionAllRecipients,
   permalinksIn,
   previewImageIds,
@@ -213,10 +214,11 @@ export function RoomThread({
     myRole,
     members,
     mentionCandidates,
-    // 投稿できる人だけがリアクションを付けられる。参加していない public ルームは読めるだけ（ADR 0044 決定 6）
-    canReact: room !== undefined && (room.kind !== "public" || room.is_member),
+    // 投稿できる人だけがリアクションを付けられる。参加していない public ルームは読めるだけ（ADR 0044 決定 6）、
+    // アーカイブ中は誰も付けられない（ADR 0059）
+    canReact: room !== undefined && canPost(room),
     // ピン留めも投稿できる人だけ（ADR 0054 決定 4）。スレッドの返信もピン留めできる
-    canPin: room !== undefined && (room.kind !== "public" || room.is_member),
+    canPin: room !== undefined && canPost(room),
   });
   const draftViews = useMemo(() => drafts.map(toAttachmentDraftView), [drafts]);
   const typingNames = useMemo(() => (typing ?? []).map((t) => t.user.display_name), [typing]);
@@ -266,7 +268,10 @@ export function RoomThread({
         room={{ kind: room.kind, name: roomName(room) }}
         onClose={onClose}
         footer={
-          !ready ? undefined : room.kind === "public" && !room.is_member ? (
+          !ready ? undefined : room.archived_at !== null ? (
+            // アーカイブ中は返信もできない。復元はチャンネルの帯と設定から（ADR 0059）
+            <ArchivedRoomBar />
+          ) : room.kind === "public" && !room.is_member ? (
             <JoinRoomBar joining={joining} onJoin={join} />
           ) : (
             <Composer

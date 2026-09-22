@@ -66,6 +66,10 @@ export function systemMessageText(message: Pick<Message, "sender" | "system">): 
       return `${name} がチャンネルから外されました`;
     case "room_renamed":
       return `${name} がチャンネル名を ${message.system.old_name} から ${message.system.new_name} に変更しました`;
+    case "room_archived":
+      return `${name} がチャンネルをアーカイブしました`;
+    case "room_unarchived":
+      return `${name} がチャンネルを復元しました`;
     case "message_pinned":
       // いまは書かれない（ADR 0054 決定 3 の追記）。改める前に書かれた行のための文言
       return `${name} がこのチャンネルにメッセージをピン留めしました`;
@@ -152,6 +156,8 @@ export function toRoomSummaryView(
     mentionCount: room.mention_count,
     // 期限の来たミュートは、ストアがタイマーで戻す前でも、ここで「していない」とみなす（ADR 0055）
     muted: isMuted(room.notifications, now.getTime()),
+    // サイドバーのチャンネルの節には出さず、検索したときだけ印を付けて出す（ADR 0059。Sidebar が決める）
+    archived: room.archived_at !== null,
   };
 }
 
@@ -769,7 +775,8 @@ export function messageActions(
   message: Message,
   { userId, room, myRole, senderRole }: { userId: string; room: Room; myRole: Role | undefined; senderRole: Role | undefined },
 ): { canEdit: boolean; canDelete: boolean } {
-  if (message.deleted_at !== null) return { canEdit: false, canDelete: false };
+  // アーカイブ中は誰も編集・削除できない（ADR 0059 決定 2）
+  if (message.deleted_at !== null || room.archived_at !== null) return { canEdit: false, canDelete: false };
   // 投稿できるのはルームのメンバーだけ（参加していない public は読めるだけ）
   if (message.sender.id === userId) return { canEdit: room.is_member, canDelete: room.is_member };
   const canModerate =
@@ -778,6 +785,26 @@ export function messageActions(
     roleRanks[myRole] >= roleRanks.admin &&
     (senderRole === undefined || roleRanks[myRole] > roleRanks[senderRole]);
   return { canEdit: false, canDelete: canModerate };
+}
+
+/**
+ * ルームに投稿できるか（リアクション・ピン留め・入力欄も同じ）。参加していない public は読めるだけ（ADR 0044 決定 6）、
+ * アーカイブ中は誰も投稿できない（ADR 0059 決定 2）。サーバーの authz.CanWriteRoom と同じ規則にする。
+ */
+export function canPost(room: Room): boolean {
+  return room.archived_at === null && (room.kind !== "public" || room.is_member);
+}
+
+/**
+ * アーカイブ・復元・削除をできるか（ADR 0059 決定 1）。サーバーの authz.CanArchiveRoom / CanDeleteRoom と同じ規則にする。
+ * - アーカイブと復元: ルームのメンバー。admin 以上は、読めるなら参加していなくても（ここに届くルームは読める）
+ * - 削除: admin 以上だけ
+ * DM と既定のルームは対象外。
+ */
+export function roomArchiveActions(room: Room, myRole: Role | undefined): { canArchive: boolean; canDelete: boolean } {
+  if (room.kind === "dm" || room.is_default || myRole === undefined) return { canArchive: false, canDelete: false };
+  const adminOrAbove = roleRanks[myRole] >= roleRanks.admin;
+  return { canArchive: room.is_member || adminOrAbove, canDelete: adminOrAbove };
 }
 
 const roleLabels: Record<Role, RoleLabel> = { owner: "オーナー", admin: "管理者", member: "メンバー" };

@@ -2,10 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { AddRoomMemberDialog, LeaveRoomDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
+import {
+  AddRoomMemberDialog,
+  ArchiveRoomDialog,
+  DeleteRoomDialog,
+  LeaveRoomDialog,
+  RoomSettingsDialog,
+} from "@/components/chat/room-dialogs";
 import { useSessionState } from "@/lib/auth/session-provider";
 import { useAvatarUrls, useChatState, useChatStore } from "@/lib/chat/chat-provider";
-import { roomName, toDmCandidates, toRoomMemberRows } from "@/lib/chat/views";
+import { roomArchiveActions, roomName, toDmCandidates, toRoomMemberRows } from "@/lib/chat/views";
 
 /**
  * チャンネルの設定（`chat/room/room-settings-dialog.png`）。名前の変更と、非公開チャンネルのメンバーの出し入れ。
@@ -15,6 +21,9 @@ import { roomName, toDmCandidates, toRoomMemberRows } from "@/lib/chat/views";
  *
  * 参加していれば、ロールに関係なくここから退出できる。退出したあとの画面（非公開なら入口に戻る、
  * 公開なら参加していない状態で読み続ける）は、別の端末で退出したときと同じく RoomView が決める。
+ *
+ * アーカイブ・復元・削除（ADR 0059）もここから。アーカイブと削除は確認を挟み、復元は戻せるので挟まない。
+ * 削除したあとは、退出と同じく RoomView が入口に戻す（ストアが removedRooms に left を入れる）。
  */
 export function RoomSettings({
   workspaceId,
@@ -42,6 +51,9 @@ export function RoomSettings({
   const [pending, setPending] = useState(false);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  // アーカイブ・削除の確認（ADR 0059）。開いている間は設定のダイアログを隠す（退出と同じ）
+  const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null);
+  const [archiving, setArchiving] = useState(false);
 
   const isPrivate = room?.kind === "private";
 
@@ -66,6 +78,8 @@ export function RoomSettings({
 
   if (!room || room.kind === "dm") return null;
   const canEdit = myRole !== undefined && myRole !== "member";
+  const archived = room.archived_at !== null;
+  const { canArchive, canDelete } = roomArchiveActions(room, myRole);
 
   function close() {
     setName(undefined);
@@ -121,6 +135,33 @@ export function RoomSettings({
     }
   }
 
+  /** アーカイブする・戻す・削除する。失敗の表示はデザインにないので（退出と同じ）、ダイアログを残して押し直せるようにする。 */
+  async function archive(next: boolean) {
+    setArchiving(true);
+    try {
+      await (next ? store.archiveRoom(roomId) : store.unarchiveRoom(roomId));
+      setConfirming(null);
+      close();
+    } catch (err) {
+      console.error(next ? "failed to archive the room" : "failed to unarchive the room", err);
+    } finally {
+      setArchiving(false);
+    }
+  }
+
+  async function remove() {
+    setArchiving(true);
+    try {
+      await store.deleteRoom(roomId);
+      setConfirming(null);
+      close();
+    } catch (err) {
+      console.error("failed to delete the room", err);
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   async function removeMember(userId: string) {
     try {
       await store.removeRoomMember(roomId, userId);
@@ -132,7 +173,7 @@ export function RoomSettings({
   return (
     <>
       <RoomSettingsDialog
-        open={open && !adding && !confirmingLeave}
+        open={open && !adding && !confirmingLeave && confirming === null}
         kind={room.kind}
         name={name ?? roomName(room)}
         members={rows.map((row) => ({ ...row, avatarUrl: avatarUrls[row.id] ?? undefined }))}
@@ -141,6 +182,10 @@ export function RoomSettings({
         onAddMember={() => setAdding(true)}
         onRemoveMember={removeMember}
         onLeave={room.is_member ? () => setConfirmingLeave(true) : undefined}
+        archived={archived}
+        onArchive={canArchive && !archived ? () => setConfirming("archive") : undefined}
+        onUnarchive={canArchive && archived ? () => void archive(false) : undefined}
+        onDelete={canDelete ? () => setConfirming("delete") : undefined}
         onCancel={close}
         onSave={save}
         saving={saving}
@@ -168,6 +213,21 @@ export function RoomSettings({
         // やめたら設定に戻る（設定から開いたので）
         onCancel={() => setConfirmingLeave(false)}
         onConfirm={leave}
+      />
+      {/* やめたら設定に戻る（退出と同じ） */}
+      <ArchiveRoomDialog
+        open={open && confirming === "archive"}
+        name={roomName(room)}
+        pending={archiving}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => void archive(true)}
+      />
+      <DeleteRoomDialog
+        open={open && confirming === "delete"}
+        name={roomName(room)}
+        pending={archiving}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => void remove()}
       />
     </>
   );
