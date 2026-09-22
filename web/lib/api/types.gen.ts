@@ -32,6 +32,10 @@ export type SavedItemStatus = "ok" | "unavailable";
 
 export type NotifyLevel = "all" | "mentions" | "none";
 
+export type ActivityItemType = "message" | "reaction";
+
+export type ActivityReason = "dm" | "mention" | "thread" | "channel" | "reaction";
+
 export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified";
 
 export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "activity" | "ping";
@@ -562,6 +566,34 @@ export interface MoveSavedRequest {
   state: SavedState;
 }
 
+export interface ActivityItem {
+  /** id は一覧の中で 1 件を決める値（activity.reaction_removed の id と同じ）。 */
+  id: string;
+  type: ActivityItemType;
+  reasons: ActivityReason[];
+  /** unread はルームやスレッドの既読位置から導いた未読（決定 5）。リアクションは常に false。 */
+  unread: boolean;
+  occurred_at: string;
+  room: LinkedRoom;
+  message: Message;
+  reaction: ActivityReaction | null;
+}
+
+export interface ActivityReaction {
+  emoji: string;
+  user: UserProfile;
+}
+
+export interface ActivityList {
+  items: ActivityItem[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export interface ActivityUnreadCount {
+  count: number;
+}
+
 export interface ThreadMessageList {
   root: Message;
   messages: Message[];
@@ -835,6 +867,16 @@ export interface ThreadNotificationsUpdatedData {
   notify_replies: boolean;
 }
 
+export interface ActivityReactionAddedData {
+  workspace_id: string;
+  item: ActivityItem;
+}
+
+export interface ActivityReactionRemovedData {
+  workspace_id: string;
+  id: string;
+}
+
 /** サーバーからのイベント（docs/events.md）。type で data の型が決まる。 */
 export type ServerEvent =
   | { type: "message.created"; data: Message }
@@ -856,7 +898,9 @@ export type ServerEvent =
   | { type: "saved.updated"; data: SavedItem }
   | { type: "notifications.updated"; data: NotificationsUpdatedData }
   | { type: "room.notifications_updated"; data: RoomNotificationsUpdatedData }
-  | { type: "thread.notifications_updated"; data: ThreadNotificationsUpdatedData };
+  | { type: "thread.notifications_updated"; data: ThreadNotificationsUpdatedData }
+  | { type: "activity.reaction_added"; data: ActivityReactionAddedData }
+  | { type: "activity.reaction_removed"; data: ActivityReactionRemovedData };
 
 export type ServerEventType = ServerEvent["type"];
 

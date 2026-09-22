@@ -49,6 +49,10 @@ const (
 	EventRoomNotificationsUpdated EventType = "room.notifications_updated"
 	// スレッドの返信の通知（ADR 0056）。本人のすべての接続にだけ届く。
 	EventThreadNotificationsUpdated EventType = "thread.notifications_updated"
+	// 自分のメッセージにリアクションが付いた・外れた（ADR 0058 決定 9）。送信者のすべての接続にだけ届く。
+	// メッセージのアクティビティは、クライアントが message.created から自分で判断するので、イベントを作らない。
+	EventActivityReactionAdded   EventType = "activity.reaction_added"
+	EventActivityReactionRemoved EventType = "activity.reaction_removed"
 )
 
 // Audience はイベントの宛先。複数の経路で同じ接続に当たっても、実装は 1 回だけ届ける。

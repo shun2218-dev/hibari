@@ -79,6 +79,16 @@ func TestWireRoundTrip(t *testing.T) {
 			Data: chat.RoomNotificationsUpdated{WorkspaceID: u(), RoomID: u(), Notifications: chat.RoomNotifications{Level: &mentions, Muted: true, MutedUntil: &edited}},
 		},
 		{Type: chat.EventThreadNotificationsUpdated, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ThreadNotificationsUpdated{WorkspaceID: u(), RoomID: u(), ThreadRootID: u(), NotifyReplies: false}},
+		{
+			// アクティビティのリアクション（ADR 0058 決定 9）。付けた人と絵文字、送信者から見たルームが往復で落ちないこと
+			Type: chat.EventActivityReactionAdded, To: chat.Audience{Users: []ulid.ULID{user.ID}},
+			Data: chat.ActivityReactionAdded{WorkspaceID: u(), Item: chat.ActivityItem{
+				Key: "r:x:y:👍", Type: chat.ActivityItemReaction, Reasons: []chat.ActivityReason{chat.ReasonReaction}, OccurredAt: at,
+				Room: chat.LinkedRoom{ID: message.RoomID, Kind: "dm", DMPeer: &user}, Message: message,
+				Reaction: &chat.ActivityReaction{Emoji: "👍", User: user},
+			}},
+		},
+		{Type: chat.EventActivityReactionRemoved, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ActivityReactionRemoved{WorkspaceID: u(), Key: "r:x:y:👍"}},
 	}
 	if len(events) != len(dataDecoders) {
 		t.Fatalf("test covers %d event types, dataDecoders has %d", len(events), len(dataDecoders))

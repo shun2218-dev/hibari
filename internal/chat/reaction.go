@@ -58,8 +58,9 @@ func (s *Service) changeReaction(ctx context.Context, actor, roomID, messageID u
 	}
 
 	var (
-		msg     Message
-		changed bool
+		msg      Message
+		changed  bool
+		activity *Event
 	)
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
@@ -121,6 +122,10 @@ func (s *Service) changeReaction(ctx context.Context, actor, roomID, messageID u
 			if err := q.UpdateMessageChangeSeq(ctx, store.UpdateMessageChangeSeqParams{ID: messageID, ChangeSeq: changeSeq}); err != nil {
 				return fmt.Errorf("update change_seq: %w", err)
 			}
+			// 送信者のアクティビティにも知らせる（ADR 0058 決定 9）。message.updated には誰がいつ付けたかが載らないため
+			if activity, err = s.reactionActivityEvent(ctx, q, a.room.WorkspaceID, roomID, messageID, m.SenderID, actor, e, add); err != nil {
+				return err
+			}
 		}
 		msg, err = getMessage(ctx, q, roomID, actor, messageID)
 		return err
@@ -130,6 +135,9 @@ func (s *Service) changeReaction(ctx context.Context, actor, roomID, messageID u
 	}
 	if changed {
 		s.deliver(ctx, messageEvent(EventMessageUpdated, msg))
+	}
+	if activity != nil {
+		s.deliver(ctx, *activity)
 	}
 	return msg, nil
 }

@@ -94,6 +94,8 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | `notifications.updated` | 本人 | ワークスペースでの全体の通知の設定が変わった（別の端末を含む。ADR 0055） |
 | `room.notifications_updated` | 本人 | ルームごとの通知の設定（ミュート・通知する内容）が変わった（別の端末を含む。ADR 0055） |
 | `thread.notifications_updated` | 本人 | スレッドの返信の通知が変わった（別の端末を含む。ADR 0056） |
+| `activity.reaction_added` | 本人（メッセージの送信者） | 自分のメッセージに、ほかの人がリアクションを付けた（ADR 0058） |
+| `activity.reaction_removed` | 本人（メッセージの送信者） | そのリアクションが外された（ADR 0058） |
 
 #### `message.created` / `message.updated` / `message.deleted`
 
@@ -260,6 +262,22 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 - スレッドの返信の通知が変わった（ADR 0056）。オフでも参加は残り、未読も数える。見せ方だけを変える
 - 参加していないスレッドを「新しい返信の通知を受け取る」でフォローしたときは、先に `thread.followed` が届く（参加中のスレッドの一覧に加える）
 - 再接続では、参加中のスレッドの一覧（`notify_replies` / `mention_count` を含む）を取り直せば揃う
+
+#### `activity.reaction_added` / `activity.reaction_removed`
+
+アクティビティ（ADR 0058 決定 9）。**メッセージのアクティビティにはイベントを作らない。** クライアントが `message.created` を見て、
+通知の規則（`testdata/notification-rules.json`）で自分で足す。リアクションだけは `message.updated` に「誰がいつ付けたか」が載らないので、
+送信者にだけ届ける。自分で付けたとき、送信者がそのルームをミュートしている・通知が「なし」のときは届けない（一覧に載らないため）。
+
+```json
+{ "workspace_id": "01J8...", "item": { /* GET /workspaces/{id}/activity の 1 件と同じ形（送信者から見た値） */ } }
+{ "workspace_id": "01J8...", "id": "r:..." }
+```
+
+- `item.id` と `activity.reaction_removed` の `id` は同じ値。受け取ったら一覧のその 1 件を足す・外す
+- リアクションには未読がないので、未読の件数（`GET /workspaces/{id}/activity/unread_count`）は変わらない
+- 未読の件数は `room.read` / `thread.read` を受けたら取り直す（既読位置から導くので、イベントでは届かない）
+- 再接続では、一覧の先頭のページと未読の件数を取り直す（アクティビティには差分のカーソルがない）
 
 #### `room.read`
 
