@@ -110,7 +110,7 @@ func (s *Service) SetRoomNotifications(ctx context.Context, actor, roomID ulid.U
 	if err != nil {
 		return RoomNotifications{}, err
 	}
-	if !authz.CanSetRoomNotifications(a.kind(), a.actor(actor)) {
+	if !authz.CanSetRoomNotifications(a.authzRoom(), a.actor(actor)) {
 		return RoomNotifications{}, ErrForbidden
 	}
 	// DM の通知は全体の設定だけで決まる（決定 1）。上書きを受け付けると、効かない値が保存される。
@@ -169,7 +169,7 @@ func (s *Service) SetThreadNotifications(ctx context.Context, actor, roomID, roo
 	if err != nil {
 		return ThreadNotifications{}, err
 	}
-	if !authz.CanFollowThread(a.kind(), a.actor(actor)) {
+	if !authz.CanFollowThread(a.authzRoom(), a.actor(actor)) {
 		return ThreadNotifications{}, ErrForbidden
 	}
 	root, err := q.GetMessageView(ctx, store.GetMessageViewParams{RoomID: roomID, ID: rootID})

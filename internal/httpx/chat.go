@@ -38,6 +38,9 @@ type ChatService interface {
 	ListRooms(ctx context.Context, actor, workspaceID ulid.ULID) ([]chat.Room, error)
 	GetRoom(ctx context.Context, actor, roomID ulid.ULID) (chat.Room, error)
 	UpdateRoom(ctx context.Context, actor, roomID ulid.ULID, in chat.RoomUpdate) (chat.Room, error)
+	ArchiveRoom(ctx context.Context, actor, roomID ulid.ULID) (chat.Room, error)
+	UnarchiveRoom(ctx context.Context, actor, roomID ulid.ULID) (chat.Room, error)
+	DeleteRoom(ctx context.Context, actor, roomID ulid.ULID) error
 	JoinRoom(ctx context.Context, actor, roomID ulid.ULID) (chat.Room, error)
 	AddRoomMember(ctx context.Context, actor, roomID, target ulid.ULID) error
 	RemoveRoomMember(ctx context.Context, actor, roomID, target ulid.ULID) error
@@ -124,6 +127,10 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("GET /api/v1/workspaces/{workspaceID}/rooms", h.listRooms)
 	handle("GET /api/v1/rooms/{roomID}", h.getRoom)
 	handle("PATCH /api/v1/rooms/{roomID}", h.updateRoom)
+	// アーカイブ・復元・削除（ADR 0059 決定 8）。PATCH に混ぜないのは、できる人が名前の変更と違い、ログも残す別の操作だから。
+	handle("DELETE /api/v1/rooms/{roomID}", h.deleteRoom)
+	handle("POST /api/v1/rooms/{roomID}/archive", h.archiveRoom)
+	handle("POST /api/v1/rooms/{roomID}/unarchive", h.unarchiveRoom)
 	handle("POST /api/v1/rooms/{roomID}/join", h.joinRoom)
 	handle("GET /api/v1/rooms/{roomID}/members", h.listRoomMembers)
 	handle("POST /api/v1/rooms/{roomID}/members", h.addRoomMember)
@@ -807,7 +814,9 @@ type roomResponse struct {
 	LastMessage *lastMessageResponse `json:"last_message"`
 	// Notifications は本人のチャンネルごとの通知の設定（ADR 0055 決定 4）。参加していない public ルームでは null。
 	Notifications *roomNotificationsBody `json:"notifications"`
-	CreatedAt     time.Time              `json:"created_at"`
+	// ArchivedAt はアーカイブされていなければ null（ADR 0059 決定 5）。一覧はアーカイブ済みも返す。
+	ArchivedAt *time.Time `json:"archived_at"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 // dmPeerResponse は DM の相手。presence は自動で決まる状態の初期値（ADR 0015 / 0049）。
@@ -852,6 +861,7 @@ func newRoomResponse(r chat.Room, withCount bool) roomResponse {
 		LastReadUserSeq: r.LastReadUserSeq,
 		UnreadCount:     r.UnreadCount,
 		MentionCount:    r.MentionCount,
+		ArchivedAt:      r.ArchivedAt,
 		CreatedAt:       r.CreatedAt,
 	}
 	if m := r.LastMessage; m != nil {
@@ -990,6 +1000,44 @@ func (h *chatHandlers) updateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, newRoomResponse(room, true))
+}
+
+// archiveRoom はルームをアーカイブする（ADR 0059）。
+func (h *chatHandlers) archiveRoom(w http.ResponseWriter, r *http.Request) {
+	h.setRoomArchived(w, r, h.svc.ArchiveRoom)
+}
+
+// unarchiveRoom はアーカイブを戻す（ADR 0059）。
+func (h *chatHandlers) unarchiveRoom(w http.ResponseWriter, r *http.Request) {
+	h.setRoomArchived(w, r, h.svc.UnarchiveRoom)
+}
+
+func (h *chatHandlers) setRoomArchived(w http.ResponseWriter, r *http.Request, set func(ctx context.Context, actor, roomID ulid.ULID) (chat.Room, error)) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	room, err := set(r.Context(), actorOf(r), roomID)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newRoomResponse(room, true))
+}
+
+// deleteRoom はルームを削除する（ADR 0059）。元に戻せない。
+func (h *chatHandlers) deleteRoom(w http.ResponseWriter, r *http.Request) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	if err := h.svc.DeleteRoom(r.Context(), actorOf(r), roomID); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // joinRoom は public ルームに参加する。すでにメンバーでも 200 を返す。

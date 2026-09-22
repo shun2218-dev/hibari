@@ -51,6 +51,9 @@ const (
 	// **いまは書かない**（Slack の実物にログがなかったので改めた。決定 3 の追記）。
 	// 改める前に書かれた行を読めるように、種類と DB の CHECK だけを残している。
 	SystemMessagePinned SystemEventType = "message_pinned"
+	// SystemRoomArchived / SystemRoomUnarchived はアーカイブした・戻した（ADR 0059 決定 4）。主語はアーカイブ・復元した人。
+	SystemRoomArchived   SystemEventType = "room_archived"
+	SystemRoomUnarchived SystemEventType = "room_unarchived"
 )
 
 // SystemEvent はシステムメッセージの中身。主語は Message.Sender（ADR 0033）。
@@ -231,8 +234,8 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		if err != nil {
 			return err
 		}
-		if !authz.CanWriteRoom(a.kind(), a.actor(actor)) {
-			return ErrForbidden
+		if err := a.authorize(func(r authz.Room) bool { return authz.CanWriteRoom(r, a.actor(actor)) }); err != nil {
+			return err
 		}
 
 		existing, err := q.GetMessageIDByClientMsgID(ctx, store.GetMessageIDByClientMsgIDParams{RoomID: roomID, SenderID: actor, ClientMsgID: in.ClientMsgID})
@@ -254,7 +257,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		now := s.clock.Now()
 		allocated, err := q.AllocateMessageSeq(ctx, store.AllocateMessageSeqParams{RoomID: roomID, Now: now})
 		if err != nil {
-			return fmt.Errorf("allocate seq: %w", err)
+			return archivedIfNoRows(err, "allocate seq")
 		}
 		seq := allocated.LastMessageSeq
 		id := s.ids.New()
@@ -600,8 +603,8 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 			// システムメッセージは参加や名前の変更の記録で、編集・削除の対象にしない（ADR 0033）。
 			return ErrForbidden
 		}
-		if !authz.CanEditMessage(a.kind(), a.actor(actor), m.SenderID == actor) {
-			return ErrForbidden
+		if err := a.authorize(func(r authz.Room) bool { return authz.CanEditMessage(r, a.actor(actor), m.SenderID == actor) }); err != nil {
+			return err
 		}
 		if m.DeletedAt != nil {
 			return ErrMessageDeleted
@@ -614,7 +617,7 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 		// メッセージの行ロックの後に rooms の行ロックを取る（ADR 0014「ロックの順序」）。
 		changeSeq, err := q.AllocateChangeSeq(ctx, store.AllocateChangeSeqParams{RoomID: roomID, N: 1})
 		if err != nil {
-			return fmt.Errorf("allocate change_seq: %w", err)
+			return archivedIfNoRows(err, "allocate change_seq")
 		}
 		now := s.clock.Now()
 		if err := q.UpdateMessageBody(ctx, store.UpdateMessageBodyParams{ID: messageID, Body: body, Now: now, ChangeSeq: changeSeq}); err != nil {
@@ -666,8 +669,10 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, roomID, messageID ul
 		if MessageKind(m.Kind) == MessageKindSystem {
 			return ErrForbidden
 		}
-		if !authz.CanDeleteMessage(a.kind(), a.actor(actor), m.SenderID == actor, a.roles[m.SenderID]) {
-			return ErrForbidden
+		if err := a.authorize(func(r authz.Room) bool {
+			return authz.CanDeleteMessage(r, a.actor(actor), m.SenderID == actor, a.roles[m.SenderID])
+		}); err != nil {
+			return err
 		}
 		if m.DeletedAt != nil {
 			// 削除済みへの削除は冪等な成功。change_seq を採番せず、配信もしない。
@@ -722,7 +727,7 @@ func (s *Service) MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq
 	if err != nil {
 		return ReadState{}, err
 	}
-	if !authz.CanMarkRoomRead(a.kind(), a.actor(actor)) {
+	if !authz.CanMarkRoomRead(a.authzRoom(), a.actor(actor)) {
 		return ReadState{}, ErrForbidden
 	}
 	// 1 文の UPDATE で完結するので、判定との間にルームから外されたら行が見つからない。そのときは判定の時点に合わせて拒否する。

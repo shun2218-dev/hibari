@@ -511,6 +511,14 @@ type roomUpdatedData struct {
 	RoomID      string `json:"room_id"`
 	Name        string `json:"name"`
 	IsDefault   bool   `json:"is_default"`
+	// ArchivedAt はアーカイブされていなければ null（ADR 0059 決定 5）。
+	ArchivedAt *time.Time `json:"archived_at"`
+}
+
+// roomDeletedData はルームの削除（ADR 0059 決定 7）。届いた時点で、サーバーはそのルームの購読を外している。
+type roomDeletedData struct {
+	WorkspaceID string `json:"workspace_id"`
+	RoomID      string `json:"room_id"`
 }
 
 type roomMemberRemovedData struct {
@@ -627,7 +635,9 @@ func eventData(d any) (any, error) {
 	case chat.MemberLeft:
 		return memberLeftData{d.WorkspaceID.String(), d.RoomID.String(), d.UserID.String()}, nil
 	case chat.RoomUpdated:
-		return roomUpdatedData{d.WorkspaceID.String(), d.RoomID.String(), d.Name, d.IsDefault}, nil
+		return roomUpdatedData{d.WorkspaceID.String(), d.RoomID.String(), d.Name, d.IsDefault, d.ArchivedAt}, nil
+	case chat.RoomDeleted:
+		return roomDeletedData{d.WorkspaceID.String(), d.RoomID.String()}, nil
 	case chat.RoomMemberRemoved:
 		return roomMemberRemovedData{d.WorkspaceID.String(), d.RoomID.String(), d.Reason}, nil
 	case chat.RoomRead:

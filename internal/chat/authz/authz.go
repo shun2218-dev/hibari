@@ -134,6 +134,17 @@ const (
 	RoomDM      RoomKind = "dm"
 )
 
+// Room は authz が見るルームの情報（ADR 0059 決定 2）。
+//
+// 種類だけでなく状態も渡すのは、アーカイブのように「ルームの状態によって、誰であってもできなくなる操作」があるため。
+// 判定をハンドラやサービスの `if archived` に散らさず、ここに集める（CLAUDE.md ルール 9）。
+// すべてのルームの関数がこの型を受け取るので、呼ぶ側は状態を渡さずに呼べない。
+type Room struct {
+	Kind      RoomKind
+	IsDefault bool
+	Archived  bool
+}
+
 // RoomActor は、あるルームに対する actor の立場。
 type RoomActor struct {
 	// Role はルームが属するワークスペースでのロール。空ならワークスペースのメンバーではない。
@@ -149,11 +160,11 @@ func CanCreateRoom(actor Role) bool {
 
 // CanReadRoom はルームのメッセージとメンバーを読めるかを返す。
 // public はワークスペースのメンバーなら参加していなくても読める。private / dm はルームのメンバーだけ。
-func CanReadRoom(kind RoomKind, a RoomActor) bool {
+func CanReadRoom(r Room, a RoomActor) bool {
 	if !a.Role.IsMember() {
 		return false
 	}
-	switch kind {
+	switch r.Kind {
 	case RoomPublic:
 		return true
 	case RoomPrivate, RoomDM:
@@ -164,68 +175,97 @@ func CanReadRoom(kind RoomKind, a RoomActor) bool {
 }
 
 // CanWriteRoom はルームに投稿できるかを返す。public でも投稿には参加が必要。
-func CanWriteRoom(kind RoomKind, a RoomActor) bool {
-	return CanReadRoom(kind, a) && a.IsRoomMember
+// アーカイブ中は誰も投稿できない（ADR 0059 決定 2）。ピン留め・アップロード・編集・typing もこの判定に乗るので、まとめて止まる。
+func CanWriteRoom(r Room, a RoomActor) bool {
+	return !r.Archived && CanReadRoom(r, a) && a.IsRoomMember
 }
 
 // CanPinMessage はメッセージをピン留めできる・外せるかを返す（ADR 0054 決定 4）。
 // いまは投稿できる人なら誰でも（Slack の既定と同じ）。判定を別の関数にしておくのは、
 // あとで「admin 以上だけ」に絞るときに、呼ぶ側を直さずに済むようにするため（CanMentionAll と同じ）。
-func CanPinMessage(kind RoomKind, a RoomActor) bool {
-	return CanWriteRoom(kind, a)
+func CanPinMessage(r Room, a RoomActor) bool {
+	return CanWriteRoom(r, a)
 }
 
 // CanJoinRoom は自分でルームに参加できるかを返す。自分で参加できるのは public だけ。
-func CanJoinRoom(kind RoomKind, a RoomActor) bool {
-	return kind == RoomPublic && a.Role.IsMember()
+// アーカイブ中は参加できない（ADR 0059 決定 2。メンバーが増えるのはルームの状態の変更）。
+func CanJoinRoom(r Room, a RoomActor) bool {
+	return !r.Archived && r.Kind == RoomPublic && a.Role.IsMember()
 }
 
 // CanAddRoomMember は他人をルームに追加できるかを返す。private のメンバーなら誰でも追加できる。
 // public は各自が参加し、dm のメンバーは作成時の 2 人で固定する。
-func CanAddRoomMember(kind RoomKind, a RoomActor) bool {
-	return kind == RoomPrivate && CanReadRoom(kind, a)
+func CanAddRoomMember(r Room, a RoomActor) bool {
+	return !r.Archived && r.Kind == RoomPrivate && CanReadRoom(r, a)
 }
 
 // CanUpdateRoom はルームの設定（name / is_default）を変更できるかを返す。
 // is_default は以降に参加する全員に効くので admin 以上に限る。読めないルーム（参加していない private）は変更できない。
-func CanUpdateRoom(kind RoomKind, a RoomActor) bool {
-	return kind != RoomDM && a.Role.rank() >= RoleAdmin.rank() && CanReadRoom(kind, a)
+// アーカイブ中は変更できない（ADR 0059 決定 2）。is_default のルームをアーカイブできないので、アーカイブ中に既定にもできない。
+func CanUpdateRoom(r Room, a RoomActor) bool {
+	return !r.Archived && r.Kind != RoomDM && a.Role.rank() >= RoleAdmin.rank() && CanReadRoom(r, a)
 }
 
 // CanRemoveRoomMember は他人をルームから外せるかを返す。自分で抜けるのは CanLeaveRoom。
 // ロールが target より上で、かつそのルームを読めること（private ならメンバーであること）が必要。
-func CanRemoveRoomMember(kind RoomKind, a RoomActor, target Role) bool {
-	return kind != RoomDM && CanManage(a.Role, target) && CanReadRoom(kind, a)
+func CanRemoveRoomMember(r Room, a RoomActor, target Role) bool {
+	return !r.Archived && r.Kind != RoomDM && CanManage(a.Role, target) && CanReadRoom(r, a)
 }
 
 // CanLeaveRoom は自分でルームから抜けられるかを返す。dm からは抜けられない。
-func CanLeaveRoom(kind RoomKind, a RoomActor) bool {
-	return (kind == RoomPublic || kind == RoomPrivate) && a.Role.IsMember() && a.IsRoomMember
+// アーカイブ中も抜けられる（ADR 0059 決定 2。本人だけの状態で、ほかの人の画面に何も起こさない）。
+func CanLeaveRoom(r Room, a RoomActor) bool {
+	return (r.Kind == RoomPublic || r.Kind == RoomPrivate) && a.Role.IsMember() && a.IsRoomMember
 }
 
 // CanMarkRoomRead は既読位置を更新できるかを返す。既読位置は room_members の行にあるので、参加していない public は対象外。
-func CanMarkRoomRead(kind RoomKind, a RoomActor) bool {
-	return CanReadRoom(kind, a) && a.IsRoomMember
+func CanMarkRoomRead(r Room, a RoomActor) bool {
+	return CanReadRoom(r, a) && a.IsRoomMember
 }
 
 // CanSetRoomNotifications はルームごとの通知の設定（ミュートと通知する内容。ADR 0055 決定 3）を変えられるかを返す。
 // 設定は room_members の行にあるので、既読位置と同じく、読めるが参加していない public ルームでは持てない。
-func CanSetRoomNotifications(kind RoomKind, a RoomActor) bool {
-	return CanReadRoom(kind, a) && a.IsRoomMember
+func CanSetRoomNotifications(r Room, a RoomActor) bool {
+	return CanReadRoom(r, a) && a.IsRoomMember
 }
 
 // CanFollowThread はスレッドに参加して返信の通知を切り替えられるかを返す（ADR 0056 決定 5）。
 // 参加は thread_members の行で、room_members への FK があるので、参加していない public ルームでは持てない。
-func CanFollowThread(kind RoomKind, a RoomActor) bool {
-	return CanReadRoom(kind, a) && a.IsRoomMember
+func CanFollowThread(r Room, a RoomActor) bool {
+	return CanReadRoom(r, a) && a.IsRoomMember
+}
+
+// CanArchiveRoom はルームをアーカイブできるかを返す（ADR 0059 決定 1）。
+// アーカイブは戻せるので広く許す: ルームのメンバーなら誰でも。admin 以上は、読めるルームなら参加していなくても
+// （メンバーが全員抜けたルームを片付けられるように）。DM と is_default のルームは対象外。
+func CanArchiveRoom(r Room, a RoomActor) bool {
+	return !r.Archived && canArchiveOrUnarchive(r, a)
+}
+
+// CanUnarchiveRoom はアーカイブを戻せるかを返す。できる人はアーカイブと同じ。
+func CanUnarchiveRoom(r Room, a RoomActor) bool {
+	return r.Archived && canArchiveOrUnarchive(r, a)
+}
+
+func canArchiveOrUnarchive(r Room, a RoomActor) bool {
+	if r.Kind == RoomDM || r.IsDefault || !CanReadRoom(r, a) {
+		return false
+	}
+	return a.IsRoomMember || a.Role.rank() >= RoleAdmin.rank()
+}
+
+// CanDeleteRoom はルームを削除できるかを返す（ADR 0059 決定 1）。戻せないので admin 以上に絞る（Slack と同じ）。
+// アーカイブ中でも削除できる。読めない private は、admin 以上でも削除できない（存在を 404 で隠す。ADR 0011）。
+func CanDeleteRoom(r Room, a RoomActor) bool {
+	return r.Kind != RoomDM && !r.IsDefault && a.Role.rank() >= RoleAdmin.rank() && CanReadRoom(r, a)
 }
 
 // ---- メッセージ ----
 
 // CanEditMessage はメッセージを編集できるかを返す。送信者本人で、いまも投稿できる場合だけ（ADR 0012）。
 // 他人の本文を書き換えられると、発言の主体が分からなくなるので、admin 以上にも許さない。
-func CanEditMessage(kind RoomKind, a RoomActor, isSender bool) bool {
-	return isSender && CanWriteRoom(kind, a)
+func CanEditMessage(r Room, a RoomActor, isSender bool) bool {
+	return isSender && CanWriteRoom(r, a)
 }
 
 // CanDeleteMessage はメッセージを削除できるかを返す（ADR 0012）。
@@ -234,11 +274,11 @@ func CanEditMessage(kind RoomKind, a RoomActor, isSender bool) bool {
 //   - それ以外は、ルームを読める admin 以上で、送信者を管理できる（CanManage）場合だけ。荒らしの投稿を消すため。
 //     送信者がワークスペースを抜けていれば（senderRole が空）、admin 以上なら削除できる。抜けた人の投稿を誰も消せなくなるのを避ける。
 //   - dm では他人のメッセージを削除できない。dm は 2 人だけの場で、管理の対象にしない。
-func CanDeleteMessage(kind RoomKind, a RoomActor, isSender bool, senderRole Role) bool {
+func CanDeleteMessage(r Room, a RoomActor, isSender bool, senderRole Role) bool {
 	if isSender {
-		return CanWriteRoom(kind, a)
+		return CanWriteRoom(r, a)
 	}
-	if kind == RoomDM || a.Role.rank() < RoleAdmin.rank() || !CanReadRoom(kind, a) {
+	if r.Archived || r.Kind == RoomDM || a.Role.rank() < RoleAdmin.rank() || !CanReadRoom(r, a) {
 		return false
 	}
 	return !senderRole.IsMember() || CanManage(a.Role, senderRole)
@@ -248,8 +288,8 @@ func CanDeleteMessage(kind RoomKind, a RoomActor, isSender bool, senderRole Role
 
 // CanUploadAttachment は、ルームに添付ファイルをアップロードする URL を発行できるかを返す（ADR 0013）。
 // アップロードは投稿の準備なので、投稿できる人に限る。読めるだけの人（参加していない public）がストレージに書き込めると、容量を使うだけの操作ができてしまう。
-func CanUploadAttachment(kind RoomKind, a RoomActor) bool {
-	return CanWriteRoom(kind, a)
+func CanUploadAttachment(r Room, a RoomActor) bool {
+	return CanWriteRoom(r, a)
 }
 
 // CanCompleteAttachment はアップロードの完了（HEAD による検証）を報告できるかを返す。アップロードした本人だけ。
@@ -258,8 +298,8 @@ func CanCompleteAttachment(isUploader bool) bool {
 }
 
 // CanViewAttachment は、メッセージに付いた添付ファイルの GET URL を取得できるかを返す。メッセージを読める人なら取得できる。
-func CanViewAttachment(kind RoomKind, a RoomActor) bool {
-	return CanReadRoom(kind, a)
+func CanViewAttachment(r Room, a RoomActor) bool {
+	return CanReadRoom(r, a)
 }
 
 // ---- WebSocket（ADR 0015） ----
@@ -271,11 +311,11 @@ func CanSubscribeWorkspace(actor Role) bool {
 
 // CanSubscribeRoom はルームのイベント（メッセージ・メンバー・typing）を購読できるかを返す。読める人なら購読できる。
 // 購読のたびと権限の変更のたびに判定し、接続したときの結果をキャッシュし続けない（CLAUDE.md ルール 8）。
-func CanSubscribeRoom(kind RoomKind, a RoomActor) bool {
-	return CanReadRoom(kind, a)
+func CanSubscribeRoom(r Room, a RoomActor) bool {
+	return CanReadRoom(r, a)
 }
 
 // CanSendTyping は入力中を知らせられるかを返す。投稿できる人だけ（読めるだけの人が「入力中」と表示されないように）。
-func CanSendTyping(kind RoomKind, a RoomActor) bool {
-	return CanWriteRoom(kind, a)
+func CanSendTyping(r Room, a RoomActor) bool {
+	return CanWriteRoom(r, a)
 }

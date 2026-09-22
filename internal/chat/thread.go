@@ -52,7 +52,7 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 	// 「チャンネルにも投稿する」なら、チャンネルの発言として user_seq と last_message_at も進める（ADR 0039）。
 	allocated, err := q.AllocateThreadReplySeq(ctx, store.AllocateThreadReplySeqParams{RoomID: roomID, InChannel: in.AlsoInChannel, Now: now})
 	if err != nil {
-		return Message{}, nil, fmt.Errorf("allocate thread reply seq: %w", err)
+		return Message{}, nil, archivedIfNoRows(err, "allocate thread reply seq")
 	}
 	// change_seq は 2 つ採番した。返信が 1 つ目、親（返信数の変化）が 2 つ目。
 	replyChangeSeq, rootChangeSeq := allocated.LastChangeSeq-1, allocated.LastChangeSeq
@@ -177,7 +177,7 @@ func (s *Service) softDeleteMessage(ctx context.Context, q *store.Queries, roomI
 	}
 	last, err := q.AllocateChangeSeq(ctx, store.AllocateChangeSeqParams{RoomID: roomID, N: n})
 	if err != nil {
-		return nil, fmt.Errorf("allocate change_seq: %w", err)
+		return nil, archivedIfNoRows(err, "allocate change_seq")
 	}
 	// 返信の削除では、削除した返信が 1 つ目、親が 2 つ目の番号を使う（送信と同じ並び）。
 	if err := q.SoftDeleteMessage(ctx, store.SoftDeleteMessageParams{ID: m.ID, Now: s.clock.Now(), ChangeSeq: last - n + 1}); err != nil {
@@ -454,7 +454,7 @@ func (s *Service) MarkThreadRead(ctx context.Context, actor, roomID, rootID ulid
 	if err != nil {
 		return ThreadReadState{}, err
 	}
-	if !authz.CanMarkRoomRead(a.kind(), a.actor(actor)) {
+	if !authz.CanMarkRoomRead(a.authzRoom(), a.actor(actor)) {
 		return ThreadReadState{}, ErrForbidden
 	}
 	root, err := q.GetMessageView(ctx, store.GetMessageViewParams{RoomID: roomID, ID: rootID})

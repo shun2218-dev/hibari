@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -53,6 +54,8 @@ const (
 	// メッセージのアクティビティは、クライアントが message.created から自分で判断するので、イベントを作らない。
 	EventActivityReactionAdded   EventType = "activity.reaction_added"
 	EventActivityReactionRemoved EventType = "activity.reaction_removed"
+	// ルームが削除された（ADR 0059 決定 7）。
+	EventRoomDeleted EventType = "room.deleted"
 )
 
 // Audience はイベントの宛先。複数の経路で同じ接続に当たっても、実装は 1 回だけ届ける。
@@ -79,7 +82,10 @@ type Event struct {
 	Type          EventType
 	To            Audience
 	AccessChanges []AccessChange
-	Data          any
+	// ClosedRooms は、このイベントを届けたあとで、全接続の購読を外すルーム（ADR 0059 決定 7。削除されたルーム）。
+	// ルームがもうないので、AccessChanges のようにユーザーごとに DB を読み直す必要はない。
+	ClosedRooms []ulid.ULID
+	Data        any
 }
 
 // イベントのデータ。JSON の形は WebSocket の層（httpx）が docs/events.md に合わせて決める。
@@ -102,6 +108,7 @@ type Event struct {
 //	notifications.updated               → NotificationsUpdated
 //	room.notifications_updated          → RoomNotificationsUpdated
 //	thread.notifications_updated        → ThreadNotificationsUpdated
+//	room.deleted                        → RoomDeleted
 
 // RemovalReason はメンバーから外れた理由。
 type RemovalReason string
@@ -130,6 +137,13 @@ type RoomUpdated struct {
 	RoomID      ulid.ULID
 	Name        string
 	IsDefault   bool
+	// ArchivedAt はアーカイブした時刻。アーカイブされていなければ nil（ADR 0059 決定 5）。
+	ArchivedAt *time.Time
+}
+
+type RoomDeleted struct {
+	WorkspaceID ulid.ULID
+	RoomID      ulid.ULID
 }
 
 type RoomMemberRemoved struct {

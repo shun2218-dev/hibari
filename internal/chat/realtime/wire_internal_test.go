@@ -46,7 +46,13 @@ func TestWireRoundTrip(t *testing.T) {
 		{Type: chat.EventMessageDeleted, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}}, Data: chat.Message{ID: u(), Attachments: []chat.MessageAttachment{}, Mentions: []chat.Mention{}, Reactions: []chat.MessageReaction{}, DeletedAt: &edited}},
 		{Type: chat.EventMemberJoined, To: chat.Audience{Rooms: []ulid.ULID{u()}, Users: []ulid.ULID{user.ID}}, Data: chat.MemberJoined{WorkspaceID: u(), RoomID: u(), User: user}},
 		{Type: chat.EventMemberLeft, To: chat.Audience{Rooms: []ulid.ULID{u()}}, Data: chat.MemberLeft{WorkspaceID: u(), RoomID: u(), UserID: u()}},
-		{Type: chat.EventRoomUpdated, To: chat.Audience{Rooms: []ulid.ULID{u()}, Workspaces: []ulid.ULID{u()}}, Data: chat.RoomUpdated{WorkspaceID: u(), RoomID: u(), Name: "general", IsDefault: true}},
+		{Type: chat.EventRoomUpdated, To: chat.Audience{Rooms: []ulid.ULID{u()}, Workspaces: []ulid.ULID{u()}}, Data: chat.RoomUpdated{WorkspaceID: u(), RoomID: u(), Name: "general", IsDefault: true, ArchivedAt: &at}},
+		{
+			// 削除したルームの購読を、受け取ったインスタンスが外せるように運ぶ（ADR 0059 決定 7）
+			Type: chat.EventRoomDeleted, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}, Users: []ulid.ULID{user.ID}},
+			ClosedRooms: []ulid.ULID{message.RoomID},
+			Data:        chat.RoomDeleted{WorkspaceID: u(), RoomID: message.RoomID},
+		},
 		{
 			Type: chat.EventRoomMemberRemoved, To: chat.Audience{Users: []ulid.ULID{user.ID}},
 			AccessChanges: []chat.AccessChange{{UserID: user.ID, WorkspaceID: u()}},

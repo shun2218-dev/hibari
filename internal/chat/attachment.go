@@ -233,8 +233,8 @@ func (s *Service) CreateAttachment(ctx context.Context, actor, roomID ulid.ULID,
 	if err != nil {
 		return CreatedAttachment{}, err
 	}
-	if !authz.CanUploadAttachment(a.kind(), a.actor(actor)) {
-		return CreatedAttachment{}, ErrForbidden
+	if err := a.authorize(func(r authz.Room) bool { return authz.CanUploadAttachment(r, a.actor(actor)) }); err != nil {
+		return CreatedAttachment{}, err
 	}
 
 	id := s.ids.New()
@@ -342,7 +342,7 @@ func (s *Service) GetAttachmentURL(ctx context.Context, actor, attachmentID ulid
 	if err != nil {
 		return DownloadURL{}, err
 	}
-	if !authz.CanViewAttachment(a.kind(), a.actor(actor)) {
+	if !authz.CanViewAttachment(a.authzRoom(), a.actor(actor)) {
 		return DownloadURL{}, ErrNotFound
 	}
 
@@ -413,22 +413,55 @@ func loadMessageAttachments(ctx context.Context, q *store.Queries, roomID ulid.U
 }
 
 // CleanupAttachments は、メッセージに付かないまま attachmentRetention を過ぎた添付と、削除されたメッセージの添付を、
-// ストレージのオブジェクトと行ごと消す。消した件数を返す。
+// ストレージのオブジェクトと行ごと消す。続けて、削除したルームの添付のオブジェクト（storage_deletions。ADR 0059 決定 6）も消す。
+// 消したオブジェクトの件数を返す。
 //
 // 対象がなくなるまで、cleanupBatchSize 件ずつのトランザクションを繰り返す。行は FOR UPDATE SKIP LOCKED で取るので、
 // 複数台で同時に実行しても同じ行を取り合わない（ロードマップ Phase 3c / Phase 5）。
 func (s *Service) CleanupAttachments(ctx context.Context) (int, error) {
 	total := 0
-	for {
-		n, err := s.cleanupAttachmentBatch(ctx)
-		total += n
-		if err != nil {
-			return total, err
-		}
-		if n < cleanupBatchSize {
-			return total, nil
+	for _, batch := range []func(context.Context) (int, error){s.cleanupAttachmentBatch, s.cleanupStorageDeletionBatch} {
+		for {
+			n, err := batch(ctx)
+			total += n
+			if err != nil {
+				return total, err
+			}
+			if n < cleanupBatchSize {
+				break
+			}
 		}
 	}
+	return total, nil
+}
+
+// cleanupStorageDeletionBatch は、猶予を過ぎた storage_deletions の行のオブジェクトを消してから行を消す。
+// 失敗したらロールバックして、次の実行でやり直す（添付の掃除と同じ。S3 の DELETE は冪等）。
+func (s *Service) cleanupStorageDeletionBatch(ctx context.Context) (int, error) {
+	var n int
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		q := store.New(tx)
+		keys, err := q.LockDueStorageDeletions(ctx, store.LockDueStorageDeletionsParams{Now: s.clock.Now(), MaxRows: cleanupBatchSize})
+		if err != nil {
+			return fmt.Errorf("lock storage deletions: %w", err)
+		}
+		for _, key := range keys {
+			if err := s.storage.Delete(ctx, key); err != nil {
+				return fmt.Errorf("delete object: %w", err)
+			}
+		}
+		if len(keys) > 0 {
+			if err := q.DeleteStorageDeletions(ctx, keys); err != nil {
+				return fmt.Errorf("delete storage deletions: %w", err)
+			}
+		}
+		n = len(keys)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 func (s *Service) cleanupAttachmentBatch(ctx context.Context) (int, error) {
@@ -528,8 +561,10 @@ func (s *Service) DeleteMessageAttachment(ctx context.Context, actor, roomID, me
 		if MessageKind(m.Kind) == MessageKindSystem || m.DeletedAt != nil {
 			return ErrNotFound
 		}
-		if !authz.CanDeleteMessage(a.kind(), a.actor(actor), m.SenderID == actor, a.roles[m.SenderID]) {
-			return ErrForbidden
+		if err := a.authorize(func(r authz.Room) bool {
+			return authz.CanDeleteMessage(r, a.actor(actor), m.SenderID == actor, a.roles[m.SenderID])
+		}); err != nil {
+			return err
 		}
 
 		n, err := q.DeleteMessageAttachment(ctx, store.DeleteMessageAttachmentParams{ID: attachmentID, RoomID: roomID, MessageID: &messageID})
@@ -561,7 +596,7 @@ func (s *Service) DeleteMessageAttachment(ctx context.Context, actor, roomID, me
 		} else {
 			changeSeq, err := q.AllocateChangeSeq(ctx, store.AllocateChangeSeqParams{RoomID: roomID, N: 1})
 			if err != nil {
-				return fmt.Errorf("allocate change_seq: %w", err)
+				return archivedIfNoRows(err, "allocate change_seq")
 			}
 			// 添付が 1 件減るのは「このメッセージの見え方が変わった」こと。編集ではないので edited_at は触らない。
 			if err := q.UpdateMessageChangeSeq(ctx, store.UpdateMessageChangeSeqParams{ID: messageID, ChangeSeq: changeSeq}); err != nil {

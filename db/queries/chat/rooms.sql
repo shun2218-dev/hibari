@@ -5,16 +5,20 @@
 -- 送信と同じトランザクションの中で呼ぶ。rooms の行ロックで同じルームへの送信・編集・削除が直列化され、
 -- ロールバックすれば採番も取り消されるので欠番にならない。
 -- 人の発言なので user_seq も 1 進める（ADR 0033）。
+-- アーカイブ中は行を返さない（ADR 0059 決定 3）。authz はトランザクションの前に読んだ値で判断するので、
+-- その後にアーカイブされた送信はここで止める。アーカイブも同じ行を更新するので、行ロックで直列化される。
 UPDATE rooms
    SET last_message_seq = last_message_seq + 1,
        last_change_seq  = last_change_seq + 1,
        last_user_seq    = last_user_seq + 1,
        last_message_at  = sqlc.arg(now)::timestamptz
  WHERE id = sqlc.arg(room_id)
+   AND archived_at IS NULL
 RETURNING last_message_seq, last_change_seq, last_user_seq;
 
 -- name: AllocateSystemMessageSeq :one
 -- システムメッセージ（ADR 0033）の採番。seq と change_seq は進め、user_seq は進めない（未読数に数えない）。
+-- アーカイブ中でも採番する（アーカイブ中の退出のログと、復元のログを書くため。ADR 0059）。
 UPDATE rooms
    SET last_message_seq = last_message_seq + 1,
        last_change_seq  = last_change_seq + 1,
@@ -33,14 +37,17 @@ UPDATE rooms
        last_user_seq    = last_user_seq + CASE WHEN sqlc.arg(in_channel)::boolean THEN 1 ELSE 0 END,
        last_message_at  = CASE WHEN sqlc.arg(in_channel)::boolean THEN sqlc.arg(now)::timestamptz ELSE last_message_at END
  WHERE id = sqlc.arg(room_id)
+   AND archived_at IS NULL
 RETURNING last_message_seq, last_change_seq, last_user_seq;
 
 -- name: AllocateChangeSeq :one
 -- 既存のメッセージの編集・削除のために change_seq だけを n 個採番し、最後の番号を返す（ADR 0014）。seq は進めない。
 -- 返信の削除は、返信と親（返信数が減る）の 2 つを使う（ADR 0036）。
+-- 使うのは編集・削除・リアクション・ピン留め・添付の削除で、どれもアーカイブ中は止める操作なので、アーカイブ中は行を返さない（ADR 0059 決定 3）。
 UPDATE rooms
    SET last_change_seq = last_change_seq + sqlc.arg(n)::bigint
  WHERE id = sqlc.arg(room_id)
+   AND archived_at IS NULL
 RETURNING last_change_seq;
 
 -- name: CreateRoom :one
@@ -201,3 +208,42 @@ SELECT rm.user_id, rm.joined_at, wm.role, u.handle, u.display_name,
    AND u.deleted_at IS NULL
  ORDER BY rm.user_id
  LIMIT sqlc.arg(max_rows);
+
+-- name: ArchiveRoom :one
+-- アーカイブする（ADR 0059 決定 3）。すでにアーカイブ済みなら行を返さない（呼ぶ側が 409 にする）。
+-- 送信の採番と同じ rooms の行を更新するので、行ロックで直列化される。
+UPDATE rooms
+   SET archived_at = sqlc.arg(now)::timestamptz
+ WHERE id = sqlc.arg(id)
+   AND archived_at IS NULL
+RETURNING *;
+
+-- name: UnarchiveRoom :one
+-- アーカイブを戻す。アーカイブされていなければ行を返さない。
+UPDATE rooms
+   SET archived_at = NULL
+ WHERE id = sqlc.arg(id)
+   AND archived_at IS NOT NULL
+RETURNING *;
+
+-- name: LockRoomForDelete :one
+-- 削除の前にルームの行を FOR UPDATE でロックする（ADR 0059 決定 6）。
+-- 添付の INSERT（rooms への外部キーで KEY SHARE を取る）と送信の採番を止め、写すキーと消す行のあいだに添付が増えないようにする。
+SELECT id
+  FROM rooms
+ WHERE id = sqlc.arg(id)
+   FOR UPDATE;
+
+-- name: EnqueueRoomStorageDeletions :exec
+-- ルームの添付のオブジェクトのキーを、ルームに依存しない掃除の列に写す（ADR 0059 決定 6）。
+-- pending の行も写す。削除の直前に発行された PUT URL で、削除の後に置かれたオブジェクトも not_before を過ぎてから消すため。
+INSERT INTO storage_deletions (object_key, not_before, created_at)
+SELECT object_key, sqlc.arg(not_before)::timestamptz, sqlc.arg(now)::timestamptz
+  FROM attachments
+ WHERE room_id = sqlc.arg(room_id)
+ON CONFLICT (object_key) DO NOTHING;
+
+-- name: DeleteRoom :exec
+-- ルームを行ごと消す（論理削除にしない。ADR 0059 決定 6）。メッセージ・添付・メンバー・リアクション・メンション・保存・スレッドの行は CASCADE で消える。
+DELETE FROM rooms
+ WHERE id = sqlc.arg(id);

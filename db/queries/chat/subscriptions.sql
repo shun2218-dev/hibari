@@ -4,7 +4,8 @@
 -- name: ListRoomAccessForUser :many
 -- room_ids のうち存在するルームについて、user_id のワークスペースでのロールとルームのメンバーかどうかを返す。
 -- 削除済みのワークスペースのルームは返さない（存在しないものとして扱う）。
-SELECT r.id, r.workspace_id, r.kind,
+-- is_default / archived_at は authz に渡すルームの状態（ADR 0059 決定 2。アーカイブ中は typing を止める）。
+SELECT r.id, r.workspace_id, r.kind, r.is_default, r.archived_at,
        coalesce(wm.role, '')::text AS role,
        (rm.user_id IS NOT NULL)::boolean AS is_room_member
   FROM rooms r

@@ -43,6 +43,8 @@ type wireEvent struct {
 	Users         []ulid.ULID         `json:"users,omitempty"`
 	ExceptUser    *ulid.ULID          `json:"except_user,omitzero"`
 	AccessChanges []chat.AccessChange `json:"access_changes,omitempty"`
+	// ClosedRooms は、届けたあとで全接続の購読を外すルーム（ADR 0059 決定 7）。受け取ったインスタンスがそれぞれ外す。
+	ClosedRooms []ulid.ULID `json:"closed_rooms,omitempty"`
 	// Data はドメインの型をそのまま JSON にしたもの。型は Type で決まる（dataDecoders）。
 	Data jsontext.Value `json:"data"`
 }
@@ -71,6 +73,7 @@ var dataDecoders = map[chat.EventType]func([]byte) (any, error){
 	chat.EventThreadNotificationsUpdated: decodeData[chat.ThreadNotificationsUpdated],
 	chat.EventActivityReactionAdded:      decodeData[chat.ActivityReactionAdded],
 	chat.EventActivityReactionRemoved:    decodeData[chat.ActivityReactionRemoved],
+	chat.EventRoomDeleted:                decodeData[chat.RoomDeleted],
 }
 
 func decodeData[T any](b []byte) (any, error) {
@@ -122,6 +125,7 @@ func encodeWire(ev chat.Event, id ulid.ULID, fanout int) ([]byte, error) {
 		Workspaces:    ev.To.Workspaces,
 		Users:         ev.To.Users,
 		AccessChanges: ev.AccessChanges,
+		ClosedRooms:   ev.ClosedRooms,
 		Data:          data,
 	}
 	if ev.To.ExceptUser != (ulid.ULID{}) {
@@ -154,6 +158,7 @@ func decodeWire(payload []byte) (w wireEvent, ev chat.Event, err error) {
 		Type:          w.Type,
 		To:            chat.Audience{Rooms: w.Rooms, Workspaces: w.Workspaces, Users: w.Users},
 		AccessChanges: w.AccessChanges,
+		ClosedRooms:   w.ClosedRooms,
 		Data:          data,
 	}
 	if w.ExceptUser != nil {

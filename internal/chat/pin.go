@@ -46,11 +46,11 @@ func (s *Service) changePin(ctx context.Context, actor, roomID, messageID ulid.U
 		if err != nil {
 			return err
 		}
-		if !authz.CanReadRoom(a.kind(), a.actor(actor)) {
+		if !authz.CanReadRoom(a.authzRoom(), a.actor(actor)) {
 			return ErrNotFound
 		}
-		if !authz.CanPinMessage(a.kind(), a.actor(actor)) {
-			return ErrForbidden
+		if err := a.authorize(func(r authz.Room) bool { return authz.CanPinMessage(r, a.actor(actor)) }); err != nil {
+			return err
 		}
 		m, err := q.GetMessageForUpdate(ctx, store.GetMessageForUpdateParams{RoomID: roomID, ID: messageID})
 		if err != nil {
@@ -76,7 +76,7 @@ func (s *Service) changePin(ctx context.Context, actor, roomID, messageID ulid.U
 		// 2 人が同時に 100 件目を付けても 101 件にはならない。超えたらロールバックで番号も戻る（決定 4）。
 		changeSeq, err := q.AllocateChangeSeq(ctx, store.AllocateChangeSeqParams{RoomID: roomID, N: 1})
 		if err != nil {
-			return fmt.Errorf("allocate change_seq: %w", err)
+			return archivedIfNoRows(err, "allocate change_seq")
 		}
 		var n int64
 		if pin {
@@ -124,7 +124,7 @@ func (s *Service) ListPins(ctx context.Context, actor, roomID ulid.ULID) ([]Mess
 	if err != nil {
 		return nil, err
 	}
-	if !authz.CanReadRoom(a.kind(), a.actor(actor)) {
+	if !authz.CanReadRoom(a.authzRoom(), a.actor(actor)) {
 		return nil, ErrNotFound
 	}
 	rows, err := q.ListRoomPins(ctx, store.ListRoomPinsParams{RoomID: roomID, MaxRows: MaxRoomPins})

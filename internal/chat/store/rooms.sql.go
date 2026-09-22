@@ -40,6 +40,7 @@ const allocateChangeSeq = `-- name: AllocateChangeSeq :one
 UPDATE rooms
    SET last_change_seq = last_change_seq + $1::bigint
  WHERE id = $2
+   AND archived_at IS NULL
 RETURNING last_change_seq
 `
 
@@ -50,6 +51,7 @@ type AllocateChangeSeqParams struct {
 
 // 既存のメッセージの編集・削除のために change_seq だけを n 個採番し、最後の番号を返す（ADR 0014）。seq は進めない。
 // 返信の削除は、返信と親（返信数が減る）の 2 つを使う（ADR 0036）。
+// 使うのは編集・削除・リアクション・ピン留め・添付の削除で、どれもアーカイブ中は止める操作なので、アーカイブ中は行を返さない（ADR 0059 決定 3）。
 func (q *Queries) AllocateChangeSeq(ctx context.Context, arg AllocateChangeSeqParams) (int64, error) {
 	row := q.db.QueryRow(ctx, allocateChangeSeq, arg.N, arg.RoomID)
 	var last_change_seq int64
@@ -65,6 +67,7 @@ UPDATE rooms
        last_user_seq    = last_user_seq + 1,
        last_message_at  = $1::timestamptz
  WHERE id = $2
+   AND archived_at IS NULL
 RETURNING last_message_seq, last_change_seq, last_user_seq
 `
 
@@ -84,6 +87,8 @@ type AllocateMessageSeqRow struct {
 // 送信と同じトランザクションの中で呼ぶ。rooms の行ロックで同じルームへの送信・編集・削除が直列化され、
 // ロールバックすれば採番も取り消されるので欠番にならない。
 // 人の発言なので user_seq も 1 進める（ADR 0033）。
+// アーカイブ中は行を返さない（ADR 0059 決定 3）。authz はトランザクションの前に読んだ値で判断するので、
+// その後にアーカイブされた送信はここで止める。アーカイブも同じ行を更新するので、行ロックで直列化される。
 func (q *Queries) AllocateMessageSeq(ctx context.Context, arg AllocateMessageSeqParams) (AllocateMessageSeqRow, error) {
 	row := q.db.QueryRow(ctx, allocateMessageSeq, arg.Now, arg.RoomID)
 	var i AllocateMessageSeqRow
@@ -112,6 +117,7 @@ type AllocateSystemMessageSeqRow struct {
 }
 
 // システムメッセージ（ADR 0033）の採番。seq と change_seq は進め、user_seq は進めない（未読数に数えない）。
+// アーカイブ中でも採番する（アーカイブ中の退出のログと、復元のログを書くため。ADR 0059）。
 func (q *Queries) AllocateSystemMessageSeq(ctx context.Context, arg AllocateSystemMessageSeqParams) (AllocateSystemMessageSeqRow, error) {
 	row := q.db.QueryRow(ctx, allocateSystemMessageSeq, arg.Now, arg.RoomID)
 	var i AllocateSystemMessageSeqRow
@@ -126,6 +132,7 @@ UPDATE rooms
        last_user_seq    = last_user_seq + CASE WHEN $1::boolean THEN 1 ELSE 0 END,
        last_message_at  = CASE WHEN $1::boolean THEN $2::timestamptz ELSE last_message_at END
  WHERE id = $3
+   AND archived_at IS NULL
 RETURNING last_message_seq, last_change_seq, last_user_seq
 `
 
@@ -149,6 +156,42 @@ func (q *Queries) AllocateThreadReplySeq(ctx context.Context, arg AllocateThread
 	row := q.db.QueryRow(ctx, allocateThreadReplySeq, arg.InChannel, arg.Now, arg.RoomID)
 	var i AllocateThreadReplySeqRow
 	err := row.Scan(&i.LastMessageSeq, &i.LastChangeSeq, &i.LastUserSeq)
+	return i, err
+}
+
+const archiveRoom = `-- name: ArchiveRoom :one
+UPDATE rooms
+   SET archived_at = $1::timestamptz
+ WHERE id = $2
+   AND archived_at IS NULL
+RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq, last_user_seq
+`
+
+type ArchiveRoomParams struct {
+	Now time.Time
+	ID  ulid.ULID
+}
+
+// アーカイブする（ADR 0059 決定 3）。すでにアーカイブ済みなら行を返さない（呼ぶ側が 409 にする）。
+// 送信の採番と同じ rooms の行を更新するので、行ロックで直列化される。
+func (q *Queries) ArchiveRoom(ctx context.Context, arg ArchiveRoomParams) (Room, error) {
+	row := q.db.QueryRow(ctx, archiveRoom, arg.Now, arg.ID)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Kind,
+		&i.Name,
+		&i.DmKey,
+		&i.IsDefault,
+		&i.CreatedBy,
+		&i.LastMessageSeq,
+		&i.LastMessageAt,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.LastChangeSeq,
+		&i.LastUserSeq,
+	)
 	return i, err
 }
 
@@ -240,6 +283,17 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, e
 	return i, err
 }
 
+const deleteRoom = `-- name: DeleteRoom :exec
+DELETE FROM rooms
+ WHERE id = $1
+`
+
+// ルームを行ごと消す（論理削除にしない。ADR 0059 決定 6）。メッセージ・添付・メンバー・リアクション・メンション・保存・スレッドの行は CASCADE で消える。
+func (q *Queries) DeleteRoom(ctx context.Context, id ulid.ULID) error {
+	_, err := q.db.Exec(ctx, deleteRoom, id)
+	return err
+}
+
 const deleteRoomMember = `-- name: DeleteRoomMember :execrows
 DELETE FROM room_members
  WHERE room_id = $1
@@ -257,6 +311,27 @@ func (q *Queries) DeleteRoomMember(ctx context.Context, arg DeleteRoomMemberPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const enqueueRoomStorageDeletions = `-- name: EnqueueRoomStorageDeletions :exec
+INSERT INTO storage_deletions (object_key, not_before, created_at)
+SELECT object_key, $1::timestamptz, $2::timestamptz
+  FROM attachments
+ WHERE room_id = $3
+ON CONFLICT (object_key) DO NOTHING
+`
+
+type EnqueueRoomStorageDeletionsParams struct {
+	NotBefore time.Time
+	Now       time.Time
+	RoomID    ulid.ULID
+}
+
+// ルームの添付のオブジェクトのキーを、ルームに依存しない掃除の列に写す（ADR 0059 決定 6）。
+// pending の行も写す。削除の直前に発行された PUT URL で、削除の後に置かれたオブジェクトも not_before を過ぎてから消すため。
+func (q *Queries) EnqueueRoomStorageDeletions(ctx context.Context, arg EnqueueRoomStorageDeletionsParams) error {
+	_, err := q.db.Exec(ctx, enqueueRoomStorageDeletions, arg.NotBefore, arg.Now, arg.RoomID)
+	return err
 }
 
 const getDMRoom = `-- name: GetDMRoom :one
@@ -703,6 +778,52 @@ func (q *Queries) ListUserProfiles(ctx context.Context, ids []ulid.ULID) ([]List
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockRoomForDelete = `-- name: LockRoomForDelete :one
+SELECT id
+  FROM rooms
+ WHERE id = $1
+   FOR UPDATE
+`
+
+// 削除の前にルームの行を FOR UPDATE でロックする（ADR 0059 決定 6）。
+// 添付の INSERT（rooms への外部キーで KEY SHARE を取る）と送信の採番を止め、写すキーと消す行のあいだに添付が増えないようにする。
+func (q *Queries) LockRoomForDelete(ctx context.Context, id ulid.ULID) (ulid.ULID, error) {
+	row := q.db.QueryRow(ctx, lockRoomForDelete, id)
+	var id_2 ulid.ULID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const unarchiveRoom = `-- name: UnarchiveRoom :one
+UPDATE rooms
+   SET archived_at = NULL
+ WHERE id = $1
+   AND archived_at IS NOT NULL
+RETURNING id, workspace_id, kind, name, dm_key, is_default, created_by, last_message_seq, last_message_at, created_at, archived_at, last_change_seq, last_user_seq
+`
+
+// アーカイブを戻す。アーカイブされていなければ行を返さない。
+func (q *Queries) UnarchiveRoom(ctx context.Context, id ulid.ULID) (Room, error) {
+	row := q.db.QueryRow(ctx, unarchiveRoom, id)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Kind,
+		&i.Name,
+		&i.DmKey,
+		&i.IsDefault,
+		&i.CreatedBy,
+		&i.LastMessageSeq,
+		&i.LastMessageAt,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+		&i.LastChangeSeq,
+		&i.LastUserSeq,
+	)
+	return i, err
 }
 
 const updateRoom = `-- name: UpdateRoom :one

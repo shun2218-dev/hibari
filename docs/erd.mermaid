@@ -146,7 +146,7 @@ erDiagram
     bigint last_user_seq "チャンネルの人の発言の数。未読数に使う（ADR 0033 / 0036）"
     timestamptz last_message_at "一覧のソート用に非正規化。スレッドの返信では進めない"
     timestamptz created_at
-    timestamptz archived_at
+    timestamptz archived_at "アーカイブ中なら入る（ADR 0059）。送信・編集の採番の UPDATE はアーカイブ中に行を返さない"
   }
 
   room_members {
@@ -169,7 +169,7 @@ erDiagram
     uuid client_msg_id "UNIQUE(room_id, sender_id, これ)。冪等性"
     bigint user_seq "その行までのチャンネルの人の発言の数（ADR 0033）"
     text kind "user / system（ADR 0033）"
-    text system_type "system のときだけ。room_created など（message_pinned は改める前の行だけ。ADR 0054）"
+    text system_type "system のときだけ。room_created / room_archived など（message_pinned は改める前の行だけ。ADR 0054 / 0059）"
     jsonb system_data "system のときだけ。room_renamed の old_name / new_name"
     text body "削除時は空にする"
     uuid thread_root_id FK "スレッドの親。(room_id, thread_root_id) の複合 FK。チャンネルの投稿なら null（ADR 0036）"
@@ -234,5 +234,11 @@ erDiagram
     bigint size_bytes "署名に含めるので PUT はこのサイズに限られる"
     int width "画像のみ。クライアントの申告値"
     int height "画像のみ。クライアントの申告値"
+    timestamptz created_at
+  }
+
+  storage_deletions {
+    text object_key PK "ルームの削除で写した添付のオブジェクトのキー。どの表にも FK を張らない（ADR 0059）"
+    timestamptz not_before "これより前には消さない（発行済みの PUT URL の有効期間）。INDEX"
     timestamptz created_at
   }

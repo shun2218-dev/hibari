@@ -69,11 +69,11 @@ func (s *Service) changeReaction(ctx context.Context, actor, roomID, messageID u
 		if err != nil {
 			return err
 		}
-		if !authz.CanReadRoom(a.kind(), a.actor(actor)) {
+		if !authz.CanReadRoom(a.authzRoom(), a.actor(actor)) {
 			return ErrNotFound
 		}
-		if !authz.CanWriteRoom(a.kind(), a.actor(actor)) {
-			return ErrForbidden
+		if err := a.authorize(func(r authz.Room) bool { return authz.CanWriteRoom(r, a.actor(actor)) }); err != nil {
+			return err
 		}
 		// メッセージの行を押さえてから種類を数える。同時に 21 種類目が入らないようにするのと、
 		// rooms の行ロック（change_seq の採番）より先に取ってロックの順序をそろえるため（ADR 0014）。
@@ -115,7 +115,7 @@ func (s *Service) changeReaction(ctx context.Context, actor, roomID, messageID u
 		if changed {
 			changeSeq, err := q.AllocateChangeSeq(ctx, store.AllocateChangeSeqParams{RoomID: roomID, N: 1})
 			if err != nil {
-				return fmt.Errorf("allocate change_seq: %w", err)
+				return archivedIfNoRows(err, "allocate change_seq")
 			}
 			// seq / user_seq / last_message_at は進めない。リアクションはチャンネルの発言ではないので、
 			// 未読数（ADR 0033）にもサイドバーの並びにも影響しない。
