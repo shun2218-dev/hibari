@@ -43,13 +43,26 @@ describe("AppearanceSettings", () => {
 });
 
 describe("NotificationSettings", () => {
-  it("reflects and changes what to be notified about (ADR 0055)", async () => {
+  it("ワークスペースごとに通知する内容を選べる（ADR 0055 決定 2）", async () => {
     const onLevelChange = vi.fn();
-    render(<NotificationSettings level="mentions" onLevelChange={onLevelChange} />);
+    render(
+      <NotificationSettings
+        workspaces={[
+          { id: "w1", name: "hibari 開発", level: "mentions" },
+          { id: "w2", name: "個人メモ", level: "all" },
+        ]}
+        onLevelChange={onLevelChange}
+      />,
+    );
 
-    expect(screen.getByRole("radio", { name: /メンションと DM/ })).toBeChecked();
-    await userEvent.click(screen.getByRole("radio", { name: /なし/ }));
-    expect(onLevelChange).toHaveBeenCalledWith("none");
+    const dev = screen.getByRole("group", { name: "hibari 開発" });
+    const memo = screen.getByRole("group", { name: "個人メモ" });
+    // 節ごとに別のまとまりなので、どちらも選んだ値が残る
+    expect(within(dev).getByRole("radio", { name: /メンションと DM/ })).toBeChecked();
+    expect(within(memo).getByRole("radio", { name: /すべて/ })).toBeChecked();
+
+    await userEvent.click(within(memo).getByRole("radio", { name: /なし/ }));
+    expect(onLevelChange).toHaveBeenCalledWith("w2", "none");
   });
 });
 

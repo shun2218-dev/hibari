@@ -31,6 +31,8 @@ Phase 6.14 は、チャンネルをミュートできるようにし、タブが
   （隠すと、隠したチャンネルを探す入口と、隠す / 出すの設定が要る）
 - **通知の設定は、全体とチャンネルごとの 2 段**（Slack と同じ）。キーワード通知と通知のスケジュールは作らない
 - **一時的なミュート（1 時間・明日まで）も作る**
+- **全体の設定はワークスペースごと**（2026-09-22 に改めた。決定 2）
+- **スレッドごとのミュートは 6.14a の後**に別で扱う（Slack にはある）
 
 ## 決定
 
@@ -38,7 +40,7 @@ Phase 6.14 は、チャンネルをミュートできるようにし、タブが
 
 | 値 | どこの設定か | 取りうる値 | 未設定のとき |
 |---|---|---|---|
-| 全体の通知する内容 | 本人（ユーザーごと） | `all`（すべて）/ `mentions`（メンションと DM）/ `none`（なし） | `mentions`（Slack の既定と同じ） |
+| 全体の通知する内容 | 本人 × ワークスペース | `all`（すべて）/ `mentions`（メンションと DM）/ `none`（なし） | `mentions`（Slack の既定と同じ） |
 | チャンネルごとの上書き | 本人 × ルーム | `all`（すべての新しい投稿）/ `mentions`（メンションのみ） | 全体の設定に従う |
 | ミュート | 本人 × ルーム | ミュートしている（期限つきか、期限なし） | ミュートしていない |
 
@@ -55,20 +57,18 @@ DM                             → 全体が none でなければ対象（チャ
 - **未読数とメンションの件数は、設定によらずこれまでどおり数える**（ADR 0033 / 0041）。設定が変えるのは「見せ方」と「通知するか」だけ。
   サーバーの数え方を設定で変えると、設定を変えるたびに件数を数え直すことになる
 
-### 2. 全体の設定は、ユーザーごとの 1 行（Postgres）
+### 2. 全体の設定は、ワークスペースごと（`workspace_members` の列）
 
 ```sql
-CREATE TABLE user_notification_settings (
-    user_id    uuid        PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
-    level      text        NOT NULL CHECK (level IN ('all', 'mentions', 'none')),
-    updated_at timestamptz NOT NULL
-);
+ALTER TABLE workspace_members
+    ADD COLUMN notify_level text CHECK (notify_level IN ('all', 'mentions', 'none'));
 ```
 
-- **ユーザーごと**にする（Slack はワークスペースごと）。設定画面（`/settings`）はユーザーの画面で、ワークスペースを選ぶ場所がないため。
-  ワークスペースごとに変えたくなったら、`workspace_members` に上書きの列を足せば、同じ規則（上書きがなければ全体）で広げられる
-- 手動の離席（ADR 0049 の `user_presence_settings`）と同じく、設定するときだけ行を作る。**chat のテーブル**で、auth は知らない（CLAUDE.md ルール 1）
-- 本人が選んだ設定なので Postgres に置く（ルール 5）
+- **ワークスペースごと**にする（Slack と同じ。オーナーの判断、2026-09-22 に改めた。下の「状態の履歴」）。
+  仕事のワークスペースはすべて、趣味のワークスペースはメンションだけ、のように分けられる
+- NULL なら `mentions`（未設定）。カスタムステータス（ADR 0049 決定 5）と同じく、主キーがすでに「ワークスペース × ユーザー」の
+  `workspace_members` に列を足し、新しいテーブルを作らない。ワークスペースを抜けたら設定も消える
+- **chat のテーブル**で、auth は知らない（CLAUDE.md ルール 1）。本人が選んだ設定なので Postgres に置く（ルール 5）
 
 ### 3. チャンネルごとの設定は、`room_members` の列
 
@@ -93,15 +93,16 @@ ALTER TABLE room_members
 ### 4. API
 
 ```
-GET /api/v1/users/me/notifications                     → {"level": "mentions"}
-PUT /api/v1/users/me/notifications                     {"level": "all" | "mentions" | "none"}
+GET /api/v1/workspaces/{workspaceID}/me/notifications   → {"level": "mentions"}
+PUT /api/v1/workspaces/{workspaceID}/me/notifications   {"level": "all" | "mentions" | "none"}
 PUT /api/v1/rooms/{roomID}/me/notifications            {"level": "all" | "mentions" | null, "muted_until": null | "2026-09-22T12:00:00Z", "muted": true | false}
 ```
 
 - ルームの設定は**全部の値を 1 回で置き換える**（`PUT`）。メニューで 1 つを変えるときも、手元の残りの値と一緒に送る。
   部分の更新（`PATCH`）にしないのは、「ミュートを外したら期限も消える」のような組み合わせの規則を、サーバーの 1 か所で守るため
 - 検証（外れたら 422）: `muted_until` は未来の時刻だけ（`Clock` で判定）、`muted` が false なら `muted_until` は null、DM では `level` は null
-- パスは auth の `/users/me` の下に並ぶが、**ハンドラも DB の行も chat のもの**（ADR 0049 の `/users/me/presence` と同じ）
+- ワークスペースの設定は、カスタムステータス（ADR 0049 の `/workspaces/{id}/me/status`）と同じく `/workspaces/{id}/me` の下に置く。
+  メンバーでなければ 404（ワークスペースの存在を明かさない。ほかの `/workspaces/{id}` と同じ）
 - ルームの一覧と 1 件（`GET /workspaces/{id}/rooms`、`GET /rooms/{id}`）の応答に、本人の設定を足す:
 
 ```jsonc
@@ -114,12 +115,12 @@ PUT /api/v1/rooms/{roomID}/me/notifications            {"level": "all" | "mentio
 設定は本人だけの状態なので、**本人のすべての接続に届ける**（別のタブ・別の端末をそろえる）。
 
 ```jsonc
-{ "type": "notifications.updated",      "data": { "level": "all" } }
+{ "type": "notifications.updated",      "data": { "workspace_id": "01J8...", "level": "all" } }
 { "type": "room.notifications_updated", "data": { "workspace_id": "01J8...", "room_id": "01J8...",
                                                   "level": null, "muted": true, "muted_until": null } }
 ```
 
-- 再接続したら、ルームの一覧（設定を含む）と全体の設定を取り直す。どちらも行が少なく、`change_seq` のような差分の仕組みは要らない
+- 再接続したら、ルームの一覧（設定を含む）と、開いているワークスペースの全体の設定を取り直す。どちらも行が少なく、`change_seq` のような差分の仕組みは要らない
   （ADR 0049 のメンバー一覧と同じ考え方。「後で」（ADR 0054）と違って、ページングする一覧ではない）
 - **期限切れのイベントは配らない。** クライアントは `muted_until` を持っているので、自分でタイマーを張って薄い表示を戻す（ADR 0049 と同じ）
 
@@ -129,6 +130,7 @@ PUT /api/v1/rooms/{roomID}/me/notifications            {"level": "all" | "mentio
 - メンションの件数（`@N`。ADR 0043）は出す。ミュートしていても自分宛ては分かるようにする（Slack と同じ）
 - 並びは変えない（最後のメッセージが新しい順。ミュートしたものを下に寄せない）
 - 設定の入口はルームのヘッダーの「通知」のアイコン（Slack と同じ）と、ユーザー設定の「通知」。見た目はデザインで描いて、オーナーに見てもらう
+  （ユーザー設定の「通知」には、所属するワークスペースごとの節を並べる。`docs/ui/README.md` の「Phase 6.14a で足した画面」）
 
 ## 理由
 
@@ -138,14 +140,14 @@ PUT /api/v1/rooms/{roomID}/me/notifications            {"level": "all" | "mentio
   設定を変えた瞬間に過去の分まで数え直しが要り、数の意味が人によって変わる。見せ方の差にしておけば、サーバーは今のままでよい。
 - **期限を読むときに落とす理由**: ADR 0049 のカスタムステータスと同じ。期限ごとにジョブを起こして「解除されました」を配るより、
   読む側が時刻を比べる方が経路が少なく、止まっていたサーバーが戻ったときの取りこぼしもない。
-- **全体の設定をユーザーごとにする理由**: 設定画面がユーザーの画面で、ワークスペースごとに分ける入口がない。
-  ワークスペースごとにしたくなったときも、上書きの列を足すだけで同じ規則のまま広げられる（上の決定 2）。
+- **全体の設定をワークスペースごとにする理由**: ワークスペースは使い方（仕事・趣味）ごとに分かれていて、通知の強さもそれに合わせたい
+  （オーナーの判断）。`workspace_members` の列にすれば、ワークスペースを抜けたときの後始末も要らない。
 
 ## 検討した代替案
 
 - **ミュートしたチャンネルをサイドバーから隠す**（Slack の既定）: オーナーと比較して不採用。隠したチャンネルへ戻る入口と、隠す / 出すの設定が要る。
-- **全体の設定をワークスペースごとにする**（Slack と同じ）: 設定画面にワークスペースを選ぶ場所を作る必要がある。いまはワークスペースを
-  1 つだけ使う人がほとんどで、分ける価値より入口の複雑さの方が大きい。
+- **全体の設定をユーザーごとにする**（最初の案。`user_notification_settings`）: 設定画面にワークスペースを選ぶ場所が要らないが、
+  ワークスペースごとに通知の強さを変えられない。オーナーの判断で改めた（2026-09-22）。
 - **ミュートを `muted_until` だけで表す**（無期限を `infinity`）: 上の決定 3 のとおり、`infinity` をドメインに持ち込むことになる。
 - **設定をルームの `change_seq` や差分に乗せる**: 設定は本人だけのもので、ルームの全員の差分に混ぜる理由がない（ADR 0054 の「後で」と同じ判断）。
   一覧が小さいので、本人ごとの番号も要らない。
@@ -163,3 +165,7 @@ PUT /api/v1/rooms/{roomID}/me/notifications            {"level": "all" | "mentio
   オーナーの判断を取り、採用。
 - 2026-09-22: 一時的なミュートの「明日まで」は「明日いっぱい」とする（オーナーの判断）。`muted_until` は翌々日の 0:00 で、
   日付の区切りは利用者の端末のタイムゾーン。クライアントが `Clock` から求めて送る（サーバーは未来の時刻かだけを検証する。決定 4 のまま）。
+- 2026-09-22: 全体の設定を**ユーザーごとからワークスペースごと**に改めた（オーナーの判断。構築順 3 の前）。
+  `user_notification_settings` は作らず `workspace_members.notify_level` にし、API を `/workspaces/{id}/me/notifications` に、
+  `notifications.updated` に `workspace_id` を足した。
+- 2026-09-22: スレッドごとのミュート（Slack にある）は、6.14a の後に別の ADR で扱う（オーナーの判断。ロードマップの Phase 6.14c）。

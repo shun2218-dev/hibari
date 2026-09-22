@@ -736,7 +736,7 @@ ADR 0055 のとおり足した。新しいトークンは使っていない。�
 | ミュートしたルームのサイドバー | `chat/notification/sidebar.png` | ルームの一覧の `notifications` |
 | 同（ダーク） | `chat/notification/sidebar-dark.png` | — |
 | 同（モバイル） | `chat/notification/mobile-sidebar.png` | — |
-| ユーザー設定の「通知」 | `settings/notifications/notifications.png` | `GET` / `PUT /users/me/notifications` |
+| ユーザー設定の「通知」 | `settings/notifications/notifications.png` | `GET` / `PUT /workspaces/{id}/me/notifications` |
 | 同（ダーク） | `settings/notifications/notifications-dark.png` | — |
 | 同（モバイル） | `settings/notifications/mobile-notifications.png` | — |
 
@@ -750,7 +750,9 @@ ADR 0055 のとおり足した。新しいトークンは使っていない。�
 - **DM のメニューはミュートだけ**（決定 3）。文言は「ミュートする」（「ダイレクトメッセージをミュートする」はメニューの幅で折り返したため）。
 - **ミュートしたルームは、名前（とチャンネルの `#` / 鍵）を `text-text-muted` にする**。未読があっても太字にせず、DM の未読の数も出さない。
   メンションの `@N` は出す。並びは変えない（決定 6）。薄い色だけでは読み上げで分からないので、名前に「（ミュート中）」を添える（見た目には出さない）。
-- **ユーザー設定に「通知」を足した**（プロフィールの次）。テーマと同じ枠のラジオで「すべて」/「メンションと DM」/「なし」を選ぶ。
+- **ユーザー設定に「通知」を足した**（プロフィールの次）。全体の設定はワークスペースごとなので（ADR 0055 決定 2 を改めた）、
+  所属するワークスペースごとに節（ワークスペースのアイコンと名前）を並べ、テーマと同じ枠のラジオで「すべて」/「メンションと DM」/「なし」を選ぶ。
+  チャンネルのメニューの「全体の設定に従う」の補足（「いまは「メンションと DM」」）は、そのルームのワークスペースの値を出す。
   チャンネルごとの設定はヘッダーから変えることを、下に 1 行で書いた。ページをつなぐまで（構築順 4）アプリのナビには出さない。
 
 #### デザインで決めた点（オーナーに確認する）

@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { NotificationSettings } from "@/components/settings/settings-sections";
 
+import { workspaces } from "../fixtures";
 import { userSettings } from "../screens";
 
 /**
@@ -20,17 +21,23 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
+/** 全体の設定はワークスペースごと（ADR 0055 決定 2）。2 つに所属して、別の値を選んでいるところ。 */
+const notificationWorkspaces = [
+  { ...workspaces.dev, level: "mentions" as const },
+  { ...workspaces.memo, level: "all" as const },
+];
+
 export const Notifications: Story = {
   name: "通知",
   tags: ["since:6.14"],
-  render: () => userSettings("notifications", <NotificationSettings level="mentions" />),
+  render: () => userSettings("notifications", <NotificationSettings workspaces={notificationWorkspaces} />),
 };
 
 export const NotificationsDark: Story = {
   name: "通知（ダーク）",
   tags: ["since:6.14"],
   parameters: { theme: "dark" },
-  render: () => userSettings("notifications", <NotificationSettings level="mentions" />),
+  render: () => userSettings("notifications", <NotificationSettings workspaces={notificationWorkspaces} />),
 };
 
 export const MobileNotifications: Story = {
@@ -38,5 +45,5 @@ export const MobileNotifications: Story = {
   tags: ["since:6.14"],
   parameters: { screenshot: { size: "390x844" } },
   globals: { viewport: { value: "mobile" } },
-  render: () => userSettings("notifications", <NotificationSettings level="mentions" />),
+  render: () => userSettings("notifications", <NotificationSettings workspaces={notificationWorkspaces} />),
 };
