@@ -939,8 +939,9 @@ describe("WorkspaceScreen", () => {
           const list = await screen.findByRole("list", { name: "参加しているスレッド" });
           const link = within(list).getByRole("link");
           expect(link).toHaveAttribute("href", "/w/ws-1/r/r-design?t=m-2");
-          expect(link).toHaveTextContent("親のメッセージ");
-          expect(within(link).getByLabelText("未読 1 件")).toBeInTheDocument();
+          const row = within(list).getByRole("listitem");
+          expect(row).toHaveTextContent("親のメッセージ");
+          expect(within(row).getByLabelText("未読 1 件")).toBeInTheDocument();
           expect(sidebar().getByRole("link", { name: /スレッド/ })).toHaveAttribute("aria-current", "page");
           // 一覧を開いているときは、ルームへ移さない
           expect(nav.router.replace).not.toHaveBeenCalled();

@@ -64,6 +64,9 @@ import {
   deletedThreadRoot,
   threadItems,
   threadList,
+  threadListWithNotifyOff,
+  threadRootKey,
+  unreadThreadCountWithNotifyOff,
   threadReplies,
   threadRoot,
   threadRepliesWithBroadcast,
@@ -153,8 +156,17 @@ type ChatOptions = {
   thread?: "replies" | "empty" | "root-deleted" | "broadcast";
   /** スレッドを開かずに、チャンネルに流した返信のあるタイムラインを出す（ADR 0039。モバイルではパネルが全画面になるため）。 */
   broadcastInChannel?: boolean;
-  /** ルームの代わりに、参加しているスレッドの一覧を出す。 */
-  threads?: "list" | "empty";
+  /**
+   * ルームの代わりに、参加しているスレッドの一覧を出す。notify-off は返信の通知をオフにした行の混ざった一覧、
+   * row-menu はオフにした行の「その他」を開いたところ（ADR 0056）。
+   */
+  threads?: "list" | "empty" | "notify-off" | "row-menu";
+  /**
+   * スレッドの親の「…」の返信の通知（ADR 0056）。
+   * - menu: 参加しているスレッド（「返信の通知をオフにする」）
+   * - menu-follow: 参加していないスレッド（「新しい返信の通知を受け取る」）
+   */
+  threadNotify?: "menu" | "menu-follow";
   /** メンションのあるタイムラインとサイドバーにする（ADR 0043）。 */
   mentions?: boolean;
   /** 入力欄の `@` の補完を開いた状態で出す（`@` の後ろに打った文字。ADR 0043）。 */
@@ -342,6 +354,7 @@ export function chat({
   thread,
   broadcastInChannel,
   threads,
+  threadNotify,
   mentions,
   mentionQuery,
   jump,
@@ -424,7 +437,12 @@ export function chat({
             selectedRoomId={roomRemoved || threads || savedList ? undefined : room.id}
             threads={
               thread || threads
-                ? { href: noHref, unreadCount: threads === "empty" ? 0 : unreadThreadCount, selected: Boolean(threads) }
+                ? { href: noHref, unreadCount:
+                    threads === "empty"
+                      ? 0
+                      : threads === "notify-off" || threads === "row-menu"
+                        ? unreadThreadCountWithNotifyOff
+                        : unreadThreadCount, selected: Boolean(threads) }
                 : undefined
             }
             saved={pins || saved ? { href: noHref, selected: savedList } : undefined}
@@ -471,7 +489,14 @@ export function chat({
           ) : undefined
         }
       >
-        {threads && <ThreadList threads={threads === "empty" ? [] : threadList} threadHref={roomHref} />}
+        {threads && (
+          <ThreadList
+            threads={threads === "empty" ? [] : threads === "list" ? threadList : threadListWithNotifyOff}
+            threadHref={roomHref}
+            onToggleNotify={noop}
+            openMenuKey={threads === "row-menu" ? "m-chat-0930" : undefined}
+          />
+        )}
         {savedList && (
           <SavedList
             tab={savedTab}
@@ -527,8 +552,8 @@ export function chat({
                 ? timelineWithFormatting
                 : jump
                 ? timelineJumped
-                : thread
-                ? threadTimeline(thread)
+                : thread || threadNotify
+                ? threadTimeline(thread ?? "replies")
                 : mentions
                   ? timelineWithMentions
                   : broadcastInChannel
@@ -542,7 +567,9 @@ export function chat({
             openThreadKey={thread === "root-deleted" ? deletedThreadRoot.key : thread ? threadContent?.root.key : undefined}
             highlightedKey={jump === "highlight" ? jumpTargetKey : undefined}
             hoveredKey={
-              pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : saved ? saveCandidateKey : hoveredKey
+              threadNotify
+                ? threadRootKey
+                : pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : saved ? saveCandidateKey : hoveredKey
             }
             pinFor={
               pins
@@ -575,7 +602,14 @@ export function chat({
               // 添付だけを削除できるのは、メッセージを削除できる人と同じ（ADR 0045 決定 5）
               canDelete: key === pendingMessageKey || (messageAttachments !== undefined && key === attachmentMessageKey),
             })}
-            openMenuKey={pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : menuKey}
+            openMenuKey={
+              threadNotify ? threadRootKey : pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : menuKey
+            }
+            threadNotifyFor={
+              threadNotify
+                ? (key) => (key === threadRootKey ? { notifying: threadNotify === "menu", onClick: noop } : undefined)
+                : undefined
+            }
             editingKey={editingKey}
             editing={{ value: "了解です。今日の夕方までに一覧を更新して、また共有します。" }}
           />

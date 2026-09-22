@@ -90,3 +90,42 @@ export const MobileThreads: Story = {
   globals: { viewport: { value: "mobile" } },
   render: () => chat({ threads: "list" }),
 };
+
+export const RootMenuNotify: Story = {
+  name: "スレッドの親の「…」: 返信の通知をオフにする",
+  tags: ["since:6.14"],
+  render: () => chat({ threadNotify: "menu" }),
+};
+
+export const RootMenuFollow: Story = {
+  name: "スレッドの親の「…」: 新しい返信の通知を受け取る",
+  tags: ["since:6.14"],
+  render: () => chat({ threadNotify: "menu-follow" }),
+};
+
+export const ThreadsNotifyOff: Story = {
+  name: "参加しているスレッドの一覧: 返信の通知をオフにした行",
+  tags: ["since:6.14"],
+  render: () => chat({ threads: "notify-off" }),
+};
+
+export const ThreadsNotifyOffDark: Story = {
+  name: "参加しているスレッドの一覧: 返信の通知をオフにした行（ダーク）",
+  tags: ["since:6.14"],
+  parameters: { theme: "dark" },
+  render: () => chat({ threads: "notify-off", dark: true }),
+};
+
+export const ThreadsRowMenu: Story = {
+  name: "参加しているスレッドの一覧: 行の「その他」",
+  tags: ["since:6.14"],
+  render: () => chat({ threads: "row-menu" }),
+};
+
+export const MobileThreadsNotifyOff: Story = {
+  name: "参加しているスレッドの一覧: 返信の通知をオフにした行（モバイル）",
+  tags: ["since:6.14"],
+  parameters: { screenshot: { size: "390x844" } },
+  globals: { viewport: { value: "mobile" } },
+  render: () => chat({ threads: "notify-off" }),
+};

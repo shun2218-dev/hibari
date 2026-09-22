@@ -428,7 +428,9 @@ export const threadList: ThreadListItemView[] = [
     root: { sender: you, timeLabel: "09:41", body: "おはようございます。昨日の続きで、未読まわりを琥珀に寄せてみました。", deleted: false },
     replyCount: 3,
     lastReplyLabel: "10:18",
-    unreadCount: 1
+    unreadCount: 1,
+    notifyReplies: true,
+    mentionCount: 0,
   },
   {
     key: "m-chat-0930",
@@ -436,7 +438,9 @@ export const threadList: ThreadListItemView[] = [
     root: { sender: miyuki, timeLabel: "09:30", body: "近所に新しい喫茶店ができたらしい。今度の金曜、誰か一緒に行きませんか？", deleted: false },
     replyCount: 5,
     lastReplyLabel: "10:02",
-    unreadCount: 2
+    unreadCount: 2,
+    notifyReplies: true,
+    mentionCount: 0,
   },
   {
     key: "m-release-1740",
@@ -444,7 +448,9 @@ export const threadList: ThreadListItemView[] = [
     root: { sender: naoki, timeLabel: "昨日", body: "", deleted: true },
     replyCount: 2,
     lastReplyLabel: "昨日",
-    unreadCount: 0
+    unreadCount: 0,
+    notifyReplies: true,
+    mentionCount: 0,
   },
   {
     key: "m-dm-1612",
@@ -452,9 +458,23 @@ export const threadList: ThreadListItemView[] = [
     root: { sender: you, timeLabel: "9月11日", body: "縦バーの件、画面の録画を撮っておきました。あとで見てもらえますか？", deleted: false },
     replyCount: 1,
     lastReplyLabel: "9月11日",
-    unreadCount: 0
+    unreadCount: 0,
+    notifyReplies: true,
+    mentionCount: 0,
   },
 ];
+
+/**
+ * 返信の通知をオフにしたスレッドの混ざった一覧（ADR 0056 決定 2）。
+ * 雑談のスレッドは未読があっても強調せず、リリース準備のスレッドは自分宛てのメンションがあるので `@1` を出す。
+ */
+export const threadListWithNotifyOff: ThreadListItemView[] = threadList.map((thread) =>
+  thread.key === "m-chat-0930"
+    ? { ...thread, notifyReplies: false }
+    : thread.key === "m-release-1740"
+      ? { ...thread, notifyReplies: false, unreadCount: 2, mentionCount: 1 }
+      : thread,
+);
 
 /** サイドバーの「スレッド」のバッジ（未読のあるスレッドの数）。 */
 export const unreadThreadCount = threadList.filter((thread) => thread.unreadCount > 0).length;
@@ -884,3 +904,8 @@ export const dmTimeline: TimelineItem[] = [
   message("m-dm-1012", you, "10:12", "ありがとうございます。ホバーの色も合わせて直しておきます。"),
   message("m-dm-1014", naoki, "10:14", "縦バーの件、あとで画面で見ます"),
 ];
+
+/** 返信の通知をオフにしたスレッドは、未読のメンションがなければサイドバーのバッジに数えない（ADR 0056 決定 2）。 */
+export const unreadThreadCountWithNotifyOff = threadListWithNotifyOff.filter((thread) =>
+  thread.notifyReplies ? thread.unreadCount > 0 : thread.mentionCount > 0,
+).length;

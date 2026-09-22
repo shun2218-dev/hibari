@@ -7,6 +7,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { Portal } from "@/components/ui/portal";
 import { Button, IconButton, TextButton } from "@/components/ui/button";
 import {
+  BellIcon,
+  BellOffIcon,
   BookmarkIcon,
   ChevronRightIcon,
   ClockIcon,
@@ -101,6 +103,12 @@ type MessageItemProps = {
    */
   pin?: { label: string; onClick: () => void };
   /**
+   * 「…」のスレッドの返信の通知（ADR 0056 決定 5・7）。スレッドの親（返信の付いたメッセージ）にだけ出す。出すかは呼ぶ側が決める。
+   * notifying が true なら「返信の通知をオフにする」、false（参加していない・オフ）なら「新しい返信の通知を受け取る」。
+   * 文言は Slack の公式ヘルプのとおり。
+   */
+  threadNotify?: { notifying: boolean; onClick: () => void };
+  /**
    * ホバーの「後で」（ADR 0054）。読める人なら誰でも保存できる（参加していない public ルームも）。
    * saved は見る人ごとの値で、REST から来る（決定 10）。保存済みはアイコンを塗って緑にする。
    */
@@ -160,6 +168,7 @@ export function MessageItem({
   canDelete = false,
   copyLink,
   pin,
+  threadNotify,
   save,
   menuOpen = false,
   onToggleMenu,
@@ -203,7 +212,7 @@ export function MessageItem({
   // ホバーのカードはポインタのある md 以上でだけ出す（モバイルは押せば全画面のパネルが開く）
   const hoverCardShown = profileHoverCard !== undefined && desktopPicker && (hover.open || forceProfileHover);
   // 削除済みには操作の対象がなく、送信失敗には専用の操作（再送・削除）があるので、ホバーの操作を出さない
-  const hasMenu = canEdit || canDelete || copyLink !== undefined || pin !== undefined;
+  const hasMenu = canEdit || canDelete || copyLink !== undefined || pin !== undefined || threadNotify !== undefined;
   // 送信中・失敗にはまだメッセージの ID がなく、保存の対象にならない
   const canSave = save !== undefined && !deleted && status === "sent";
   // リアクションは行が増減するだけで本文が変わらない（ADR 0044）。送信中・失敗・削除済みには付けられない
@@ -477,7 +486,7 @@ export function MessageItem({
         ))}
 
       {menuOpen && hasMenu && (
-        <Popover label="メッセージの操作" className="top-6 right-4 w-60" onDismiss={onToggleMenu}>
+        <Popover label="メッセージの操作" className="top-6 right-4 w-64" onDismiss={onToggleMenu}>
           {copyLink && (
             <MenuItem icon={LinkIcon} onClick={copyLink.onClick}>
               {copyLink.label}
@@ -486,6 +495,11 @@ export function MessageItem({
           {pin && (
             <MenuItem icon={pinnedBy ? PinOffIcon : PinIcon} onClick={pin.onClick}>
               {pin.label}
+            </MenuItem>
+          )}
+          {threadNotify && (
+            <MenuItem icon={threadNotify.notifying ? BellOffIcon : BellIcon} onClick={threadNotify.onClick}>
+              {threadNotify.notifying ? "返信の通知をオフにする" : "新しい返信の通知を受け取る"}
             </MenuItem>
           )}
           {canEdit && (

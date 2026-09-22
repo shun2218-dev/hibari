@@ -51,6 +51,8 @@ type TimelineProps = {
   copyLinkFor?: (key: string) => { label: string; onClick: () => void } | undefined;
   /** key ごとのピン留めの付け外し（ADR 0054）。ピン留めできないメッセージ・人には undefined を返す。 */
   pinFor?: (key: string) => { label: string; onClick: () => void } | undefined;
+  /** key ごとのスレッドの返信の通知（ADR 0056）。スレッドの親でなければ undefined を返す。 */
+  threadNotifyFor?: (key: string) => { notifying: boolean; onClick: () => void } | undefined;
   /** key ごとの「後で」（ADR 0054）。保存できないメッセージには undefined を返す。 */
   saveFor?: (key: string) => { saved: boolean; onClick: () => void } | undefined;
   /** 「…」を開いているメッセージ。 */
@@ -152,6 +154,7 @@ export function Timeline({
   actionsFor,
   copyLinkFor,
   pinFor,
+  threadNotifyFor,
   saveFor,
   openMenuKey,
   onToggleMenu,
@@ -324,6 +327,7 @@ export function Timeline({
                     canDelete={actions?.canDelete}
                     copyLink={copyLinkFor?.(key)}
                     pin={pinFor?.(key)}
+                    threadNotify={threadNotifyFor?.(key)}
                     save={saveFor?.(key)}
                     menuOpen={openMenuKey === key}
                     onToggleMenu={() => onToggleMenu?.(key)}
