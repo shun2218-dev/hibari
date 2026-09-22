@@ -41,7 +41,7 @@ import { Timeline } from "@/components/chat/timeline";
 import type { AttachmentDraftView, ConnectionBannerStatus } from "@/components/chat/types";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { SettingsLayout, type SettingsSection } from "@/components/settings/settings-layout";
-import { notificationLevelLabels } from "@/components/settings/settings-sections";
+import { notifyLevelLabels } from "@/lib/chat/notifications";
 import { type AdminSection, WorkspaceAdminLayout } from "@/components/workspace/admin-layout";
 import { InviteList } from "@/components/workspace/invites";
 import { type MemberMenuState, MemberList } from "@/components/workspace/member-list";
@@ -393,7 +393,7 @@ export function chat({
             <NotificationMenu
               kind={room.kind}
               level={notifications === "menu-muted" ? "all" : null}
-              defaultLevelLabel={notificationLevelLabels.mentions}
+              defaultLevelLabel={notifyLevelLabels.mentions}
               mute={notifications === "menu-muted" ? {} : notifications === "menu-temporary" ? { untilLabel: "今日 18:30 まで" } : null}
             />
           ),

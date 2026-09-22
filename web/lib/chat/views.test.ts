@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { TimelineItem } from "@/components/chat/types";
-import type { MessageAttachment, MessageLink } from "@/lib/api/types.gen";
+import type { MessageAttachment, MessageLink, RoomNotifications } from "@/lib/api/types.gen";
 import { kei, member, message, miyuki, naoki, room, roomMember, savedItem, systemMessage } from "@/test/chat-data";
 
 import {
@@ -61,6 +61,18 @@ describe("toRoomSummaryView", () => {
     );
 
     expect(view).toMatchObject({ name: "雑談", lastMessage: "高橋 みゆき: 喫茶店ができたらしい", timeLabel: "10:22", unreadCount: 3 });
+  });
+
+  it("ミュートを、期限と比べてから muted にする（ADR 0055）", () => {
+    const muted = (notifications: RoomNotifications | null) =>
+      toRoomSummaryView(room("r1", "雑談", { notifications }), now, { timeZone: tz }).muted;
+
+    expect(muted({ level: null, muted: true, muted_until: null })).toBe(true);
+    expect(muted({ level: null, muted: true, muted_until: "2026-09-13T03:00:00Z" })).toBe(true);
+    // 期限の来たミュートは、ストアのタイマーが戻す前でも薄くしない
+    expect(muted({ level: null, muted: true, muted_until: "2026-09-13T01:00:00Z" })).toBe(false);
+    // 参加していない public ルームは設定を持たない
+    expect(muted(null)).toBe(false);
   });
 
   it("names a DM after the peer and omits the sender", () => {

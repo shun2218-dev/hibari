@@ -16,6 +16,7 @@ import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
 import { useMessageActions } from "./message-actions";
 import { type ProfileSender, useProfileHoverCard, useSenders } from "./profile";
+import { useRoomNotifications } from "./room-notifications";
 import { RoomPins } from "./room-pins";
 import { RoomSettings } from "./room-settings";
 import { RoomHeader } from "@/components/chat/room-header";
@@ -129,6 +130,7 @@ export function RoomView({
   const visible = useDocumentVisible();
   // ヘッダーの下の「メッセージ / ピン」（ADR 0054 決定 11 の追記）。ルームごとに作り直すので、別のルームでは「メッセージ」から始まる
   const [tab, setTab] = useState<RoomTab>("messages");
+  const notifications = useRoomNotifications(workspaceId, roomId);
 
   useEffect(() => {
     store.openRoom(roomId);
@@ -358,6 +360,8 @@ export function RoomView({
       // DM は設定を変えられない（ADR 0011）。member にも読み取り専用で開ける。
       // ワークスペースから外されたら、もう読めないので出さない
       onOpenSettings={room.kind === "dm" || removedFromWorkspace ? undefined : () => setSettingsOpen(true)}
+      // ミュートと通知の設定（ADR 0055）。参加していない public ルームと、外されたワークスペースでは出さない
+      notifications={removedFromWorkspace ? undefined : notifications}
       onBack={onBack}
     />
   );

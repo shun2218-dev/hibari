@@ -5,9 +5,9 @@ import type { ReactNode } from "react";
 
 import { type SettingsHrefs, SettingsLayout, type SettingsSection } from "@/components/settings/settings-layout";
 
-// 「通知」（ADR 0055）は、ページをつなぐまで行き先を持たせない（ナビに出さない。Phase 6.14a の構築順 4 で足す）
 export const settingsHrefs = {
   profile: "/settings/profile",
+  notifications: "/settings/notifications",
   devices: "/settings/devices",
   appearance: "/settings/appearance",
 } satisfies SettingsHrefs;

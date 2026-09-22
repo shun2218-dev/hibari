@@ -219,6 +219,8 @@ export function createRealtime({ store, createActivity: makeActivity, ...connect
     if (state.members[workspaceId]) tasks.push(store.loadMembers(workspaceId));
     // 「後で」は本人ごとの change_seq の差分で追いつく（ADR 0054 決定 7。docs/events.md の「同期」の 7）
     if (state.saved[workspaceId]?.cursor != null) tasks.push(store.syncSaved(workspaceId));
+    // 全体の通知の設定も change_seq に乗らない（ADR 0055 決定 5）。ルームごとの設定はルーム一覧に入っている
+    if (state.notificationLevels[workspaceId] !== undefined) tasks.push(store.loadNotificationLevel(workspaceId));
     for (const { kind, id } of targets) {
       if (kind !== "room") continue;
       if (state.timelines[id]?.status === "ready") tasks.push(store.syncTimeline(id));

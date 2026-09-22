@@ -1022,12 +1022,20 @@ Push 通知（APNs / FCM）は Phase 7 以降のまま。ここで作るのは�
    「明日まで」は明日いっぱい（`muted_until` は翌々日の 0:00。端末のタイムゾーンで区切る。オーナーの判断、2026-09-22）
 3. DB と API: マイグレーション、`GET` / `PUT /workspaces/{id}/me/notifications`、`PUT /rooms/{id}/me/notifications`、ルームの応答の `notifications`、`notifications.updated` / `room.notifications_updated` ← 完了
    期限の来たミュートを落とすのは Go の `roomNotificationsOf` 1 か所（カスタムステータスの `statusOf` と同じ）
-4. Web
+4. Web: ヘッダーの「通知」のメニュー、サイドバーの薄い表示、ユーザー設定の「通知」、イベントと再接続の取り直し、期限のタイマー ← 完了
+   期限が来たミュートは、ストアがいちばん早い期限にタイマーを張って戻す（`lib/chat/store.ts` の `scheduleMuteExpiry`）
 
 **DoD**
-- [ ] ミュートしたチャンネルは未読が強調されず、メンションの件数は出る
-- [ ] 一時的なミュートは期限が来ると、再読み込みなしで元に戻る
-- [ ] 設定の変更が本人のほかのタブにも揃い、切断中の変更も再接続で揃う
+- [x] ミュートしたチャンネルは未読が強調されず、メンションの件数は出る
+      （`sidebar.test.tsx` の「ミュートしたルームは薄くし…」、`workspace-screen.test.tsx` の「ミュートと通知の設定」、
+      サーバーが件数を変えないことは `internal/chat/notification_test.go` の「ミュートしても未読数は数える」）
+- [x] 一時的なミュートは期限が来ると、再読み込みなしで元に戻る
+      （`store.test.ts` の「一時的なミュートは、期限が来たら再読み込みなしで戻る」。偽のタイマーで確かめている。サーバーは `TestSetRoomNotifications` の期限切れ）
+- [x] 設定の変更が本人のほかのタブにも揃い、切断中の変更も再接続で揃う
+      （`internal/httpx/notification_test.go` の `TestWSNotificationEvents`、`store.test.ts` のイベントの節、
+      `realtime.test.ts` の「after reconnecting, reads the rooms' and the workspace's notification settings again」）
+
+ヘッダーのメニューの実物での確認は未実施（ローカルのワークスペースにチャンネルがない）。ユーザー設定の「通知」は実物の API で読めることを確かめた。
 
 ### Phase 6.14c — スレッドのミュート
 

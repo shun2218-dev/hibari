@@ -49,6 +49,8 @@ function routes(overrides: Record<string, Handler> = {}): Record<string, Handler
     // 「後で」の差分のカーソルを決めるために、ワークスペースを開いたときに進行中を取る（ADR 0054 決定 7）
     "GET /api/v1/workspaces/ws-1/saved?state=in_progress&limit=50": () =>
       json(200, { items: [], in_progress_count: 0, last_change_seq: 0, has_more: false }),
+    // チャンネルの「通知」のメニューの「全体の設定に従う」の補足に使う（ADR 0055）
+    "GET /api/v1/workspaces/ws-1/me/notifications": () => json(200, { level: "mentions" }),
     ...overrides,
   };
 }
@@ -1577,6 +1579,77 @@ describe("WorkspaceScreen", () => {
 
       await screen.findByRole("list", { name: "ピン留めしたメッセージ" });
       expect(screen.queryByRole("button", { name: "ピンを外す" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("ミュートと通知の設定（ADR 0055）", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    it("ヘッダーの「通知」でミュートすると、全部の値を PUT し、サイドバーの行が薄くなる", async () => {
+      let sent: unknown;
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "PUT /api/v1/rooms/r-design/me/notifications": (_url, init) => {
+            sent = JSON.parse(init.body as string);
+            return json(200, { level: null, muted: true, muted_until: null });
+          },
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      await userEvent.click(screen.getByRole("button", { name: "通知" }));
+      // 「全体の設定に従う」の補足は、そのワークスペースの値
+      expect(await screen.findByText("いまは「メンションと DM」")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "チャンネルをミュートする" }));
+
+      expect(sent).toEqual({ level: null, muted: true, muted_until: null });
+      expect(await screen.findByRole("button", { name: "通知（ミュート中）" })).toBeInTheDocument();
+      // 未読があっても太字にしない（名前に「（ミュート中）」を添える）
+      expect(sidebar().getByRole("link", { name: /デザインレビュー（ミュート中）/ })).toBeInTheDocument();
+    });
+
+    it("「1 時間」は 1 時間後の期限を送る", async () => {
+      let sent: { muted_until: string } | undefined;
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "PUT /api/v1/rooms/r-design/me/notifications": (_url, init) => {
+            sent = JSON.parse(init.body as string);
+            return json(200, sent);
+          },
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+      const before = Date.now();
+
+      await userEvent.click(screen.getByRole("button", { name: "通知" }));
+      await userEvent.click(screen.getByRole("button", { name: "1 時間" }));
+
+      await waitFor(() => expect(sent).toBeDefined());
+      const until = Date.parse(sent!.muted_until);
+      expect(until - before).toBeGreaterThanOrEqual(60 * 60 * 1000);
+      expect(until - Date.now()).toBeLessThanOrEqual(60 * 60 * 1000);
+      await userEvent.click(await screen.findByRole("button", { name: "通知（ミュート中）" }));
+      expect(screen.getByText(/まで.*ミュート中|いっぱいミュート中/)).toBeInTheDocument();
+    });
+
+    it("参加していない public ルームには「通知」を出さない（設定を持てない）", async () => {
+      const notJoined = { ...design, is_member: false, last_read_seq: null, last_read_user_seq: null, notifications: null };
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(notJoined),
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [notJoined, chat, dm], unread_thread_count: 0 }),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      expect(screen.queryByRole("button", { name: /^通知/ })).not.toBeInTheDocument();
     });
   });
 

@@ -40,6 +40,7 @@ import { dayKey, formatBytes, formatDate, formatListTime, formatStatusExpiry, fo
 import { type Permalink, clampCardBody, findPermalinks, linkKey, permalinkPath } from "./links";
 import { type MentionCandidate } from "./mentions";
 import { inChannel } from "./messages";
+import { isMuted } from "./notifications";
 
 /**
  * API のレスポンスを、presentational コンポーネントの表示用の型に変える（ADR 0018）。
@@ -147,6 +148,8 @@ export function toRoomSummaryView(
     timeLabel: room.last_message_at ? formatListTime(new Date(room.last_message_at), now, timeZone) : undefined,
     unreadCount: room.unread_count,
     mentionCount: room.mention_count,
+    // 期限の来たミュートは、ストアがタイマーで戻す前でも、ここで「していない」とみなす（ADR 0055）
+    muted: isMuted(room.notifications, now.getTime()),
   };
 }
 
