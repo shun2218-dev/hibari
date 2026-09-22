@@ -2,7 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 
-import type { MediaState, MediaStore } from "@/lib/chat/media/media";
+import type { MediaState, MediaStore } from "@/lib/chat/media/media-store";
 
 import { useChatContext } from "./use-chat-context";
 

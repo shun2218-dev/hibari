@@ -1,7 +1,7 @@
 import type { RoomKind, RoomSummaryView, UserStatusView } from "@/components/chat/types";
 import type { Room } from "@/lib/api/types.gen";
 import { formatListTime } from "@/lib/chat/format/time";
-import { isMuted } from "@/lib/chat/notifications/notifications";
+import { isMuted } from "@/lib/chat/notifications/mute";
 import type { PresenceView } from "@/lib/chat/presence";
 
 import { memberPresence } from "./members";

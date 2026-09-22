@@ -33,7 +33,7 @@ import { Timeline } from "@/components/chat/timeline";
 import type { ActivityFilter, AttachmentDraftView, ConnectionBannerStatus } from "@/components/chat/types";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog";
-import { notifyLevelLabels } from "@/lib/chat/notifications/notifications";
+import { notifyLevelLabels } from "@/lib/chat/notifications/mute";
 import { attachmentMessageKey, timelineWithImages } from "@/stories/fixtures/attachments";
 import { timelineWithLinkCards } from "@/stories/fixtures/links";
 import { pinCandidateKey, pinnedMessageKey, pinnedMessages, timelineWithPins } from "@/stories/fixtures/pins";
