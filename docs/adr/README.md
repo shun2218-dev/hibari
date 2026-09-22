@@ -64,6 +64,7 @@
 | [0055](0055-mute-and-notification-settings.md) | ミュートと通知の設定（Phase 6.14a。本人が選んだ設定として DB に持ち、本人宛てのイベントで揃える） | 採用 |
 | [0056](0056-thread-notifications.md) | スレッドの通知（Phase 6.14c。参加は残して「返信の通知」だけを切り替え、明示的なフォローを足す） | 採用 |
 | [0057](0057-browser-notifications.md) | ブラウザ通知（Phase 6.14b。WebSocket で届いたメッセージを、クライアントが設定を読んで通知に変える） | 採用 |
+| [0058](0058-sidebar-menu-and-activity.md) | サイドバーのメニューとアクティビティ（Phase 6.14.5。アクティビティは行を持たず、通知の規則と既読位置から導く） | 採用 |
 
 ## テンプレート
 
