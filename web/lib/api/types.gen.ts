@@ -24,7 +24,7 @@ export type MentionKind = "user" | "channel" | "here";
 
 export type Presence = "active" | "idle" | "offline";
 
-export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed" | "message_pinned";
+export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed" | "message_pinned" | "room_archived" | "room_unarchived";
 
 export type SavedState = "in_progress" | "archived" | "completed" | "removed";
 
@@ -38,7 +38,7 @@ export type ActivityItemType = "message" | "reaction";
 
 export type ActivityReason = "dm" | "mention" | "thread" | "channel" | "reaction";
 
-export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified";
+export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "room-archived" | "room-not-archived" | "room-protected" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified";
 
 export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "activity" | "ping";
 
@@ -356,6 +356,8 @@ export interface Room {
   last_message: LastMessage | null;
   /** notifications は本人のチャンネルごとの通知の設定（ADR 0055 決定 4）。参加していない public ルームでは null。 */
   notifications: RoomNotifications | null;
+  /** archived_at はアーカイブされていなければ null（ADR 0059 決定 5）。一覧はアーカイブ済みも返す。 */
+  archived_at: string | null;
   created_at: string;
 }
 
@@ -776,12 +778,19 @@ export interface RoomUpdatedData {
   room_id: string;
   name: string;
   is_default: boolean;
+  /** archived_at はアーカイブされていなければ null（ADR 0059 決定 5）。 */
+  archived_at: string | null;
 }
 
 export interface RoomMemberRemovedData {
   workspace_id: string;
   room_id: string;
   reason: RemovalReason;
+}
+
+export interface RoomDeletedData {
+  workspace_id: string;
+  room_id: string;
 }
 
 export interface RoomReadData {
@@ -902,7 +911,8 @@ export type ServerEvent =
   | { type: "room.notifications_updated"; data: RoomNotificationsUpdatedData }
   | { type: "thread.notifications_updated"; data: ThreadNotificationsUpdatedData }
   | { type: "activity.reaction_added"; data: ActivityReactionAddedData }
-  | { type: "activity.reaction_removed"; data: ActivityReactionRemovedData };
+  | { type: "activity.reaction_removed"; data: ActivityReactionRemovedData }
+  | { type: "room.deleted"; data: RoomDeletedData };
 
 export type ServerEventType = ServerEvent["type"];
 

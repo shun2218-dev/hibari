@@ -1174,13 +1174,13 @@ Push 通知（APNs / FCM）は Phase 7 以降のまま。ここで作るのは�
 **構築順**（PR を分ける）
 1. 設計: ADR 0059 ← 完了
 2. デザイン: アーカイブ中の入力欄の代わり・ルームの設定のアーカイブ / 復元 / 削除と確認・サイドバーの検索のアーカイブの印
-3. サーバー: authz の引数・アーカイブ / 復元 / 削除の API・`room.deleted` と購読の解除・`storage_deletions` と掃除ジョブ
+3. サーバー: authz の引数・アーカイブ / 復元 / 削除の API・`room.deleted` と購読の解除・`storage_deletions` と掃除ジョブ ← 完了
 4. Web: 設定の操作・アーカイブの表示・`room.deleted` の反映
 
 **DoD**
-- [ ] アーカイブしたチャンネルは読めるが、投稿などは API で拒否される
-- [ ] アーカイブ・削除が、開いている全員の画面に即座に反映される
-- [ ] 削除したチャンネルの添付ファイルがストレージから消える
+- [x] アーカイブしたチャンネルは読めるが、投稿などは API で拒否される（`room_archive_test.go` の `TestArchivedRoomOperations`（止める操作は 409、本人だけの状態の操作は通る）と `TestArchiveRoomConcurrentWithSends`、`authz_test.go` の全組み合わせ、`internal/httpx/room_archive_test.go`）
+- [ ] アーカイブ・削除が、開いている全員の画面に即座に反映される（サーバーは `room.updated` の `archived_at` と `room.deleted` を配り、削除では Hub が購読を外す: `TestArchiveRoom`・`TestDeleteRoom`・`hub_test.go` の `TestDeliverClosesDeletedRooms`。画面は構築順 4）
+- [x] 削除したチャンネルの添付ファイルがストレージから消える（`TestDeleteRoom`: 猶予の 15 分の前は残し、過ぎると削除の後に PUT されたものも含めて消える）
 
 ---
 

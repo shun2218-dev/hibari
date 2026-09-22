@@ -31,6 +31,9 @@ const (
 	problemRoomNameTaken         problemType = "room-name-taken"
 	problemUserNotInWorkspace    problemType = "user-not-in-workspace"
 	problemMessageDeleted        problemType = "message-deleted"
+	problemRoomArchived          problemType = "room-archived"
+	problemRoomNotArchived       problemType = "room-not-archived"
+	problemRoomProtected         problemType = "room-protected"
 	problemAttachmentNotUploaded problemType = "attachment-not-uploaded"
 	problemAttachmentMismatch    problemType = "attachment-mismatch"
 	problemOwnerMustTransfer     problemType = "owner-must-transfer"
@@ -124,6 +127,13 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		writeProblem(w, r, problem{Type: problemRoomNameTaken, Title: "A room with this name already exists", Status: http.StatusConflict})
 	case errors.Is(err, chat.ErrUserNotInWorkspace):
 		writeProblem(w, r, problem{Type: problemUserNotInWorkspace, Title: "The user is not a member of the workspace", Status: http.StatusUnprocessableEntity})
+	case errors.Is(err, chat.ErrRoomArchived):
+		// 権限はあるが、ルームがアーカイブ中なので今はできない（ADR 0059 決定 2）。403 にすると、クライアントが「権限がない」と区別できない。
+		writeProblem(w, r, problem{Type: problemRoomArchived, Title: "The room is archived", Status: http.StatusConflict})
+	case errors.Is(err, chat.ErrRoomNotArchived):
+		writeProblem(w, r, problem{Type: problemRoomNotArchived, Title: "The room is not archived", Status: http.StatusConflict})
+	case errors.Is(err, chat.ErrRoomProtected):
+		writeProblem(w, r, problem{Type: problemRoomProtected, Title: "Direct messages and the default room cannot be archived or deleted", Status: http.StatusUnprocessableEntity})
 	case errors.Is(err, chat.ErrMessageDeleted):
 		writeProblem(w, r, problem{Type: problemMessageDeleted, Title: "The message has been deleted", Status: http.StatusConflict})
 	case errors.Is(err, chat.ErrAttachmentNotUploaded):

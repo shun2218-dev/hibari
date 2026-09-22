@@ -79,7 +79,8 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | `message.deleted` | room | 削除された（`data` は tombstone） |
 | `member.joined` | room、参加した本人 | ルームの作成・参加・追加・DM の作成・招待の受け入れでルームのメンバーになった |
 | `member.left` | room | 退出した、または外された |
-| `room.updated` | room（public ならワークスペースも） | 名前や `is_default` が変わった |
+| `room.updated` | room（public ならワークスペースも） | 名前や `is_default` が変わった。アーカイブ・復元した（ADR 0059） |
+| `room.deleted` | room（public ならワークスペースも、private なら削除した時点のメンバー本人も） | ルームが削除された（ADR 0059） |
 | `room.member_removed` | 本人 | 自分がルームから抜けた・外された |
 | `room.read` | 本人 | 自分の既読位置が進んだ（別の端末を含む） |
 | `workspace.updated` | workspace | 名前や `invite_policy` が変わった |
@@ -189,7 +190,7 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 }
 ```
 
-`type` は `room_created` / `member_joined` / `member_left` / `member_removed` / `room_renamed`。**sender はその行の主語**（参加した人、名前を変えた人）。DM には出ない。
+`type` は `room_created` / `member_joined` / `member_left` / `member_removed` / `room_renamed` / `room_archived` / `room_unarchived`（ADR 0059）。**sender はその行の主語**（参加した人、名前を変えた人）。DM には出ない。
 
 #### `member.joined`
 
@@ -208,8 +209,21 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 #### `room.updated`
 
 ```json
-{ "workspace_id": "01J8...", "room_id": "01J8...", "name": "デザインレビュー", "is_default": false }
+{ "workspace_id": "01J8...", "room_id": "01J8...", "name": "デザインレビュー", "is_default": false, "archived_at": null }
 ```
+
+- `archived_at`: アーカイブされていれば時刻、されていなければ `null`（ADR 0059 決定 5）。アーカイブしても読めるので、購読は外れない。
+  アーカイブ中は、投稿・編集・リアクションなどの API が 409 `room-archived` を返す
+
+#### `room.deleted`
+
+```json
+{ "workspace_id": "01J8...", "room_id": "01J8..." }
+```
+
+- 届いた時点で、サーバーはそのルームの購読を全接続から外している（ADR 0059 決定 7）。クライアントはそのルームのものを全部捨てる
+  （サイドバー・メッセージ・ピン留め・アクティビティ・「後で」の行）。開いていたら「アクセスできません」の画面にする（ADR 0035）
+- 取りこぼしても、再接続の同期でルーム一覧を取り直せば、そのルームは返ってこない
 
 #### `room.member_removed`
 

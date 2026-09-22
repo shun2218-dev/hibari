@@ -111,7 +111,7 @@ func (s *Service) SaveMessage(ctx context.Context, actor, roomID, messageID ulid
 		if err != nil {
 			return err
 		}
-		if !authz.CanReadRoom(a.kind(), a.actor(actor)) {
+		if !authz.CanReadRoom(a.authzRoom(), a.actor(actor)) {
 			return ErrNotFound
 		}
 		m, err := q.GetMessageView(ctx, store.GetMessageViewParams{RoomID: roomID, ID: messageID})
@@ -386,7 +386,7 @@ func (s *Service) hydrateSaved(ctx context.Context, q *store.Queries, actor ulid
 		if err != nil {
 			return nil, err
 		}
-		if !authz.CanReadRoom(a.kind(), a.actor(actor)) {
+		if !authz.CanReadRoom(a.authzRoom(), a.actor(actor)) {
 			continue
 		}
 		idx := byRoom[roomID]

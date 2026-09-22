@@ -72,7 +72,7 @@ var tsEnums = []tsEnum{
 	enumOf("Presence", chat.PresenceActive, chat.PresenceIdle, chat.PresenceOffline),
 	enumOf("SystemEventType",
 		chat.SystemRoomCreated, chat.SystemMemberJoined, chat.SystemMemberLeft, chat.SystemMemberRemoved, chat.SystemRoomRenamed,
-		chat.SystemMessagePinned),
+		chat.SystemMessagePinned, chat.SystemRoomArchived, chat.SystemRoomUnarchived),
 	enumOf("SavedState", chat.SavedInProgress, chat.SavedArchived, chat.SavedCompleted, chat.SavedRemoved),
 	enumOf("SavedItemStatus", chat.SavedItemOK, chat.SavedItemUnavailable),
 	enumOf("NotifyLevel", chat.NotifyAll, chat.NotifyMentions, chat.NotifyNone),
@@ -85,6 +85,7 @@ var tsEnums = []tsEnum{
 		problemHandleTaken, problemEmailTaken, problemAvatarNotUploaded, problemAvatarMismatch,
 		problemInviteInvalid, problemInviteExpired, problemInviteExhausted, problemOwnerMustTransfer,
 		problemRoomNameTaken, problemUserNotInWorkspace, problemMessageDeleted,
+		problemRoomArchived, problemRoomNotArchived, problemRoomProtected,
 		problemAttachmentNotUploaded, problemAttachmentMismatch, problemWSTicketInvalid, problemEmailUnverified),
 	enumOf("ClientMessageType", clientSubscribe, clientUnsubscribe, clientTyping, clientActivity, clientPing),
 	enumOf("AckError", ackInvalidMessage, ackNotFound, ackNotSubscribed, ackForbidden, ackTooManySubscriptions, ackInternal),
@@ -218,6 +219,7 @@ var tsDecls = []tsDecl{
 	response[memberLeftData]("MemberLeftData"),
 	response[roomUpdatedData]("RoomUpdatedData"),
 	response[roomMemberRemovedData]("RoomMemberRemovedData"),
+	response[roomDeletedData]("RoomDeletedData"),
 	response[roomReadData]("RoomReadData"),
 	response[workspaceUpdatedData]("WorkspaceUpdatedData"),
 	response[workspaceMemberRemovedData]("WorkspaceMemberRemovedData"),
@@ -278,6 +280,7 @@ var tsEvents = []struct {
 	{chat.EventThreadNotificationsUpdated, chat.ThreadNotificationsUpdated{}},
 	{chat.EventActivityReactionAdded, chat.ActivityReactionAdded{}},
 	{chat.EventActivityReactionRemoved, chat.ActivityReactionRemoved{}},
+	{chat.EventRoomDeleted, chat.RoomDeleted{}},
 }
 
 func TestTypeScriptTypes(t *testing.T) {

@@ -457,6 +457,27 @@ func (h *Hub) DeliverLocal(ctx context.Context, ev chat.Event) {
 	for c := range targets {
 		h.send(ctx, c, ev)
 	}
+
+	// 削除されたルームの購読を、届けたあとで全接続から外す（ADR 0059 決定 7、CLAUDE.md ルール 8）。
+	// Send は送信のキューに積むだけなので、外した後でもイベントは届く。外す前に届けないと、room.deleted 自体が届かない。
+	if len(ev.ClosedRooms) > 0 {
+		h.closeRooms(ev.ClosedRooms)
+	}
+}
+
+// closeRooms は、ルームの購読を全接続から外し、Redis のチャンネルの購読を返す。
+func (h *Hub) closeRooms(roomIDs []ulid.ULID) {
+	var released []string
+	h.mu.Lock()
+	for _, roomID := range roomIDs {
+		for c := range h.roomSubs[roomID] {
+			if h.unsubscribeLocked(c, RoomTopic(roomID)) {
+				released = append(released, roomChannel(roomID))
+			}
+		}
+	}
+	h.mu.Unlock()
+	h.release(released)
 }
 
 func (h *Hub) send(ctx context.Context, c *Client, ev chat.Event) {

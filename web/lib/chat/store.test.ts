@@ -1154,7 +1154,7 @@ describe("createChatStore realtime", () => {
       });
       await Promise.all([store.loadWorkspaces(), store.loadRooms("ws-1")]);
 
-      store.applyEvent({ type: "room.updated", data: { workspace_id: "ws-1", room_id: "r1", name: "雑談 改", is_default: true } });
+      store.applyEvent({ type: "room.updated", data: { workspace_id: "ws-1", room_id: "r1", name: "雑談 改", is_default: true, archived_at: null } });
       store.applyEvent({ type: "workspace.updated", data: { workspace_id: "ws-1", name: "hibari", invite_policy: "all_members" } });
 
       expect(store.getSnapshot().rooms.r1).toMatchObject({ name: "雑談 改", is_default: true });

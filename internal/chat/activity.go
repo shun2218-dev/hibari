@@ -212,7 +212,7 @@ func (s *Service) hydrateActivity(ctx context.Context, q *store.Queries, actor u
 		if err != nil {
 			return nil, err
 		}
-		if !authz.CanReadRoom(a.kind(), a.actor(actor)) {
+		if !authz.CanReadRoom(a.authzRoom(), a.actor(actor)) {
 			continue
 		}
 		views, err := q.ListMessageViewsByIDs(ctx, store.ListMessageViewsByIDsParams{RoomID: roomID, Ids: byRoom[roomID]})

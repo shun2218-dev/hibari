@@ -157,21 +157,30 @@ func TestCanRevokeInvite(t *testing.T) {
 // roomCase はルームに対する actor の立場の組み合わせ。
 type roomCase struct {
 	kind         RoomKind
+	isDefault    bool
+	archived     bool
 	role         Role
 	isRoomMember bool
 }
 
 var allKinds = []RoomKind{RoomPublic, RoomPrivate, RoomDM, RoomKind("group")}
 
-// checkRoom はルームの判定を、種類 × ロール × ルームのメンバーかどうかの全組み合わせで確かめる。
-func checkRoom(t *testing.T, name string, f func(RoomKind, RoomActor) bool, allowed func(roomCase) bool) {
+// checkRoom はルームの判定を、種類 × 既定かどうか × アーカイブ中かどうか × ロール × ルームのメンバーかどうかの全組み合わせで確かめる。
+// dm は既定にならない（DB の CHECK）が、判定が既定の DM を受け取っても壊れないことも確かめるため、組み合わせから外さない。
+func checkRoom(t *testing.T, name string, f func(Room, RoomActor) bool, allowed func(roomCase) bool) {
 	t.Helper()
 	for _, kind := range allKinds {
-		for _, role := range allRoles {
-			for _, isRoomMember := range []bool{false, true} {
-				c := roomCase{kind, role, isRoomMember}
-				if got, want := f(kind, RoomActor{Role: role, IsRoomMember: isRoomMember}), allowed(c); got != want {
-					t.Errorf("%s(kind=%q, role=%q, room_member=%v) = %v, want %v", name, kind, role, isRoomMember, got, want)
+		for _, isDefault := range []bool{false, true} {
+			for _, archived := range []bool{false, true} {
+				for _, role := range allRoles {
+					for _, isRoomMember := range []bool{false, true} {
+						c := roomCase{kind, isDefault, archived, role, isRoomMember}
+						r := Room{Kind: kind, IsDefault: isDefault, Archived: archived}
+						if got, want := f(r, RoomActor{Role: role, IsRoomMember: isRoomMember}), allowed(c); got != want {
+							t.Errorf("%s(kind=%q, default=%v, archived=%v, role=%q, room_member=%v) = %v, want %v",
+								name, kind, isDefault, archived, role, isRoomMember, got, want)
+						}
+					}
 				}
 			}
 		}
@@ -197,9 +206,9 @@ func TestCanReadRoom(t *testing.T) {
 
 func TestCanWriteRoom(t *testing.T) {
 	checkRoom(t, "CanWriteRoom", CanWriteRoom, func(c roomCase) bool {
-		// public でも投稿には参加が必要。
+		// public でも投稿には参加が必要。アーカイブ中は誰も投稿できない（ADR 0059）。
 		known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
-		return known && isWorkspaceMember(c.role) && c.isRoomMember
+		return !c.archived && known && isWorkspaceMember(c.role) && c.isRoomMember
 	})
 }
 
@@ -207,26 +216,29 @@ func TestCanPinMessage(t *testing.T) {
 	checkRoom(t, "CanPinMessage", CanPinMessage, func(c roomCase) bool {
 		// いまは投稿できる人と同じ（ADR 0054 決定 4）。参加していない public は読めるが付けられない。
 		known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
-		return known && isWorkspaceMember(c.role) && c.isRoomMember
+		return !c.archived && known && isWorkspaceMember(c.role) && c.isRoomMember
 	})
 }
 
 func TestCanJoinRoom(t *testing.T) {
 	checkRoom(t, "CanJoinRoom", CanJoinRoom, func(c roomCase) bool {
-		return c.kind == RoomPublic && isWorkspaceMember(c.role)
+		return !c.archived && c.kind == RoomPublic && isWorkspaceMember(c.role)
 	})
 }
 
 func TestCanAddRoomMember(t *testing.T) {
 	checkRoom(t, "CanAddRoomMember", CanAddRoomMember, func(c roomCase) bool {
 		// private のメンバーならロールに関係なく追加できる。
-		return c.kind == RoomPrivate && isWorkspaceMember(c.role) && c.isRoomMember
+		return !c.archived && c.kind == RoomPrivate && isWorkspaceMember(c.role) && c.isRoomMember
 	})
 }
 
 func TestCanUpdateRoom(t *testing.T) {
 	checkRoom(t, "CanUpdateRoom", CanUpdateRoom, func(c roomCase) bool {
 		adminOrAbove := c.role == o || c.role == a
+		if c.archived {
+			return false // アーカイブ中は設定を変えられない（ADR 0059）
+		}
 		switch c.kind {
 		case RoomPublic:
 			return adminOrAbove
@@ -234,6 +246,42 @@ func TestCanUpdateRoom(t *testing.T) {
 			return adminOrAbove && c.isRoomMember // 読めない private は変更できない
 		default:
 			return false // dm と未知の種類
+		}
+	})
+}
+
+// アーカイブと復元（ADR 0059 決定 1）。ルームのメンバーなら誰でも、admin 以上は読めれば参加していなくても。DM と既定のルームは対象外。
+func TestCanArchiveRoom(t *testing.T) {
+	can := func(c roomCase) bool {
+		adminOrAbove := c.role == o || c.role == a
+		switch {
+		case c.isDefault || !isWorkspaceMember(c.role):
+			return false
+		case c.kind == RoomPublic:
+			return c.isRoomMember || adminOrAbove
+		case c.kind == RoomPrivate:
+			return c.isRoomMember // 読めない private は admin でもできない
+		default:
+			return false // dm と未知の種類
+		}
+	}
+	checkRoom(t, "CanArchiveRoom", CanArchiveRoom, func(c roomCase) bool { return !c.archived && can(c) })
+	checkRoom(t, "CanUnarchiveRoom", CanUnarchiveRoom, func(c roomCase) bool { return c.archived && can(c) })
+}
+
+// 削除（ADR 0059 決定 1）。admin 以上だけ。アーカイブ中でもできる。
+func TestCanDeleteRoom(t *testing.T) {
+	checkRoom(t, "CanDeleteRoom", CanDeleteRoom, func(c roomCase) bool {
+		adminOrAbove := c.role == o || c.role == a
+		switch {
+		case c.isDefault || !adminOrAbove:
+			return false
+		case c.kind == RoomPublic:
+			return true
+		case c.kind == RoomPrivate:
+			return c.isRoomMember
+		default:
+			return false
 		}
 	})
 }
@@ -247,9 +295,12 @@ func TestCanLeaveRoom(t *testing.T) {
 func TestCanRemoveRoomMember(t *testing.T) {
 	for _, target := range allRoles {
 		checkRoom(t, fmt.Sprintf("CanRemoveRoomMember(target=%q)", target),
-			func(k RoomKind, ra RoomActor) bool { return CanRemoveRoomMember(k, ra, target) },
+			func(k Room, ra RoomActor) bool { return CanRemoveRoomMember(k, ra, target) },
 			func(c roomCase) bool {
 				manages := (c.role == o && (target == a || target == m)) || (c.role == a && target == m)
+				if c.archived {
+					return false
+				}
 				switch c.kind {
 				case RoomPublic:
 					return manages
@@ -287,29 +338,32 @@ func TestCanFollowThread(t *testing.T) {
 }
 
 func TestCanEditMessage(t *testing.T) {
-	checkRoom(t, "CanEditMessage(sender)", func(k RoomKind, ra RoomActor) bool { return CanEditMessage(k, ra, true) },
+	checkRoom(t, "CanEditMessage(sender)", func(k Room, ra RoomActor) bool { return CanEditMessage(k, ra, true) },
 		func(c roomCase) bool {
 			known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
-			return known && isWorkspaceMember(c.role) && c.isRoomMember
+			return !c.archived && known && isWorkspaceMember(c.role) && c.isRoomMember
 		})
 	// 他人のメッセージは owner でも編集できない。
-	checkRoom(t, "CanEditMessage(not sender)", func(k RoomKind, ra RoomActor) bool { return CanEditMessage(k, ra, false) },
+	checkRoom(t, "CanEditMessage(not sender)", func(k Room, ra RoomActor) bool { return CanEditMessage(k, ra, false) },
 		func(roomCase) bool { return false })
 }
 
 func TestCanDeleteMessage(t *testing.T) {
-	checkRoom(t, "CanDeleteMessage(sender)", func(k RoomKind, ra RoomActor) bool { return CanDeleteMessage(k, ra, true, m) },
+	checkRoom(t, "CanDeleteMessage(sender)", func(k Room, ra RoomActor) bool { return CanDeleteMessage(k, ra, true, m) },
 		func(c roomCase) bool {
 			known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
-			return known && isWorkspaceMember(c.role) && c.isRoomMember
+			return !c.archived && known && isWorkspaceMember(c.role) && c.isRoomMember
 		})
 	for _, sender := range allRoles {
 		checkRoom(t, fmt.Sprintf("CanDeleteMessage(sender role=%q)", sender),
-			func(k RoomKind, ra RoomActor) bool { return CanDeleteMessage(k, ra, false, sender) },
+			func(k Room, ra RoomActor) bool { return CanDeleteMessage(k, ra, false, sender) },
 			func(c roomCase) bool {
 				// owner は admin と member の、admin は member の投稿を消せる。抜けた人（none / 未知の値）の投稿は admin 以上なら消せる。
 				departed := sender == none || sender == bogus
 				manages := (c.role == o && (sender == a || sender == m || departed)) || (c.role == a && (sender == m || departed))
+				if c.archived {
+					return false
+				}
 				switch c.kind {
 				case RoomPublic:
 					return manages // 参加していなくても読めるので消せる
@@ -326,7 +380,7 @@ func TestCanUploadAttachment(t *testing.T) {
 	checkRoom(t, "CanUploadAttachment", CanUploadAttachment, func(c roomCase) bool {
 		// 投稿できる人だけ。参加していない public ではアップロードできない。
 		known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
-		return known && isWorkspaceMember(c.role) && c.isRoomMember
+		return !c.archived && known && isWorkspaceMember(c.role) && c.isRoomMember
 	})
 }
 
@@ -366,6 +420,6 @@ func TestCanSendTyping(t *testing.T) {
 	checkRoom(t, "CanSendTyping", CanSendTyping, func(c roomCase) bool {
 		// 読めるだけ（参加していない public）の人は入力中を出せない。
 		known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
-		return known && isWorkspaceMember(c.role) && c.isRoomMember
+		return !c.archived && known && isWorkspaceMember(c.role) && c.isRoomMember
 	})
 }

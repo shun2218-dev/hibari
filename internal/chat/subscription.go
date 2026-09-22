@@ -32,7 +32,7 @@ func (a *SubscriptionAuthorizer) AuthorizeRoom(ctx context.Context, userID, room
 		return ulid.ULID{}, err
 	}
 	r, ok := rooms[roomID]
-	if !ok || !authz.CanSubscribeRoom(r.kind, r.actor) {
+	if !ok || !authz.CanSubscribeRoom(r.room, r.actor) {
 		return ulid.ULID{}, ErrNotFound
 	}
 	return r.workspaceID, nil
@@ -61,7 +61,7 @@ func (a *SubscriptionAuthorizer) Allowed(ctx context.Context, userID ulid.ULID, 
 			return nil, nil, err
 		}
 		for id, r := range access {
-			if authz.CanSubscribeRoom(r.kind, r.actor) {
+			if authz.CanSubscribeRoom(r.room, r.actor) {
 				rooms[id] = true
 			}
 		}
@@ -91,9 +91,9 @@ func (a *SubscriptionAuthorizer) AuthorizeTyping(ctx context.Context, userID, ro
 	}
 	r, ok := rooms[roomID]
 	switch {
-	case !ok || !authz.CanReadRoom(r.kind, r.actor):
+	case !ok || !authz.CanReadRoom(r.room, r.actor):
 		return TypingStarted{}, ErrNotFound
-	case !authz.CanSendTyping(r.kind, r.actor):
+	case !authz.CanSendTyping(r.room, r.actor):
 		return TypingStarted{}, ErrForbidden
 	}
 	if threadRootID != nil {
@@ -123,7 +123,7 @@ func (a *SubscriptionAuthorizer) WorkspaceIDs(ctx context.Context, userID ulid.U
 
 type subscribedRoom struct {
 	workspaceID ulid.ULID
-	kind        RoomKind
+	room        authz.Room
 	actor       authz.RoomActor
 }
 
@@ -136,7 +136,7 @@ func (a *SubscriptionAuthorizer) roomAccess(ctx context.Context, userID ulid.ULI
 	for _, r := range rows {
 		rooms[r.ID] = subscribedRoom{
 			workspaceID: r.WorkspaceID,
-			kind:        RoomKind(r.Kind),
+			room:        authz.Room{Kind: RoomKind(r.Kind), IsDefault: r.IsDefault, Archived: r.ArchivedAt != nil},
 			actor:       authz.RoomActor{Role: Role(r.Role), IsRoomMember: r.IsRoomMember},
 		}
 	}

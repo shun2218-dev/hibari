@@ -7,13 +7,14 @@ package store
 
 import (
 	"context"
+	"time"
 
 	ulid "github.com/oklog/ulid/v2"
 )
 
 const listRoomAccessForUser = `-- name: ListRoomAccessForUser :many
 
-SELECT r.id, r.workspace_id, r.kind,
+SELECT r.id, r.workspace_id, r.kind, r.is_default, r.archived_at,
        coalesce(wm.role, '')::text AS role,
        (rm.user_id IS NOT NULL)::boolean AS is_room_member
   FROM rooms r
@@ -32,6 +33,8 @@ type ListRoomAccessForUserRow struct {
 	ID           ulid.ULID
 	WorkspaceID  ulid.ULID
 	Kind         string
+	IsDefault    bool
+	ArchivedAt   *time.Time
 	Role         string
 	IsRoomMember bool
 }
@@ -40,6 +43,7 @@ type ListRoomAccessForUserRow struct {
 // どれも読み取りだけで、ロックしない。購読と権限の変更の競合は Hub の epoch で扱う。
 // room_ids のうち存在するルームについて、user_id のワークスペースでのロールとルームのメンバーかどうかを返す。
 // 削除済みのワークスペースのルームは返さない（存在しないものとして扱う）。
+// is_default / archived_at は authz に渡すルームの状態（ADR 0059 決定 2。アーカイブ中は typing を止める）。
 func (q *Queries) ListRoomAccessForUser(ctx context.Context, arg ListRoomAccessForUserParams) ([]ListRoomAccessForUserRow, error) {
 	rows, err := q.db.Query(ctx, listRoomAccessForUser, arg.UserID, arg.RoomIds)
 	if err != nil {
@@ -53,6 +57,8 @@ func (q *Queries) ListRoomAccessForUser(ctx context.Context, arg ListRoomAccessF
 			&i.ID,
 			&i.WorkspaceID,
 			&i.Kind,
+			&i.IsDefault,
+			&i.ArchivedAt,
 			&i.Role,
 			&i.IsRoomMember,
 		); err != nil {

@@ -23,7 +23,18 @@ var (
 	ErrRoomNameTaken = errors.New("chat: room name already taken")
 	// ErrUserNotInWorkspace は、ルームへの追加や DM の相手がワークスペースのメンバーではないことを表す。
 	ErrUserNotInWorkspace = errors.New("chat: user is not a member of the workspace")
+	// ErrRoomArchived は、権限はあるがルームがアーカイブ中なのでできないことを表す（ADR 0059 決定 2）。
+	// すでにアーカイブ済みのルームをアーカイブしようとしたときにも返す。
+	ErrRoomArchived = errors.New("chat: room is archived")
+	// ErrRoomNotArchived は、アーカイブされていないルームを復元しようとしたことを表す。
+	ErrRoomNotArchived = errors.New("chat: room is not archived")
+	// ErrRoomProtected は、アーカイブ・削除の対象外のルーム（DM と is_default のルーム）であることを表す（ADR 0059 決定 1）。
+	ErrRoomProtected = errors.New("chat: room cannot be archived or deleted")
 )
+
+// storageDeletionDelay は、ルームの削除から添付のオブジェクトを消すまでの猶予（ADR 0059 決定 6）。
+// 削除の直前に発行された PUT URL で、削除の後にオブジェクトが置かれることがあるので、URL の有効期間が切れるまで待つ。
+const storageDeletionDelay = uploadURLTTL
 
 // roomNameMax はルーム名の長さの上限（rune 単位）。
 const roomNameMax = 80
@@ -64,7 +75,9 @@ type Room struct {
 	LastMessage *MessagePreview
 	// Notifications は actor のチャンネルごとの通知の設定（ADR 0055 決定 4）。ルームのメンバーでなければ nil。
 	Notifications *RoomNotifications
-	CreatedAt     time.Time
+	// ArchivedAt はアーカイブした時刻（ADR 0059）。アーカイブされていなければ nil。
+	ArchivedAt *time.Time
+	CreatedAt  time.Time
 }
 
 // MessagePreview はサイドバーに出す最終メッセージ。
@@ -97,6 +110,7 @@ func toRoom(r store.ListRoomsForUserRow, now time.Time) Room {
 		LastUserSeq:     r.Room.LastUserSeq,
 		LastReadUserSeq: r.LastReadUserSeq,
 		MentionCount:    r.MentionCount,
+		ArchivedAt:      r.Room.ArchivedAt,
 		CreatedAt:       r.Room.CreatedAt,
 	}
 	// 参加していない public ルームは room_members の行がなく、muted も NULL になる。設定を持てないので nil にする。
@@ -203,6 +217,37 @@ func (a roomAccess) actor(userID ulid.ULID) authz.RoomActor {
 
 func (a roomAccess) kind() RoomKind { return RoomKind(a.room.Kind) }
 
+// authzRoom は authz に渡すルームの情報（ADR 0059 決定 2）。
+func (a roomAccess) authzRoom() authz.Room {
+	return authz.Room{Kind: a.kind(), IsDefault: a.room.IsDefault, Archived: a.room.ArchivedAt != nil}
+}
+
+// authorize は authz の判定 check をルームに当て、拒まれたときに返すエラーを選ぶ（ADR 0059 決定 2）。
+// アーカイブ中でなければ許されたのなら ErrRoomArchived（権限はあるが、今はできない）、そうでなければ ErrForbidden。
+// 「アーカイブ中でなければ」の判定も authz に聞き直し、判定の中身をここに書かない。
+func (a roomAccess) authorize(check func(authz.Room) bool) error {
+	r := a.authzRoom()
+	if check(r) {
+		return nil
+	}
+	if r.Archived {
+		r.Archived = false
+		if check(r) {
+			return ErrRoomArchived
+		}
+	}
+	return ErrForbidden
+}
+
+// archivedIfNoRows は、採番の UPDATE が行を返さなかったこと（= その間にアーカイブされた。ADR 0059 決定 3）を ErrRoomArchived にする。
+// 採番の前に rooms の行はあることを確かめているので、行がないのはアーカイブのときだけ。
+func archivedIfNoRows(err error, what string) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrRoomArchived
+	}
+	return fmt.Errorf("%s: %w", what, err)
+}
+
 // lockMode は loadRoomAccess がどの行をロックするか。
 type lockMode int
 
@@ -258,7 +303,7 @@ func loadRoomAccess(ctx context.Context, q *store.Queries, mode lockMode, roomID
 	for _, m := range memberships {
 		a.members[m] = true
 	}
-	if !authz.CanReadRoom(a.kind(), a.actor(userIDs[0])) {
+	if !authz.CanReadRoom(a.authzRoom(), a.actor(userIDs[0])) {
 		return roomAccess{}, ErrNotFound
 	}
 	return a, nil
@@ -593,8 +638,8 @@ func (s *Service) UpdateRoom(ctx context.Context, actor, roomID ulid.ULID, in Ro
 		if err != nil {
 			return err
 		}
-		if !authz.CanUpdateRoom(a.kind(), a.actor(actor)) {
-			return ErrForbidden
+		if err := a.authorize(func(r authz.Room) bool { return authz.CanUpdateRoom(r, a.actor(actor)) }); err != nil {
+			return err
 		}
 		if params.Name != nil || params.IsDefault != nil {
 			previousName := a.room.Name
@@ -623,18 +668,163 @@ func (s *Service) UpdateRoom(ctx context.Context, actor, roomID ulid.ULID, in Ro
 		return Room{}, err
 	}
 	if updated {
-		to := Audience{Rooms: []ulid.ULID{roomID}}
-		if room.Kind == authz.RoomPublic {
-			// public ルームは参加していないメンバーのサイドバーにも出るので、ワークスペースの購読者にも届ける。
-			to.Workspaces = []ulid.ULID{room.WorkspaceID}
-		}
 		s.deliver(ctx, append([]Event{{
 			Type: EventRoomUpdated,
-			To:   to,
-			Data: RoomUpdated{WorkspaceID: room.WorkspaceID, RoomID: roomID, Name: room.Name, IsDefault: room.IsDefault},
+			To:   roomUpdatedAudience(room),
+			Data: roomUpdated(room),
 		}}, systemEvents...)...)
 	}
 	return room, nil
+}
+
+// roomUpdated は room.updated のデータ。名前・既定・アーカイブのどれが変わっても、いまの値を全部入れる。
+func roomUpdated(room Room) RoomUpdated {
+	return RoomUpdated{WorkspaceID: room.WorkspaceID, RoomID: room.ID, Name: room.Name, IsDefault: room.IsDefault, ArchivedAt: room.ArchivedAt}
+}
+
+// roomUpdatedAudience は room.updated の宛先。public ルームは参加していないメンバーのサイドバーにも出るので、ワークスペースの購読者にも届ける。
+func roomUpdatedAudience(room Room) Audience {
+	to := Audience{Rooms: []ulid.ULID{room.ID}}
+	if room.Kind == authz.RoomPublic {
+		to.Workspaces = []ulid.ULID{room.WorkspaceID}
+	}
+	return to
+}
+
+// ArchiveRoom はルームをアーカイブする（ADR 0059）。読めるが、投稿やリアクションなどはできなくなる。
+// できるのはルームのメンバー（admin 以上は読めれば参加していなくても）。DM と is_default のルームは対象外。
+func (s *Service) ArchiveRoom(ctx context.Context, actor, roomID ulid.ULID) (Room, error) {
+	return s.setRoomArchived(ctx, actor, roomID, true)
+}
+
+// UnarchiveRoom はアーカイブを戻す。メンバーはアーカイブの前のまま残っている。できる人はアーカイブと同じ。
+func (s *Service) UnarchiveRoom(ctx context.Context, actor, roomID ulid.ULID) (Room, error) {
+	return s.setRoomArchived(ctx, actor, roomID, false)
+}
+
+func (s *Service) setRoomArchived(ctx context.Context, actor, roomID ulid.ULID, archive bool) (Room, error) {
+	var (
+		room   Room
+		logged Event
+	)
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		q := store.New(tx)
+		a, err := loadRoomAccess(ctx, q, shareLock, roomID, actor)
+		if err != nil {
+			return err
+		}
+		r := a.authzRoom()
+		if r.Kind == authz.RoomDM || r.IsDefault {
+			return ErrRoomProtected
+		}
+		switch {
+		case archive && r.Archived:
+			return ErrRoomArchived
+		case !archive && !r.Archived:
+			return ErrRoomNotArchived
+		}
+		allowed := authz.CanUnarchiveRoom
+		if archive {
+			allowed = authz.CanArchiveRoom
+		}
+		if !allowed(r, a.actor(actor)) {
+			return ErrForbidden
+		}
+		// ログはアーカイブの前に書く（アーカイブした後も書けるが、「アーカイブ中の最後の行」がアーカイブのログになるように順序をそろえる）。
+		// システムメッセージの採番はアーカイブ中も止めないので、復元のログはどちらの順でも書ける（決定 4）。
+		systemType := SystemRoomUnarchived
+		if archive {
+			systemType = SystemRoomArchived
+		}
+		if logged, err = s.writeSystemMessage(ctx, q, roomID, actor, SystemEvent{Type: systemType}); err != nil {
+			return err
+		}
+		// 状態の確認と更新のあいだに別のリクエストが先に変えたら、行が返らない。そのときは先を越された側の 409 にする。
+		if archive {
+			_, err = q.ArchiveRoom(ctx, store.ArchiveRoomParams{ID: roomID, Now: s.clock.Now()})
+		} else {
+			_, err = q.UnarchiveRoom(ctx, roomID)
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			if archive {
+				return ErrRoomArchived
+			}
+			return ErrRoomNotArchived
+		}
+		if err != nil {
+			return fmt.Errorf("set room archived: %w", err)
+		}
+		room, err = getRoom(ctx, q, actor, roomID, s.clock.Now())
+		return err
+	})
+	if err != nil {
+		return Room{}, err
+	}
+	// 読めることは変わらないので、購読は外さない（決定 5）。
+	s.deliver(ctx, Event{Type: EventRoomUpdated, To: roomUpdatedAudience(room), Data: roomUpdated(room)}, logged)
+	return room, nil
+}
+
+// DeleteRoom はルームを行ごと削除する（ADR 0059 決定 6）。元に戻せない。
+// できるのは読める admin 以上。DM と is_default のルームは対象外。アーカイブ中でも削除できる。
+// 添付のオブジェクトは、キーを storage_deletions に写しておき、掃除ジョブが猶予の後に消す。
+func (s *Service) DeleteRoom(ctx context.Context, actor, roomID ulid.ULID) error {
+	var (
+		workspaceID ulid.ULID
+		kind        RoomKind
+		members     []ulid.ULID
+	)
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		q := store.New(tx)
+		a, err := loadRoomAccess(ctx, q, shareLock, roomID, actor)
+		if err != nil {
+			return err
+		}
+		r := a.authzRoom()
+		if r.Kind == authz.RoomDM || r.IsDefault {
+			return ErrRoomProtected
+		}
+		if !authz.CanDeleteRoom(r, a.actor(actor)) {
+			return ErrForbidden
+		}
+		// 行ロックで、添付の INSERT（外部キーの KEY SHARE）と送信の採番を止める。写すキーと消す行のあいだに添付が増えないようにする。
+		if _, err := q.LockRoomForDelete(ctx, roomID); err != nil {
+			return fmt.Errorf("lock room: %w", err)
+		}
+		if members, err = q.ListRoomMemberIDs(ctx, roomID); err != nil {
+			return fmt.Errorf("list room members: %w", err)
+		}
+		now := s.clock.Now()
+		if err := q.EnqueueRoomStorageDeletions(ctx, store.EnqueueRoomStorageDeletionsParams{
+			RoomID: roomID, NotBefore: now.Add(storageDeletionDelay), Now: now,
+		}); err != nil {
+			return fmt.Errorf("enqueue storage deletions: %w", err)
+		}
+		if err := q.DeleteRoom(ctx, roomID); err != nil {
+			return fmt.Errorf("delete room: %w", err)
+		}
+		workspaceID, kind = a.room.WorkspaceID, r.Kind
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	// 宛先: ルームの購読者、public ならワークスペースの購読者、private なら削除した時点のメンバー本人（決定 7）。
+	// private をワークスペース全体に配らないのは、読めない private ルームの ID を読めない人に知らせないため（ADR 0011）。
+	to := Audience{Rooms: []ulid.ULID{roomID}}
+	if kind == authz.RoomPublic {
+		to.Workspaces = []ulid.ULID{workspaceID}
+	} else {
+		to.Users = members
+	}
+	// ルームがもうないので、届けたあとで全接続の購読を外す（CLAUDE.md ルール 8）。ユーザーごとの再検証は要らない。
+	s.deliver(ctx, Event{
+		Type:        EventRoomDeleted,
+		To:          to,
+		ClosedRooms: []ulid.ULID{roomID},
+		Data:        RoomDeleted{WorkspaceID: workspaceID, RoomID: roomID},
+	})
+	return nil
 }
 
 // JoinRoom は public ルームに参加する。すでにメンバーでも成功を返す（冪等）。
@@ -649,8 +839,8 @@ func (s *Service) JoinRoom(ctx context.Context, actor, roomID ulid.ULID) (Room, 
 		if err != nil {
 			return err
 		}
-		if !authz.CanJoinRoom(a.kind(), a.actor(actor)) {
-			return ErrForbidden
+		if err := a.authorize(func(r authz.Room) bool { return authz.CanJoinRoom(r, a.actor(actor)) }); err != nil {
+			return err
 		}
 		n, err := q.AddRoomMember(ctx, store.AddRoomMemberParams{RoomID: roomID, UserID: actor, Now: s.clock.Now()})
 		if err != nil {
@@ -685,8 +875,8 @@ func (s *Service) AddRoomMember(ctx context.Context, actor, roomID, target ulid.
 		if err != nil {
 			return err
 		}
-		if !authz.CanAddRoomMember(a.kind(), a.actor(actor)) {
-			return ErrForbidden
+		if err := a.authorize(func(r authz.Room) bool { return authz.CanAddRoomMember(r, a.actor(actor)) }); err != nil {
+			return err
 		}
 		if !a.roles[target].IsMember() {
 			return ErrUserNotInWorkspace
@@ -736,11 +926,13 @@ func (s *Service) RemoveRoomMember(ctx context.Context, actor, roomID, target ul
 			return ErrNotFound
 		}
 		if actor == target {
-			if !authz.CanLeaveRoom(a.kind(), a.actor(actor)) {
+			if !authz.CanLeaveRoom(a.authzRoom(), a.actor(actor)) {
 				return ErrForbidden
 			}
-		} else if !authz.CanRemoveRoomMember(a.kind(), a.actor(actor), a.roles[target]) {
-			return ErrForbidden
+		} else if err := a.authorize(func(r authz.Room) bool {
+			return authz.CanRemoveRoomMember(r, a.actor(actor), a.roles[target])
+		}); err != nil {
+			return err
 		}
 		if _, err := q.DeleteRoomMember(ctx, store.DeleteRoomMemberParams{RoomID: roomID, UserID: target}); err != nil {
 			return fmt.Errorf("delete room member: %w", err)

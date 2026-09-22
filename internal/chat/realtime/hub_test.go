@@ -560,6 +560,47 @@ func TestDeliverRevalidatesAccessChanges(t *testing.T) {
 	}
 }
 
+// 削除されたルームは、room.deleted を届けたあとで全接続の購読を外す（ADR 0059 決定 7、CLAUDE.md ルール 8）。
+func TestDeliverClosesDeletedRooms(t *testing.T) {
+	e := newEnv(t)
+	w := e.world()
+	alice, aliceConn := e.connect(t, w.alice)
+	bob, bobConn := e.connect(t, w.bob)
+	for _, c := range []*realtime.Client{alice, bob} {
+		e.subscribe(t, c, realtime.RoomTopic(w.room))
+		e.subscribe(t, c, realtime.RoomTopic(w.other))
+	}
+	aliceConn.take()
+	bobConn.take()
+
+	e.hub.DeliverLocal(t.Context(), chat.Event{
+		Type:        chat.EventRoomDeleted,
+		To:          chat.Audience{Rooms: []ulid.ULID{w.room}},
+		ClosedRooms: []ulid.ULID{w.room},
+		Data:        chat.RoomDeleted{WorkspaceID: w.ws, RoomID: w.room},
+	})
+	for name, conn := range map[string]*fakeConn{"alice": aliceConn, "bob": bobConn} {
+		// 購読を外す前に届ける。外してからだと room.deleted 自体が届かない
+		if got := conn.take(); !equalTypes(got, chat.EventRoomDeleted) {
+			t.Errorf("%s received %v, want room.deleted", name, got)
+		}
+	}
+
+	e.hub.DeliverLocal(t.Context(), messageTo(w.room))
+	e.hub.DeliverLocal(t.Context(), messageTo(w.other))
+	for name, conn := range map[string]*fakeConn{"alice": aliceConn, "bob": bobConn} {
+		if got := conn.take(); !equalTypes(got, chat.EventMessageCreated) {
+			t.Errorf("%s received %v, want only the message in the room that still exists", name, got)
+		}
+	}
+	if got := e.subscriber.channels()["room:"+w.room.String()]; got != 0 {
+		t.Errorf("room refs after delete = %d, want 0", got)
+	}
+	if got := e.subscriber.channels()["room:"+w.other.String()]; got != 2 {
+		t.Errorf("other room refs = %d, want 2", got)
+	}
+}
+
 // 購読の authz が権限の変更の前の状態を読んで通っても、その間に再検証が始まっていれば、authz をやり直して登録しない。
 func TestSubscribeRetriesWhenAccessChangesConcurrently(t *testing.T) {
 	e := newEnv(t)
