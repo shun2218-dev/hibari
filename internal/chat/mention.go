@@ -34,13 +34,14 @@ type mentionAll struct {
 	hereTargets []ulid.ULID
 }
 
-// resolveHere は @here の対象を返す。本文に @here がない、またはチャンネルに出ない本文なら何もしない。
+// resolveHere は @here の対象を返す。本文に @here がなければ何もしない。
+// スレッドだけの返信でも解決する（対象の人をスレッドに参加させる。ADR 0056 決定 4）。
 //
 // presence の読み取りは**トランザクションの外**で行う（CLAUDE.md ルール 5 の Redis を、Postgres の行ロックを持ったまま待たない）。
 // 読んだ後にオフラインになった人が混ざることはあるが、@here はもともと「送った瞬間の目安」なので許容する（ADR 0041）。
 // Redis が読めないときは対象を空にして、本文の送信は続ける。本文が届くことの方が大事なので、送信ごと失敗させない。
-func (s *Service) resolveHere(ctx context.Context, logger *slog.Logger, roomID ulid.ULID, body string, inChannel bool) mentionAll {
-	if !inChannel || !mention.Has(mention.Parse(body), mention.KindHere) || s.presence == nil {
+func (s *Service) resolveHere(ctx context.Context, logger *slog.Logger, roomID ulid.ULID, body string) mentionAll {
+	if !mention.Has(mention.Parse(body), mention.KindHere) || s.presence == nil {
 		return mentionAll{}
 	}
 	members, err := store.New(s.db).ListRoomMemberIDs(ctx, roomID)
@@ -69,9 +70,9 @@ func (s *Service) resolveHere(ctx context.Context, logger *slog.Logger, roomID u
 // 行はルームのメンバーにしか作らない（非メンバーには知らせない）。クエリが room_members を JOIN するので、
 // 非メンバーの ID が本文にあっても静かに落ちる。
 //
-// inChannel は、その本文がチャンネルのタイムラインに出るか（チャンネルの投稿と「チャンネルにも投稿する」を付けた返信）。
-// **スレッドだけの返信では @channel / @here の行を作らない**（Slack と同じ。ADR 0041）。個人へのメンションはスレッドの中でも数える。
-func createMessageMentions(ctx context.Context, q *store.Queries, now time.Time, roomID, messageID ulid.ULID, body string, inChannel bool, all mentionAll) error {
+// スレッドだけの返信でも @channel / @here の行を作る（ADR 0056 決定 4。以前はチャンネルに出る本文だけにしていた。ADR 0041）。
+// スレッドだけの返信の行は、スレッドに参加している人にしか数えられない（件数の SQL）。参加させるのは送信の側（sendThreadReply）。
+func createMessageMentions(ctx context.Context, q *store.Queries, now time.Time, roomID, messageID ulid.ULID, body string, all mentionAll) error {
 	ms := mention.Parse(body)
 	if len(ms) == 0 {
 		return nil
@@ -82,9 +83,6 @@ func createMessageMentions(ctx context.Context, q *store.Queries, now time.Time,
 		}); err != nil {
 			return fmt.Errorf("create user mentions: %w", err)
 		}
-	}
-	if !inChannel {
-		return nil
 	}
 	if mention.Has(ms, mention.KindChannel) {
 		if err := q.CreateChannelMention(ctx, store.CreateChannelMentionParams{RoomID: roomID, MessageID: messageID, Now: now}); err != nil {

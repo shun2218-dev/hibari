@@ -593,6 +593,8 @@ describe("threads (ADR 0036)", () => {
         last_thread_seq: 3,
         last_read_thread_seq: 1,
         unread_count: 2,
+        notify_replies: true,
+        mention_count: 0,
       },
       new Date("2026-09-13T03:00:00Z"),
       { timeZone: tz, memberNames: { [naoki.id]: "佐藤 直樹" } },

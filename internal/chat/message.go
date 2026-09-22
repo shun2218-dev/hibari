@@ -220,8 +220,8 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 	}
 
 	// @here の対象は、トランザクションに入る前に presence から決める（ADR 0041）。
-	// スレッドだけの返信では @channel / @here を数えないので、解決も要らない（Slack と同じ）。
-	all := s.resolveHere(ctx, s.logger, roomID, in.Body, in.ThreadRootID == nil || in.AlsoInChannel)
+	// スレッドだけの返信でも解決する（対象の人をスレッドに参加させる。ADR 0056 決定 4）。
+	all := s.resolveHere(ctx, s.logger, roomID, in.Body)
 
 	// threadEvents は、スレッドの返信で message.created の後に届けるイベント（親の返信数、参加。ADR 0036）。
 	var threadEvents []Event
@@ -246,7 +246,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		}
 
 		if in.ThreadRootID != nil {
-			msg, threadEvents, err = s.sendThreadReply(ctx, q, actor, a.room.WorkspaceID, roomID, *in.ThreadRootID, in, all)
+			msg, threadEvents, err = s.sendThreadReply(ctx, q, actor, a.room.WorkspaceID, roomID, *in.ThreadRootID, a.kind(), in, all)
 			created = err == nil
 			return err
 		}
@@ -270,7 +270,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		if err := attachToMessage(ctx, q, actor, roomID, id, in.AttachmentIDs); err != nil {
 			return err
 		}
-		if err := createMessageMentions(ctx, q, now, roomID, id, in.Body, true, all); err != nil {
+		if err := createMessageMentions(ctx, q, now, roomID, id, in.Body, all); err != nil {
 			return err
 		}
 		if _, err := q.AdvanceLastReadSeq(ctx, store.AdvanceLastReadSeqParams{RoomID: roomID, UserID: actor, Seq: seq}); err != nil {
@@ -579,7 +579,7 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 
 	// 編集でも、本文に @here があれば対象を決め直す（presence はトランザクションの外で読む。ADR 0041）。
 	// この時点ではチャンネルに出る本文かどうか分からないので、決めるだけ決めて、使うかはトランザクションの中で判断する。
-	all := s.resolveHere(ctx, s.logger, roomID, body, true)
+	all := s.resolveHere(ctx, s.logger, roomID, body)
 
 	var (
 		msg     Message
@@ -625,7 +625,9 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 		if err := q.DeleteMessageMentions(ctx, store.DeleteMessageMentionsParams{RoomID: roomID, MessageID: messageID}); err != nil {
 			return fmt.Errorf("delete message mentions: %w", err)
 		}
-		if err := createMessageMentions(ctx, q, now, roomID, messageID, body, m.InChannel, all); err != nil {
+		// 編集でメンションを足しても、スレッドの参加者は増やさない（送信のときだけ。個人へのメンションもこれまでどおり）。
+		// スレッドの @channel の行は、すでに参加している人にだけ数えられる。
+		if err := createMessageMentions(ctx, q, now, roomID, messageID, body, all); err != nil {
 			return err
 		}
 		changed = true

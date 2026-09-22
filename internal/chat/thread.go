@@ -34,7 +34,7 @@ func isThreadRoot(kind string, threadRootID *ulid.ULID) bool {
 //
 // ロックの順序は room_members（済み）→ 親のメッセージ → rooms → thread_members。
 // 編集・削除の「room_members → メッセージ → rooms」と同じ向きにそろえる。rooms を持ったまま親を待つと、親の編集とデッドロックする。
-func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, workspaceID, roomID, rootID ulid.ULID, in SendMessageInput, all mentionAll) (Message, []Event, error) {
+func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, workspaceID, roomID, rootID ulid.ULID, kind RoomKind, in SendMessageInput, all mentionAll) (Message, []Event, error) {
 	root, err := q.GetMessageForUpdate(ctx, store.GetMessageForUpdateParams{RoomID: roomID, ID: rootID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 別のルームのメッセージも、存在しない ID と同じく見つからない。
@@ -73,9 +73,9 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 	if err := attachToMessage(ctx, q, actor, roomID, id, in.AttachmentIDs); err != nil {
 		return Message{}, nil, err
 	}
-	// スレッドだけの返信では、@channel / @here は誰の件数も増やさない（Slack と同じ。ADR 0041）。
-	// 「チャンネルにも投稿する」を付けた返信はチャンネルの発言なので、チャンネルの投稿と同じに扱う。
-	if err := createMessageMentions(ctx, q, now, roomID, id, in.Body, in.AlsoInChannel, all); err != nil {
+	// スレッドの返信の @channel / @here も、チャンネルの投稿と同じ人をメンションとして数える（ADR 0056 決定 4。ADR 0041 を改めた）。
+	// スレッドだけの返信の行は「参加していて、thread_seq が既読位置より先」で数えるので、下で対象の人を参加させる。
+	if err := createMessageMentions(ctx, q, now, roomID, id, in.Body, all); err != nil {
 		return Message{}, nil, err
 	}
 
@@ -111,10 +111,34 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 			events = append(events, threadFollowedEvent(workspaceID, roomID, rootID, root.SenderID, 0))
 		}
 	}
-	// 個人へのメンションを受けた人も、そのスレッドに参加する（ADR 0036 の想定どおり。ADR 0041）。
+	// 1 対 1 の DM のスレッドは、最初の返信で 2 人とも参加する（Slack の既定。ADR 0056 決定 6）。
+	// 親の投稿者は上で入っているので、ここで入るのは「親を書いていないし、返信もしていない」もう 1 人。
+	if threadSeq == 1 && kind == authz.RoomDM {
+		followed, err := q.FollowThreadForRoomMembers(ctx, store.FollowThreadForRoomMembersParams{
+			RoomID: roomID, ThreadRootID: rootID, LastReadThreadSeq: 0, Now: now,
+		})
+		if err != nil {
+			return Message{}, nil, fmt.Errorf("follow dm thread: %w", err)
+		}
+		for _, userID := range followed {
+			events = append(events, threadFollowedEvent(workspaceID, roomID, rootID, userID, 0))
+		}
+	}
+	// メンションを受けた人も、そのスレッドに参加する（ADR 0036 の想定どおり。ADR 0041）。
 	// 既読位置をこの返信の 1 つ前にするので、メンションされた返信だけが未読になる。
-	// @channel / @here では参加させない（ルームの全員をスレッドの参加者にしてしまう）。
-	if mentioned := mention.UserIDs(mention.Parse(in.Body)); len(mentioned) > 0 {
+	// @channel はルームの全員、@here はその瞬間にオンラインの人が参加する（Slack の実物に合わせる。ADR 0056 決定 4）。
+	ms := mention.Parse(in.Body)
+	if mention.Has(ms, mention.KindChannel) {
+		followed, err := q.FollowThreadForRoomMembers(ctx, store.FollowThreadForRoomMembersParams{
+			RoomID: roomID, ThreadRootID: rootID, LastReadThreadSeq: threadSeq - 1, Now: now,
+		})
+		if err != nil {
+			return Message{}, nil, fmt.Errorf("follow thread by @channel: %w", err)
+		}
+		for _, userID := range followed {
+			events = append(events, threadFollowedEvent(workspaceID, roomID, rootID, userID, threadSeq-1))
+		}
+	} else if mentioned := append(mention.UserIDs(ms), all.hereTargets...); len(mentioned) > 0 {
 		followed, err := q.FollowThreadForMentioned(ctx, store.FollowThreadForMentionedParams{
 			RoomID: roomID, ThreadRootID: rootID, UserIds: mentioned, LastReadThreadSeq: threadSeq - 1, Now: now,
 		})
@@ -203,6 +227,8 @@ type ThreadPage struct {
 	LastChangeSeq int64
 	// LastReadThreadSeq は actor の既読位置。スレッドに参加していなければ nil。
 	LastReadThreadSeq *int64
+	// NotifyReplies は actor の返信の通知（ADR 0056）。スレッドに参加していなければ nil。
+	NotifyReplies *bool
 }
 
 // ListThreadMessages はスレッドの親と返信を返す。ルームを読める人なら取得できる（スレッドのための権限は持たない。ADR 0036）。
@@ -308,10 +334,11 @@ func (s *Service) finishThreadPage(
 	if err := loadMessageSaved(ctx, q, actor, page.Replies); err != nil {
 		return ThreadPage{}, err
 	}
-	lastRead, err := q.GetThreadMembership(ctx, store.GetThreadMembershipParams{ThreadRootID: rootID, UserID: actor})
+	membership, err := q.GetThreadMembership(ctx, store.GetThreadMembershipParams{ThreadRootID: rootID, UserID: actor})
 	switch {
 	case err == nil:
-		page.LastReadThreadSeq = &lastRead
+		page.LastReadThreadSeq = &membership.LastReadThreadSeq
+		page.NotifyReplies = &membership.NotifyReplies
 	case !errors.Is(err, pgx.ErrNoRows):
 		return ThreadPage{}, fmt.Errorf("get thread membership: %w", err)
 	}
@@ -470,6 +497,10 @@ type FollowedThread struct {
 	LastReadThreadSeq int64
 	// UnreadCount は親の last_thread_seq - 自分の既読位置。削除された返信も数える近似（ADR 0036）。
 	UnreadCount int64
+	// NotifyReplies は返信の通知（ADR 0056 決定 1）。オフでも一覧に残り、未読も数える。
+	NotifyReplies bool
+	// MentionCount は未読の範囲にある自分宛てのメンションの数。オフの行でも `@N` を出すため（決定 2）。
+	MentionCount int64
 }
 
 // FollowedThreadRoom はスレッドがあるルーム。
@@ -548,8 +579,10 @@ func (s *Service) ListThreads(ctx context.Context, actor, workspaceID ulid.ULID,
 			LastThreadSeq:     r.LastThreadSeq,
 			LastReadThreadSeq: r.LastReadThreadSeq,
 			UnreadCount:       r.LastThreadSeq - r.LastReadThreadSeq,
+			NotifyReplies:     r.NotifyReplies,
+			MentionCount:      r.MentionCount,
 		}
-		// 参加の行は返信があったときにしかできないので、最後の返信の時刻は必ずある。
+		// 参加の行は返信があるスレッドにしかできない（明示的なフォローも返信のある親だけ。ADR 0056）ので、最後の返信の時刻は必ずある。
 		if r.ThreadLastReplyAt != nil {
 			t.LastReplyAt = *r.ThreadLastReplyAt
 		}

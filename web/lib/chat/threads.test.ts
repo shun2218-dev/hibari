@@ -15,6 +15,8 @@ function followed(id: string, overrides: Partial<FollowedThread> = {}): Followed
     last_thread_seq: 1,
     last_read_thread_seq: 1,
     unread_count: 0,
+    notify_replies: true,
+    mention_count: 0,
     ...overrides,
   };
 }

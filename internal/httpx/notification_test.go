@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/oklog/ulid/v2"
 )
 
 // 通知の設定の API（ロードマップ Phase 6.14a / ADR 0055 決定 4・5）。
@@ -159,4 +161,48 @@ func roomNotificationsIn(t *testing.T, c *apiClient, u apiUser, workspaceID, roo
 	}
 	t.Fatalf("room %s が一覧にない: %s", roomID, r.body)
 	return nil
+}
+
+// スレッドの返信の通知（ADR 0056 決定 7）。
+func TestThreadNotificationsAPI(t *testing.T) {
+	c := newAPI(t)
+	f := newChatFixture(c)
+	root := decode[messageBody](t, c.sendMessage(f.alice, f.public.ID, "親"))
+	r := c.as(f.bob, http.MethodPost, "/api/v1/rooms/"+f.public.ID+"/messages",
+		map[string]any{"client_msg_id": ulid.Make().String(), "body": "返信", "thread_root_id": root.ID})
+	expectStatus(t, r, http.StatusCreated)
+	path := "/api/v1/rooms/" + f.public.ID + "/threads/" + root.ID + "/me/notifications"
+	otherTab := c.dialWS(f.bob)
+	otherTab.sync()
+
+	t.Run("オフにすると一覧の notify_replies が false になり、本人の別のタブに届く", func(t *testing.T) {
+		r := c.as(f.bob, http.MethodPut, path, map[string]bool{"notify_replies": false})
+		expectStatus(t, r, http.StatusOK)
+		if got := strings.TrimSpace(string(r.body)); !strings.HasPrefix(got, `{"notify_replies":false,"last_read_thread_seq":`) {
+			t.Errorf("body = %s", got)
+		}
+		r = c.as(f.bob, http.MethodGet, "/api/v1/workspaces/"+f.ws.ID+"/threads?limit=200", nil)
+		expectStatus(t, r, http.StatusOK)
+		if !strings.Contains(string(r.body), `"notify_replies":false,"mention_count":0`) {
+			t.Errorf("threads = %s", r.body)
+		}
+		ev := eventsOfType(otherTab.sync(), "thread.notifications_updated")
+		want := `{"workspace_id":"` + f.ws.ID + `","room_id":"` + f.public.ID + `","thread_root_id":"` + root.ID + `","notify_replies":false}`
+		if len(ev) != 1 || string(ev[0].Data) != want {
+			t.Errorf("thread.notifications_updated = %v", ev)
+		}
+	})
+
+	t.Run("スレッドの応答にも自分の notify_replies が載る", func(t *testing.T) {
+		r := c.as(f.bob, http.MethodGet, "/api/v1/rooms/"+f.public.ID+"/threads/"+root.ID+"/messages", nil)
+		expectStatus(t, r, http.StatusOK)
+		if !strings.Contains(string(r.body), `"notify_replies":false`) {
+			t.Errorf("thread = %s", r.body)
+		}
+	})
+
+	t.Run("notify_replies を省くと 422、参加していない public ルームは 403", func(t *testing.T) {
+		expectStatus(t, c.as(f.bob, http.MethodPut, path, map[string]any{}), http.StatusUnprocessableEntity)
+		expectStatus(t, c.as(f.owner, http.MethodPut, path, map[string]bool{"notify_replies": true}), http.StatusForbidden)
+	})
 }

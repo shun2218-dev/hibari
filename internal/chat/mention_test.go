@@ -309,20 +309,59 @@ func TestMentionInThread(t *testing.T) {
 		}
 	})
 
-	// スレッドだけの返信の @channel / @here は誰にも通知しない（Slack と同じ。ADR 0041）。
-	t.Run("@channel in a thread-only reply counts for nobody", func(t *testing.T) {
-		reply(t, env, r.member, room.ID, root.ID, "<!channel> <!here> スレッドの中")
-		if got := mentionCount(t, env, r.member2, room.ID); got != 0 {
-			t.Errorf("member2's mention_count = %d, want 0", got)
-		}
-	})
-
-	t.Run("@channel in a reply that also goes to the channel counts for everyone", func(t *testing.T) {
-		broadcastReply(t, env, r.member, room.ID, root.ID, "<!channel> チャンネルにも")
+	// スレッドだけの返信の @channel も、ルームの全員をスレッドに参加させて数える（Slack の実物。ADR 0056 決定 4。ADR 0041 を改めた）。
+	t.Run("@channel in a thread-only reply joins everyone and counts", func(t *testing.T) {
+		reply(t, env, r.member, room.ID, root.ID, "<!channel> スレッドの中")
 		if got := mentionCount(t, env, r.member2, room.ID); got != 1 {
 			t.Errorf("member2's mention_count = %d, want 1", got)
 		}
+		threads, err := env.Service.ListThreads(t.Context(), r.member2, r.ws.ID, chat.PageRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// 参加した時点の既読位置はその返信の 1 つ前なので、@channel の返信だけが未読で、メンションとして数える
+		if len(threads.Items) != 1 || threads.Items[0].UnreadCount != 1 || threads.Items[0].MentionCount != 1 {
+			t.Fatalf("member2's threads = %+v, want the thread with 1 unread mention", threads.Items)
+		}
+		// 送った本人は、送信で既読位置が進むので数えない
+		if got := mentionCount(t, env, r.member, room.ID); got != 0 {
+			t.Errorf("sender's mention_count = %d, want 0", got)
+		}
 	})
+
+	t.Run("@channel in a reply that also goes to the channel counts once more", func(t *testing.T) {
+		broadcastReply(t, env, r.member, room.ID, root.ID, "<!channel> チャンネルにも")
+		if got := mentionCount(t, env, r.member2, room.ID); got != 2 {
+			t.Errorf("member2's mention_count = %d, want 2", got)
+		}
+	})
+}
+
+// スレッドだけの返信の @here は、その瞬間にオンラインの人だけを参加させる（ADR 0056 決定 4）。
+func TestMentionHereInThread(t *testing.T) {
+	online := &onlineSet{}
+	env := chattest.New(t, chattest.WithPresenceReader(online))
+	r, room := mentionRoom(t, env)
+	root := send(t, env, r.member, room.ID, "親")
+	online.set(r.member2)
+
+	reply(t, env, r.member, room.ID, root.ID, "<!here> いまいる人")
+
+	for _, tc := range []struct {
+		user ulid.ULID
+		want int
+	}{{r.member2, 1}, {r.admin, 0}} {
+		threads, err := env.Service.ListThreads(t.Context(), tc.user, r.ws.ID, chat.PageRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(threads.Items) != tc.want {
+			t.Errorf("threads of %s = %d, want %d", tc.user, len(threads.Items), tc.want)
+		}
+	}
+	if got := mentionCount(t, env, r.member2, room.ID); got != 1 {
+		t.Errorf("online member's mention_count = %d, want 1", got)
+	}
 }
 
 // 同じルームに多数の goroutine が同時に @channel を送っても、件数がずれずデッドロックしない

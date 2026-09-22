@@ -575,6 +575,8 @@ export interface ThreadMessageList {
   last_change_seq: number;
   /** last_read_thread_seq は自分の既読位置。スレッドに参加していなければ null。 */
   last_read_thread_seq: number | null;
+  /** notify_replies は自分の返信の通知（ADR 0056）。スレッドに参加していなければ null。 */
+  notify_replies: boolean | null;
 }
 
 export interface ThreadReadState {
@@ -602,11 +604,25 @@ export interface FollowedThread {
   last_thread_seq: number;
   last_read_thread_seq: number;
   unread_count: number;
+  /** notify_replies は返信の通知。オフでも一覧に残り、未読も数える（ADR 0056 決定 1・2）。 */
+  notify_replies: boolean;
+  /** mention_count は未読の範囲にある自分宛てのメンションの数。オフの行でも `@N` を出すため。 */
+  mention_count: number;
 }
 
 export interface ThreadList {
   threads: FollowedThread[];
   next_cursor: string | null;
+}
+
+export interface ThreadNotificationsRequest {
+  notify_replies?: boolean | null;
+}
+
+export interface ThreadNotifications {
+  notify_replies: boolean;
+  /** last_read_thread_seq は参加していれば既読位置。参加していないスレッドを「オフ」にしたときは null。 */
+  last_read_thread_seq: number | null;
 }
 
 export interface MessageLinkRef {
@@ -812,6 +828,13 @@ export interface RoomNotificationsUpdatedData {
   muted_until: string | null;
 }
 
+export interface ThreadNotificationsUpdatedData {
+  workspace_id: string;
+  room_id: string;
+  thread_root_id: string;
+  notify_replies: boolean;
+}
+
 /** サーバーからのイベント（docs/events.md）。type で data の型が決まる。 */
 export type ServerEvent =
   | { type: "message.created"; data: Message }
@@ -832,7 +855,8 @@ export type ServerEvent =
   | { type: "thread.followed"; data: ThreadFollowedData }
   | { type: "saved.updated"; data: SavedItem }
   | { type: "notifications.updated"; data: NotificationsUpdatedData }
-  | { type: "room.notifications_updated"; data: RoomNotificationsUpdatedData };
+  | { type: "room.notifications_updated"; data: RoomNotificationsUpdatedData }
+  | { type: "thread.notifications_updated"; data: ThreadNotificationsUpdatedData };
 
 export type ServerEventType = ServerEvent["type"];
 

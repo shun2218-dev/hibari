@@ -147,6 +147,12 @@ SELECT count(*)
  WHERE tm.user_id = $1
    AND r.workspace_id = $2
    AND m.last_thread_seq > tm.last_read_thread_seq
+   AND (tm.notify_replies OR EXISTS (
+         SELECT 1 FROM message_mentions mm
+           JOIN messages t ON t.room_id = mm.room_id AND t.id = mm.message_id
+          WHERE t.thread_root_id = tm.thread_root_id
+            AND (mm.user_id IS NULL OR mm.user_id = tm.user_id)
+            AND t.thread_seq > tm.last_read_thread_seq))
 `
 
 type CountUnreadThreadsParams struct {
@@ -155,6 +161,8 @@ type CountUnreadThreadsParams struct {
 }
 
 // 未読の返信がある参加中のスレッドの数（サイドバーの「スレッド」のバッジ。ADR 0036）。
+// 返信の通知をオフにしたスレッドは、未読の範囲に自分宛てのメンションがあるときだけ数える（ADR 0056 決定 2）。
+// 条件は ListFollowedThreads の mention_count と同じ。片方だけ直さないこと。
 func (q *Queries) CountUnreadThreads(ctx context.Context, arg CountUnreadThreadsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countUnreadThreads, arg.UserID, arg.WorkspaceID)
 	var count int64
@@ -303,6 +311,50 @@ func (q *Queries) FollowThreadForMentioned(ctx context.Context, arg FollowThread
 		arg.Now,
 		arg.RoomID,
 		arg.UserIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ulid.ULID{}
+	for rows.Next() {
+		var user_id ulid.ULID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const followThreadForRoomMembers = `-- name: FollowThreadForRoomMembers :many
+INSERT INTO thread_members (room_id, thread_root_id, user_id, last_read_thread_seq, created_at)
+SELECT rm.room_id, $1, rm.user_id, $2, $3::timestamptz
+  FROM room_members rm
+ WHERE rm.room_id = $4
+ON CONFLICT (thread_root_id, user_id) DO NOTHING
+RETURNING user_id
+`
+
+type FollowThreadForRoomMembersParams struct {
+	ThreadRootID      ulid.ULID
+	LastReadThreadSeq int64
+	Now               time.Time
+	RoomID            ulid.ULID
+}
+
+// ルームのメンバー全員をスレッドに参加させる（ADR 0056）。スレッドの @channel（決定 4）と、DM のスレッドの最初の返信（決定 6）で使う。
+// 新しく参加した人の user_id だけを返す。すでに参加していた人には、既読位置と返信の通知を戻さないよう何もしない。
+// 大きなルームでも 1 文で入れる（件数の上限は設けない。ADR 0041 の @here と同じ扱い）。
+func (q *Queries) FollowThreadForRoomMembers(ctx context.Context, arg FollowThreadForRoomMembersParams) ([]ulid.ULID, error) {
+	rows, err := q.db.Query(ctx, followThreadForRoomMembers,
+		arg.ThreadRootID,
+		arg.LastReadThreadSeq,
+		arg.Now,
+		arg.RoomID,
 	)
 	if err != nil {
 		return nil, err
@@ -494,7 +546,7 @@ func (q *Queries) GetMessageView(ctx context.Context, arg GetMessageViewParams) 
 }
 
 const getThreadMembership = `-- name: GetThreadMembership :one
-SELECT last_read_thread_seq
+SELECT last_read_thread_seq, notify_replies
   FROM thread_members
  WHERE thread_root_id = $1
    AND user_id = $2
@@ -505,11 +557,16 @@ type GetThreadMembershipParams struct {
 	UserID       ulid.ULID
 }
 
-func (q *Queries) GetThreadMembership(ctx context.Context, arg GetThreadMembershipParams) (int64, error) {
+type GetThreadMembershipRow struct {
+	LastReadThreadSeq int64
+	NotifyReplies     bool
+}
+
+func (q *Queries) GetThreadMembership(ctx context.Context, arg GetThreadMembershipParams) (GetThreadMembershipRow, error) {
 	row := q.db.QueryRow(ctx, getThreadMembership, arg.ThreadRootID, arg.UserID)
-	var last_read_thread_seq int64
-	err := row.Scan(&last_read_thread_seq)
-	return last_read_thread_seq, err
+	var i GetThreadMembershipRow
+	err := row.Scan(&i.LastReadThreadSeq, &i.NotifyReplies)
+	return i, err
 }
 
 const listFollowedThreads = `-- name: ListFollowedThreads :many
@@ -517,7 +574,14 @@ SELECT m.id, m.room_id, m.seq, m.sender_id, m.body, m.last_thread_seq, m.thread_
        m.created_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name,
        r.kind AS room_kind, r.name AS room_name, r.dm_key AS room_dm_key,
-       tm.last_read_thread_seq
+       tm.last_read_thread_seq, tm.notify_replies,
+       -- 未読の範囲にある自分宛てのメンションの数（ADR 0056 決定 2）。返信の通知をオフにした行でも ` + "`" + `@N` + "`" + ` を出すため。
+       -- スレッドの返信（thread_seq を持つ行）だけを見る。@channel は user_id が NULL の 1 行（ADR 0041）。
+       (SELECT count(*) FROM message_mentions mm
+          JOIN messages t ON t.room_id = mm.room_id AND t.id = mm.message_id
+         WHERE t.thread_root_id = tm.thread_root_id
+           AND (mm.user_id IS NULL OR mm.user_id = tm.user_id)
+           AND t.thread_seq > tm.last_read_thread_seq)::bigint AS mention_count
   FROM thread_members tm
   JOIN messages m ON m.id = tm.thread_root_id
   JOIN rooms r ON r.id = tm.room_id
@@ -554,6 +618,8 @@ type ListFollowedThreadsRow struct {
 	RoomName          *string
 	RoomDmKey         *string
 	LastReadThreadSeq int64
+	NotifyReplies     bool
+	MentionCount      int64
 }
 
 // 参加しているスレッドを、最後の返信が新しい順に max_rows 件（ADR 0036）。after は前のページの最後の親の ID。
@@ -590,6 +656,8 @@ func (q *Queries) ListFollowedThreads(ctx context.Context, arg ListFollowedThrea
 			&i.RoomName,
 			&i.RoomDmKey,
 			&i.LastReadThreadSeq,
+			&i.NotifyReplies,
+			&i.MentionCount,
 		); err != nil {
 			return nil, err
 		}
@@ -1165,6 +1233,28 @@ type RemoveThreadReplyParams struct {
 func (q *Queries) RemoveThreadReply(ctx context.Context, arg RemoveThreadReplyParams) error {
 	_, err := q.db.Exec(ctx, removeThreadReply, arg.ChangeSeq, arg.ID)
 	return err
+}
+
+const setThreadNotifyReplies = `-- name: SetThreadNotifyReplies :one
+UPDATE thread_members
+   SET notify_replies = $1
+ WHERE thread_root_id = $2
+   AND user_id = $3
+RETURNING last_read_thread_seq
+`
+
+type SetThreadNotifyRepliesParams struct {
+	NotifyReplies bool
+	ThreadRootID  ulid.ULID
+	UserID        ulid.ULID
+}
+
+// 返信の通知を切り替える（ADR 0056 決定 5・7）。参加していなければ行を返さない。
+func (q *Queries) SetThreadNotifyReplies(ctx context.Context, arg SetThreadNotifyRepliesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, setThreadNotifyReplies, arg.NotifyReplies, arg.ThreadRootID, arg.UserID)
+	var last_read_thread_seq int64
+	err := row.Scan(&last_read_thread_seq)
+	return last_read_thread_seq, err
 }
 
 const softDeleteMessage = `-- name: SoftDeleteMessage :exec

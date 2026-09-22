@@ -23,6 +23,8 @@ type threadMessageListResponse struct {
 	LastChangeSeq int64 `json:"last_change_seq"`
 	// LastReadThreadSeq は自分の既読位置。スレッドに参加していなければ null。
 	LastReadThreadSeq *int64 `json:"last_read_thread_seq"`
+	// NotifyReplies は自分の返信の通知（ADR 0056）。スレッドに参加していなければ null。
+	NotifyReplies *bool `json:"notify_replies"`
 }
 
 // listThreadMessages は ?before_seq= / ?after_seq= / ?around_message_id= / ?limit= でスレッドの親と返信を返す。messages は seq の昇順。
@@ -64,6 +66,7 @@ func (h *chatHandlers) listThreadMessages(w http.ResponseWriter, r *http.Request
 		Around:            newMessageAroundResponse(page.Around),
 		LastChangeSeq:     page.LastChangeSeq,
 		LastReadThreadSeq: page.LastReadThreadSeq,
+		NotifyReplies:     page.NotifyReplies,
 	}
 	for i, m := range page.Replies {
 		resp.Messages[i] = newMessageResponse(m)
@@ -126,6 +129,10 @@ type followedThreadResponse struct {
 	LastThreadSeq     int64 `json:"last_thread_seq"`
 	LastReadThreadSeq int64 `json:"last_read_thread_seq"`
 	UnreadCount       int64 `json:"unread_count"`
+	// NotifyReplies は返信の通知。オフでも一覧に残り、未読も数える（ADR 0056 決定 1・2）。
+	NotifyReplies bool `json:"notify_replies"`
+	// MentionCount は未読の範囲にある自分宛てのメンションの数。オフの行でも `@N` を出すため。
+	MentionCount int64 `json:"mention_count"`
 }
 
 type threadListResponse struct {
@@ -170,7 +177,49 @@ func (h *chatHandlers) listThreads(w http.ResponseWriter, r *http.Request) {
 			LastThreadSeq:     t.LastThreadSeq,
 			LastReadThreadSeq: t.LastReadThreadSeq,
 			UnreadCount:       t.UnreadCount,
+			NotifyReplies:     t.NotifyReplies,
+			MentionCount:      t.MentionCount,
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// threadNotificationsRequest はスレッドの返信の通知（ADR 0056 決定 7）。true は「新しい返信の通知を受け取る」（フォローを兼ねる）。
+type threadNotificationsRequest struct {
+	NotifyReplies *bool `json:"notify_replies"`
+}
+
+type threadNotificationsResponse struct {
+	NotifyReplies bool `json:"notify_replies"`
+	// LastReadThreadSeq は参加していれば既読位置。参加していないスレッドを「オフ」にしたときは null。
+	LastReadThreadSeq *int64 `json:"last_read_thread_seq"`
+}
+
+func (h *chatHandlers) setThreadNotifications(w http.ResponseWriter, r *http.Request) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	rootID, err := pathID(r, "rootID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	var req threadNotificationsRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	// 省くと「オフ」と区別がつかないので必須にする（ルームの設定の PUT と違い、値は 1 つだけ）
+	if req.NotifyReplies == nil {
+		writeError(h.logger, w, r, &chat.ValidationError{Fields: []chat.FieldError{{Field: "notify_replies", Reason: chat.ReasonRequired}}})
+		return
+	}
+	got, err := h.svc.SetThreadNotifications(r.Context(), actorOf(r), roomID, rootID, *req.NotifyReplies)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, threadNotificationsResponse{NotifyReplies: got.NotifyReplies, LastReadThreadSeq: got.LastReadThreadSeq})
 }

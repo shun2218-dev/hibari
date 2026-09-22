@@ -190,6 +190,7 @@ erDiagram
     uuid user_id PK, FK "複合主キー。INDEX(user_id)"
     uuid room_id FK "(room_id, user_id) → room_members の複合 FK。ルームを抜けたら CASCADE で消える"
     bigint last_read_thread_seq "未読数 = 親の last_thread_seq - これ（ADR 0036）"
+    boolean notify_replies "返信の通知。オフでも参加は残す。既定 true（ADR 0056）"
     timestamptz created_at
   }
 
