@@ -75,7 +75,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | type | 宛先 | いつ |
 |---|---|---|
 | `message.created` | room | メッセージが送信された |
-| `message.updated` | room | 本文が編集された。スレッドの親の `thread`（返信数・最終返信）が変わった（ADR 0036）。絵文字のリアクションが付け外しされた（ADR 0044）。添付ファイルが 1 件削除された（ADR 0045） |
+| `message.updated` | room | 本文が編集された。スレッドの親の `thread`（返信数・最終返信）が変わった（ADR 0036）。絵文字のリアクションが付け外しされた（ADR 0044）。添付ファイルが 1 件削除された（ADR 0045）。ピン留めが付け外しされた（ADR 0054） |
 | `message.deleted` | room | 削除された（`data` は tombstone） |
 | `member.joined` | room、参加した本人 | ルームの作成・参加・追加・DM の作成・招待の受け入れでルームのメンバーになった |
 | `member.left` | room | 退出した、または外された |
@@ -90,6 +90,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | `typing.started` | room（入力した本人の接続を除く） | 入力中になった |
 | `thread.read` | 本人 | 自分のスレッドの既読位置が進んだ（別の端末を含む。ADR 0036） |
 | `thread.followed` | 本人 | 自分がスレッドに参加した（自分の返信、自分の投稿への最初の返信、スレッドの中でのメンション。ADR 0041） |
+| `saved.updated` | 本人 | 自分の「後で」が変わった（保存・タブの移動・外す。別の端末を含む。ADR 0054） |
 
 #### `message.created` / `message.updated` / `message.deleted`
 
@@ -212,6 +213,24 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 - `reason`: `left`（自分で抜けた）/ `removed`（他人に外された、またはサーバーの再検証で読めなくなった）
 - 届いた時点で、サーバーはその接続の購読を外している（読めなくなった場合）。public ルームは参加していなくても読めるので、購読が残ることがある。
 - 画面: `chat/room/removed-from-channel.png`。非公開チャンネルの名前も「外された」ことも出さず、「アクセスできません」だけにする（ADR 0035）
+
+#### `saved.updated`
+
+`data` は REST（`GET /workspaces/{id}/saved`）の 1 件と同じ形。本人にしか届かないので、メッセージの中身と、
+受け取る人ごとの値（`me` / `saved`）も入る。外したときは `state: "removed"` で、中身は入らない。
+
+```json
+{ "id": "01J8...", "message_id": "01J8...", "room_id": "01J8...", "state": "archived", "change_seq": 7,
+  "saved_at": "2026-09-22T01:00:00Z", "status": "ok", "room": { "id": "01J8...", "kind": "public", "name": "雑談", "dm_peer": null },
+  "message": { /* REST と同じメッセージの形 */ } }
+```
+
+`change_seq` は**本人ごと（ワークスペース × ユーザー）**の番号で、ルームの `change_seq` とは別に進む。
+受け取ったときの扱いはルームと同じ（カーソル以下は無視・カーソル + 1 は反映・それより先なら差分を取る）。
+読めない・削除済みのメッセージの保存は `status: "unavailable"` で、`room` と `message` は `null`（どちらかは区別しない）。
+
+メッセージの `saved`（自分が保存しているか）は REST にだけ入り、`message.*` のイベントでは省く（`me` と同じ）。
+クライアントは `saved` の無い更新では手元の値を保ち、`saved.updated` と保存の差分で直す。
 
 #### `room.read`
 
@@ -343,6 +362,8 @@ WebSocket の配信は落ちうるので、クライアントはルームごと�
    - 受け取ったメッセージは `id` で上書きし、表示は `seq` で並べる
 5. 開いているパネルのルームのメンバー一覧（`presence` を含む）を REST で取り直す
 6. ワークスペースのメンバー一覧を REST で取り直す（`presence` / `away` / `status` は `change_seq` に乗らないので、取りこぼしは取り直しで回復する。ADR 0049）
+7. 「後で」の差分を `GET /api/v1/workspaces/{id}/saved?after_change_seq=<保存のカーソル>` で `has_more` が false になるまで読む。
+   カーソルは、最初に一覧を読んだときの `last_change_seq` と、受け取った `change_seq` の最大値（ADR 0054 決定 7）
 
 接続中にメッセージのイベントを受け取ったら:
 

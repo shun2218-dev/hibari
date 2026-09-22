@@ -29,6 +29,8 @@ erDiagram
   room_members |o--o{ message_mentions : "宛先。@channel は null"
   messages ||--o{ message_reactions : "リアクション"
   room_members ||--o{ message_reactions : "付けた人"
+  messages ||--o{ saved_messages : "保存"
+  workspace_members ||--o{ saved_messages : "保存した人"
 
   rooms ||--o{ attachments : "保存先"
   users ||--o{ attachments : "アップロード"
@@ -109,6 +111,7 @@ erDiagram
     text status_emoji "カスタムステータス。null なら未設定（ADR 0049）"
     text status_text "null 可。絵文字なしの文言は CHECK で禁止"
     timestamptz status_expires_at "null なら消えない。読むときに Clock で落とす"
+    bigint last_saved_change_seq "本人の「後で」の変更番号の採番カウンタ（ADR 0054）"
   }
 
   user_presence_settings {
@@ -201,6 +204,18 @@ erDiagram
     text emoji PK "複合主キー。Unicode の絵文字そのもの。正規化しない"
     uuid room_id FK "複合 FK に使う"
     timestamptz created_at "集計の並び（最初に付いた順）に使う。INDEX(message_id, これ)"
+  }
+
+  saved_messages {
+    uuid user_id PK, FK "複合主キー。(workspace_id, これ) → workspace_members の複合 FK。抜けたら CASCADE で消える（ADR 0054）"
+    uuid message_id PK, FK "複合主キー。(room_id, これ) → messages の複合 FK"
+    uuid workspace_id FK "ワークスペースごとの「後で」"
+    uuid room_id FK "ルームから外れても消さない。読むときに authz で伏せる"
+    uuid id "UNIQUE。保存し直すたびに振り直す。一覧の並びとカーソル"
+    text state "in_progress / archived / completed / removed。外すのは removed（行を消さない）"
+    bigint change_seq "UNIQUE(workspace_id, user_id, これ)。本人ごとの差分のカーソル"
+    timestamptz saved_at
+    timestamptz updated_at
   }
 
   attachments {

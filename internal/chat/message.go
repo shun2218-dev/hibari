@@ -101,7 +101,10 @@ type Message struct {
 	// Reactions は付いた絵文字のリアクション（ADR 0044）。最初に付いた順。削除済みのメッセージでは空。
 	Reactions []MessageReaction
 	// Pinned はピン留めされているときだけ入る（ADR 0054）。削除するとピンも外れるので、削除済みでは常に nil。
-	Pinned    *MessagePin
+	Pinned *MessagePin
+	// Saved は閲覧者が「後で」に保存しているか（ADR 0054 決定 10）。**受け取る人ごとの値**なので REST でしか意味を持たない。
+	// WebSocket の配信では httpx が落とす（リアクションの Me と同じ）。
+	Saved     bool
 	CreatedAt time.Time
 	EditedAt  *time.Time
 	DeletedAt *time.Time
@@ -313,6 +316,9 @@ func getMessage(ctx context.Context, q *store.Queries, roomID, viewer, id ulid.U
 	if err := loadMessageReactions(ctx, q, roomID, viewer, msgs); err != nil {
 		return Message{}, err
 	}
+	if err := loadMessageSaved(ctx, q, viewer, msgs); err != nil {
+		return Message{}, err
+	}
 	return msgs[0], nil
 }
 
@@ -458,6 +464,9 @@ func (s *Service) finishMessagePage(ctx context.Context, q *store.Queries, roomI
 		return MessagePage{}, err
 	}
 	if err := loadMessageReactions(ctx, q, roomID, viewer, page.Messages); err != nil {
+		return MessagePage{}, err
+	}
+	if err := loadMessageSaved(ctx, q, viewer, page.Messages); err != nil {
 		return MessagePage{}, err
 	}
 	return page, nil

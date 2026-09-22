@@ -26,6 +26,10 @@ export type Presence = "active" | "idle" | "offline";
 
 export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed" | "message_pinned";
 
+export type SavedState = "in_progress" | "archived" | "completed" | "removed";
+
+export type SavedItemStatus = "ok" | "unavailable";
+
 export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified";
 
 export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "activity" | "ping";
@@ -422,6 +426,8 @@ export interface Message {
   reactions: MessageReaction[];
   /** pinned はピン留めされているときだけ入る。されていなければ null（ADR 0054 決定 2）。 見る人によらない値なので、WebSocket の配信でもそのまま載せる。 */
   pinned: MessagePin | null;
+  /** saved は閲覧者が「後で」に保存しているか（ADR 0054 決定 10）。**REST のレスポンスにだけ入る。** リアクションの me と同じく受け取る人ごとの値なので、WebSocket の配信では落とす。 クライアントは saved の無い更新では手元の値を保ち、saved.updated と保存の差分で直す。 */
+  saved?: boolean;
   created_at: string;
   edited_at: string | null;
   deleted_at: string | null;
@@ -509,6 +515,34 @@ export interface ReadState {
 export interface PinList {
   /** messages はピン留めした時刻の新しい順。 */
   messages: Message[];
+}
+
+export interface SavedItem {
+  /** id は保存し直すたびに振り直す ULID。一覧の ?before= のカーソルに使う。 */
+  id: string;
+  message_id: string;
+  room_id: string;
+  state: SavedState;
+  /** change_seq は本人ごとの変更番号。再接続の差分（?after_change_seq=）のカーソルに使う（決定 7）。 */
+  change_seq: number;
+  saved_at: string;
+  status: SavedItemStatus;
+  room: LinkedRoom | null;
+  /** message は REST と同じメッセージの形。本人にしか届かないので、受け取る人ごとの値（me / saved）も入る。 */
+  message: Message | null;
+}
+
+export interface SavedList {
+  items: SavedItem[];
+  /** in_progress_count は「進行中」のタブの件数。読めない行も数える。 */
+  in_progress_count: number;
+  /** last_change_seq は一覧を読む直前の本人の最新の変更番号。差分のカーソルをここから始める。 */
+  last_change_seq: number;
+  has_more: boolean;
+}
+
+export interface MoveSavedRequest {
+  state: SavedState;
 }
 
 export interface ThreadMessageList {
@@ -764,7 +798,8 @@ export type ServerEvent =
   | { type: "member.status_changed"; data: MemberStatusChangedData }
   | { type: "typing.started"; data: TypingStartedData }
   | { type: "thread.read"; data: ThreadReadData }
-  | { type: "thread.followed"; data: ThreadFollowedData };
+  | { type: "thread.followed"; data: ThreadFollowedData }
+  | { type: "saved.updated"; data: SavedItem };
 
 export type ServerEventType = ServerEvent["type"];
 

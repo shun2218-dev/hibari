@@ -305,6 +305,9 @@ func (s *Service) finishThreadPage(
 	if err := loadMessageReactions(ctx, q, roomID, actor, page.Replies); err != nil {
 		return ThreadPage{}, err
 	}
+	if err := loadMessageSaved(ctx, q, actor, page.Replies); err != nil {
+		return ThreadPage{}, err
+	}
 	lastRead, err := q.GetThreadMembership(ctx, store.GetThreadMembershipParams{ThreadRootID: rootID, UserID: actor})
 	switch {
 	case err == nil:

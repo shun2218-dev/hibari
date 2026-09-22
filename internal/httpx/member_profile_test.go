@@ -67,9 +67,9 @@ func TestMemberProfile(t *testing.T) {
 			as   apiUser
 			path string
 		}{
-			"メンバーでない人":             {outsider, base + owner.id},
-			"外されたユーザー":             {member, base + kicked.id},
-			"別のワークスペースのユーザー":       {member, base + outsider.id},
+			"メンバーでない人":              {outsider, base + owner.id},
+			"外されたユーザー":              {member, base + kicked.id},
+			"別のワークスペースのユーザー":        {member, base + outsider.id},
 			"別のワークスペースを指して自分の同僚を引く": {member, "/api/v1/workspaces/" + otherWS.ID + "/members/" + owner.id},
 			"ULID でない ID":           {member, base + "not-a-ulid"},
 		} {

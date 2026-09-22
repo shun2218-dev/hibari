@@ -43,6 +43,7 @@ const (
 	EventTypingStarted          EventType = "typing.started"
 	EventThreadRead             EventType = "thread.read"
 	EventThreadFollowed         EventType = "thread.followed"
+	EventSavedUpdated           EventType = "saved.updated"
 )
 
 // Audience はイベントの宛先。複数の経路で同じ接続に当たっても、実装は 1 回だけ届ける。
@@ -88,6 +89,7 @@ type Event struct {
 //	typing.started                      → TypingStarted
 //	thread.read                         → ThreadRead
 //	thread.followed                     → ThreadFollowed
+//	saved.updated                       → SavedItem
 
 // RemovalReason はメンバーから外れた理由。
 type RemovalReason string
