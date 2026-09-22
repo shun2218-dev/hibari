@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
 
-import { userSettings } from "@/stories/screens";
+import { userSettings } from "@/stories/screens/settings";
 
 /**
  * ユーザー設定 / 外観。

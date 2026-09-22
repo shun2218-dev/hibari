@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { ProfileSettings } from "@/components/settings/profile-settings";
 
-import { mockAvatars, users } from "@/stories/fixtures";
-import { userSettings } from "@/stories/screens";
+import { mockAvatars, users } from "@/stories/fixtures/users";
+import { userSettings } from "@/stories/screens/settings";
 
 /**
  * ユーザー設定 / プロフィール。

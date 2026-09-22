@@ -8,7 +8,8 @@ import {
   ResetPasswordInvalid,
 } from "@/components/auth/password-reset";
 
-import { auth, goodStrength, noHref } from "@/stories/screens";
+import { auth, goodStrength } from "@/stories/screens/auth";
+import { noHref } from "@/stories/screens/shared";
 
 /**
  * 認証 / パスワードの再設定。

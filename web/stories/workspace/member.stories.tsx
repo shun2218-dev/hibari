@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { KickMemberDialog } from "@/components/workspace/member-dialogs";
 
-import { users } from "@/stories/fixtures";
-import { membersPage } from "@/stories/screens";
+import { users } from "@/stories/fixtures/users";
+import { membersPage } from "@/stories/screens/workspace";
 
 /**
  * ワークスペースの管理 / メンバー。

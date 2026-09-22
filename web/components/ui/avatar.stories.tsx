@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { mockAvatars, users } from "@/stories/fixtures";
+import { mockAvatars, users } from "@/stories/fixtures/users";
 
 import { Avatar } from "./avatar";
 

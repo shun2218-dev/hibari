@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { DeleteMessageDialog } from "@/components/chat/dialogs/delete-message";
 
-import { pendingMessageKey } from "@/stories/fixtures";
-import { chat } from "@/stories/screens";
+import { pendingMessageKey } from "@/stories/fixtures/timeline";
+import { chat } from "@/stories/screens/chat";
 
 /**
  * チャット / メッセージの操作。

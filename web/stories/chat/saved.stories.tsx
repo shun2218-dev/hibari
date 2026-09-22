@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { chat } from "@/stories/screens";
+import { chat } from "@/stories/screens/chat";
 
 /**
  * チャット / 「後で」（ADR 0054。Slack の「後で」と同じく、自分だけに見える保存）。
