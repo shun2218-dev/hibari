@@ -1,9 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 import { NotificationSettings } from "@/components/settings/settings-sections";
 import { useChatState, useChatStore } from "@/lib/chat/chat-provider";
+import {
+  notificationPermission,
+  requestNotificationPermission,
+  serverNotificationPermission,
+  setSoundEnabled,
+  soundEnabled,
+  subscribeNotificationPrefs,
+  watchPermission,
+} from "@/lib/notification-prefs";
 
 /**
  * 通知（ADR 0055。settings/notifications/notifications.png）。
@@ -15,6 +24,10 @@ export function NotificationsSection() {
   const store = useChatStore();
   const workspaces = useChatState((s) => s.workspaces);
   const levels = useChatState((s) => s.notificationLevels);
+  // このブラウザのデスクトップ通知（ADR 0057 決定 5・6）。どちらも端末ごとで、サーバーには持たない
+  const permission = useSyncExternalStore(subscribeNotificationPrefs, notificationPermission, serverNotificationPermission);
+  const sound = useSyncExternalStore(subscribeNotificationPrefs, soundEnabled, () => true);
+  useEffect(() => watchPermission(), []);
 
   useEffect(() => {
     void store.loadWorkspaces();
@@ -28,6 +41,12 @@ export function NotificationsSection() {
   return (
     <NotificationSettings
       workspaces={workspaces.list.map((w) => ({ id: w.id, name: w.name, level: levels[w.id] ?? "mentions" }))}
+      browser={{
+        permission,
+        onRequestPermission: () => void requestNotificationPermission(),
+        sound,
+        onSoundChange: setSoundEnabled,
+      }}
       onLevelChange={(workspaceId, level) =>
         void store.setNotificationLevel(workspaceId, level).catch((err: unknown) => {
           console.error("failed to update the notification level", err);
