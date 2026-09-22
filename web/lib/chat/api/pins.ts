@@ -1,5 +1,5 @@
 import type { Message, PinList } from "@/lib/api/types.gen";
-import type { Session } from "@/lib/auth/session/session";
+import type { Session } from "@/lib/auth/session/auth-session";
 
 import { messagePath } from "./messages";
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createSession } from "@/lib/auth/session/session";
+import { createSession } from "@/lib/auth/session/auth-session";
 import { message, naoki, room, roomMember, savedItem } from "@/test/chat-data";
 import { type Handler, TEST_API_BASE, fakeApi, json, tokens } from "@/test/fake-api";
 import { fakeSockets } from "@/test/fake-socket";

@@ -3,7 +3,7 @@
 import { useContext, useEffect, useState, useSyncExternalStore } from "react";
 
 import type { SessionState } from "@/lib/auth/session/core";
-import type { Session } from "@/lib/auth/session/session";
+import type { Session } from "@/lib/auth/session/auth-session";
 import { SessionContext } from "@/providers/session-provider";
 
 export function useSession(): Session {

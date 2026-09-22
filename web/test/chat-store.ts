@@ -1,7 +1,7 @@
 import { createChatApi } from "@/lib/chat/api/chat-api";
 import { createChatStore } from "@/lib/chat/store/chat-store";
 import type { ChatStoreOptions } from "@/lib/chat/store/state";
-import { createSession } from "@/lib/auth/session/session";
+import { createSession } from "@/lib/auth/session/auth-session";
 import { message, naoki, room } from "@/test/chat-data";
 import { type Handler, TEST_API_BASE, fakeApi, json, tokens } from "@/test/fake-api";
 

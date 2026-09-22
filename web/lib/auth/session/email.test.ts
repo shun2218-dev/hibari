@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "@/lib/api/error";
-import { createSession } from "@/lib/auth/session/session";
+import { createSession } from "@/lib/auth/session/auth-session";
 import { type Handler, TEST_API_BASE as BASE, fakeApi, json, problem, testUser as user, tokens as rawTokens } from "@/test/fake-api";
 
 function tokens(accessToken: string, withUser = false) {
