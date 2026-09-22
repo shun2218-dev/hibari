@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Button, IconButton, TextButton } from "@/components/ui/button";
-import { CloseIcon } from "@/components/ui/icons";
+import { ArchiveIcon, CloseIcon } from "@/components/ui/icons";
 
 import type { RoomKind } from "./types";
 
@@ -103,6 +103,26 @@ export function JoinRoomBar({ joining, onJoin }: { joining?: boolean; onJoin?: (
       <Button onClick={onJoin} disabled={joining}>
         参加する
       </Button>
+    </div>
+  );
+}
+
+/**
+ * アーカイブされたルームの入力欄の代わり（ADR 0059）。読めるが、投稿・リアクションなどはできない。
+ * 復元できるのはルームのメンバー（と admin 以上）なので、`onRestore` を渡したときだけボタンを出す。
+ */
+export function ArchivedRoomBar({ restoring, onRestore }: { restoring?: boolean; onRestore?: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-t border-border bg-surface-muted px-4 py-2.5">
+      <p className="flex items-center gap-2 text-sm text-text-secondary">
+        <ArchiveIcon className="size-4 shrink-0" />
+        アーカイブされたチャンネルです。投稿やリアクションはできません。
+      </p>
+      {onRestore && (
+        <Button variant="secondary" onClick={onRestore} disabled={restoring} className="shrink-0">
+          チャンネルを復元
+        </Button>
+      )}
     </div>
   );
 }

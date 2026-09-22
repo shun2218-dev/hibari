@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
 
 import { Avatar } from "@/components/ui/avatar";
-import { UnreadBadge } from "@/components/ui/badge";
+import { Badge, UnreadBadge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { ChevronDownIcon, HashIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
@@ -63,10 +63,11 @@ export function Sidebar({
   notice,
   railed = false,
 }: SidebarProps) {
-  const channels = rooms.filter((room) => room.kind !== "dm");
-  const dms = rooms.filter((room) => room.kind === "dm");
   // 検索して 0 件なのか、まだチャンネルがないのかで、出すものが違う
   const searching = search.trim() !== "";
+  // アーカイブしたチャンネルはサイドバーから外し、検索したときだけ出す（ADR 0059。Slack もサイドバーから消える）
+  const channels = rooms.filter((room) => room.kind !== "dm" && (searching || !room.archived));
+  const dms = rooms.filter((room) => room.kind === "dm");
 
   return (
     <nav aria-label="チャンネル" className="flex h-full flex-col bg-surface">
@@ -270,6 +271,7 @@ export function RoomRow({ room, href, selected }: { room: RoomSummaryView; href:
                 {muted && <span className="sr-only">（ミュート中）</span>}
               </span>
               {room.peer?.status && <StatusEmoji status={room.peer.status} className="text-xs" />}
+              {room.archived && <Badge className="self-center">アーカイブ済み</Badge>}
             </span>
             {room.timeLabel && <span className="shrink-0 font-mono text-2xs text-text-muted">{room.timeLabel}</span>}
           </span>

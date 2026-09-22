@@ -12,6 +12,7 @@ import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 import { ChatLayout } from "@/components/chat/chat-layout";
 import {
+  ArchivedRoomBar,
   EmptyMessages,
   JoinRoomBar,
   MessageNotFoundNotice,
@@ -85,6 +86,8 @@ import {
   timelineWithLinkCards,
   timelineWithAvatars,
   timelineWithSystemMessages,
+  timelineArchived,
+  roomsSearchedWithArchived,
   mentionCandidates,
   hoveredReaction,
   lastMessageKey,
@@ -155,7 +158,7 @@ type ChatOptions = {
   /** チャット画面の上に重ねるダイアログ。 */
   dialog?: ReactNode;
   body?: "timeline" | "empty" | "removed-room" | "removed-workspace";
-  footer?: "composer" | "join" | "none";
+  footer?: "composer" | "join" | "archived" | "archived-readonly" | "none";
   members?: boolean;
   switcher?: boolean;
   createWorkspace?: boolean;
@@ -299,6 +302,8 @@ type ChatOptions = {
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
    */
   dark?: boolean;
+  /** サイドバーの検索の結果に、アーカイブしたチャンネルを混ぜる（`search` と一緒に使う。ADR 0059）。 */
+  archivedSearch?: boolean;
 };
 
 /** ホバーのカードを出すメッセージと、その中身。 */
@@ -405,9 +410,12 @@ export function chat({
   dmsUnread,
   preview,
   dark,
+  archivedSearch,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
   const roomRemoved = body === "removed-room";
+  // アーカイブしたルーム（ADR 0059）。archived-readonly は復元できない人（参加していない member）が見たところ
+  const archivedRoom = footer === "archived" || footer === "archived-readonly";
   const threadContent = thread ? threadPanelContent(thread) : undefined;
   const hover = profile?.startsWith("hover-") ? profileHover(profile) : undefined;
   const profilePanel = profile?.startsWith("panel-") ? profilePanelContent(profile) : undefined;
@@ -431,7 +439,7 @@ export function chat({
   const roomMuted = notifications === "menu-muted" || notifications === "menu-temporary";
   // 参加していない public ルームは設定を持てないので、「通知」のアイコンを出さない（ADR 0055 決定 3）
   const roomNotifications =
-    footer === "join"
+    footer === "join" || footer === "archived-readonly"
       ? undefined
       : {
           muted: roomMuted,
@@ -452,6 +460,10 @@ export function chat({
             rooms={
               noRooms
                 ? []
+                : search !== undefined && archivedSearch
+                  ? roomsSearchedWithArchived
+                  : archivedRoom
+                    ? rooms.map((r) => (r.id === room.id ? { ...r, archived: true } : r))
                 : roomRemoved
                   ? rooms.filter((r) => r.id !== selectedRoom.id)
                   : notifications
@@ -537,6 +549,7 @@ export function chat({
         )}
         {!roomRemoved && !threads && (
           <RoomHeader
+            archived={archivedRoom}
             kind={room.kind}
             name={room.name}
             memberCount={room.memberCount}
@@ -561,7 +574,9 @@ export function chat({
         {body === "timeline" && !threads && !pinsTab && (
           <Timeline
             items={
-              notifications === "menu-dm"
+              archivedRoom
+                ? timelineArchived
+                : notifications === "menu-dm"
                 ? dmTimeline
                 : profile === "hover-former" || profile === "panel-former"
                 ? timelineWithFormerMember
@@ -657,6 +672,8 @@ export function chat({
           />
         )}
         {footer === "join" && <JoinRoomBar />}
+        {footer === "archived" && <ArchivedRoomBar onRestore={noop} />}
+        {footer === "archived-readonly" && <ArchivedRoomBar />}
       </ChatLayout>
       {dialog}
       <RemoveSavedItemDialog open={saved === "confirm"} />
@@ -930,8 +947,33 @@ export function imageViewer(images: ComponentProps<typeof ImageViewer>["images"]
 }
 
 /** チャンネルの設定のダイアログ。読み取り専用（member）のときだけ退出を出す。 */
-export function roomSettingsDialog({ canEdit, onLeave }: { canEdit: boolean; onLeave?: () => void }) {
+export function roomSettingsDialog({
+  canEdit,
+  onLeave,
+  archive,
+}: {
+  canEdit: boolean;
+  onLeave?: () => void;
+  /**
+   * アーカイブ・復元・削除の節（ADR 0059）。
+   * - member: アーカイブだけ（ルームのメンバーの member）
+   * - admin: アーカイブと削除
+   * - archived: アーカイブ中に admin が開いたところ（復元と削除）
+   */
+  archive?: "member" | "admin" | "archived";
+}) {
   return (
-    <RoomSettingsDialog open kind="private" name="リリース準備" canEdit={canEdit} members={roomSettingsMembers} onLeave={onLeave} />
+    <RoomSettingsDialog
+      open
+      kind="private"
+      name="リリース準備"
+      canEdit={canEdit}
+      members={roomSettingsMembers}
+      onLeave={onLeave}
+      archived={archive === "archived"}
+      onArchive={archive === "member" || archive === "admin" ? noop : undefined}
+      onUnarchive={archive === "archived" ? noop : undefined}
+      onDelete={archive === "admin" || archive === "archived" ? noop : undefined}
+    />
   );
 }

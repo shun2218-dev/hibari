@@ -44,6 +44,10 @@ export type RoomSummaryView = {
    * メンションの `@N` は出す。期限の切れたミュートは、データ層が `Clock` で落としてから渡す。
    */
   muted?: boolean;
+  /**
+   * アーカイブされている（ADR 0059）。サイドバーのチャンネルの節には出さず、検索したときだけ印を付けて出す。
+   */
+  archived?: boolean;
 };
 
 export type MessageAttachmentView =

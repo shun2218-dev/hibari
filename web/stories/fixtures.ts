@@ -333,6 +333,40 @@ export const timelineWithSystemMessages: TimelineItem[] = [
   { type: "system", key: "s-left", text: "中村 涼 がチャンネルを退出しました", timeLabel: "10:20" },
 ];
 
+/** アーカイブしたルームのタイムライン（chat/archive/room.png。ADR 0059）。最後の行がアーカイブのログになる。 */
+export const timelineArchived: TimelineItem[] = [
+  { type: "date", key: "d-0912", label: "2026年9月12日" },
+  message("m-1402", miyuki, "14:02", "新しいチャンネル一覧のモック、共有フォルダに置きました。"),
+  message("m-1410", naoki, "14:10", "ありがとうございます。今日中に見ます。"),
+  message("m-1655", you, "16:55", "レビューは全部終わったので、このチャンネルはアーカイブしておきます。続きは #雑談 でお願いします。"),
+  { type: "system", key: "s-archived", text: "あなた がチャンネルをアーカイブしました", timeLabel: "16:56" },
+];
+
+/** サイドバーの検索で、アーカイブしたチャンネルが混ざるところ（chat/archive/search.png。ADR 0059）。 */
+export const roomsSearchedWithArchived: RoomSummaryView[] = [
+  rooms[0],
+  {
+    id: "room-design-old",
+    kind: "public",
+    name: "デザインレビュー旧案",
+    lastMessage: "あなた: レビューは全部終わったので、このチャンネルはアーカイブしておきます",
+    timeLabel: "9/12",
+    unreadCount: 0,
+    mentionCount: 0,
+    archived: true,
+  },
+  {
+    id: "room-design-private",
+    kind: "private",
+    name: "デザイン採用",
+    lastMessage: "佐藤 直樹: 採用の連絡は済みました",
+    timeLabel: "8/30",
+    unreadCount: 0,
+    mentionCount: 0,
+    archived: true,
+  },
+];
+
 /**
  * 画像を設定している人と、していない人が混ざった状態（chat/timeline/avatar-images.png）。
  * 一覧では、画像のある人だけが差し替わる。

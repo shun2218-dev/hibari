@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  ArchivedRoomBar,
   EmptyMessages,
   JoinRoomBar,
   MessageNotFoundNotice,
@@ -45,6 +46,17 @@ describe("chat states", () => {
 
     rerender(<JoinRoomBar joining />);
     expect(screen.getByRole("button", { name: "参加する" })).toBeDisabled();
+  });
+
+  it("アーカイブしたルームでは、入力欄の代わりに読み取り専用だと伝え、復元できる人にだけボタンを出す（ADR 0059）", async () => {
+    const onRestore = vi.fn();
+    const { rerender } = render(<ArchivedRoomBar onRestore={onRestore} />);
+    expect(screen.getByText("アーカイブされたチャンネルです。投稿やリアクションはできません。")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "チャンネルを復元" }));
+    expect(onRestore).toHaveBeenCalledOnce();
+
+    rerender(<ArchivedRoomBar />);
+    expect(screen.queryByRole("button", { name: "チャンネルを復元" })).not.toBeInTheDocument();
   });
 
   it("未読の件数と、最初の未読へ飛ぶ操作を出す（ADR 0042）", async () => {
