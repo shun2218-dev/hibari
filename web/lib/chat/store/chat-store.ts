@@ -1,21 +1,24 @@
 import type { ChatApi } from "@/lib/chat/api/chat-api";
 import type { ChatStoreOptions } from "@/lib/chat/store/state";
 
-import { createWorkspaces } from "./slices/workspaces";
-import { createNotifications } from "./slices/notifications";
-import { createActivity } from "./slices/activity";
-import { createRead } from "./slices/read";
-import { createPins } from "./slices/pins";
-import { createSaved } from "./slices/saved";
-import { createThreads } from "./slices/threads";
-import { createTyping } from "./slices/typing";
-import { createTimeline } from "./slices/timeline";
-import { createHistory } from "./slices/history";
-import { createSend } from "./slices/send";
-import { createMessageActions } from "./slices/message-actions";
-import { createRooms } from "./slices/rooms";
-import { createEvents } from "./slices/events";
-import { createStoreCore } from "./slices/core";
+import { createInvites } from "./invites";
+import { createMembers } from "./members";
+import { createMySettings } from "./my-settings";
+import { createWorkspaces } from "./workspaces";
+import { createNotifications } from "./notifications";
+import { createActivity } from "./activity";
+import { createRead } from "./read";
+import { createPins } from "./pins";
+import { createSaved } from "./saved";
+import { createThreads } from "./threads";
+import { createTyping } from "./typing";
+import { createTimeline } from "./timeline";
+import { createHistory } from "./history";
+import { createSend } from "./send";
+import { createMessageActions } from "./message-actions";
+import { createRooms } from "./rooms";
+import { createEvents } from "./events";
+import { createStoreCore } from "./core";
 
 /**
  * チャットの状態のストア（ADR 0024 の session と同じく自作で、useSyncExternalStore で購読する）。
@@ -32,6 +35,9 @@ import { createStoreCore } from "./slices/core";
 export function createChatStore(api: ChatApi, options: ChatStoreOptions) {
   const core = createStoreCore(api, options);
   const workspaces = createWorkspaces(core);
+  const members = createMembers(core, { workspaces });
+  const mySettings = createMySettings(core, { members });
+  const invites = createInvites(core);
   const notifications = createNotifications(core);
   const activity = createActivity(core);
   const read = createRead(core, { activity });
@@ -44,11 +50,14 @@ export function createChatStore(api: ChatApi, options: ChatStoreOptions) {
   const send = createSend(core, { timeline });
   const messageActions = createMessageActions(core, { timeline });
   const rooms = createRooms(core, { activity, saved, timeline, send });
-  const events = createEvents(core, { workspaces, activity, saved, threads, typing, timeline, rooms });
+  const events = createEvents(core, { workspaces, members, activity, saved, threads, typing, timeline, rooms });
 
   return {
     ...core.actions,
     ...workspaces.actions,
+    ...members.actions,
+    ...mySettings.actions,
+    ...invites.actions,
     ...notifications.actions,
     ...activity.actions,
     ...read.actions,

@@ -1,5 +1,5 @@
 
-import { toggleReaction } from "@/lib/chat/store/reactions";
+import { toggleReaction } from "@/lib/chat/rules/reactions";
 
 import type { StoreCore } from "./core";
 import type { Timeline } from "./timeline";

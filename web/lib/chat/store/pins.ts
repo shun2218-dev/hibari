@@ -1,39 +1,71 @@
-/**
- * ピン留め（ADR 0054）の、状態を持たない計算。
- *
- * ピン留めの一覧はサーバーが「ピン留めした新しい順」で返す。届いたメッセージ（message.updated・差分）で
- * 手元の一覧を直すときも、同じ並びを作る。
- */
 import type { Message } from "@/lib/api/types.gen";
+import { applyPinnedMessages } from "@/lib/chat/rules/pins";
+import { statusOf } from "./state";
 
-/** ルームごとのピン留めの上限（ADR 0054 決定 4）。超えるとサーバーが 422（`pinned: too_many`）を返す。 */
-export const MAX_ROOM_PINS = 100;
-
-/** ピン留めの一覧の並び。ピン留めした時刻の新しい順で、同じ時刻ならメッセージの ID の大きい順（サーバーと同じ）。 */
-export function comparePins(a: Message, b: Message): number {
-  const at = (b.pinned?.at ?? "").localeCompare(a.pinned?.at ?? "");
-  return at !== 0 ? at : b.id.localeCompare(a.id);
-}
+import type { StoreCore } from "./core";
 
 /**
- * 届いたメッセージで、手元のピン留めの一覧を直す。
- *
- * - ピン留めされていて削除されていなければ、一覧に入れる（すでにあれば、change_seq の大きい方に置き換える）
- * - ピンが外れた・削除された（削除でピンも外れる。ADR 0054 決定 4）なら、一覧から除く
- *
- * 何も変わらなければ、同じ配列をそのまま返す（描き直しを起こさない）。
+ * ピン留め（ADR 0054）。
  */
-export function applyPinnedMessages(current: readonly Message[], incoming: readonly Message[]): Message[] {
-  let next: Message[] | undefined;
-  for (const message of incoming) {
-    const list = next ?? (current as Message[]);
-    const index = list.findIndex((m) => m.id === message.id);
-    const existing = index >= 0 ? list[index] : undefined;
-    if (existing && existing.change_seq > message.change_seq) continue;
-    const pinned = message.pinned !== null && message.deleted_at === null;
-    if (!pinned && !existing) continue;
-    const without = list.filter((m) => m.id !== message.id);
-    next = pinned ? [...without, message].sort(comparePins) : without;
+export function createPins(
+  core: StoreCore,
+) {
+  const { api, once, update } = core;
+
+  /**
+   * 届いたメッセージ（イベント・差分・送信の応答）を、スレッドに反映する。
+   * - 返信: 開いたことのあるスレッドに足す。自分の返信なら、サーバーが自分の既読位置も進めている
+   * - 親（thread を持つ）: スレッドの親と、参加中の一覧の返信数・未読数を書き換える
+   */
+  /**
+   * 届いたメッセージで、取ってあるピン留めの一覧を直す（ADR 0054 決定 2）。
+   * ピン留めは message.updated と差分に乗るので、タイムラインと同じ経路でここにも通す。取っていないルームには何もしない。
+   */
+  function absorbPins(messages: readonly Message[]) {
+    const byRoom = new Map<string, Message[]>();
+    for (const m of messages) byRoom.set(m.room_id, [...(byRoom.get(m.room_id) ?? []), m]);
+    for (const [roomId, list] of byRoom) {
+      update((s) => {
+        const current = s.pins[roomId];
+        if (current?.status !== "ready") return s;
+        const next = applyPinnedMessages(current.messages, list);
+        return next === current.messages ? s : { ...s, pins: { ...s.pins, [roomId]: { ...current, messages: next } } };
+      });
+    }
   }
-  return next ?? (current as Message[]);
+
+  /** ルームのピン留めの一覧を取る。取り直し（再接続・差分が追いつかない）では、取れるまで手元の一覧を見せる。 */
+  function loadPins(roomId: string): Promise<void> {
+    return once(`pins:${roomId}`, async () => {
+      update((s) => ({
+        ...s,
+        pins: { ...s.pins, [roomId]: s.pins[roomId] ?? { status: "loading", messages: [] } },
+      }));
+      try {
+        const { messages } = await api.listPins(roomId);
+        update((s) => ({ ...s, pins: { ...s.pins, [roomId]: { status: "ready", messages } } }));
+      } catch (err) {
+        update((s) => ({
+          ...s,
+          pins: { ...s.pins, [roomId]: { status: statusOf(err), messages: s.pins[roomId]?.messages ?? [] } },
+        }));
+        if (statusOf(err) === "error") console.error("failed to load pins", err);
+      }
+    });
+  }
+
+  return {
+    absorbPins,
+    loadPins,
+    actions: {
+      /** ルームのピン留めの一覧を取る（ADR 0054）。取ってあれば取り直さない（変化はイベントと差分で直す）。 */
+      loadPins(roomId: string): Promise<void> {
+        const current = core.state.pins[roomId];
+        if (current && current.status !== "error") return Promise.resolve();
+        return loadPins(roomId);
+      },
+    },
+  };
 }
+
+export type Pins = ReturnType<typeof createPins>;

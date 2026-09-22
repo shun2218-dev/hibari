@@ -9,9 +9,9 @@ import {
   messageActivityItem,
   parseActivityListKey,
   removeActivity,
-} from "@/lib/chat/store/activity-feed";
-import { inChannel } from "@/lib/chat/store/messages";
-import { type ChatState, MAX_UNREAD_ACTIVITY } from "@/lib/chat/store/state";
+} from "@/lib/chat/rules/activity-feed";
+import { inChannel } from "@/lib/chat/rules/messages";
+import { type ChatState, MAX_UNREAD_ACTIVITY } from "./state";
 
 import type { StoreCore } from "./core";
 

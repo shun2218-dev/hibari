@@ -1,5 +1,5 @@
 import type { MessageAttachment } from "@/lib/api/types.gen";
-import type { OutgoingMessage } from "@/lib/chat/store/state";
+import type { OutgoingMessage } from "./state";
 import { ulid } from "@/lib/ulid";
 
 import type { StoreCore } from "./core";

@@ -1,5 +1,5 @@
 import type { UserProfile } from "@/lib/api/types.gen";
-import { TYPING_TTL_MS } from "@/lib/chat/store/state";
+import { TYPING_TTL_MS } from "./state";
 
 import type { StoreCore } from "./core";
 

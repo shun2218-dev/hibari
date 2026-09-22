@@ -1,5 +1,5 @@
 import type { MessageList } from "@/lib/api/types.gen";
-import { advanceCursor, mergeMessages } from "@/lib/chat/store/messages";
+import { advanceCursor, mergeMessages } from "@/lib/chat/rules/messages";
 
 import type { StoreCore } from "./core";
 import type { Timeline } from "./timeline";
