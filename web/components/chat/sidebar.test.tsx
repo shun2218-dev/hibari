@@ -127,6 +127,12 @@ describe("Sidebar", () => {
     expect(screen.queryByLabelText("未読 2 件")).not.toBeInTheDocument();
   });
 
+  it("検索の下に帯を置ける（デスクトップ通知。ADR 0057）", () => {
+    renderSidebar({ notice: <p>帯</p> });
+
+    expect(screen.getByText("帯")).toBeInTheDocument();
+  });
+
   it("shows presence only for online DM peers", () => {
     renderSidebar();
 

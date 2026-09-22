@@ -39,6 +39,8 @@ type SidebarProps = {
    * 件数は出さない（未読ではないので、琥珀のバッジで呼ばない）。渡さなければ出さない。
    */
   saved?: { href: string; selected: boolean };
+  /** 検索の下に置く帯（「デスクトップ通知を有効にする」。ADR 0057）。渡さなければ出さない。 */
+  notice?: ReactNode;
 };
 
 export function Sidebar({
@@ -59,6 +61,7 @@ export function Sidebar({
   onStartDm,
   threads,
   saved,
+  notice,
 }: SidebarProps) {
   const channels = rooms.filter((room) => room.kind !== "dm");
   const dms = rooms.filter((room) => room.kind === "dm");
@@ -109,6 +112,8 @@ export function Sidebar({
           />
         </label>
       </div>
+
+      {notice}
 
       {rooms.length === 0 ? (
         <div className="flex flex-col items-center gap-1 px-4 pt-12 text-center">
