@@ -5,7 +5,8 @@ import { useEffect, useMemo } from "react";
 import { PinsList } from "@/components/chat/pins-list";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
-import { toMemberNames, toPinnedMessageView } from "@/lib/chat/views/views";
+import { toPinnedMessageView } from "@/lib/chat/views/lists";
+import { toMemberNames } from "@/lib/chat/views/members";
 
 /**
  * ルームの「ピン」のタブ（ADR 0054。chat/pin/list.png）。タイムラインの代わりにメインの領域に出す（Slack と同じ）。

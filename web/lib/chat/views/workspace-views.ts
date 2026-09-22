@@ -4,7 +4,8 @@ import type { InviteRowView, MemberRowView, WorkspaceRole } from "@/components/w
 import type { Invite, InvitePolicy, Member, Role } from "@/lib/api/types.gen";
 
 import { formatDayTime } from "@/lib/chat/format/time";
-import { type UrlTable, memberPresence, statusView } from "./views";
+import { memberPresence, statusView } from "./members";
+import type { UrlTable } from "./message";
 
 /**
  * ワークスペースの管理画面の表示用の変換（ADR 0018 / 0029）。

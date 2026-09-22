@@ -5,7 +5,8 @@ import { useMemo, useState } from "react";
 import { ThreadList } from "@/components/chat/thread-list";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
-import { toMemberNames, toThreadListItemView } from "@/lib/chat/views/views";
+import { toMemberNames } from "@/lib/chat/views/members";
+import { toThreadListItemView } from "@/lib/chat/views/threads";
 
 /**
  * 参加しているスレッドの一覧（`/w/{id}/threads`。chat/thread/threads.png）。押すと、そのルームをスレッドのパネルを開いた状態で出す。

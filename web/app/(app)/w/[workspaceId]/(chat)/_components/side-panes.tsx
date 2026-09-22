@@ -12,7 +12,9 @@ import { useAvatarUrls } from "@/hooks/chat/use-media";
 import type { ActivityFilter } from "@/lib/api/types.gen";
 import { withSide } from "@/lib/chat/format/links";
 import { activityListKey } from "@/lib/chat/store/activity-feed";
-import { memberSettings, toActivityItemView, toMemberNames, toRoomSummaryView, toSavedItemView } from "@/lib/chat/views/views";
+import { toActivityItemView, toSavedItemView } from "@/lib/chat/views/lists";
+import { memberSettings, toMemberNames } from "@/lib/chat/views/members";
+import { toRoomSummaryView } from "@/lib/chat/views/rooms";
 
 /**
  * 左のメニューの DM・アクティビティ・後で（ADR 0058）。サイドバーの列に出す形（pane）と、左のメニューにポインタを

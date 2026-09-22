@@ -14,7 +14,8 @@ import { useMedia, useMediaState } from "./use-media";
 import { buildPermalink } from "@/lib/chat/format/links";
 import type { MentionCandidate } from "@/lib/chat/format/mentions";
 import { useOrigin } from "@/hooks/use-origin";
-import { isPreviewImage, messageActions } from "@/lib/chat/views/views";
+import { isPreviewImage } from "@/lib/chat/views/message";
+import { messageActions } from "@/lib/chat/views/permissions";
 import { currentTheme, serverTheme, subscribeTheme } from "@/lib/theme";
 
 /** コピーの結果をメニューに出しておく時間。 */

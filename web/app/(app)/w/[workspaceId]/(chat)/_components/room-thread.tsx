@@ -29,19 +29,11 @@ import { useDocumentVisible } from "@/hooks/use-document-visible";
 import { useOrigin } from "@/hooks/use-origin";
 import { mentionAll } from "@/lib/chat/format/mentions";
 import { draftsReady } from "@/lib/chat/media/uploads";
-import {
-  alsoInChannelDoneLabel,
-  alsoInChannelLabel,
-  canPost,
-  mentionAllRecipients,
-  permalinksIn,
-  previewImageIds,
-  roomName,
-  toAttachmentDraftView,
-  toMemberNames,
-  toMentionCandidates,
-  toThreadTimelineItems,
-} from "@/lib/chat/views/views";
+import { mentionAllRecipients, toMemberNames, toMentionCandidates } from "@/lib/chat/views/members";
+import { permalinksIn, previewImageIds, toAttachmentDraftView } from "@/lib/chat/views/message";
+import { canPost } from "@/lib/chat/views/permissions";
+import { alsoInChannelDoneLabel, alsoInChannelLabel, roomName } from "@/lib/chat/views/rooms";
+import { toThreadTimelineItems } from "@/lib/chat/views/threads";
 
 import { useMessageActions } from "@/hooks/chat/use-message-actions";
 import { useProfileHoverCard } from "@/hooks/chat/use-profile-hover-card";

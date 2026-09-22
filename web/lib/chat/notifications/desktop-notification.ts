@@ -3,7 +3,7 @@ import type { ActivityReason, FollowedThread, Message, NotifyLevel, Room } from 
 import { type Block, type Inline, parseBody } from "@/lib/chat/format/body-format";
 import { permalinkPath } from "@/lib/chat/format/links";
 import { isMuted } from "./notifications";
-import { roomName } from "@/lib/chat/views/views";
+import { roomName } from "@/lib/chat/views/rooms";
 
 /**
  * ブラウザ通知（ADR 0057）の「出すか」と「何を出すか」。どちらも純粋な関数で、ストアの値を受け取るだけ。
