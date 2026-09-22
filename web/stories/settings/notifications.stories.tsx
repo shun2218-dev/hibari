@@ -6,8 +6,8 @@ import {
   NotificationSettings,
 } from "@/components/settings/settings-sections";
 
-import { workspaces } from "../fixtures";
-import { noop, userSettings } from "../screens";
+import { workspaces } from "@/stories/fixtures";
+import { noop, userSettings } from "@/stories/screens";
 
 /**
  * ユーザー設定 / 通知（ADR 0055）。

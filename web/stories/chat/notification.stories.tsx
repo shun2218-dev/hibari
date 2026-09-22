@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { chat } from "../screens";
+import { chat } from "@/stories/screens";
 
 /**
  * チャット / ミュートと通知の設定（ADR 0055）。

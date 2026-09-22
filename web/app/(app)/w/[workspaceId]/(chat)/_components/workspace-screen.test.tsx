@@ -1,0 +1,2377 @@
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { clearEditor, typeInEditor, valueOf } from "@/components/chat/editor/test-utils";
+import type { Room } from "@/lib/api/types.gen";
+import { lastRoomId, lastWorkspaceId, rememberLocation } from "@/lib/chat/last-location";
+import { kei, member, message, miyuki, naoki, room, roomMember, savedItem, workspace } from "@/test/chat-data";
+import { type Handler, json, problem, testUser } from "@/test/fake-api";
+import { renderWithChat } from "@/test/render-with-chat";
+
+import { WorkspaceScreen } from "./workspace-screen";
+
+const nav = vi.hoisted(() => ({
+  router: { replace: vi.fn(), push: vi.fn() },
+  params: {} as { workspaceId: string; roomId?: string },
+  // 開いているスレッド（?t=）と、パス（/w/{id}/threads の判定）
+  search: "",
+  pathname: "",
+}));
+vi.mock("next/navigation", () => ({
+  useRouter: () => nav.router,
+  useParams: () => nav.params,
+  useSearchParams: () => new URLSearchParams(nav.search),
+  usePathname: () => nav.pathname,
+}));
+
+const design = room("r-design", "デザインレビュー", {
+  last_message_seq: 3,
+  last_read_seq: 1,
+  unread_count: 2,
+  last_message_at: "2026-09-13T02:05:00Z",
+  last_user_seq: 3,
+  last_read_user_seq: 1,
+  last_message: { id: "m-3", sender: miyuki, kind: "user", body: "presence を確認します", created_at: "2026-09-13T02:05:00Z", deleted: false },
+});
+const chat = room("r-chat", "雑談", { is_default: true });
+const dm = room("r-dm", "", { kind: "dm", name: null, dm_peer: { ...naoki, presence: "active" } });
+
+function routes(overrides: Record<string, Handler> = {}): Record<string, Handler> {
+  return {
+    "GET /api/v1/workspaces": () =>
+      json(200, { workspaces: [workspace("ws-1", "hibari 開発"), workspace("ws-2", "個人メモ")] }),
+    "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [design, chat, dm], unread_thread_count: 0 }),
+    "GET /api/v1/workspaces/ws-1/threads?limit=200": () => json(200, { threads: [], next_cursor: null }),
+    // 名前の横のステータスと DM の相手の presence に使う（ADR 0049 決定 7 の追記）
+    "GET /api/v1/workspaces/ws-1/members?limit=200": () =>
+      json(200, { members: [member(naoki, { role: "owner" }), member(miyuki), member(kei)], next_cursor: null }),
+    // 「後で」の差分のカーソルを決めるために、ワークスペースを開いたときに進行中を取る（ADR 0054 決定 7）
+    "GET /api/v1/workspaces/ws-1/saved?state=in_progress&limit=50": () =>
+      json(200, { items: [], in_progress_count: 0, last_change_seq: 0, has_more: false }),
+    // チャンネルの「通知」のメニューの「全体の設定に従う」の補足に使う（ADR 0055）
+    "GET /api/v1/workspaces/ws-1/me/notifications": () => json(200, { level: "mentions" }),
+    // 左のメニューのアクティビティのバッジ（ADR 0058）
+    "GET /api/v1/workspaces/ws-1/activity/unread_count": () => json(200, { count: 0 }),
+    ...overrides,
+  };
+}
+
+function openRoom(r: Room, messages = [message(1), message(2), message(3)]): Record<string, Handler> {
+  return {
+    [`GET /api/v1/rooms/${r.id}`]: () => json(200, { ...r, member_count: 4 }),
+    [`GET /api/v1/rooms/${r.id}/messages?limit=50`]: () =>
+      json(200, { messages: messages.map((m) => ({ ...m, room_id: r.id })), has_more: false, last_change_seq: 3 }),
+    [`POST /api/v1/rooms/${r.id}/read`]: () => json(200, { last_read_seq: r.last_message_seq, last_read_user_seq: r.last_message_seq, unread_count: 0, mention_count: 0 }),
+    // `@` の補完のために、ルームを開いた時点でメンバーを引く（ADR 0043）
+    [`GET /api/v1/rooms/${r.id}/members?limit=200`]: () =>
+      json(200, { members: [roomMember(naoki, { role: "owner", presence: "active" }), roomMember(miyuki), roomMember(kei)], next_cursor: null }),
+    // ヘッダーのピン留めの件数に使う（ADR 0054）
+    [`GET /api/v1/rooms/${r.id}/pins`]: () =>
+      json(200, { messages: messages.filter((m) => m.pinned).map((m) => ({ ...m, room_id: r.id })) }),
+  };
+}
+
+function sidebar() {
+  return within(screen.getByRole("navigation", { name: "チャンネル" }));
+}
+
+/** md 以上の左のメニュー（ADR 0058）。モバイルの下のメニューも同じ名前なので、先に出る方（左の縦のメニュー）を取る。 */
+function rail() {
+  return within(screen.getAllByRole("navigation", { name: "メニュー" })[0]);
+}
+
+describe("WorkspaceScreen", () => {
+  beforeEach(() => {
+    nav.router.replace.mockReset();
+    nav.router.push.mockReset();
+    nav.params = { workspaceId: "ws-1" };
+    nav.search = "";
+    nav.pathname = "/w/ws-1";
+    window.localStorage.clear();
+  });
+
+  describe("choosing a room", () => {
+    it("opens the last room opened in this workspace", async () => {
+      rememberLocation("ws-1", "r-dm");
+
+      renderWithChat(<WorkspaceScreen />, routes());
+
+      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1/r/r-dm"));
+    });
+
+    it("falls back to the default room, then to the first room", async () => {
+      rememberLocation("ws-1", "r-deleted");
+
+      const first = renderWithChat(<WorkspaceScreen />, routes());
+      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1/r/r-chat"));
+      first.unmount();
+
+      nav.router.replace.mockReset();
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [design, dm] }) }),
+      );
+      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1/r/r-design"));
+    });
+
+    it("leaves a workspace the user is not a member of and forgets it", async () => {
+      rememberLocation("ws-9", "r-x");
+      nav.params = { workspaceId: "ws-9" };
+
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ "GET /api/v1/workspaces/ws-9/rooms": () => problem(404, "not-found") }),
+      );
+
+      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/"));
+      expect(lastWorkspaceId()).toBeUndefined();
+    });
+  });
+
+  describe("an open room", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    it("shows the rooms, the history with the unread divider, and marks it read", async () => {
+      const { api } = renderWithChat(<WorkspaceScreen />, routes(openRoom(design)));
+
+      expect(await screen.findByRole("heading", { name: /デザインレビュー/ })).toBeInTheDocument();
+      expect(screen.getByText("メンバー4人")).toBeInTheDocument();
+      expect(sidebar().getByRole("link", { name: /デザインレビュー/ })).toHaveAttribute("aria-current", "page");
+      expect(sidebar().getByRole("link", { name: /佐藤 直樹/ })).toHaveAttribute("href", "/w/ws-1/r/r-dm");
+
+      const history = within(screen.getByRole("list", { name: "メッセージ" }));
+      expect(history.getAllByRole("article").map((a) => a.textContent)).toEqual([
+        expect.stringContaining("本文 1"),
+        expect.stringContaining("本文 2"),
+        expect.stringContaining("本文 3"),
+      ]);
+      expect(history.getByText("ここから未読")).toBeInTheDocument();
+
+      await waitFor(() => expect(api.paths()).toContain("POST /api/v1/rooms/r-design/read"));
+      // 未読数はサイドバーから消えるが、開いている間は区切りを残す
+      await waitFor(() =>
+        expect(within(sidebar().getByRole("link", { name: /デザインレビュー/ })).queryByText("2")).not.toBeInTheDocument(),
+      );
+      expect(history.getByText("ここから未読")).toBeInTheDocument();
+      expect(lastRoomId("ws-1")).toBe("r-design");
+
+      await userEvent.click(history.getByRole("button", { name: "すべて既読にする" }));
+      expect(history.queryByText("ここから未読")).not.toBeInTheDocument();
+    });
+
+    it("shows the start of an empty room", async () => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-chat" };
+
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(chat, [])));
+
+      expect(await screen.findByText("# 雑談 のはじまりです")).toBeInTheDocument();
+    });
+
+    it("lets a non-member read a public room and join it", async () => {
+      const guest = { ...design, is_member: false, last_read_seq: null, unread_count: 0 };
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [guest, chat] }),
+          ...openRoom(guest),
+          "POST /api/v1/rooms/r-design/join": () => json(200, { ...design, is_member: true, last_read_seq: 0 }),
+        }),
+      );
+
+      await screen.findByRole("list", { name: "メッセージ" });
+      expect(api.paths()).not.toContain("POST /api/v1/rooms/r-design/read");
+      await userEvent.click(screen.getByRole("button", { name: "参加する" }));
+
+      await waitFor(() => expect(screen.queryByRole("button", { name: "参加する" })).not.toBeInTheDocument());
+    });
+
+    it("shows the same no-access notice as a removal when the room in the url cannot be read", async () => {
+      rememberLocation("ws-1", "r-design");
+
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [chat, dm] }),
+          "GET /api/v1/rooms/r-design": () => problem(404, "not-found"),
+          "GET /api/v1/rooms/r-design/messages?limit=50": () => problem(404, "not-found"),
+        }),
+      );
+
+      // 存在しないのか読めないのかは区別しない（ADR 0035）。入口から開き直したときに、また開かないように忘れる
+      expect(await screen.findByRole("heading", { name: "このチャンネルにはアクセスできません" })).toBeInTheDocument();
+      expect(lastRoomId("ws-1")).toBeUndefined();
+      expect(nav.router.replace).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole("button", { name: "チャンネル一覧に戻る" }));
+      expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1");
+    });
+
+    it("opens the members panel", async () => {
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "GET /api/v1/rooms/r-design/members?limit=200": () =>
+            json(200, {
+              members: [roomMember(naoki, { role: "owner", presence: "active" }), roomMember(miyuki)],
+              next_cursor: null,
+            }),
+        }),
+      );
+
+      await userEvent.click(await screen.findByRole("button", { name: "メンバー" }));
+
+      const panel = within(await screen.findByRole("complementary", { name: "メンバー" }));
+      expect(await panel.findByText("佐藤 直樹")).toBeInTheDocument();
+      expect(panel.getByText("オーナー")).toBeInTheDocument();
+      await userEvent.click(panel.getByRole("button", { name: "閉じる" }));
+      expect(screen.queryByRole("complementary", { name: "メンバー" })).not.toBeInTheDocument();
+    });
+
+    it("opens a dm with a member picked from the sidebar", async () => {
+      const user = userEvent.setup();
+      const dmRoom = room("r-new-dm", "", { kind: "dm", name: null, dm_peer: { ...miyuki, presence: "active" } });
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "GET /api/v1/workspaces/ws-1/members?limit=200": () =>
+            json(200, { members: [member(naoki, { role: "owner" }), member(miyuki)], next_cursor: null }),
+          "POST /api/v1/workspaces/ws-1/rooms": () => json(201, dmRoom),
+        }),
+      );
+
+      await user.click(await screen.findByRole("button", { name: "ダイレクトメッセージを開く" }));
+      // 自分（佐藤 直樹）は候補に出ない
+      expect(await screen.findByRole("radio", { name: /高橋 みゆき/ })).toBeInTheDocument();
+      expect(screen.queryByRole("radio", { name: /佐藤 直樹/ })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("radio", { name: /高橋 みゆき/ }));
+      await user.click(screen.getByRole("button", { name: "開く" }));
+
+      await waitFor(() => expect(api.calls.at(-1)?.init.body).toBe(JSON.stringify({ kind: "dm", user_id: miyuki.id })));
+      await waitFor(() => expect(nav.router.push).toHaveBeenCalledWith("/w/ws-1/r/r-new-dm"));
+    });
+
+    it("renames a channel and manages its members from the header", async () => {
+      const user = userEvent.setup();
+      const priv = room("r-priv", "リリース準備", { kind: "private", member_count: 2 });
+      nav.params = { workspaceId: "ws-1", roomId: "r-priv" };
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces": () => json(200, { workspaces: [workspace("ws-1", "hibari 開発", { my_role: "admin" })] }),
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [priv] }),
+          ...openRoom(priv, []),
+          "GET /api/v1/rooms/r-priv/members?limit=200": () =>
+            json(200, { members: [roomMember(naoki, { role: "admin" }), roomMember(miyuki)], next_cursor: null }),
+          "GET /api/v1/workspaces/ws-1/members?limit=200": () =>
+            json(200, {
+              members: [member(naoki, { role: "admin" }), member(miyuki), member(kei)],
+              next_cursor: null,
+            }),
+          "PATCH /api/v1/rooms/r-priv": (_url, init) => json(200, { ...priv, ...JSON.parse(init.body as string) }),
+          "POST /api/v1/rooms/r-priv/members": () => new Response(null, { status: 204 }),
+          [`DELETE /api/v1/rooms/r-priv/members/${miyuki.id}`]: () => new Response(null, { status: 204 }),
+        }),
+      );
+
+      await user.click(await screen.findByRole("button", { name: "チャンネルの設定" }));
+      const dialog = within(await screen.findByRole("dialog"));
+
+      // 参加していない人だけを候補に出す
+      await user.click(await dialog.findByRole("button", { name: "メンバーを追加" }));
+      const picker = within(await screen.findByRole("dialog"));
+      expect(await picker.findByRole("radio", { name: /森田 圭/ })).toBeInTheDocument();
+      expect(picker.queryByRole("radio", { name: /高橋 みゆき/ })).not.toBeInTheDocument();
+      await user.click(picker.getByRole("radio", { name: /森田 圭/ }));
+      await user.click(picker.getByRole("button", { name: "追加する" }));
+      await waitFor(() => expect(api.paths()).toContain("POST /api/v1/rooms/r-priv/members"));
+
+      // 外す
+      await user.click(within(await screen.findByRole("dialog")).getAllByRole("button", { name: "外す" })[0]);
+      await waitFor(() => expect(api.paths()).toContain(`DELETE /api/v1/rooms/r-priv/members/${miyuki.id}`));
+
+      // 名前を変える
+      const field = within(screen.getByRole("dialog")).getByLabelText("チャンネル名");
+      await user.clear(field);
+      await user.type(field, "リリース準備 2");
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "保存する" }));
+
+      await waitFor(() => expect(api.calls.at(-1)?.init.body).toBe(JSON.stringify({ name: "リリース準備 2" })));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+
+    it("leaves a private channel from its settings and goes back to the workspace without a notice", async () => {
+      const user = userEvent.setup();
+      const priv = room("r-priv", "リリース準備", { kind: "private", member_count: 2 });
+      nav.params = { workspaceId: "ws-1", roomId: "r-priv" };
+      rememberLocation("ws-1", "r-priv");
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [priv, chat] }),
+          ...openRoom(priv, []),
+          "GET /api/v1/rooms/r-priv/members?limit=200": () => json(200, { members: [roomMember(naoki)], next_cursor: null }),
+          "GET /api/v1/workspaces/ws-1/members?limit=200": () => json(200, { members: [member(naoki)], next_cursor: null }),
+          [`DELETE /api/v1/rooms/r-priv/members/${testUser.id}`]: () => new Response(null, { status: 204 }),
+        }),
+      );
+
+      // member でも（読み取り専用の設定から）退出できる
+      await user.click(await screen.findByRole("button", { name: "チャンネルの設定" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "退出する" }));
+      const confirm = within(await screen.findByRole("dialog"));
+      expect(confirm.getByText(/リリース準備 から退出します。.*読めなくなります/)).toBeInTheDocument();
+      await user.click(confirm.getByRole("button", { name: "退出する" }));
+
+      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1"));
+      expect(api.paths()).toContain(`DELETE /api/v1/rooms/r-priv/members/${testUser.id}`);
+      expect(screen.queryByText(/外されました/)).not.toBeInTheDocument();
+      expect(lastRoomId("ws-1")).toBeUndefined();
+    });
+
+    it("keeps a public channel readable after leaving it, and backs out of the confirmation to the settings", async () => {
+      const user = userEvent.setup();
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          [`DELETE /api/v1/rooms/r-design/members/${testUser.id}`]: () => new Response(null, { status: 204 }),
+        }),
+      );
+
+      await user.click(await screen.findByRole("button", { name: "チャンネルの設定" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "退出する" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "キャンセル" }));
+      expect(await screen.findByRole("heading", { name: "チャンネルの設定" })).toBeInTheDocument();
+
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "退出する" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "退出する" }));
+
+      expect(await screen.findByRole("button", { name: "参加する" })).toBeInTheDocument();
+      expect(screen.getByRole("list", { name: "メッセージ" })).toBeInTheDocument();
+      expect(nav.router.replace).not.toHaveBeenCalled();
+
+      // 参加していないので、設定からはもう退出を出さない
+      await user.click(screen.getByRole("button", { name: "チャンネルの設定" }));
+      expect(within(await screen.findByRole("dialog")).queryByRole("button", { name: "退出する" })).not.toBeInTheDocument();
+    });
+
+    it("does not offer channel settings for a dm", async () => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-dm" };
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(dm)));
+
+      expect(await screen.findByRole("button", { name: "メンバー" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "チャンネルの設定" })).not.toBeInTheDocument();
+    });
+
+    it("filters the rooms by name", async () => {
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(design)));
+
+      await userEvent.type(await screen.findByRole("searchbox", { name: "チャンネルを検索" }), "雑");
+
+      expect(sidebar().getAllByRole("link").map((l) => l.textContent)).toEqual([expect.stringContaining("雑談")]);
+    });
+
+    it("switches to another workspace", async () => {
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(design)));
+
+      await userEvent.click(await screen.findByRole("button", { name: /hibari 開発/ }));
+      await userEvent.click(screen.getByRole("button", { name: /個人メモ/ }));
+
+      expect(nav.router.push).toHaveBeenCalledWith("/w/ws-2");
+      expect(screen.queryByRole("dialog", { name: "ワークスペースを切り替える" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("creates the first channel of an empty workspace and opens it", async () => {
+    const { api } = renderWithChat(
+      <WorkspaceScreen />,
+      routes({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [] }),
+        "POST /api/v1/workspaces/ws-1/rooms": () => json(201, room("r-new", "リリース準備", { kind: "private" })),
+      }),
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "チャンネルを作成" }));
+    await userEvent.type(screen.getByLabelText("チャンネル名"), "リリース準備");
+    await userEvent.click(screen.getByRole("radio", { name: /非公開/ }));
+    await userEvent.click(screen.getByRole("button", { name: "作成する" }));
+
+    await waitFor(() => expect(nav.router.push).toHaveBeenCalledWith("/w/ws-1/r/r-new"));
+    expect(JSON.parse(api.calls.at(-1)!.init.body as string)).toEqual({ kind: "private", name: "リリース準備" });
+    expect(sidebar().getByRole("link", { name: /リリース準備/ })).toBeInTheDocument();
+  });
+
+  describe("realtime", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    /** 開いた後の差分の取得は、何も変わっていない応答にする。 */
+    function live(overrides: Record<string, Handler> = {}) {
+      return routes({
+        ...openRoom(design),
+        "GET /api/v1/rooms/r-design/messages?after_change_seq=3&limit=100": () =>
+          json(200, { messages: [], has_more: false, last_change_seq: 3 }),
+        ...overrides,
+      });
+    }
+
+    async function connected(overrides: Record<string, Handler> = {}) {
+      const result = renderWithChat(<WorkspaceScreen />, live(overrides));
+      await screen.findByRole("list", { name: "メッセージ" });
+      await waitFor(() => expect(result.sockets.sockets).toHaveLength(1));
+      result.sockets.last().open();
+      // 表示中のワークスペースとサイドバーのルームを購読する
+      await waitFor(() =>
+        expect(result.sockets.last().messages()).toEqual(
+          expect.arrayContaining([
+            { type: "subscribe", workspace_id: "ws-1" },
+            { type: "subscribe", room_id: "r-design" },
+            { type: "subscribe", room_id: "r-chat" },
+            { type: "subscribe", room_id: "r-dm" },
+          ]),
+        ),
+      );
+      return result;
+    }
+
+    // 離席とカスタムステータス（ADR 0049）
+    describe("離席とカスタムステータス（ADR 0049）", () => {
+      it("アカウントメニューから離席にできる", async () => {
+        const { api } = await connected({
+          "PUT /api/v1/users/me/presence": () => json(200, { away: true }),
+        });
+
+        // md 以上ではアバターは左のメニューの下にある（ADR 0058）
+        await userEvent.click(rail().getByRole("button", { name: "アカウントメニュー" }));
+        await userEvent.click(await screen.findByRole("button", { name: "離席中にする" }));
+
+        await waitFor(() =>
+          expect(api.calls.filter((c) => c.path === "/api/v1/users/me/presence")).toHaveLength(1),
+        );
+        expect(JSON.parse(api.calls.at(-1)!.init.body as string)).toEqual({ away: true });
+      });
+
+      it("ステータスを設定すると、絶対の時刻にして送る", async () => {
+        const { api } = await connected({
+          "PUT /api/v1/workspaces/ws-1/me/status": () => json(200, { emoji: "📅", text: "会議中", expires_at: null }),
+        });
+
+        await userEvent.click(rail().getByRole("button", { name: "アカウントメニュー" }));
+        await userEvent.click(await screen.findByRole("button", { name: "ステータスを設定" }));
+        await userEvent.click(await screen.findByRole("button", { name: "会議中" }));
+        await userEvent.click(screen.getByRole("radio", { name: "1 時間" }));
+        await userEvent.click(screen.getByRole("button", { name: "保存" }));
+
+        await waitFor(() => expect(api.calls.some((c) => c.path === "/api/v1/workspaces/ws-1/me/status")).toBe(true));
+        const body = JSON.parse(api.calls.findLast((c) => c.path === "/api/v1/workspaces/ws-1/me/status")!.init.body as string);
+        expect(body).toMatchObject({ emoji: "📅", text: "会議中" });
+        // 「1 時間」はクライアントが絶対の時刻にして送る（サーバーはタイムゾーンを知らない）
+        expect(new Date(body.expires_at).getTime() - Date.now()).toBeGreaterThan(50 * 60 * 1000);
+      });
+
+      it("届いた member.status_changed で、名前の横に絵文字が出る", async () => {
+        const { sockets } = await connected();
+
+        sockets.last().receive({
+          type: "member.status_changed",
+          data: {
+            workspace_id: "ws-1",
+            user_id: naoki.id,
+            away: false,
+            status: { emoji: "🌴", text: "休暇中", expires_at: null },
+          },
+        });
+
+        expect(await screen.findAllByRole("img", { name: "ステータス: 🌴 休暇中" })).not.toHaveLength(0);
+      });
+    });
+
+    it("shows a message from someone else as it arrives and reads it while the latest is in view", async () => {
+      const { sockets, api } = await connected({
+        "POST /api/v1/rooms/r-design/read": (_url, init) =>
+          json(200, { last_read_seq: JSON.parse(init.body as string).seq, last_read_user_seq: JSON.parse(init.body as string).seq, unread_count: 0 }),
+      });
+
+      sockets.last().receive({
+        type: "message.created",
+        data: message(4, { room_id: "r-design", change_seq: 4, body: "リアルタイムで届いた" }),
+      });
+
+      expect(await screen.findByText("リアルタイムで届いた")).toBeInTheDocument();
+      await waitFor(() =>
+        expect(api.calls.filter((c) => c.path === "/api/v1/rooms/r-design/read").map((c) => JSON.parse(c.init.body as string))).toContainEqual({ seq: 4 }),
+      );
+    });
+
+    describe("writing", () => {
+      const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+      const composer = () => screen.getByRole("textbox", { name: "メッセージ" });
+
+      /** 送信の API。client_msg_id ごとに 1 回だけ採番し、同じ値の再送には同じメッセージを返す。 */
+      function sendRoute({ reachable = (): boolean => true } = {}) {
+        const sent: { client_msg_id: string; body: string; reply_to_id?: string }[] = [];
+        const created = new Map<string, ReturnType<typeof message>>();
+        const handler: Handler = (_url, init) => {
+          const req = JSON.parse(init.body as string);
+          sent.push(req);
+          if (!reachable()) throw new TypeError("Failed to fetch");
+          const existing = created.get(req.client_msg_id);
+          if (existing) return json(200, existing);
+          const seq = 4 + created.size;
+          const m = message(seq, { room_id: "r-design", change_seq: seq, sender: naoki, client_msg_id: req.client_msg_id, body: req.body });
+          created.set(req.client_msg_id, m);
+          return json(201, m);
+        };
+        return { sent, handler };
+      }
+
+      it("shows the message while sending, clears the input, and tells others I am typing", async () => {
+        let respond!: () => void;
+        const responded = new Promise<void>((r) => (respond = r));
+        const route = sendRoute();
+        const { sockets } = await connected({
+          "POST /api/v1/rooms/r-design/messages": async (url, init) => {
+            await responded;
+            return route.handler(url, init);
+          },
+        });
+
+        await typeInEditor(composer(), "こんにちは");
+        expect(sockets.last().messages()).toContainEqual({ type: "typing", room_id: "r-design" });
+        await userEvent.keyboard("{Enter}");
+
+        expect(valueOf(composer())).toBe("");
+        const pending = history().getByRole("article", { name: /佐藤 直樹/ });
+        expect(within(pending).getByText("こんにちは")).toBeInTheDocument();
+        expect(within(pending).getByRole("img", { name: "送信中" })).toBeInTheDocument();
+
+        respond();
+        await waitFor(() => expect(history().queryByRole("img", { name: "送信中" })).not.toBeInTheDocument());
+        expect(history().getAllByText("こんにちは")).toHaveLength(1);
+        expect(route.sent).toEqual([{ client_msg_id: expect.stringMatching(/^[0-9A-Z]{26}$/), body: "こんにちは" }]);
+      });
+
+      it("marks a message sent while offline as failed, and resending it does not post twice", async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        let online = false;
+        const route = sendRoute({ reachable: () => online });
+        const { sockets } = await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+
+        await typeInEditor(composer(), "切断中に送信");
+        await userEvent.keyboard("{Enter}");
+        expect(await history().findByText("送信できませんでした")).toBeInTheDocument();
+
+        online = true;
+        await userEvent.click(history().getByRole("button", { name: "再送する" }));
+        await waitFor(() => expect(history().queryByText("送信できませんでした")).not.toBeInTheDocument());
+        // 同じメッセージの created イベントが後から届いても、1 件のまま
+        sockets.last().receive({
+          type: "message.created",
+          data: message(4, { room_id: "r-design", change_seq: 4, sender: naoki, client_msg_id: route.sent[0]!.client_msg_id, body: "切断中に送信" }),
+        });
+
+        expect(route.sent.map((r) => r.client_msg_id)).toEqual([route.sent[0]!.client_msg_id, route.sent[0]!.client_msg_id]);
+        await waitFor(() => expect(history().getAllByText("切断中に送信")).toHaveLength(1));
+      });
+
+      it("discards a failed message", async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        await connected({ "POST /api/v1/rooms/r-design/messages": sendRoute({ reachable: () => false }).handler });
+
+        await typeInEditor(composer(), "やめる");
+        await userEvent.keyboard("{Enter}");
+        await userEvent.click(await history().findByRole("button", { name: "削除" }));
+
+        expect(history().queryByText("やめる")).not.toBeInTheDocument();
+      });
+
+      it("keeps thread replies out of the channel (ADR 0036)", async () => {
+        await connected(openRoom(design, [message(1), message(2), message(3, { thread_root_id: "m-1", thread_seq: 1, body: "スレッドの返信" })]));
+
+        expect(history().getAllByRole("article")).toHaveLength(2);
+        expect(history().queryByText("スレッドの返信")).not.toBeInTheDocument();
+      });
+
+      describe("mentions (ADR 0041 / 0043)", () => {
+        it("completes a handle and sends the id, not the handle", async () => {
+          const route = sendRoute();
+          await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+
+          await typeInEditor(composer(), "@miy");
+          const list = within(await screen.findByRole("listbox", { name: "メンションの候補" }));
+          await userEvent.click(list.getByRole("button", { name: /高橋 みゆき/ }));
+          // 入力欄には名前のチップ、値はトークン（ADR 0052 決定 3 / 4）
+          expect(within(composer()).getByText("@高橋 みゆき")).toBeInTheDocument();
+          expect(valueOf(composer())).toBe(`<@${miyuki.id}> `);
+
+          await typeInEditor(composer(), "おはよう");
+          await userEvent.keyboard("{Enter}");
+          await waitFor(() => expect(route.sent).toHaveLength(1));
+          expect(route.sent[0]!.body).toBe(`<@${miyuki.id}> おはよう`);
+        });
+
+        it("leaves an unknown handle as plain text", async () => {
+          const route = sendRoute();
+          await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+
+          await typeInEditor(composer(), "@dareka よろしく");
+          await userEvent.keyboard("{Enter}");
+          await waitFor(() => expect(route.sent).toHaveLength(1));
+          expect(route.sent[0]!.body).toBe("@dareka よろしく");
+        });
+
+        it("asks before sending @channel and counts the recipients without me", async () => {
+          const route = sendRoute();
+          await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+
+          await typeInEditor(composer(), "@channel 明日は休みます");
+          await userEvent.keyboard("{Enter}");
+          const dialog = within(await screen.findByRole("dialog", { name: "@channel を送りますか？" }));
+          expect(screen.getByText("このチャンネルのメンバー 2 人に知らせが飛びます。")).toBeInTheDocument();
+
+          await userEvent.click(dialog.getByRole("button", { name: "キャンセル" }));
+          expect(route.sent).toHaveLength(0);
+          // 手で打った @channel も、空白を打った時点でチップになっている（ADR 0043）
+          expect(valueOf(composer())).toBe("<!channel> 明日は休みます");
+
+          await typeInEditor(composer(), "");
+          await userEvent.keyboard("{Enter}");
+          await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "送信する" }));
+          await waitFor(() => expect(route.sent).toHaveLength(1));
+          expect(route.sent[0]!.body).toBe("<!channel> 明日は休みます");
+          expect(valueOf(composer())).toBe("");
+        });
+
+        it("does not ask for a mention to one person", async () => {
+          const route = sendRoute();
+          await connected({ "POST /api/v1/rooms/r-design/messages": route.handler });
+
+          await typeInEditor(composer(), "@miyuki ありがとう");
+          await userEvent.keyboard("{Enter}");
+          await waitFor(() => expect(route.sent).toHaveLength(1));
+          expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        });
+
+        it("shows the name instead of the id, and marks the row addressed to me", async () => {
+          const { sockets } = await connected();
+
+          sockets.last().receive({
+            type: "message.created",
+            data: message(4, {
+              room_id: "r-design",
+              change_seq: 4,
+              sender: miyuki,
+              body: `<@${naoki.id}> 確認おねがいします`,
+              mentions: [{ kind: "user", user: naoki }],
+            }),
+          });
+
+          const row = await history().findByRole("article", { name: /あなた宛て/ });
+          expect(within(row).getByRole("button", { name: "@佐藤 直樹" })).toBeInTheDocument();
+          expect(within(row).queryByText(new RegExp(naoki.id))).not.toBeInTheDocument();
+        });
+
+        it("counts a mention in another room in the sidebar", async () => {
+          const { sockets } = await connected();
+
+          sockets.last().receive({
+            type: "message.created",
+            data: message(4, {
+              room_id: "r-chat",
+              change_seq: 4,
+              sender: miyuki,
+              body: "<!here> 手が空いている人いますか",
+              mentions: [{ kind: "here", user: naoki }],
+            }),
+          });
+
+          const row = await sidebar().findByRole("link", { name: /雑談/ });
+          expect(within(row).getByLabelText("メンション 1 件")).toHaveTextContent("@1");
+        });
+
+        it("edits with the chips and saves ids, and turns a typed handle into a mention", async () => {
+          const body = `<@${miyuki.id}> よろしく`;
+          const mine = message(3, { sender: naoki, body, mentions: [{ kind: "user", user: miyuki }] });
+          const sent: string[] = [];
+          await connected({
+            ...openRoom(design, [message(1), message(2), mine]),
+            "PATCH /api/v1/rooms/r-design/messages/m-3": (_url, init) => {
+              const edited = JSON.parse(init.body as string).body;
+              sent.push(edited);
+              return json(200, { ...mine, room_id: "r-design", change_seq: 4, body: edited, edited_at: "2026-09-13T02:00:00Z" });
+            },
+          });
+
+          const article = history().getAllByRole("article")[2]!;
+          await userEvent.click(within(article).getByRole("button", { name: "その他の操作" }));
+          await userEvent.click(screen.getByRole("button", { name: "メッセージを編集" }));
+
+          // 編集のときは ID ではなく名前のチップで見せる（ADR 0052 決定 2）
+          const editor = screen.getByRole("textbox", { name: "メッセージを編集" });
+          expect(valueOf(editor)).toBe(body);
+          expect(within(editor).getByText("@高橋 みゆき")).toBeInTheDocument();
+          await clearEditor(editor);
+          await typeInEditor(editor, "@miyuki ありがとう");
+          await userEvent.keyboard("{Enter}");
+
+          await waitFor(() => expect(sent).toEqual([`<@${miyuki.id}> ありがとう`]));
+        });
+      });
+
+      describe("threads (ADR 0036 / 0037)", () => {
+        const root = message(2, {
+          room_id: "r-design",
+          body: "親のメッセージ",
+          thread: { reply_count: 2, last_thread_seq: 2, last_reply_at: "2026-09-13T01:30:00Z" },
+        });
+        const replies = [
+          message(4, { room_id: "r-design", change_seq: 4, body: "返信 1", thread_root_id: "m-2", thread_seq: 1 }),
+          message(5, { room_id: "r-design", change_seq: 5, body: "返信 2", thread_root_id: "m-2", thread_seq: 2 }),
+        ];
+        const panel = () => within(screen.getByRole("complementary", { name: "スレッド" }));
+        function threadRoute(lastRead: number | null = 0): Record<string, Handler> {
+          return {
+            "GET /api/v1/rooms/r-design/threads/m-2/messages?limit=50": () =>
+              json(200, { root, messages: replies, has_more: false, last_change_seq: 5, last_read_thread_seq: lastRead }),
+            "POST /api/v1/rooms/r-design/threads/m-2/read": () =>
+              json(200, { following: lastRead !== null, last_read_thread_seq: 2, unread_count: 0 }),
+          };
+        }
+        const followed = (unread: number) => ({
+          room: { id: "r-design", kind: "public", name: "デザインレビュー" },
+          root: { id: "m-2", sender: miyuki, kind: "user", body: "親のメッセージ", created_at: "2026-09-13T01:00:00Z", deleted: false },
+          root_seq: 2,
+          reply_count: 2,
+          last_reply_at: "2026-09-13T01:30:00Z",
+          last_thread_seq: 2,
+          last_read_thread_seq: 2 - unread,
+          unread_count: unread,
+          notify_replies: true,
+          mention_count: 0,
+        });
+
+        it("opens the thread from the reply action and from the reply count", async () => {
+          await connected(openRoom(design, [message(1), root, message(3)]));
+
+          const article = history().getAllByRole("article")[1]!;
+          expect(within(article).getByRole("button", { name: /2 件の返信/ })).toBeInTheDocument();
+          await userEvent.click(within(article).getByRole("button", { name: /2 件の返信/ }));
+          expect(nav.router.push).toHaveBeenLastCalledWith("/w/ws-1/r/r-design?t=m-2");
+
+          await userEvent.click(within(article).getByRole("button", { name: "返信", hidden: true }));
+          expect(nav.router.push).toHaveBeenCalledTimes(2);
+        });
+
+        it("shows the root and the replies in the panel, and reads them while open", async () => {
+          nav.search = "t=m-2";
+          const { api } = await connected({
+            ...openRoom(design, [message(1), root, message(3)]),
+            ...threadRoute(0),
+            "POST /api/v1/rooms/r-design/threads/m-2/read": () =>
+              json(200, { following: true, last_read_thread_seq: 2, unread_count: 0 }),
+          });
+
+          expect(await panel().findByText("返信 2")).toBeInTheDocument();
+          expect(panel().getByText("親のメッセージ")).toBeInTheDocument();
+          expect(panel().getByText("2 件の返信")).toBeInTheDocument();
+          // パネルの中では「返信」を出さない（入れ子にしない）
+          expect(panel().queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
+          await waitFor(() =>
+            expect(api.calls.filter((c) => c.path === "/api/v1/rooms/r-design/threads/m-2/read").map((c) => JSON.parse(c.init.body as string))).toEqual([{ seq: 5 }]),
+          );
+
+          await userEvent.click(panel().getByRole("button", { name: "スレッドを閉じる" }));
+          expect(nav.router.replace).toHaveBeenLastCalledWith("/w/ws-1/r/r-design");
+        });
+
+        it("sends a reply to the thread, not to the channel", async () => {
+          nav.search = "t=m-2";
+          const sent: unknown[] = [];
+          await connected({
+            ...openRoom(design, [message(1), root, message(3)]),
+            ...threadRoute(),
+            "POST /api/v1/rooms/r-design/messages": (_url, init) => {
+              const req = JSON.parse(init.body as string);
+              sent.push(req);
+              return json(201, message(6, { room_id: "r-design", change_seq: 6, sender: naoki, client_msg_id: req.client_msg_id, body: req.body, thread_root_id: "m-2", thread_seq: 3 }));
+            },
+          });
+          await panel().findByText("返信 2");
+
+          await typeInEditor(screen.getByRole("textbox", { name: "スレッドに返信" }), "スレッドで答えます");
+          await userEvent.keyboard("{Enter}");
+
+          expect(await panel().findByText("スレッドで答えます")).toBeInTheDocument();
+          expect(sent).toEqual([expect.objectContaining({ body: "スレッドで答えます", thread_root_id: "m-2" })]);
+          expect(history().queryByText("スレッドで答えます")).not.toBeInTheDocument();
+        });
+
+        describe("チャンネルにも投稿する（ADR 0039）", () => {
+          function sendRouteWithFlag(sent: unknown[]): Record<string, Handler> {
+            return {
+              "POST /api/v1/rooms/r-design/messages": (_url, init) => {
+                const req = JSON.parse(init.body as string);
+                sent.push(req);
+                return json(201, message(6, {
+                  room_id: "r-design", change_seq: 6, user_seq: 4, sender: naoki, client_msg_id: req.client_msg_id,
+                  body: req.body, thread_root_id: "m-2", thread_seq: 3, also_in_channel: req.also_in_channel,
+                }));
+              },
+            };
+          }
+
+          it("sends the reply to the channel too when the box is checked, and shows it in both", async () => {
+            nav.search = "t=m-2";
+            const sent: unknown[] = [];
+            await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute(), ...sendRouteWithFlag(sent) });
+            await panel().findByText("返信 2");
+
+            await userEvent.click(screen.getByRole("checkbox", { name: "チャンネルにも投稿する" }));
+            await typeInEditor(screen.getByRole("textbox", { name: "スレッドに返信" }), "みんなにも伝えます");
+            await userEvent.keyboard("{Enter}");
+
+            await waitFor(() => expect(sent).toEqual([expect.objectContaining({ thread_root_id: "m-2", also_in_channel: true })]));
+            expect(await history().findByText("みんなにも伝えます")).toBeInTheDocument();
+            expect(panel().getByText("チャンネルにも投稿しました")).toBeInTheDocument();
+            expect(history().getByRole("button", { name: "スレッドに返信しました" })).toBeInTheDocument();
+            // 送るたびにチェックは外す（次の返信が知らずに流れないように）
+            expect(screen.getByRole("checkbox", { name: "チャンネルにも投稿する" })).not.toBeChecked();
+          });
+
+          it("leaves the reply in the thread when the box is not checked", async () => {
+            nav.search = "t=m-2";
+            const sent: unknown[] = [];
+            await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute(), ...sendRouteWithFlag(sent) });
+            await panel().findByText("返信 2");
+
+            await typeInEditor(screen.getByRole("textbox", { name: "スレッドに返信" }), "スレッドだけ");
+            await userEvent.keyboard("{Enter}");
+
+            await waitFor(() => expect(sent).toEqual([expect.objectContaining({ also_in_channel: false })]));
+            expect(await panel().findByText("スレッドだけ")).toBeInTheDocument();
+            expect(history().queryByText("スレッドだけ")).not.toBeInTheDocument();
+          });
+
+          it("asks before @channel only when the reply also goes to the channel (ADR 0041 / 0043)", async () => {
+            nav.search = "t=m-2";
+            const sent: unknown[] = [];
+            await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute(), ...sendRouteWithFlag(sent) });
+            await panel().findByText("返信 2");
+
+            // スレッドだけの返信では @channel は誰にも飛ばないので、確認を出さずにそのまま送る
+            await typeInEditor(screen.getByRole("textbox", { name: "スレッドに返信" }), "@channel スレッドだけ");
+            await userEvent.keyboard("{Enter}");
+            await waitFor(() => expect(sent).toHaveLength(1));
+            expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+            expect(sent[0]).toMatchObject({ body: "<!channel> スレッドだけ", also_in_channel: false });
+
+            await userEvent.click(screen.getByRole("checkbox", { name: "チャンネルにも投稿する" }));
+            await typeInEditor(screen.getByRole("textbox", { name: "スレッドに返信" }), "@channel みんなにも");
+            await userEvent.keyboard("{Enter}");
+            await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "送信する" }));
+
+            await waitFor(() => expect(sent).toHaveLength(2));
+            expect(sent[1]).toMatchObject({ body: "<!channel> みんなにも", also_in_channel: true });
+          });
+
+          it("opens the thread from the label on the channel row", async () => {
+            const broadcast = message(4, {
+              room_id: "r-design", change_seq: 4, user_seq: 4, body: "流した返信",
+              thread_root_id: "m-2", thread_seq: 1, also_in_channel: true,
+            });
+            await connected(openRoom(design, [message(1), root, broadcast]));
+
+            expect(history().getByText("流した返信")).toBeInTheDocument();
+            await userEvent.click(history().getByRole("button", { name: "スレッドに返信しました" }));
+
+            expect(nav.router.push).toHaveBeenLastCalledWith("/w/ws-1/r/r-design?t=m-2");
+          });
+        });
+
+        it("shows typing in the thread only in the panel", async () => {
+          nav.search = "t=m-2";
+          const { sockets } = await connected({ ...openRoom(design, [message(1), root, message(3)]), ...threadRoute() });
+          await panel().findByText("返信 2");
+
+          sockets.last().receive({ type: "typing.started", data: { workspace_id: "ws-1", room_id: "r-design", thread_root_id: "m-2", user: miyuki } });
+
+          expect(await panel().findByText("高橋 みゆき が入力中")).toBeInTheDocument();
+          expect(screen.getAllByText("高橋 みゆき が入力中")).toHaveLength(1);
+        });
+
+        it("counts unread threads in the sidebar and updates them from events", async () => {
+          const { sockets } = await connected({
+            ...openRoom(design, [message(1), root, message(3)]),
+            "GET /api/v1/workspaces/ws-1/threads?limit=200": () => json(200, { threads: [followed(0)], next_cursor: null }),
+          });
+          const threadsLink = () => sidebar().getByRole("link", { name: /スレッド/ });
+          await waitFor(() => expect(threadsLink()).toHaveAttribute("href", "/w/ws-1/threads"));
+          expect(within(threadsLink()).queryByLabelText(/未読/)).not.toBeInTheDocument();
+
+          // 返信（change_seq 4）と、返信数の増えた親（5）が続けて届く
+          sockets.last().receive({
+            type: "message.created",
+            data: message(4, { room_id: "r-design", change_seq: 4, body: "新しい返信", thread_root_id: "m-2", thread_seq: 3 }),
+          });
+          sockets.last().receive({
+            type: "message.updated",
+            data: { ...root, change_seq: 5, thread: { reply_count: 3, last_thread_seq: 3, last_reply_at: "2026-09-13T02:00:00Z" } },
+          });
+
+          expect(await within(threadsLink()).findByLabelText("未読 1 件")).toBeInTheDocument();
+          expect(within(history().getAllByRole("article")[1]!).getByRole("button", { name: /3 件の返信/ })).toBeInTheDocument();
+          expect(history().queryByText("新しい返信")).not.toBeInTheDocument();
+
+          // 別の端末で読んだ
+          sockets.last().receive({
+            type: "thread.read",
+            data: { workspace_id: "ws-1", room_id: "r-design", thread_root_id: "m-2", last_read_thread_seq: 3, unread_count: 0 },
+          });
+          await waitFor(() => expect(within(threadsLink()).queryByLabelText(/未読/)).not.toBeInTheDocument());
+        });
+
+        describe("返信の通知（ADR 0056）", () => {
+          it("参加しているスレッドの親の「…」で通知をオフにすると PUT が飛び、サイドバーのバッジから外れる", async () => {
+            let sent: unknown;
+            await connected({
+              ...openRoom(design, [message(1), root, message(3)]),
+              "GET /api/v1/workspaces/ws-1/threads?limit=200": () => json(200, { threads: [followed(1)], next_cursor: null }),
+              "PUT /api/v1/rooms/r-design/threads/m-2/me/notifications": (_url, init) => {
+                sent = JSON.parse(init.body as string);
+                return json(200, { notify_replies: false, last_read_thread_seq: 1 });
+              },
+            });
+            const threadsRow = () => sidebar().getByRole("link", { name: /スレッド/ });
+            await waitFor(() => expect(within(threadsRow()).getByLabelText("未読 1 件")).toBeInTheDocument());
+
+            const article = history().getAllByRole("article")[1]!;
+            await userEvent.click(within(article).getByRole("button", { name: "その他の操作", hidden: true }));
+            await userEvent.click(screen.getByRole("button", { name: "返信の通知をオフにする" }));
+
+            expect(sent).toEqual({ notify_replies: false });
+            // 未読は残るが、オフのスレッドはバッジに数えない（未読のメンションがないため）
+            await waitFor(() => expect(within(threadsRow()).queryByLabelText(/未読/)).not.toBeInTheDocument());
+          });
+
+          it("参加していないスレッドは「新しい返信の通知を受け取る」で参加し、一覧を取り直す", async () => {
+            // 参加するまでは一覧に出ない。参加した後の取り直しで加わる
+            let following = false;
+            let listsAfterFollow = 0;
+            const { api } = await connected({
+              ...openRoom(design, [message(1), root, message(3)]),
+              "GET /api/v1/workspaces/ws-1/threads?limit=200": () => {
+                if (following) listsAfterFollow++;
+                return json(200, { threads: following ? [followed(0)] : [], next_cursor: null });
+              },
+              "PUT /api/v1/rooms/r-design/threads/m-2/me/notifications": () => {
+                following = true;
+                return json(200, { notify_replies: true, last_read_thread_seq: 2 });
+              },
+            });
+
+            const article = history().getAllByRole("article")[1]!;
+            await userEvent.click(within(article).getByRole("button", { name: "その他の操作", hidden: true }));
+            await userEvent.click(screen.getByRole("button", { name: "新しい返信の通知を受け取る" }));
+
+            await waitFor(() => expect(listsAfterFollow).toBeGreaterThan(0));
+            expect(api.calls.some((c) => c.method === "PUT" && JSON.parse(c.init.body as string).notify_replies === true)).toBe(true);
+          });
+
+          it("スレッドの一覧の行の「その他」からも切り替えられる", async () => {
+            nav.params = { workspaceId: "ws-1" };
+            nav.pathname = "/w/ws-1/threads";
+            let sent: unknown;
+            renderWithChat(
+              <WorkspaceScreen />,
+              routes({
+                "GET /api/v1/workspaces/ws-1/threads?limit=200": () =>
+                  json(200, { threads: [{ ...followed(1), notify_replies: false }], next_cursor: null }),
+                "PUT /api/v1/rooms/r-design/threads/m-2/me/notifications": (_url, init) => {
+                  sent = JSON.parse(init.body as string);
+                  return json(200, { notify_replies: true, last_read_thread_seq: 1 });
+                },
+              }),
+            );
+
+            const list = within(await screen.findByRole("list", { name: "参加しているスレッド" }));
+            const row = list.getByRole("listitem");
+            expect(within(row).getByRole("img", { name: "返信の通知はオフ" })).toBeInTheDocument();
+            await userEvent.click(within(row).getByRole("button", { name: "その他の操作" }));
+            await userEvent.click(screen.getByRole("button", { name: "新しい返信の通知を受け取る" }));
+
+            expect(sent).toEqual({ notify_replies: true });
+            await waitFor(() => expect(within(row).queryByRole("img", { name: "返信の通知はオフ" })).not.toBeInTheDocument());
+          });
+        });
+
+        it("lists the followed threads and links each to its room with the panel open", async () => {
+          nav.params = { workspaceId: "ws-1" };
+          nav.pathname = "/w/ws-1/threads";
+          renderWithChat(
+            <WorkspaceScreen />,
+            routes({
+              "GET /api/v1/workspaces/ws-1/threads?limit=200": () => json(200, { threads: [followed(1)], next_cursor: null }),
+            }),
+          );
+
+          const list = await screen.findByRole("list", { name: "参加しているスレッド" });
+          const link = within(list).getByRole("link");
+          expect(link).toHaveAttribute("href", "/w/ws-1/r/r-design?t=m-2");
+          const row = within(list).getByRole("listitem");
+          expect(row).toHaveTextContent("親のメッセージ");
+          expect(within(row).getByLabelText("未読 1 件")).toBeInTheDocument();
+          expect(sidebar().getByRole("link", { name: /スレッド/ })).toHaveAttribute("aria-current", "page");
+          // 一覧を開いているときは、ルームへ移さない
+          expect(nav.router.replace).not.toHaveBeenCalled();
+        });
+      });
+
+      it("edits my own message in place", async () => {
+        const mine = message(3, { sender: naoki, body: "書き間違い" });
+        await connected({
+          ...openRoom(design, [message(1), message(2), mine]),
+          "PATCH /api/v1/rooms/r-design/messages/m-3": (_url, init) =>
+            json(200, { ...mine, room_id: "r-design", change_seq: 4, body: JSON.parse(init.body as string).body, edited_at: "2026-09-13T02:00:00Z" }),
+        });
+
+        const article = history().getAllByRole("article")[2]!;
+        // 他人のメッセージの「…」には「リンクをコピー」しかない（member なので編集も削除もできない。ADR 0012 / 0040）
+        const others = history().getAllByRole("article")[1]!;
+        await userEvent.click(within(others).getByRole("button", { name: "その他の操作" }));
+        expect(screen.getByRole("button", { name: "リンクをコピー" })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "メッセージを編集" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "メッセージを削除" })).not.toBeInTheDocument();
+        await userEvent.click(within(others).getByRole("button", { name: "その他の操作" }));
+
+        await userEvent.click(within(article).getByRole("button", { name: "その他の操作" }));
+        await userEvent.click(screen.getByRole("button", { name: "メッセージを編集" }));
+        const editor = screen.getByRole("textbox", { name: "メッセージを編集" });
+        await clearEditor(editor);
+        await typeInEditor(editor, "書き直し");
+        await userEvent.keyboard("{Enter}");
+
+        expect(await history().findByText("（編集済み）")).toBeInTheDocument();
+        expect(history().getByText(/書き直し/)).toBeInTheDocument();
+        expect(screen.queryByRole("textbox", { name: "メッセージを編集" })).not.toBeInTheDocument();
+      });
+
+      it("closes the message menu on an outside click, and moves it to another message in one click", async () => {
+        const mine = message(3, { sender: naoki, body: "自分のメッセージ" });
+        await connected(openRoom(design, [message(1), message(2), mine]));
+        const [, second, third] = history().getAllByRole("article");
+
+        await userEvent.click(within(third!).getByRole("button", { name: "その他の操作" }));
+        expect(screen.getByRole("dialog", { name: "メッセージの操作" })).toBeInTheDocument();
+
+        // 外（タイムラインの見出し）を押すと閉じる
+        await userEvent.click(screen.getByRole("heading", { level: 1 }));
+        expect(screen.queryByRole("dialog", { name: "メッセージの操作" })).not.toBeInTheDocument();
+
+        // 開いたまま別のメッセージの「…」を押すと、1 回でそちらのメニューに移る
+        await userEvent.click(within(third!).getByRole("button", { name: "その他の操作" }));
+        await userEvent.click(within(second!).getByRole("button", { name: "その他の操作" }));
+        const menus = screen.getAllByRole("dialog", { name: "メッセージの操作" });
+        expect(menus).toHaveLength(1);
+        expect(second).toContainElement(menus[0]!);
+      });
+
+      it("deletes a message after confirming", async () => {
+        const mine = message(3, { sender: naoki, body: "消すメッセージ" });
+        const { api } = await connected({
+          ...openRoom(design, [message(1), message(2), mine]),
+          "DELETE /api/v1/rooms/r-design/messages/m-3": () => new Response(null, { status: 204 }),
+          "GET /api/v1/rooms/r-design/messages?after_change_seq=3&limit=100": () =>
+            json(200, {
+              messages: api.paths().includes("DELETE /api/v1/rooms/r-design/messages/m-3")
+                ? [{ ...mine, room_id: "r-design", body: "", change_seq: 4, deleted_at: "2026-09-13T02:00:00Z" }]
+                : [],
+              has_more: false,
+              last_change_seq: api.paths().includes("DELETE /api/v1/rooms/r-design/messages/m-3") ? 4 : 3,
+            }),
+        });
+
+        await userEvent.click(within(history().getAllByRole("article")[2]!).getByRole("button", { name: "その他の操作" }));
+        await userEvent.click(screen.getByRole("button", { name: "メッセージを削除" }));
+        const dialog = screen.getByRole("dialog", { name: "メッセージを削除しますか？" });
+        expect(within(dialog).getByText("消すメッセージ")).toBeInTheDocument();
+        await userEvent.click(within(dialog).getByRole("button", { name: "削除する" }));
+
+        // 削除したメッセージは跡を残さずに消える（ADR 0038）
+        await waitFor(() => expect(history().queryByText("消すメッセージ")).not.toBeInTheDocument());
+        expect(history().getAllByRole("article")).toHaveLength(2);
+        expect(history().queryByText("このメッセージは削除されました")).not.toBeInTheDocument();
+        expect(screen.queryByRole("dialog", { name: "メッセージを削除しますか？" })).not.toBeInTheDocument();
+        // サイドバーの最後の 1 行は、ひとつ前のメッセージを取り直す
+        await waitFor(() => expect(api.paths().filter((p) => p === "GET /api/v1/rooms/r-design")).toHaveLength(2));
+      });
+
+      describe("メッセージへのリンク（ADR 0040）", () => {
+        /** jsdom には clipboard がないので、書き込み先だけ差し替える。 */
+        function stubClipboard() {
+          const writeText = vi.fn(async () => {});
+          Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+          return writeText;
+        }
+
+        // パーマリンクは ULID しか受けない（links.ts）ので、リンク先だけ ULID の ID にする。
+        // リンク先のルームはサイドバーになくてよい。カードの中身は、見る人の権限で API が返したものだけで決まる
+        const LINK_WS = "01J9ZQZQZQZQZQZQZQZQZQZQZA";
+        const LINK_ROOM = "01J9ZQZQZQZQZQZQZQZQZQZQZB";
+        const LINK_MSG = "01J9ZQZQZQZQZQZQZQZQZQZQZC";
+        const HIDDEN_ROOM = "01J9ZQZQZQZQZQZQZQZQZQZQZD";
+        const HIDDEN_MSG = "01J9ZQZQZQZQZQZQZQZQZQZQZE";
+
+        it("「リンクをコピー」で、そのメッセージを指す URL がクリップボードに入る", async () => {
+          const writeText = stubClipboard();
+          await connected();
+
+          await userEvent.click(within(history().getAllByRole("article")[1]!).getByRole("button", { name: "その他の操作" }));
+          await userEvent.click(screen.getByRole("button", { name: "リンクをコピー" }));
+
+          expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/w/ws-1/r/r-design?m=m-2`);
+          // コピーできたことは、同じ行の文言で知らせる（ADR 0040）
+          expect(await screen.findByRole("button", { name: "コピーしました" })).toBeInTheDocument();
+        });
+
+        it("スレッドの返信のリンクには、開く親の ID が付く", async () => {
+          const writeText = stubClipboard();
+          const reply = message(3, { thread_root_id: "m-1", thread_seq: 1, also_in_channel: true, body: "チャンネルにも流した返信" });
+          await connected(openRoom(design, [message(1), message(2), reply]));
+
+          await userEvent.click(within(history().getAllByRole("article")[2]!).getByRole("button", { name: "その他の操作" }));
+          await userEvent.click(screen.getByRole("button", { name: "リンクをコピー" }));
+
+          expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/w/ws-1/r/r-design?m=m-3&t=m-1`);
+        });
+
+        it("本文に貼ったリンクをカードにし、読めないリンクは中身を出さない", async () => {
+          const readable = `${window.location.origin}/w/${LINK_WS}/r/${LINK_ROOM}?m=${LINK_MSG}`;
+          const hidden = `${window.location.origin}/w/${LINK_WS}/r/${HIDDEN_ROOM}?m=${HIDDEN_MSG}`;
+          const { api } = await connected({
+            ...openRoom(design, [message(1), message(2, { body: `これです ${readable} と ${hidden}` }), message(3)]),
+            "POST /api/v1/messages/links": () =>
+              json(200, {
+                links: [
+                  {
+                    room_id: LINK_ROOM,
+                    message_id: LINK_MSG,
+                    status: "ok",
+                    workspace: { id: LINK_WS, name: "山と印刷" },
+                    room: { id: LINK_ROOM, kind: "public", name: "雑談", dm_peer: null },
+                    message: {
+                      id: LINK_MSG,
+                      seq: 7,
+                      sender: miyuki,
+                      body: "つなぎの議事録",
+                      thread_root_id: null,
+                      attachment_count: 0,
+                      created_at: "2026-09-13T01:30:00Z",
+                      edited_at: null,
+                      deleted_at: null,
+                    },
+                  },
+                  // 読めない・存在しない・削除済みは、すべて同じ unavailable（ADR 0040）
+                  { room_id: HIDDEN_ROOM, message_id: HIDDEN_MSG, status: "unavailable", workspace: null, room: null, message: null },
+                ],
+              }),
+          });
+
+          const card = await history().findByRole("article", { name: "高橋 みゆき のメッセージ" });
+          expect(within(card).getByText("つなぎの議事録")).toBeInTheDocument();
+          // 別のワークスペースなので、ルーム名にワークスペース名を添える
+          // カードの遷移先はアプリの中のパス（ADR 0042 で飛べるようにする先）
+          expect(within(card).getByRole("link", { name: "山と印刷 / 雑談" })).toHaveAttribute(
+            "href",
+            `/w/${LINK_WS}/r/${LINK_ROOM}?m=${LINK_MSG}`,
+          );
+          expect(history().getByText("このメッセージは表示できません")).toBeInTheDocument();
+          // 貼られた順に、1 回のリクエストでまとめて取る
+          expect(JSON.parse(api.calls.find((c) => c.path === "/api/v1/messages/links")!.init.body as string)).toEqual({
+            links: [
+              { room_id: LINK_ROOM, message_id: LINK_MSG },
+              { room_id: HIDDEN_ROOM, message_id: HIDDEN_MSG },
+            ],
+          });
+        });
+      });
+    });
+
+    describe("指定したメッセージへ飛ぶ（ADR 0042）", () => {
+      const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+
+      /** 前後のページ。seq が null なら「見つからなかった」（サーバーは最新のページを返す）。 */
+      function around(messages: ReturnType<typeof message>[], seq: number | null, threadRootId: string | null = null) {
+        return json(200, {
+          messages: messages.map((m) => ({ ...m, room_id: "r-design" })),
+          has_more: true,
+          has_more_after: false,
+          around: seq === null ? null : { seq, thread_root_id: threadRootId },
+          last_change_seq: 3,
+        });
+      }
+
+      it("リンクで開いたメッセージまで飛んで、そこを強調する", async () => {
+        nav.search = "m=m-2";
+        await connected({
+          "GET /api/v1/rooms/r-design/messages?limit=50&around_message_id=m-2": () => around([message(1), message(2)], 2),
+        });
+
+        await waitFor(() => expect(history().getAllByRole("article")).toHaveLength(2));
+        expect(history().getByText("本文 2").closest("article")).toHaveClass("bg-attention-subtle");
+        expect(screen.queryByText("そのメッセージは見つかりませんでした")).not.toBeInTheDocument();
+      });
+
+      it("見つからないリンクは、理由を言わずに 1 行知らせて閉じられる", async () => {
+        nav.search = "m=m-404";
+        await connected({
+          // ない・読めない・削除済みを区別しない（ADR 0040）。サーバーは最新のページを around: null で返す
+          "GET /api/v1/rooms/r-design/messages?limit=50&around_message_id=m-404": () =>
+            around([message(1), message(2), message(3)], null),
+        });
+
+        expect(await screen.findByText("そのメッセージは見つかりませんでした")).toBeInTheDocument();
+        // 知らせを出したうえで、最新のページはそのまま読める
+        expect(history().getByText("本文 3")).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole("button", { name: "知らせを閉じる" }));
+        expect(screen.queryByText("そのメッセージは見つかりませんでした")).not.toBeInTheDocument();
+      });
+
+      it("スレッドの返信へのリンクなら、パネルも開く", async () => {
+        nav.search = "m=m-3";
+        await connected({
+          "GET /api/v1/rooms/r-design/messages?limit=50&around_message_id=m-3": () =>
+            around([message(3, { thread_root_id: "m-1", thread_seq: 1 })], 3, "m-1"),
+        });
+
+        // 飛び先（?m=）は残したままスレッドを開く。パネルの中でも同じ返信に合わせるため
+        await waitFor(() => expect(nav.router.push).toHaveBeenCalledWith("/w/ws-1/r/r-design?m=m-3&t=m-1"));
+      });
+
+      it("未読が読み込んだページより古いときだけバーを出し、押すと最初の未読から読み直す", async () => {
+        const behind = room("r-design", "デザインレビュー", {
+          last_message_seq: 10,
+          last_read_seq: 2,
+          last_user_seq: 10,
+          last_read_user_seq: 2,
+          unread_count: 8,
+        });
+        await connected({
+          "GET /api/v1/rooms/r-design": () => json(200, { ...behind, member_count: 4 }),
+          "GET /api/v1/rooms/r-design/messages?limit=50": () =>
+            json(200, {
+              messages: [message(8), message(9), message(10)].map((m) => ({ ...m, room_id: "r-design" })),
+              has_more: true,
+              last_change_seq: 10,
+            }),
+          "GET /api/v1/rooms/r-design/messages?after_change_seq=10&limit=100": () =>
+            json(200, { messages: [], has_more: false, last_change_seq: 10 }),
+          "GET /api/v1/rooms/r-design/messages?limit=50&after_seq=2": () =>
+            json(200, {
+              messages: [message(3), message(4)].map((m) => ({ ...m, room_id: "r-design" })),
+              has_more: true,
+              has_more_after: false,
+              around: null,
+              last_change_seq: 10,
+            }),
+        });
+
+        expect(await screen.findByText("未読 8 件")).toBeInTheDocument();
+        await userEvent.click(screen.getByRole("button", { name: "最初の未読へ" }));
+
+        expect(await history().findByText("本文 3")).toBeInTheDocument();
+        expect(history().queryByText("本文 10")).not.toBeInTheDocument();
+      });
+
+      it("未読がページの中にあるなら、線だけでバーは出さない", async () => {
+        await connected();
+
+        expect(await history().findByText("ここから未読")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "最初の未読へ" })).not.toBeInTheDocument();
+      });
+    });
+
+    it("shows who is typing", async () => {
+      const { sockets } = await connected();
+
+      sockets.last().receive({ type: "typing.started", data: { workspace_id: "ws-1", room_id: "r-design", thread_root_id: null, user: miyuki } });
+
+      expect(await screen.findByText("高橋 みゆき が入力中")).toBeInTheDocument();
+    });
+
+    it("shows the reconnecting banner, then syncs and shows that it is restored", async () => {
+      const { sockets } = await connected();
+
+      sockets.last().serverClose(1001);
+      expect(await screen.findByText("接続が切れました。再接続しています…")).toBeInTheDocument();
+
+      await waitFor(() => expect(sockets.sockets).toHaveLength(2));
+      sockets.last().open();
+
+      expect(await screen.findByText("接続が復帰しました")).toBeInTheDocument();
+    });
+
+    it("開いているチャンネルが削除されたら、公開チャンネルでも「アクセスできません」にして一覧から消す（ADR 0059）", async () => {
+      const { sockets } = await connected(openRoom(design));
+
+      sockets.last().receive({ type: "room.deleted", data: { workspace_id: "ws-1", room_id: "r-design" } });
+
+      expect(await screen.findByRole("heading", { name: "このチャンネルにはアクセスできません" })).toBeInTheDocument();
+      expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
+      expect(sidebar().queryByRole("link", { name: /デザインレビュー/ })).not.toBeInTheDocument();
+    });
+
+    it("ほかの人がアーカイブしたら、入力欄が帯に替わる（ADR 0059）", async () => {
+      const { sockets } = await connected(openRoom(design));
+      expect(screen.getByRole("button", { name: "送信" })).toBeInTheDocument();
+
+      sockets.last().receive({
+        type: "room.updated",
+        data: { workspace_id: "ws-1", room_id: "r-design", name: "デザインレビュー", is_default: false, archived_at: "2026-09-23T01:00:00Z" },
+      });
+
+      expect(await screen.findByText("アーカイブされたチャンネルです。投稿やリアクションはできません。")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "送信" })).not.toBeInTheDocument();
+    });
+
+    it("shows only that the channel cannot be accessed when removed from a private channel, without its name", async () => {
+      const secret = { ...design, kind: "private" as const };
+      rememberLocation("ws-1", "r-design");
+      const { sockets } = await connected({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [secret, chat, dm] }),
+        ...openRoom(secret),
+        "GET /api/v1/rooms/r-design/members?limit=200": () => json(200, { members: [roomMember(naoki)], next_cursor: null }),
+      });
+      await userEvent.click(screen.getByRole("button", { name: "メンバー" }));
+      expect(await screen.findByRole("complementary", { name: "メンバー" })).toBeInTheDocument();
+
+      sockets.last().receive({
+        type: "room.member_removed",
+        data: { workspace_id: "ws-1", room_id: "r-design", reason: "removed" },
+      });
+
+      expect(await screen.findByRole("heading", { name: "このチャンネルにはアクセスできません" })).toBeInTheDocument();
+      expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
+      // 名前はヘッダーにもサイドバーにも出さず、「外された」とも言わない。メンバーのパネルも閉じる（ADR 0035）
+      expect(screen.queryByText(/デザインレビュー/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/外され/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("complementary", { name: "メンバー" })).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "チャンネル一覧に戻る" }));
+      expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1");
+      expect(lastRoomId("ws-1")).toBeUndefined();
+    });
+
+    it("keeps a public channel readable after leaving it elsewhere", async () => {
+      const { sockets } = await connected();
+
+      sockets.last().receive({
+        type: "room.member_removed",
+        data: { workspace_id: "ws-1", room_id: "r-design", reason: "left" },
+      });
+
+      expect(await screen.findByRole("button", { name: "参加する" })).toBeInTheDocument();
+      expect(screen.getByRole("list", { name: "メッセージ" })).toBeInTheDocument();
+    });
+
+    it("shows a notice when kicked from the workspace and moves on", async () => {
+      rememberLocation("ws-1", "r-design");
+      const { sockets } = await connected();
+      expect(screen.getByRole("button", { name: "チャンネルの設定" })).toBeInTheDocument();
+
+      sockets.last().receive({
+        type: "workspace.member_removed",
+        data: { workspace_id: "ws-1", user_id: naoki.id, reason: "removed" },
+      });
+
+      expect(await screen.findByRole("heading", { name: "ワークスペースから削除されました" })).toBeInTheDocument();
+      expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
+      // ヘッダーは名前とメンバーだけを残し、もう開けない設定の入口は出さない（chat/workspace/removed-from-workspace.png）
+      expect(screen.queryByRole("button", { name: "チャンネルの設定" })).not.toBeInTheDocument();
+      expect(nav.router.replace).not.toHaveBeenCalledWith("/");
+
+      await userEvent.click(screen.getByRole("button", { name: "別のワークスペースに移動" }));
+      expect(nav.router.replace).toHaveBeenCalledWith("/");
+      expect(lastWorkspaceId()).toBeUndefined();
+    });
+  });
+
+  describe("attachments and avatars", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+    const expiresAt = "2026-09-17T01:00:00Z";
+
+    it("uploads the chosen file straight to storage and sends it with the message", async () => {
+      const puts: string[] = [];
+      let finishPut!: () => void;
+      const sent: unknown[] = [];
+      const pdf = { id: "att-1", file_name: "scale.pdf", content_type: "application/pdf", size_bytes: 3, width: null, height: null };
+      const { container } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "POST /api/v1/rooms/r-design/attachments": () =>
+            json(201, {
+              attachment: { ...pdf, room_id: "r-design", status: "pending", created_at: "2026-09-17T00:00:00Z" },
+              upload: { method: "PUT", url: "https://storage.test/att-1?sig=x", headers: { "Content-Type": "application/pdf" } },
+            }),
+          "POST /api/v1/attachments/att-1/complete": () =>
+            json(200, { ...pdf, room_id: "r-design", status: "uploaded", created_at: "2026-09-17T00:00:00Z" }),
+          "POST /api/v1/rooms/r-design/messages": (_url, init) => {
+            const req = JSON.parse(init.body as string);
+            sent.push(req);
+            return json(201, message(4, { room_id: "r-design", change_seq: 4, sender: naoki, client_msg_id: req.client_msg_id, body: "", attachments: [pdf] }));
+          },
+        }),
+        {
+          upload: {
+            putFile: (url, _headers, _file, { onProgress }) =>
+              new Promise((resolve) => {
+                puts.push(url);
+                onProgress(0.5);
+                finishPut = resolve;
+              }),
+          },
+        },
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      await userEvent.upload(
+        container.querySelector<HTMLInputElement>('input[type="file"]')!,
+        new File(["pdf"], "scale.pdf", { type: "application/pdf" }),
+      );
+
+      expect(await screen.findByRole("progressbar", { name: "scale.pdf をアップロード中" })).toHaveAttribute("aria-valuenow", "50");
+      expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
+      expect(puts).toEqual(["https://storage.test/att-1?sig=x"]);
+
+      finishPut();
+      expect(await screen.findByRole("img", { name: "アップロード済み" })).toBeInTheDocument();
+      // 添付があれば本文は空でも送れる
+      await userEvent.click(screen.getByRole("button", { name: "送信" }));
+
+      expect(screen.queryByRole("img", { name: "アップロード済み" })).not.toBeInTheDocument();
+      await waitFor(() => expect(sent).toEqual([expect.objectContaining({ body: "", attachment_ids: ["att-1"] })]));
+      expect(await history().findByText("scale.pdf")).toBeInTheDocument();
+    });
+
+    it("shows images and avatars once their urls are loaded, and downloads files with a fresh url", async () => {
+      const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+      const withFiles = [
+        message(1, { attachments: [{ id: "img-1", file_name: "mock.png", content_type: "image/png", size_bytes: 10, width: 260, height: 160 }] }),
+        message(2, { attachments: [{ id: "file-1", file_name: "scale.pdf", content_type: "application/pdf", size_bytes: 10, width: null, height: null }] }),
+      ];
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, withFiles),
+          "POST /api/v1/users/avatars": () =>
+            json(200, { avatars: { [naoki.id]: { url: "https://storage.test/avatars/naoki", expires_at: expiresAt } } }),
+          "GET /api/v1/attachments/img-1/url": () => json(200, { url: "https://storage.test/img-1", expires_at: expiresAt }),
+          "GET /api/v1/attachments/file-1/url": () => json(200, { url: "https://storage.test/file-1", expires_at: expiresAt }),
+        }),
+      );
+
+      expect(await screen.findByRole("img", { name: "mock.png" })).toHaveAttribute("src", "https://storage.test/img-1");
+      // DM の相手（佐藤 直樹）のアバターが画像になる
+      await waitFor(() =>
+        expect(
+          sidebar()
+            .getByRole("link", { name: /佐藤 直樹/ })
+            .querySelector("img"),
+        ).toHaveAttribute("src", "https://storage.test/avatars/naoki"),
+      );
+
+      await userEvent.click(history().getByRole("button", { name: "ダウンロード" }));
+      await waitFor(() => expect(click).toHaveBeenCalledOnce());
+      expect((click.mock.contexts[0] as HTMLAnchorElement).href).toBe("https://storage.test/file-1");
+    });
+  });
+  // 絵文字のリアクション（ADR 0044）。ピッカー（emoji-mart）は外のライブラリなのでテストで描かない。
+  describe("絵文字のリアクション（ADR 0044）", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    /** m-2 に 👍 が 1 件（自分は付けていない）付いた状態のタイムライン。 */
+    const reacted = [
+      message(1),
+      message(2, { reactions: [{ emoji: "👍", count: 1, me: false, users: [miyuki.id] }] }),
+      message(3),
+    ];
+    const thumbsUp = "/api/v1/rooms/r-design/messages/m-2/reactions/%F0%9F%91%8D";
+
+    const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+
+    function chip() {
+      return history().getByRole("button", { name: /を付けました$/ });
+    }
+
+    it("チップを押すと、応答を待たずに数が増えて PUT が飛ぶ", async () => {
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, reacted),
+          [`PUT ${thumbsUp}`]: () =>
+            json(200, {
+              ...message(2, { room_id: "r-design", change_seq: 4 }),
+              reactions: [{ emoji: "👍", count: 2, me: true, users: [miyuki.id, naoki.id] }],
+            }),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      expect(chip()).toHaveAttribute("aria-pressed", "false");
+      await userEvent.click(chip());
+
+      // 手元で先に反映してから送る（ADR 0044 決定 8）
+      expect(chip()).toHaveAttribute("aria-pressed", "true");
+      expect(chip()).toHaveAccessibleName("高橋 みゆき、あなたが 👍 を付けました");
+      await waitFor(() => expect(api.paths()).toContain(`PUT ${thumbsUp}`));
+    });
+
+    it("自分が付けているチップを押すと外れ、DELETE が飛ぶ", async () => {
+      const mine = [
+        message(1),
+        message(2, { reactions: [{ emoji: "👍", count: 1, me: true, users: [naoki.id] }] }),
+        message(3),
+      ];
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, mine),
+          [`DELETE ${thumbsUp}`]: () => json(200, message(2, { room_id: "r-design", change_seq: 4 })),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      await userEvent.click(chip());
+
+      await waitFor(() => expect(api.paths()).toContain(`DELETE ${thumbsUp}`));
+      expect(history().queryByRole("button", { name: /を付けました$/ })).not.toBeInTheDocument();
+    });
+
+    it("届いた message.updated で数が増え、自分が付けたことは消えない", async () => {
+      const mine = [
+        message(1),
+        message(2, { reactions: [{ emoji: "👍", count: 1, me: true, users: [naoki.id] }] }),
+        message(3),
+      ];
+      const { sockets } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, mine),
+          "GET /api/v1/rooms/r-design/messages?after_change_seq=3&limit=100": () =>
+            json(200, { messages: [], has_more: false, last_change_seq: 3 }),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+      await waitFor(() => expect(sockets.sockets).toHaveLength(1));
+      sockets.last().open();
+
+      // 配信には me が載らない（受け取る人ごとの値を入れられない。ADR 0044）
+      sockets.last().receive({
+        type: "message.updated",
+        data: {
+          ...message(2, { room_id: "r-design", change_seq: 4 }),
+          reactions: [{ emoji: "👍", count: 2, users: [naoki.id, miyuki.id] }],
+        },
+      });
+
+      await waitFor(() => expect(chip()).toHaveAccessibleName("あなた、高橋 みゆきが 👍 を付けました"));
+      expect(chip()).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("参加していない public ルームでは、付け外しできない", async () => {
+      const guest = room("r-guest", "見学", { is_member: false, last_read_seq: null, last_read_user_seq: null });
+      nav.params = { workspaceId: "ws-1", roomId: "r-guest" };
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(guest, reacted) }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      // 読めるので付いているリアクションは見えるが、「＋」は出ない（ADR 0044 決定 6）
+      expect(chip()).toBeInTheDocument();
+      expect(history().queryByRole("button", { name: "リアクションを追加", hidden: true })).not.toBeInTheDocument();
+    });
+  });
+  // 添付ファイルの拡大表示と削除（ADR 0045）。
+  describe("ピン留め（ADR 0054）", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    const pin = { by: { id: miyuki.id, handle: "miyuki", display_name: "高橋 みゆき" }, at: "2026-09-22T01:00:00Z" };
+    const pinned = [message(1), message(2, { pinned: pin }), message(3)];
+    const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+
+    it("ピン留めされたメッセージに印を出し、「ピン」のタブで一覧をタイムラインの代わりに出す", async () => {
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(design, pinned)));
+      await screen.findByRole("list", { name: "メッセージ" });
+      expect(history().getByText("高橋 みゆき がピン留めしました")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("tab", { name: "ピン" }));
+
+      const cards = within(await screen.findByRole("list", { name: "ピン留めしたメッセージ" }));
+      expect(cards.getByRole("link", { name: /のメッセージへ移動/ })).toHaveAttribute("href", "/w/ws-1/r/r-design?m=m-2");
+      // タイムラインと入力欄は出さない（Slack と同じ）
+      expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("textbox", { name: /メッセージ/ })).not.toBeInTheDocument();
+
+      // カードを押すと「メッセージ」に戻る
+      await userEvent.click(cards.getByRole("link", { name: /のメッセージへ移動/ }));
+      expect(screen.getByRole("tab", { name: "メッセージ" })).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("「…」の「チャンネルへピン留めする」で PUT が飛び、印が付く", async () => {
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "PUT /api/v1/rooms/r-design/messages/m-3/pin": () =>
+            json(200, message(3, { room_id: "r-design", change_seq: 4, pinned: { ...pin, by: naoki } })),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      const row = history().getAllByRole("article").at(-1)!;
+      await userEvent.click(within(row).getByRole("button", { name: "その他の操作" }));
+      await userEvent.click(screen.getByRole("button", { name: "チャンネルへピン留めする" }));
+
+      await waitFor(() => expect(api.paths()).toContain("PUT /api/v1/rooms/r-design/messages/m-3/pin"));
+      expect(await history().findByText("佐藤 直樹 がピン留めしました")).toBeInTheDocument();
+    });
+
+    it("「ピン」のタブからピンを外すと DELETE が飛び、一覧と印から消える", async () => {
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, pinned),
+          "DELETE /api/v1/rooms/r-design/messages/m-2/pin": () =>
+            json(200, message(2, { room_id: "r-design", change_seq: 4, pinned: null })),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+      await userEvent.click(screen.getByRole("tab", { name: "ピン" }));
+
+      await userEvent.click(await screen.findByRole("button", { name: "ピンを外す" }));
+
+      await waitFor(() => expect(api.paths()).toContain("DELETE /api/v1/rooms/r-design/messages/m-2/pin"));
+      expect(await screen.findByText("ピン留めしたメッセージはありません")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("tab", { name: "メッセージ" }));
+      expect(history().queryByText("高橋 みゆき がピン留めしました")).not.toBeInTheDocument();
+    });
+
+    it("参加していない public ルームでは、ピン留めの操作を出さない", async () => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-chat" };
+      const notJoined = { ...chat, is_member: false };
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [design, notJoined, dm], unread_thread_count: 0 }),
+          ...openRoom(notJoined, pinned),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+      await userEvent.click(screen.getByRole("tab", { name: "ピン" }));
+
+      await screen.findByRole("list", { name: "ピン留めしたメッセージ" });
+      expect(screen.queryByRole("button", { name: "ピンを外す" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("ミュートと通知の設定（ADR 0055）", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    it("ヘッダーの「通知」でミュートすると、全部の値を PUT し、サイドバーの行が薄くなる", async () => {
+      let sent: unknown;
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "PUT /api/v1/rooms/r-design/me/notifications": (_url, init) => {
+            sent = JSON.parse(init.body as string);
+            return json(200, { level: null, muted: true, muted_until: null });
+          },
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      await userEvent.click(screen.getByRole("button", { name: "通知" }));
+      // 「全体の設定に従う」の補足は、そのワークスペースの値
+      expect(await screen.findByText("いまは「メンションと DM」")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "チャンネルをミュートする" }));
+
+      expect(sent).toEqual({ level: null, muted: true, muted_until: null });
+      expect(await screen.findByRole("button", { name: "通知（ミュート中）" })).toBeInTheDocument();
+      // 未読があっても太字にしない（名前に「（ミュート中）」を添える）
+      expect(sidebar().getByRole("link", { name: /デザインレビュー（ミュート中）/ })).toBeInTheDocument();
+    });
+
+    it("「1 時間」は 1 時間後の期限を送る", async () => {
+      let sent: { muted_until: string } | undefined;
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "PUT /api/v1/rooms/r-design/me/notifications": (_url, init) => {
+            sent = JSON.parse(init.body as string);
+            return json(200, sent);
+          },
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+      const before = Date.now();
+
+      await userEvent.click(screen.getByRole("button", { name: "通知" }));
+      await userEvent.click(screen.getByRole("button", { name: "1 時間" }));
+
+      await waitFor(() => expect(sent).toBeDefined());
+      const until = Date.parse(sent!.muted_until);
+      expect(until - before).toBeGreaterThanOrEqual(60 * 60 * 1000);
+      expect(until - Date.now()).toBeLessThanOrEqual(60 * 60 * 1000);
+      await userEvent.click(await screen.findByRole("button", { name: "通知（ミュート中）" }));
+      expect(screen.getByText(/まで.*ミュート中|いっぱいミュート中/)).toBeInTheDocument();
+    });
+
+    it("参加していない public ルームには「通知」を出さない（設定を持てない）", async () => {
+      const notJoined = { ...design, is_member: false, last_read_seq: null, last_read_user_seq: null, notifications: null };
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(notJoined),
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [notJoined, chat, dm], unread_thread_count: 0 }),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      expect(screen.queryByRole("button", { name: /^通知/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("デスクトップ通知の帯（ADR 0057）", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("許可がまだなら帯を出し、押したら許可を求める。「今はしない」で閉じる", async () => {
+      const requestPermission = vi.fn(async () => "granted");
+      vi.stubGlobal("Notification", Object.assign(vi.fn(), { permission: "default", requestPermission }));
+      renderWithChat(<WorkspaceScreen />, routes());
+
+      const banner = await screen.findByRole("region", { name: "デスクトップ通知" });
+      await userEvent.click(within(banner).getByRole("button", { name: "有効にする" }));
+      expect(requestPermission).toHaveBeenCalledOnce();
+
+      await userEvent.click(within(banner).getByRole("button", { name: "今はしない" }));
+      expect(screen.queryByRole("region", { name: "デスクトップ通知" })).not.toBeInTheDocument();
+    });
+
+    it("許可が決まっていれば（拒否も）帯を出さない", async () => {
+      vi.stubGlobal("Notification", Object.assign(vi.fn(), { permission: "denied", requestPermission: vi.fn() }));
+      renderWithChat(<WorkspaceScreen />, routes());
+
+      await screen.findByRole("navigation", { name: "チャンネル" });
+      expect(screen.queryByRole("region", { name: "デスクトップ通知" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("「後で」（ADR 0054）", () => {
+    const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+    const savedList = (items: ReturnType<typeof savedItem>[], count = items.length) =>
+      json(200, { items, in_progress_count: count, last_change_seq: 3, has_more: false });
+
+    it("メッセージのホバーの「後で」で PUT が飛び、保存済みになる", async () => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "PUT /api/v1/rooms/r-design/messages/m-3/saved": () =>
+            json(200, savedItem(3, { room_id: "r-design", change_seq: 1, message: message(3, { room_id: "r-design", saved: true }) })),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      const row = history().getAllByRole("article").at(-1)!;
+      await userEvent.click(within(row).getByRole("button", { name: "「後で」に保存" }));
+
+      expect(within(row).getByRole("button", { name: "「後で」から外す" })).toHaveAttribute("aria-pressed", "true");
+      await waitFor(() => expect(api.paths()).toContain("PUT /api/v1/rooms/r-design/messages/m-3/saved"));
+    });
+
+    it("左のメニューの「後で」で一覧をサイドバーの列に出し、完了にすると完了済みへ移る（ADR 0058）", async () => {
+      nav.search = "side=later";
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/saved?state=in_progress&limit=50": () => savedList([savedItem(2), savedItem(1)]),
+          // 完了にした後に開くので、サーバーはその 1 件を返す
+          "GET /api/v1/workspaces/ws-1/saved?state=completed&limit=50": () =>
+            savedList([savedItem(2, { state: "completed", change_seq: 4 })], 1),
+          "PATCH /api/v1/workspaces/ws-1/saved/m-2": () => json(200, savedItem(2, { state: "completed", change_seq: 4 })),
+        }),
+      );
+
+      const list = await screen.findByRole("list", { name: "進行中" });
+      expect(rail().getByRole("link", { name: "後で" })).toHaveAttribute("aria-current", "page");
+      // ホームのサイドバーからは「後で」の行がなくなった
+      expect(screen.queryByRole("navigation", { name: "チャンネル" })).not.toBeInTheDocument();
+      expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+      expect(screen.getByRole("tab", { name: "進行中2" })).toHaveAttribute("aria-selected", "true");
+
+      await userEvent.click(within(list).getAllByRole("button", { name: "完了にする" })[0]);
+      await waitFor(() => expect(api.paths()).toContain("PATCH /api/v1/workspaces/ws-1/saved/m-2"));
+      expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+      expect(screen.getByRole("tab", { name: "進行中1" })).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("tab", { name: "完了済み" }));
+      const completed = await screen.findByRole("list", { name: "完了済み" });
+      // 押してルームを開いても、サイドバーは「後で」のまま（?side= を残す）
+      expect(within(completed).getByRole("link", { name: /のメッセージへ移動/ })).toHaveAttribute(
+        "href",
+        "/w/ws-1/r/room-1?m=m-2&side=later",
+      );
+    });
+
+    it("読めない行を押すと確かめてから外す", async () => {
+      nav.search = "side=later";
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/saved?state=in_progress&limit=50": () =>
+            savedList([savedItem(2, { status: "unavailable", room: null, message: null })]),
+          "DELETE /api/v1/workspaces/ws-1/saved/m-2": () => new Response(null, { status: 204 }),
+        }),
+      );
+
+      await userEvent.click(await screen.findByRole("button", { name: "このメッセージは表示できません" }));
+      const dialog = screen.getByRole("dialog", { name: "「後で」から外しますか？" });
+      await userEvent.click(within(dialog).getByRole("button", { name: "外す" }));
+
+      await waitFor(() => expect(api.paths()).toContain("DELETE /api/v1/workspaces/ws-1/saved/m-2"));
+      expect(await screen.findByText("「後で」に保存したメッセージはありません")).toBeInTheDocument();
+    });
+  });
+
+  describe("添付ファイルの拡大表示と削除（ADR 0045）", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+    const expiresAt = "2026-09-17T01:00:00Z";
+    const image = (n: number) => ({
+      id: `img-${n}`,
+      file_name: `0${n}.png`,
+      content_type: "image/png",
+      size_bytes: 10,
+      width: 260,
+      height: 160,
+    });
+    const pdf = { id: "file-1", file_name: "scale.pdf", content_type: "application/pdf", size_bytes: 10, width: null, height: null };
+
+    /** 自分（佐藤 直樹）が画像 2 枚とファイル 1 件を付けたメッセージ。 */
+    const withFiles = [
+      message(1),
+      message(2, { sender: naoki, attachments: [image(1), image(2), pdf] }),
+      message(3),
+    ];
+
+    function attachmentRoutes(overrides: Record<string, Handler> = {}) {
+      return routes({
+        ...openRoom(design, withFiles),
+        "GET /api/v1/attachments/img-1/url": () => json(200, { url: "https://storage.test/img-1", expires_at: expiresAt }),
+        "GET /api/v1/attachments/img-2/url": () => json(200, { url: "https://storage.test/img-2", expires_at: expiresAt }),
+        "GET /api/v1/attachments/file-1/url": () => json(200, { url: "https://storage.test/file-1", expires_at: expiresAt }),
+        ...overrides,
+      });
+    }
+
+    /** 拡大表示を開く。画像の URL が届くまで待ってから押す（送信中の添付は押せない）。 */
+    async function openViewer(name = "01.png") {
+      await screen.findByRole("img", { name });
+      await userEvent.click(history().getByRole("button", { name: `${name} を拡大表示` }));
+      return screen.getByRole("dialog", { name: /の拡大表示/ });
+    }
+
+    it("画像を押すと拡大表示が開き、矢印とキーボードで同じメッセージの画像を送れる", async () => {
+      renderWithChat(<WorkspaceScreen />, attachmentRoutes());
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      const viewer = await openViewer();
+      expect(within(viewer).getByText("1 / 2")).toBeInTheDocument();
+      expect(within(viewer).getByRole("img", { name: "01.png" })).toHaveAttribute("src", "https://storage.test/img-1");
+      // 端では矢印を出さない（巻き戻さない）
+      expect(within(viewer).queryByRole("button", { name: "前の画像" })).not.toBeInTheDocument();
+
+      await userEvent.click(within(viewer).getByRole("button", { name: "次の画像" }));
+      expect(within(viewer).getByText("2 / 2")).toBeInTheDocument();
+      expect(within(viewer).getByRole("img", { name: "02.png" })).toHaveAttribute("src", "https://storage.test/img-2");
+      expect(within(viewer).queryByRole("button", { name: "次の画像" })).not.toBeInTheDocument();
+
+      await userEvent.keyboard("{ArrowLeft}");
+      expect(within(viewer).getByText("1 / 2")).toBeInTheDocument();
+
+      // 閉じると、押した画像にフォーカスが戻る
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /の拡大表示/ })).not.toBeInTheDocument());
+      expect(history().getByRole("button", { name: "01.png を拡大表示" })).toHaveFocus();
+    });
+
+    it("拡大表示から添付だけを削除し、次の画像に送る", async () => {
+      const deletes: string[] = [];
+      renderWithChat(
+        <WorkspaceScreen />,
+        attachmentRoutes({
+          "DELETE /api/v1/rooms/r-design/messages/m-2/attachments/img-1": () => {
+            deletes.push("img-1");
+            return json(200, { ...withFiles[1], room_id: "r-design", change_seq: 4, attachments: [image(2), pdf] });
+          },
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+      const viewer = await openViewer();
+
+      await userEvent.click(within(viewer).getByRole("button", { name: "ファイルを削除" }));
+      // 取り消せないので、消す前に確認する。本文が残るので「ファイルだけ」の文言
+      const dialog = await screen.findByRole("dialog", { name: "ファイルを削除しますか？" });
+      expect(dialog).toHaveAccessibleDescription(/このファイルだけを削除します/);
+      await userEvent.click(within(dialog).getByRole("button", { name: "削除する" }));
+
+      await waitFor(() => expect(deletes).toEqual(["img-1"]));
+      // 消した画像は消え、拡大表示は残った画像に送られる
+      const after = await screen.findByRole("dialog", { name: /の拡大表示/ });
+      expect(within(after).getByRole("img", { name: "02.png" })).toBeInTheDocument();
+      expect(within(after).queryByText("1 / 2")).not.toBeInTheDocument();
+      await waitFor(() => expect(history().queryByRole("img", { name: "01.png" })).not.toBeInTheDocument());
+    });
+
+    it("画像でない添付は行の「…」から消す", async () => {
+      const deletes: string[] = [];
+      renderWithChat(
+        <WorkspaceScreen />,
+        attachmentRoutes({
+          "DELETE /api/v1/rooms/r-design/messages/m-2/attachments/file-1": () => {
+            deletes.push("file-1");
+            return json(200, { ...withFiles[1], room_id: "r-design", change_seq: 4, attachments: [image(1), image(2)] });
+          },
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      await userEvent.click(await history().findByRole("button", { name: "ファイルの操作" }));
+      await userEvent.click(history().getByRole("button", { name: "ファイルを削除" }));
+      const dialog = await screen.findByRole("dialog", { name: "ファイルを削除しますか？" });
+      expect(within(dialog).getByText("scale.pdf")).toBeInTheDocument();
+      await userEvent.click(within(dialog).getByRole("button", { name: "削除する" }));
+
+      await waitFor(() => expect(deletes).toEqual(["file-1"]));
+      await waitFor(() => expect(history().queryByText("scale.pdf")).not.toBeInTheDocument());
+    });
+
+    it("消せない人には、削除の導線を出さない（ADR 0012 と同じ判定）", async () => {
+      // 高橋 みゆき（member）のメッセージ。自分は owner ではないので消せない
+      const others = [message(1), message(2, { sender: miyuki, attachments: [image(1), pdf] }), message(3)];
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, others),
+          "GET /api/v1/rooms/r-design/members?limit=200": () =>
+            json(200, { members: [roomMember(naoki, { role: "member" }), roomMember(miyuki, { role: "member" })], next_cursor: null }),
+          "GET /api/v1/attachments/img-1/url": () => json(200, { url: "https://storage.test/img-1", expires_at: expiresAt }),
+          "GET /api/v1/attachments/file-1/url": () => json(200, { url: "https://storage.test/file-1", expires_at: expiresAt }),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      const viewer = await openViewer();
+      expect(within(viewer).queryByRole("button", { name: "ファイルを削除" })).not.toBeInTheDocument();
+      // ダウンロードと閉じるは、読める人なら誰でも使える
+      expect(within(viewer).getByRole("button", { name: "ダウンロード" })).toBeInTheDocument();
+      await userEvent.keyboard("{Escape}");
+
+      expect(history().queryByRole("button", { name: "ファイルの操作" })).not.toBeInTheDocument();
+    });
+  });
+
+  // プロフィール（ADR 0050）。md 以上はホバーでカード、押すと右のパネル（?p=）
+  describe("プロフィール（ADR 0050）", () => {
+    const gone = { id: "01J8ZK3X5R8Q2W4E6T8Y0U2I6C", handle: "gone", display_name: "退会 太郎" };
+    const profilePanel = () => within(screen.getByRole("complementary", { name: "プロフィール" }));
+    const openedPanel = async () => within(await screen.findByRole("complementary", { name: "プロフィール" }));
+    const profileOf = (user: typeof naoki, email: string | null, overrides = {}) => () =>
+      json(200, { ...member(user, overrides), email });
+
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+      // 画面が URL を変えたら、次の描画で useSearchParams がその値を返すようにする
+      const follow = (url: string) => {
+        nav.search = new URL(url, "http://app.test").search.slice(1);
+      };
+      nav.router.push.mockImplementation(follow);
+      nav.router.replace.mockImplementation(follow);
+    });
+
+    it("opens the panel from a sender's avatar and name", async () => {
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(design, [message(1, { sender: naoki })])));
+      const history = within(await screen.findByRole("list", { name: "メッセージ" }));
+
+      await userEvent.click(history.getByRole("button", { name: "佐藤 直樹 のプロフィール" }));
+      expect(nav.router.push).toHaveBeenLastCalledWith(`/w/ws-1/r/r-design?p=${naoki.id}`);
+    });
+
+    it("shows the member from the list and the verified email from the profile API", async () => {
+      nav.search = `p=${miyuki.id}`;
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          [`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`]: profileOf(miyuki, "miyuki@example.com"),
+        }),
+      );
+
+      expect(await (await openedPanel()).findByText("miyuki@example.com")).toBeInTheDocument();
+      expect(profilePanel().getByText("高橋 みゆき")).toBeInTheDocument();
+      expect(profilePanel().getByText("メンバー")).toBeInTheDocument();
+      expect(api.paths().filter((p) => p.endsWith(`/members/${miyuki.id}`))).toHaveLength(1);
+
+      await userEvent.click(profilePanel().getByRole("button", { name: "プロフィールを閉じる" }));
+      expect(nav.router.replace).toHaveBeenLastCalledWith("/w/ws-1/r/r-design");
+    });
+
+    it("shows no contact section when the email is unverified", async () => {
+      nav.search = `p=${miyuki.id}`;
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(design), [`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`]: profileOf(miyuki, null) }),
+      );
+
+      await waitFor(() => expect(api.paths()).toContain(`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`));
+      await openedPanel();
+      await waitFor(() => expect(profilePanel().queryByRole("status", { name: "メールアドレスを読み込み中" })).not.toBeInTheDocument());
+      expect(profilePanel().queryByRole("region", { name: "連絡先" })).not.toBeInTheDocument();
+      expect(profilePanel().getByText("高橋 みゆき")).toBeInTheDocument();
+    });
+
+    it("opens the DM once even when 'DM を送る' is pressed twice", async () => {
+      nav.search = `p=${miyuki.id}`;
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          [`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`]: profileOf(miyuki, null),
+          "POST /api/v1/workspaces/ws-1/rooms": () => json(200, dm),
+        }),
+      );
+      const button = await (await openedPanel()).findByRole("button", { name: "DM を送る" });
+
+      button.click();
+      button.click();
+
+      await waitFor(() => expect(nav.router.push).toHaveBeenLastCalledWith("/w/ws-1/r/r-dm"));
+      const created = api.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/workspaces/ws-1/rooms");
+      expect(created.map((c) => JSON.parse(c.init.body as string))).toEqual([{ kind: "dm", user_id: miyuki.id }]);
+    });
+
+    it("changes the role from the panel when the member can be managed", async () => {
+      nav.search = `p=${miyuki.id}`;
+      const changed: unknown[] = [];
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "GET /api/v1/workspaces": () => json(200, { workspaces: [workspace("ws-1", "hibari 開発", { my_role: "admin" })] }),
+          [`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`]: profileOf(miyuki, null),
+          [`PATCH /api/v1/workspaces/ws-1/members/${miyuki.id}`]: (_url, init) => {
+            changed.push(JSON.parse(init.body as string));
+            return json(200, member(miyuki, { role: "admin" }));
+          },
+        }),
+      );
+
+      await userEvent.click(await (await openedPanel()).findByRole("button", { name: "その他の操作" }));
+      await userEvent.click(profilePanel().getByRole("button", { name: "管理者" }));
+
+      expect(changed).toEqual([{ role: "admin" }]);
+      expect(await (await openedPanel()).findByText("管理者")).toBeInTheDocument();
+    });
+
+    it("hides the management entries for a member who cannot be managed", async () => {
+      // 自分（テストのユーザーは佐藤 直樹）は member。同格の相手は操作できない
+      nav.search = `p=${kei.id}`;
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(design), [`GET /api/v1/workspaces/ws-1/members/${kei.id}`]: profileOf(kei, null) }),
+      );
+
+      await userEvent.click(await (await openedPanel()).findByRole("button", { name: "その他の操作" }));
+      expect(profilePanel().queryByText("ロールの変更")).not.toBeInTheDocument();
+      expect(profilePanel().queryByRole("button", { name: "ワークスペースから削除" })).not.toBeInTheDocument();
+    });
+
+    it("offers 'プロフィールを編集' instead of a DM on your own panel", async () => {
+      // テストのユーザーは佐藤 直樹
+      nav.search = `p=${naoki.id}`;
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(design), [`GET /api/v1/workspaces/ws-1/members/${naoki.id}`]: profileOf(naoki, null, { role: "owner" }) }),
+      );
+
+      await userEvent.click(await (await openedPanel()).findByRole("button", { name: "プロフィールを編集" }));
+      expect(profilePanel().queryByRole("button", { name: "DM を送る" })).not.toBeInTheDocument();
+      expect(nav.router.push).toHaveBeenLastCalledWith("/settings/profile");
+    });
+
+    it("swaps the members panel for the profile and goes back to the members", async () => {
+      renderWithChat(<WorkspaceScreen />, routes({
+        ...openRoom(design),
+        [`GET /api/v1/workspaces/ws-1/members/${miyuki.id}`]: profileOf(miyuki, null),
+      }));
+
+      await userEvent.click(await screen.findByRole("button", { name: /メンバー/ }));
+      const members = within(await screen.findByRole("complementary", { name: "メンバー" }));
+      await userEvent.click(await members.findByRole("button", { name: /高橋 みゆき/ }));
+
+      expect(nav.router.push).toHaveBeenLastCalledWith(`/w/ws-1/r/r-design?p=${miyuki.id}`);
+      expect(screen.queryByRole("complementary", { name: "メンバー" })).not.toBeInTheDocument();
+      await userEvent.click(await (await openedPanel()).findByRole("button", { name: "メンバーに戻る" }));
+
+      expect(await screen.findByRole("complementary", { name: "メンバー" })).toBeInTheDocument();
+      expect(screen.queryByRole("complementary", { name: "プロフィール" })).not.toBeInTheDocument();
+    });
+
+    it("shows only the name and handle for someone no longer in the workspace", async () => {
+      const { api } = renderWithChat(<WorkspaceScreen />, routes(openRoom(design, [message(1, { sender: gone })])));
+      const history = within(await screen.findByRole("list", { name: "メッセージ" }));
+
+      await userEvent.click(history.getByRole("button", { name: "退会 太郎 のプロフィール" }));
+
+      expect(await (await openedPanel()).findByText("このワークスペースのメンバーではありません")).toBeInTheDocument();
+      expect(profilePanel().getByText("@gone")).toBeInTheDocument();
+      expect(profilePanel().queryByRole("button", { name: "DM を送る" })).not.toBeInTheDocument();
+      // 一覧にいない人は API も 404 なので呼ばない（ADR 0050 決定 5）
+      expect(api.paths().some((p) => p.includes(`/members/${gone.id}`))).toBe(false);
+    });
+
+    it("shows the hover card without calling the profile API", async () => {
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        matches: true,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+      try {
+        const { api } = renderWithChat(<WorkspaceScreen />, routes(openRoom(design, [message(1, { sender: miyuki })])));
+        const history = within(await screen.findByRole("list", { name: "メッセージ" }));
+        await waitFor(() => expect(api.paths()).toContain("GET /api/v1/workspaces/ws-1/members?limit=200"));
+
+        fireEvent.pointerEnter(history.getByRole("button", { name: "高橋 みゆき のプロフィール" }), { pointerType: "mouse" });
+
+        const card = within(await screen.findByRole("dialog", { name: "高橋 みゆき のプロフィール" }, { timeout: 2_000 }));
+        expect(card.getByText("メンバー")).toBeInTheDocument();
+        expect(card.getByRole("button", { name: "DM を送る" })).toBeInTheDocument();
+        expect(api.paths().some((p) => p.endsWith(`/members/${miyuki.id}`))).toBe(false);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+  });
+
+  describe("左のメニューとアクティビティ（ADR 0058）", () => {
+    const dm2 = room("r-dm2", "", {
+      kind: "dm",
+      name: null,
+      dm_peer: { ...miyuki, presence: "offline" },
+      unread_count: 2,
+      last_message_at: "2026-09-13T03:00:00Z",
+      last_message: { id: "m-9", sender: miyuki, kind: "user", body: "モックのリンク送りますね", created_at: "2026-09-13T03:00:00Z", deleted: false },
+    });
+    const withDms = (overrides: Record<string, Handler> = {}) =>
+      routes({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [design, chat, dm, dm2], unread_thread_count: 0 }),
+        ...overrides,
+      });
+    const activityItem = {
+      id: "m:0190a",
+      type: "message" as const,
+      reasons: ["mention" as const],
+      unread: true,
+      occurred_at: "2026-09-13T02:00:00Z",
+      room: { id: "r-design", kind: "public" as const, name: "デザインレビュー", dm_peer: null },
+      message: message(7, { id: "m-7", room_id: "r-design", sender: miyuki, body: `<@${naoki.id}> 見てください`, mentions: [{ kind: "user", user: naoki }] }),
+      reaction: null,
+    };
+
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+      nav.pathname = "/w/ws-1/r/r-design";
+    });
+
+    it("左のメニューは今のルームのまま行き先を変え、DM とアクティビティにバッジを出す", async () => {
+      renderWithChat(
+        <WorkspaceScreen />,
+        withDms({ ...openRoom(design), "GET /api/v1/workspaces/ws-1/activity/unread_count": () => json(200, { count: 3 }) }),
+      );
+
+      await screen.findByRole("list", { name: "メッセージ" });
+      expect(rail().getByRole("link", { name: /ホーム/ })).toHaveAttribute("aria-current", "page");
+      expect(rail().getByRole("link", { name: /ホーム/ })).toHaveAttribute("href", "/w/ws-1/r/r-design");
+      expect(rail().getByRole("link", { name: /DM/ })).toHaveAttribute("href", "/w/ws-1/r/r-design?side=dms");
+      // DM は未読の会話の数（メッセージの数ではない）、アクティビティは未読の件数
+      expect(within(rail().getByRole("link", { name: /DM/ })).getByLabelText("未読 1 件")).toBeInTheDocument();
+      expect(await within(rail().getByRole("link", { name: /アクティビティ/ })).findByLabelText("未読 3 件")).toBeInTheDocument();
+    });
+
+    it("?side=dms で、DM を最後のメッセージの新しい順に並べ、押しても DM のままにする", async () => {
+      nav.search = "side=dms";
+      renderWithChat(<WorkspaceScreen />, withDms(openRoom(design)));
+
+      const list = await screen.findByRole("list", { name: "ダイレクトメッセージ" });
+      const links = within(list).getAllByRole("link");
+      expect(links.map((a) => a.getAttribute("href"))).toEqual(["/w/ws-1/r/r-dm2?side=dms", "/w/ws-1/r/r-dm?side=dms"]);
+      expect(links[0]).toHaveTextContent("モックのリンク送りますね");
+
+      // 「未読メッセージ」で未読のある DM だけにする
+      await userEvent.click(screen.getByRole("switch", { name: "未読メッセージ" }));
+      expect(within(screen.getByRole("list", { name: "ダイレクトメッセージ" })).getAllByRole("link")).toHaveLength(1);
+    });
+
+    it("?side=activity で、アクティビティを取って並べ、押すとそのメッセージへ飛ぶ（サイドバーはそのまま）", async () => {
+      nav.search = "side=activity";
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        withDms({
+          ...openRoom(design),
+          "GET /api/v1/workspaces/ws-1/activity?filter=all&limit=50": () =>
+            json(200, { items: [activityItem], next_cursor: null, has_more: false }),
+          "GET /api/v1/workspaces/ws-1/activity?filter=mention&limit=50": () =>
+            json(200, { items: [activityItem], next_cursor: null, has_more: false }),
+        }),
+      );
+
+      const list = await screen.findByRole("list", { name: "すべて" });
+      const card = within(list).getByRole("link");
+      expect(card).toHaveAttribute("href", "/w/ws-1/r/r-design?m=m-7&side=activity");
+      expect(card).toHaveTextContent("高橋 みゆき");
+      expect(card).toHaveTextContent("でメンション");
+      expect(within(card).getByText("未読")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("tab", { name: "メンション" }));
+      await waitFor(() => expect(api.paths()).toContain("GET /api/v1/workspaces/ws-1/activity?filter=mention&limit=50"));
+    });
+
+    it("「後で」の古い URL は ?side=later にしてルームを開く", async () => {
+      nav.params = { workspaceId: "ws-1" };
+      nav.pathname = "/w/ws-1";
+      nav.search = "side=later";
+      renderWithChat(<WorkspaceScreen />, routes());
+
+      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1/r/r-chat?side=later"));
+    });
+  });
+
+  describe("アーカイブと削除（ADR 0059）", () => {
+    const archivedAt = "2026-09-23T01:00:00Z";
+    const archivedDesign = { ...design, archived_at: archivedAt };
+
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    it("アーカイブしたチャンネルは、入力欄の代わりに帯を出し、サイドバーから外し、帯から復元できる", async () => {
+      const user = userEvent.setup();
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [archivedDesign, chat, dm] }),
+          ...openRoom(archivedDesign),
+          "POST /api/v1/rooms/r-design/unarchive": () => json(200, design),
+        }),
+      );
+
+      expect(await screen.findByText("アーカイブされたチャンネルです。投稿やリアクションはできません。")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "送信" })).not.toBeInTheDocument();
+      expect(sidebar().queryByRole("link", { name: /デザインレビュー/ })).not.toBeInTheDocument();
+      // 検索したときだけ、印を付けて出す
+      await user.type(sidebar().getByRole("searchbox"), "デザイン");
+      expect(within(sidebar().getByRole("link", { name: /デザインレビュー/ })).getByText("アーカイブ済み")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "チャンネルを復元" }));
+
+      await waitFor(() => expect(api.paths()).toContain("POST /api/v1/rooms/r-design/unarchive"));
+      expect(await screen.findByRole("button", { name: "送信" })).toBeInTheDocument();
+    });
+
+    it("参加していない member には、復元のボタンも参加の帯も出さない", async () => {
+      const notJoined = { ...archivedDesign, is_member: false };
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [notJoined, chat, dm] }), ...openRoom(notJoined) }),
+      );
+
+      expect(await screen.findByText("アーカイブされたチャンネルです。投稿やリアクションはできません。")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "チャンネルを復元" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "参加する" })).not.toBeInTheDocument();
+    });
+
+    it("設定から、確認を挟んでアーカイブする", async () => {
+      const user = userEvent.setup();
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(design), "POST /api/v1/rooms/r-design/archive": () => json(200, archivedDesign) }),
+      );
+
+      await user.click(await screen.findByRole("button", { name: "チャンネルの設定" }));
+      const settings = within(await screen.findByRole("dialog"));
+      // member には削除を出さない
+      expect(settings.queryByRole("button", { name: "削除する" })).not.toBeInTheDocument();
+      await user.click(settings.getByRole("button", { name: "アーカイブする" }));
+      const confirm = within(await screen.findByRole("dialog", { name: "チャンネルをアーカイブしますか？" }));
+      await user.click(confirm.getByRole("button", { name: "アーカイブする" }));
+
+      await waitFor(() => expect(api.paths()).toContain("POST /api/v1/rooms/r-design/archive"));
+      expect(await screen.findByText("アーカイブされたチャンネルです。投稿やリアクションはできません。")).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    it("admin は設定から削除でき、チェックを入れるまで押せず、消したら黙って入口に戻る", async () => {
+      const user = userEvent.setup();
+      rememberLocation("ws-1", "r-design");
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces": () => json(200, { workspaces: [workspace("ws-1", "hibari 開発", { my_role: "admin" })] }),
+          ...openRoom(design),
+          "DELETE /api/v1/rooms/r-design": () => new Response(null, { status: 204 }),
+        }),
+      );
+
+      await user.click(await screen.findByRole("button", { name: "チャンネルの設定" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "削除する" }));
+      const confirm = within(await screen.findByRole("dialog", { name: "チャンネルを削除しますか？" }));
+      const button = confirm.getByRole("button", { name: "チャンネルを削除する" });
+      expect(button).toBeDisabled();
+      await user.click(confirm.getByRole("checkbox", { name: "はい、完全に削除します" }));
+      await user.click(button);
+
+      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1"));
+      expect(api.paths()).toContain("DELETE /api/v1/rooms/r-design");
+      expect(screen.queryByRole("heading", { name: "このチャンネルにはアクセスできません" })).not.toBeInTheDocument();
+      expect(lastRoomId("ws-1")).toBeUndefined();
+    });
+  });
+});
+

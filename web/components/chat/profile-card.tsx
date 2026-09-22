@@ -7,7 +7,7 @@ import { Avatar, PresenceDot } from "@/components/ui/avatar";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { roleLabel, type WorkspaceRole } from "@/components/workspace/types";
-import { presenceLabel } from "@/lib/presence";
+import { presenceLabel } from "@/lib/chat/presence";
 
 import type { ProfileView } from "./types";
 

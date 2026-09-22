@@ -24,8 +24,8 @@ import type {
 import type { TransferCandidate } from "@/components/workspace/member-dialogs";
 import type { InviteRowView, MemberRowView, WorkspaceRole } from "@/components/workspace/types";
 import type { DeviceView } from "@/components/settings/settings-sections";
-import type { MentionCandidate } from "@/lib/chat/mentions";
-import type { PresenceView } from "@/lib/presence";
+import type { MentionCandidate } from "@/lib/chat/format/mentions";
+import type { PresenceView } from "@/lib/chat/presence";
 
 /**
  * story のモックのアバター画像（public/dev/。Storybook は staticDirs で配る）。

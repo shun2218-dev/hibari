@@ -3,9 +3,9 @@
 import { type ReactNode, type RefObject, useLayoutEffect, useState } from "react";
 
 import { Portal } from "@/components/ui/portal";
+import { useDismiss } from "@/hooks/use-dismiss";
 import { type PanelAlign, type PanelPlacement, placeBeside, placePanel } from "@/lib/anchored-position";
 import { cx } from "@/lib/cx";
-import { useDismiss } from "@/lib/use-dismiss";
 
 /**
  * アンカー（メッセージの行）に合わせて画面に浮かせるパネル。
@@ -77,7 +77,7 @@ export function AnchoredPanel({
     };
   }, [align, anchorRef, beside, panel]);
 
-  // 外を押す / Esc で閉じる（Popover と共通。lib/use-dismiss.ts）。アンカー（メッセージの行）の中は「外」に数えない
+  // 外を押す / Esc で閉じる（Popover と共通。hooks/use-dismiss.ts）。アンカー（メッセージの行）の中は「外」に数えない
   useDismiss(panel, onDismiss, anchorRef);
 
   return (

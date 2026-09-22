@@ -3,8 +3,8 @@
 import { useState } from "react";
 
 import { type AvatarColor, avatarColor, avatarInitial } from "@/lib/avatar";
+import { type PresenceView, presenceLabel } from "@/lib/chat/presence";
 import { cx } from "@/lib/cx";
-import { type PresenceView, presenceLabel } from "@/lib/presence";
 
 // Tailwind はソース中の完全なクラス名しか生成しないので、番号から組み立てずに対応表で持つ
 const colorClass: Record<AvatarColor, string> = {
@@ -54,7 +54,7 @@ type AvatarProps = {
   shape?: "circle" | "square";
   /**
    * presence のドット（ADR 0049）。オンラインは緑、離席は色なしのアウトライン、オフラインはドットを出さない。
-   * 自動の状態と本人の手動の離席を合わせた結果を受け取る（合わせるのは `lib/presence.ts`）。
+   * 自動の状態と本人の手動の離席を合わせた結果を受け取る（合わせるのは `lib/chat/presence.ts`）。
    */
   presence?: PresenceView;
   className?: string;

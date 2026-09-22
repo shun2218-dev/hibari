@@ -1,6 +1,6 @@
 import { safeNextPath } from "@/lib/auth/next-path";
 
-import { VerifyEmailPage } from "./verify-email-page";
+import { VerifyEmailPage } from "@/app/(auth)/verify-email/_components/verify-email-page";
 
 export const metadata = {
   title: "メールアドレスの確認 | hibari",

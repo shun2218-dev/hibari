@@ -1,6 +1,6 @@
 import { SmilePlusIcon } from "@/components/ui/icons";
+import { reactionNamesLabel } from "@/lib/chat/store/reactions";
 import { cx } from "@/lib/cx";
-import { reactionNamesLabel } from "@/lib/chat/reactions";
 
 import type { MessageReactionView } from "./types";
 

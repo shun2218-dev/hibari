@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
 
-import { type Block, type Inline, type ListBlock, parseBody } from "@/lib/chat/body-format";
-import { parsePermalink, permalinkPath } from "@/lib/chat/links";
-import { useOrigin } from "@/lib/chat/use-origin";
+import { useOrigin } from "@/hooks/use-origin";
+import { type Block, type Inline, type ListBlock, parseBody } from "@/lib/chat/format/body-format";
+import { parsePermalink, permalinkPath } from "@/lib/chat/format/links";
 
 /**
  * メッセージの本文（ADR 0051）。`parseBody` の木を React の要素に写すだけで、HTML の文字列は作らない。

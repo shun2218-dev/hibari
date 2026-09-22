@@ -1,6 +1,6 @@
 import { safeNextPath } from "@/lib/auth/next-path";
 
-import { LoginPage } from "./login-page";
+import { LoginPage } from "@/app/(auth)/login/_components/login-page";
 
 export const metadata = { title: "ログイン | hibari" };
 

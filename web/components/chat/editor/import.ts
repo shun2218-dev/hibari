@@ -12,7 +12,7 @@ import {
   type TextFormatType,
 } from "lexical";
 
-import { type Block, type Inline, type ListBlock, parseBody } from "@/lib/chat/body-format";
+import { type Block, type Inline, type ListBlock, parseBody } from "@/lib/chat/format/body-format";
 
 import { $createMentionNode } from "./mention-node";
 

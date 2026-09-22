@@ -2,9 +2,9 @@ import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
 
 import { createSession } from "@/lib/auth/session";
-import { SessionProvider } from "@/lib/auth/session-provider";
-import { ChatProvider } from "@/lib/chat/chat-provider";
-import type { UploaderOptions } from "@/lib/chat/uploads";
+import type { UploaderOptions } from "@/lib/chat/media/uploads";
+import { ChatProvider } from "@/providers/chat-provider";
+import { SessionProvider } from "@/providers/session-provider";
 
 import { type Handler, TEST_API_BASE, fakeApi, json, testUser, tokens } from "./fake-api";
 import { fakeSockets } from "./fake-socket";

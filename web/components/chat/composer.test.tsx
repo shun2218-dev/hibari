@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { MentionCandidate } from "@/lib/chat/mentions";
+import type { MentionCandidate } from "@/lib/chat/format/mentions";
 
 import { AttachmentChip, Composer, TypingIndicator } from "./composer";
 import { pasteInEditor, typeInEditor, valueOf } from "./editor/test-utils";

@@ -3,8 +3,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { SettingsMobileMenu } from "@/components/settings/settings-layout";
 import { ProfileSettings } from "@/components/settings/settings-sections";
 
-import { users } from "../fixtures";
-import { noHref, settingsHrefs, userSettings } from "../screens";
+import { users } from "@/stories/fixtures";
+import { noHref, settingsHrefs, userSettings } from "@/stories/screens";
 
 /**
  * ユーザー設定 / 移動。

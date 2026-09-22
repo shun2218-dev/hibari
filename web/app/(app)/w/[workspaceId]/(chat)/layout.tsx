@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { WorkspaceScreen } from "./workspace-screen";
+import { WorkspaceScreen } from "@/app/(app)/w/[workspaceId]/(chat)/_components/workspace-screen";
 
 /**
  * ワークスペースの画面（`/w/{id}` と `/w/{id}/r/{roomId}`）。

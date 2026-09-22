@@ -7,7 +7,7 @@ import { TextField } from "@/components/ui/field";
 import { BrowserIcon, MonitorIcon, PhoneIcon } from "@/components/ui/icons";
 import { Spinner } from "@/components/ui/spinner";
 import type { NotifyLevel } from "@/lib/api/types.gen";
-import { notifyLevelLabels } from "@/lib/chat/notifications";
+import { notifyLevelLabels } from "@/lib/chat/notifications/notifications";
 import { cx } from "@/lib/cx";
 
 /**

@@ -10,6 +10,8 @@ import type { ComponentProps, ReactNode } from "react";
 
 import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
+import { AccountMenu } from "@/components/chat/account-menu";
+import { ActivityList } from "@/components/chat/activity-list";
 import { ChatLayout } from "@/components/chat/chat-layout";
 import {
   ArchivedRoomBar,
@@ -20,22 +22,20 @@ import {
   RoomUnavailable,
   UnreadJumpBar,
 } from "@/components/chat/chat-states";
-import { AccountMenu } from "@/components/chat/account-menu";
-import { ActivityList } from "@/components/chat/activity-list";
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { DmList } from "@/components/chat/dm-list";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import { MembersPanel } from "@/components/chat/members-panel";
+import { NotificationMenu } from "@/components/chat/notification-menu";
+import { NotificationPermissionBanner } from "@/components/chat/notification-permission-banner";
 import { PinsList } from "@/components/chat/pins-list";
 import { ProfileHoverCard } from "@/components/chat/profile-card";
 import { ProfilePanel } from "@/components/chat/profile-panel";
-import { NotificationMenu } from "@/components/chat/notification-menu";
-import { NotificationPermissionBanner } from "@/components/chat/notification-permission-banner";
+import { RemoveSavedItemDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
 import { RoomHeader } from "@/components/chat/room-header";
 import { RoomTabs } from "@/components/chat/room-tabs";
-import { RemoveSavedItemDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
 import { SavedList } from "@/components/chat/saved-list";
 import { SideNavBar, type SideNavItems, type SideNavKey, SideNavRail } from "@/components/chat/side-nav";
 import { Sidebar } from "@/components/chat/sidebar";
@@ -44,16 +44,16 @@ import { ThreadList } from "@/components/chat/thread-list";
 import { ThreadPanel } from "@/components/chat/thread-panel";
 import { Timeline } from "@/components/chat/timeline";
 import type { ActivityFilter, AttachmentDraftView, ConnectionBannerStatus } from "@/components/chat/types";
-import { Avatar } from "@/components/ui/avatar";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { SettingsLayout, type SettingsSection } from "@/components/settings/settings-layout";
-import { notifyLevelLabels } from "@/lib/chat/notifications";
+import { Avatar } from "@/components/ui/avatar";
 import { type AdminSection, WorkspaceAdminLayout } from "@/components/workspace/admin-layout";
+import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog";
 import { InviteList } from "@/components/workspace/invites";
 import { type MemberMenuState, MemberList } from "@/components/workspace/member-list";
-import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog";
 import type { WorkspaceRole } from "@/components/workspace/types";
 import { WorkspaceSettings } from "@/components/workspace/workspace-settings";
+import { notifyLevelLabels } from "@/lib/chat/notifications/notifications";
 
 import {
   activityItems,

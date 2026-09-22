@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
 
-import { selectedRoom } from "../fixtures";
-import { chat } from "../screens";
+import { selectedRoom } from "@/stories/fixtures";
+import { chat } from "@/stories/screens";
 
 /**
  * チャット / メンション。

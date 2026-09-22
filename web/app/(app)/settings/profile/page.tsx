@@ -1,4 +1,4 @@
-import { ProfileSection } from "./profile-section";
+import { ProfileSection } from "@/app/(app)/settings/profile/_components/profile-section";
 
 export default function Page() {
   return <ProfileSection />;

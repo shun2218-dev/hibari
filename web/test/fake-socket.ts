@@ -1,5 +1,5 @@
 import type { ClientMessage, ServerMessage } from "@/lib/api/types.gen";
-import type { SocketLike } from "@/lib/chat/connection";
+import type { SocketLike } from "@/lib/chat/realtime/connection";
 
 /** サーバーの役をテストが演じる WebSocket。 */
 export class FakeSocket implements SocketLike {

@@ -3,10 +3,10 @@
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 
-import { useSessionState } from "@/lib/auth/session-provider";
-import { ChatProvider } from "@/lib/chat/chat-provider";
+import { useSessionState } from "@/hooks/auth/use-session";
+import { ChatProvider } from "@/providers/chat-provider";
 
-import { UnverifiedEmail } from "./unverified-email";
+import { UnverifiedEmail } from "@/app/(app)/_components/unverified-email";
 
 /**
  * ログインが必要な画面の振り分け。

@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { ServerUnavailable } from "@/components/chat/chat-states";
 
-import { chat } from "../screens";
+import { chat } from "@/stories/screens";
 
 /**
  * チャット / 接続と同期。

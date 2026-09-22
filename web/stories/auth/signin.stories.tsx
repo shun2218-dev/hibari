@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { SignupForm } from "@/components/auth/signup-form";
 
-import { auth, goodStrength, login, noHref } from "../screens";
+import { auth, goodStrength, login, noHref } from "@/stories/screens";
 
 /**
  * 認証 / ログインと登録。

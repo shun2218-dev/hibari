@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { InviteAccept } from "@/components/invite/invite-accept";
 
-import { auth, inviteFooter, invitePreview, noHref } from "../screens";
+import { auth, inviteFooter, invitePreview, noHref } from "@/stories/screens";
 
 /**
  * 招待 / 受け入れ。

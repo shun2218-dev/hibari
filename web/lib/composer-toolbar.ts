@@ -1,11 +1,11 @@
-import { useSyncExternalStore } from "react";
-
 /**
  * 入力欄の書式のツールバーを出すかどうか（ADR 0052 の追記。Slack の書式設定アイコンと同じ切り替え）。
  *
  * 見る人ごとの好みなので、サーバーには持たず localStorage に置く（テーマと同じ。lib/theme.ts）。
  * 読み書きに失敗したら「覚えていない」と同じに扱い、既定の「出す」で描く。
  * チャンネルとスレッドの入力欄が同じ画面に並ぶので、片方で切り替えたらもう片方も追従させる。
+ *
+ * 購読するフックは hooks/use-composer-toolbar.ts。
  */
 
 export const COMPOSER_TOOLBAR_STORAGE_KEY = "hibari:composer-toolbar";
@@ -15,12 +15,12 @@ const listeners = new Set<() => void>();
 /** localStorage に書けなかったときの値。この画面の中だけでも切り替えを効かせる。 */
 let fallback: boolean | null = null;
 
-function subscribe(listener: () => void): () => void {
+export function subscribeComposerToolbar(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
-function read(): boolean {
+export function composerToolbarVisible(): boolean {
   if (fallback !== null) return fallback;
   try {
     return localStorage.getItem(COMPOSER_TOOLBAR_STORAGE_KEY) !== "hidden";
@@ -30,7 +30,7 @@ function read(): boolean {
 }
 
 /** サーバーでの描画では localStorage がないので、既定の「出す」で描く。 */
-function readOnServer(): boolean {
+export function serverComposerToolbarVisible(): boolean {
   return true;
 }
 
@@ -46,8 +46,3 @@ export function setComposerToolbarVisible(visible: boolean): void {
   for (const listener of listeners) listener();
 }
 
-/** ツールバーを出すかどうかと、切り替える関数。 */
-export function useComposerToolbar(): [boolean, (visible: boolean) => void] {
-  const visible = useSyncExternalStore(subscribe, read, readOnServer);
-  return [visible, setComposerToolbarVisible];
-}

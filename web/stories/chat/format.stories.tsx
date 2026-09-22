@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { chat } from "../screens";
+import { chat } from "@/stories/screens";
 
 /**
  * チャット / 本文の書式（ADR 0051）。

@@ -9,10 +9,10 @@ import { invite, member, miyuki, naoki, workspace } from "@/test/chat-data";
 import { type Handler, json, problem } from "@/test/fake-api";
 import { renderWithChat } from "@/test/render-with-chat";
 
-import { AdminShell } from "./admin-shell";
-import { InvitesSection } from "./invites/invites-section";
-import { MembersSection } from "./members/members-section";
-import { SettingsSection } from "./settings/settings-section";
+import { AdminShell } from "@/app/(app)/w/[workspaceId]/admin/_components/admin-shell";
+import { InvitesSection } from "@/app/(app)/w/[workspaceId]/admin/invites/_components/invites-section";
+import { MembersSection } from "@/app/(app)/w/[workspaceId]/admin/members/_components/members-section";
+import { SettingsSection } from "@/app/(app)/w/[workspaceId]/admin/settings/_components/settings-section";
 
 const nav = vi.hoisted(() => ({
   router: { replace: vi.fn(), push: vi.fn() },

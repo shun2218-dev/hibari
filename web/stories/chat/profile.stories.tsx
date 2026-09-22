@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { chat } from "../screens";
+import { chat } from "@/stories/screens";
 
 /**
  * チャット / プロフィール（Phase 6.9。ADR 0050）。

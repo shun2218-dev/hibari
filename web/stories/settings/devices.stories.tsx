@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { DevicesSettings } from "@/components/settings/settings-sections";
 
-import { devices } from "../fixtures";
-import { userSettings } from "../screens";
+import { devices } from "@/stories/fixtures";
+import { userSettings } from "@/stories/screens";
 
 /**
  * ユーザー設定 / デバイス。

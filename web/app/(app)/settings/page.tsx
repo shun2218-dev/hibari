@@ -5,7 +5,7 @@ import { useEffect } from "react";
 
 import { SettingsMobileMenu } from "@/components/settings/settings-layout";
 
-import { settingsHrefs } from "./settings-shell";
+import { settingsHrefs } from "@/app/(app)/settings/_components/settings-shell";
 
 /** md 以上（左にナビが出る幅）では、この一覧は出さずに最初の項目を開く。 */
 const DESKTOP = "(min-width: 768px)";

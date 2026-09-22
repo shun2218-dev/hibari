@@ -8,7 +8,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { TextField } from "@/components/ui/field";
 import { FileIcon, SearchIcon } from "@/components/ui/icons";
 
-import type { PresenceView } from "@/lib/presence";
+import type { PresenceView } from "@/lib/chat/presence";
 
 import { MessageBody } from "./message-body";
 import type { RoomKind, UserRef } from "./types";

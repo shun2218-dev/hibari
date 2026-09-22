@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
-import { SessionProvider } from "@/lib/auth/session-provider";
 import { paneSizeBootScript } from "@/lib/pane-size";
 import { themeBootScript } from "@/lib/theme";
+import { SessionProvider } from "@/providers/session-provider";
 
 import { instrumentSans, jetBrainsMono, zenKakuGothicNew } from "./fonts";
 import "./globals.css";

@@ -4,7 +4,6 @@ import { type ReactNode, useRef, useState } from "react";
 
 import { AnchoredPanel } from "@/components/ui/anchored-panel";
 import { Avatar } from "@/components/ui/avatar";
-import { Portal } from "@/components/ui/portal";
 import { Button, IconButton, TextButton } from "@/components/ui/button";
 import {
   BellIcon,
@@ -26,10 +25,11 @@ import {
 } from "@/components/ui/icons";
 import { MenuItem } from "@/components/ui/menu-item";
 import { Popover } from "@/components/ui/popover";
-import type { MentionCandidate } from "@/lib/chat/mentions";
+import { Portal } from "@/components/ui/portal";
+import { useHoverIntent } from "@/hooks/use-hover-intent";
+import { DESKTOP_QUERY, useMediaQuery } from "@/hooks/use-media-query";
+import type { MentionCandidate } from "@/lib/chat/format/mentions";
 import { cx } from "@/lib/cx";
-import { useHoverIntent } from "@/lib/use-hover-intent";
-import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 
 import { RichTextInput } from "./editor/rich-text-input";
 import { MessageBody } from "./message-body";

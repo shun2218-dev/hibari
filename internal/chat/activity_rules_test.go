@@ -16,7 +16,7 @@ import (
 	"github.com/shun2218-dev/hibari/internal/chat/chattest"
 )
 
-// ruleCase は testdata/notification-rules.json の 1 行。Vitest（web/lib/chat/notification-rules.test.ts）も同じ表を読む。
+// ruleCase は testdata/notification-rules.json の 1 行。Vitest（web/lib/chat/notifications/notification-rules.test.ts）も同じ表を読む。
 type ruleCase struct {
 	Name         string   `json:"name"`
 	Room         string   `json:"room"`
