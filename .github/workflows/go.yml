@@ -48,19 +48,13 @@ jobs:
           POSTGRES_USER: hibari
           POSTGRES_PASSWORD: hibari
           POSTGRES_DB: hibari_test
+          # 認証方式を明示し、initdb の「trust を有効にした」警告を消す（compose.yaml と同じ）。
+          # 値は公式イメージの既定と同じで、振る舞いは変わらない。
+          POSTGRES_INITDB_ARGS: --auth-local=trust --auth-host=scram-sha-256
         ports:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U hibari -d hibari_test"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 30
-      redis:
-        image: redis:7.4-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
@@ -80,6 +74,18 @@ jobs:
           cache-dependency-path: |
             go.sum
             tools/go.sum
+      - name: Redis を起動する
+        # サービスコンテナは起動コマンドを渡せず、起動する前にホストのカーネルの設定も変えられないので、docker run で起動する。
+        # イメージは compose.yaml と揃える。
+        # - vm.overcommit_memory=1: 無効のままだと Redis が起動時に警告する（fork によるバックグラウンドの保存が失敗しうるため）
+        # - 引数を渡す: 何も渡さないと「設定ファイルがない」と警告する。テストのデータは残さなくてよいので保存も切る
+        run: |
+          sudo sysctl -w vm.overcommit_memory=1
+          docker run -d --name redis -p 6379:6379 redis:7.4-alpine redis-server --save "" --appendonly no
+          for _ in $(seq 30); do
+            docker exec redis redis-cli ping && break
+            sleep 1
+          done
       - name: MinIO を起動してテスト用のバケットを作る
         # サービスコンテナは起動コマンド（server /data）を渡せないので、docker run で起動する。イメージは compose.yaml と揃える。
         run: |
