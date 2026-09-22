@@ -1,4 +1,4 @@
-import { applyReadToRoom, newestChannelSeq } from "@/lib/chat/store/messages";
+import { applyReadToRoom, newestChannelSeq } from "@/lib/chat/rules/messages";
 
 import type { StoreCore } from "./core";
 import type { Activity } from "./activity";

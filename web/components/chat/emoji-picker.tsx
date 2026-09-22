@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { rgbTriplet } from "@/lib/chat/store/reactions";
+import { rgbTriplet } from "@/lib/chat/rules/reactions";
 
 /**
  * emoji-mart の CSS 変数（`--em-*`）に写すトークン（ADR 0044 決定 7）。

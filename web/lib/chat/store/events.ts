@@ -1,8 +1,9 @@
 import type { ServerEvent } from "@/lib/api/types.gen";
-import { belongsTo, insertActivity, parseActivityListKey, removeActivity } from "@/lib/chat/store/activity-feed";
-import { applyReadToRoom } from "@/lib/chat/store/messages";
-import { applyThreadNotify } from "@/lib/chat/store/threads";
+import { belongsTo, insertActivity, parseActivityListKey, removeActivity } from "@/lib/chat/rules/activity-feed";
+import { applyReadToRoom } from "@/lib/chat/rules/messages";
+import { applyThreadNotify } from "@/lib/chat/rules/threads";
 import type { StoreCore } from "./core";
+import type { Members } from "./members";
 import type { Workspaces } from "./workspaces";
 import type { Activity } from "./activity";
 import type { Saved } from "./saved";
@@ -16,10 +17,29 @@ import type { Rooms } from "./rooms";
  */
 export function createEvents(
   core: StoreCore,
-  { workspaces, activity, saved, threads, typing, timeline, rooms }: { workspaces: Workspaces; activity: Activity; saved: Saved; threads: Threads; typing: Typing; timeline: Timeline; rooms: Rooms },
+  {
+    workspaces,
+    members,
+    activity,
+    saved,
+    threads,
+    typing,
+    timeline,
+    rooms,
+  }: {
+    workspaces: Workspaces;
+    members: Members;
+    activity: Activity;
+    saved: Saved;
+    threads: Threads;
+    typing: Typing;
+    timeline: Timeline;
+    rooms: Rooms;
+  },
 ) {
   const { patchMembers, patchRoom, patchThread, patchThreadList, patchWorkspaceMembers, update, userId } = core;
-  const { patchMemberSettings, reloadMembers, removedFromWorkspace } = workspaces;
+  const { removedFromWorkspace } = workspaces;
+  const { patchMemberSettings, reloadMembers } = members;
   const { patchActivityItems, receiveActivityChange, receiveActivityMessage, reloadActivity, roomReadAdvanced } = activity;
   const { receiveSaved } = saved;
   const { advanceThreadRead, receiveThreadTyping, reloadThreads } = threads;

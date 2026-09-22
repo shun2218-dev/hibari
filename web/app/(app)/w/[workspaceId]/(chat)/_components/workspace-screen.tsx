@@ -16,7 +16,7 @@ import { useAvatarUrls } from "@/hooks/chat/use-media";
 import { withSide } from "@/lib/chat/format/links";
 import { formatTime } from "@/lib/chat/format/time";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
-import { countUnreadThreads } from "@/lib/chat/store/threads";
+import { countUnreadThreads } from "@/lib/chat/rules/threads";
 import { memberSettings, statusView } from "@/lib/chat/views/members";
 import { toRoomSummaryView } from "@/lib/chat/views/rooms";
 

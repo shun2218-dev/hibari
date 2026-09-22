@@ -13,8 +13,8 @@ import type {
   UserProfile,
   Workspace,
 } from "@/lib/api/types.gen";
-import { type ActivityListState } from "@/lib/chat/store/activity-feed";
-import type { SavedTab, SavedTabState } from "@/lib/chat/store/saved";
+import { type ActivityListState } from "@/lib/chat/rules/activity-feed";
+import type { SavedTab, SavedTabState } from "@/lib/chat/rules/saved";
 
 /**
  * - loading: 取得中（まだ一度も取れていない）

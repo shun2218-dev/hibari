@@ -6,8 +6,8 @@ import {
   mergeIntoWindow,
   mergeMessages,
   newestChannelSeq,
-} from "@/lib/chat/store/messages";
-import { statusOf } from "@/lib/chat/store/state";
+} from "@/lib/chat/rules/messages";
+import { statusOf } from "./state";
 
 import type { StoreCore } from "./core";
 import type { Read } from "./read";

@@ -8,7 +8,7 @@ import type {
   UserProfile,
 } from "@/lib/api/types.gen";
 import { dayKey, formatDate, formatListTime, formatTime } from "@/lib/chat/format/time";
-import { inChannel } from "@/lib/chat/store/messages";
+import { inChannel } from "@/lib/chat/rules/messages";
 import type { OutgoingMessage } from "@/lib/chat/store/state";
 
 import {

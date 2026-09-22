@@ -1,7 +1,7 @@
 
 import type { RemovalReason, Room, RoomKind } from "@/lib/api/types.gen";
-import { insertByActivity } from "@/lib/chat/store/messages";
-import { statusOf } from "@/lib/chat/store/state";
+import { insertByActivity } from "@/lib/chat/rules/messages";
+import { statusOf } from "./state";
 
 import type { StoreCore } from "./core";
 import type { Activity } from "./activity";

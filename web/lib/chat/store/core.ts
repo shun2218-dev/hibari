@@ -1,7 +1,7 @@
 import type { FollowedThread, Invite, Member, Message, Room, RoomMember, Workspace } from "@/lib/api/types.gen";
 import type { ChatApi } from "@/lib/chat/api/chat-api";
 import { isMuted, nextMuteExpiry } from "@/lib/chat/notifications/notifications";
-import { insertByActivity } from "@/lib/chat/store/messages";
+import { insertByActivity } from "@/lib/chat/rules/messages";
 import type {
   ChatState,
   ChatStoreOptions,
@@ -9,7 +9,7 @@ import type {
   OutgoingMessage,
   ThreadState,
   TimelineState,
-} from "@/lib/chat/store/state";
+} from "./state";
 
 import { SEND_TIMEOUT_MS } from "./send";
 
