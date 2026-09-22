@@ -26,19 +26,40 @@ describe("Tabs", () => {
     expect(screen.getByRole("tab", { name: "二つ目" })).toBeInTheDocument();
   });
 
-  it("選んでいるタブを、横にスクロールする並びの見える位置へ寄せる（ADR 0058）", () => {
-    const scrollIntoView = vi.fn();
-    // jsdom には scrollIntoView がないので、この test の間だけ足す
-    Element.prototype.scrollIntoView = scrollIntoView;
+  it("選んでいるタブを、並びを包む要素の中だけで見える位置へ寄せる（ADR 0058）", () => {
+    // jsdom は配置を計算しないので、包む要素（幅 100）と各タブ（幅 60 ずつ横に並ぶ）の位置を与える
+    const rect = (left: number, width: number) => ({ left, right: left + width, top: 0, bottom: 0, width, height: 0, x: left, y: 0 }) as DOMRect;
+    const spy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      if (this.getAttribute("role") === "tab") {
+        const index = ["a", "b", "c"].indexOf(this.getAttribute("data-value")!);
+        const scrollLeft = this.closest("[data-testid=box]")!.scrollLeft;
+        return rect(index * 60 - scrollLeft, 60);
+      }
+      return rect(0, 100);
+    });
     try {
-      const { rerender } = render(<Tabs label="タブ" items={items} value="a" />);
-      expect(scrollIntoView.mock.contexts.at(-1)).toBe(screen.getByRole("tab", { name: "一つ目3" }));
+      const outer = document.createElement("div");
+      document.body.append(outer);
+      const { rerender } = render(
+        <div data-testid="box">
+          <Tabs label="タブ" items={items} value="a" />
+        </div>,
+        { container: outer },
+      );
+      const box = screen.getByTestId("box");
+      expect(box.scrollLeft).toBe(0);
 
-      rerender(<Tabs label="タブ" items={items} value="c" />);
-      expect(scrollIntoView.mock.contexts.at(-1)).toBe(screen.getByRole("tab", { name: "三つ目" }));
-      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "nearest", inline: "nearest" });
+      rerender(
+        <div data-testid="box">
+          <Tabs label="タブ" items={items} value="c" />
+        </div>,
+      );
+      // 三つ目（120〜180）の右端が 100 に来るまで寄せる
+      expect(box.scrollLeft).toBe(80);
+      // 外側の要素は動かさない（scrollIntoView が画面の外枠まで動かして、モバイルで崩れたため）
+      expect(outer.scrollLeft).toBe(0);
     } finally {
-      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+      spy.mockRestore();
     }
   });
 

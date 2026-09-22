@@ -38,13 +38,19 @@ export function Tabs<T extends string>({
   const list = useRef<HTMLDivElement>(null);
 
   // 並びが横にスクロールする置き場所（サイドバーの列のアクティビティ・後で。ADR 0058）では、選んだタブが隠れないように見える位置へ寄せる。
-  // 収まっているときは何も動かない（nearest）。書体の読み込みでタブの幅が変わるので、読み込み後にもう一度寄せる。
-  // jsdom には scrollIntoView も document.fonts もないので、あるときだけ呼ぶ
+  // scrollIntoView は使わない。スクロールできる祖先を全部動かすので、画面の外枠（overflow-hidden でもスクリプトからは動く）まで
+  // 横にずれて、モバイルで画面が崩れた。動かすのは並びをじかに包む要素だけにする。
+  // 書体の読み込みでタブの幅が変わるので、読み込み後にもう一度寄せる（jsdom には document.fonts がない）
   useEffect(() => {
     let active = true;
     const reveal = () => {
-      if (!active) return;
-      list.current?.querySelector<HTMLElement>(`[data-value="${value}"]`)?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      const box = list.current?.parentElement;
+      const tab = list.current?.querySelector<HTMLElement>(`[data-value="${value}"]`);
+      if (!active || !box || !tab) return;
+      const boxRect = box.getBoundingClientRect();
+      const tabRect = tab.getBoundingClientRect();
+      if (tabRect.left < boxRect.left) box.scrollLeft -= boxRect.left - tabRect.left;
+      else if (tabRect.right > boxRect.right) box.scrollLeft += tabRect.right - boxRect.right;
     };
     reveal();
     void document.fonts?.ready.then(reveal);
