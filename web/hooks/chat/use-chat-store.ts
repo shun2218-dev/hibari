@@ -3,7 +3,8 @@
 import { useSyncExternalStore } from "react";
 
 import type { Realtime } from "@/lib/chat/realtime/realtime";
-import type { ChatState, ChatStore } from "@/lib/chat/store/chat-store";
+import type { ChatStore } from "@/lib/chat/store/chat-store";
+import type { ChatState } from "@/lib/chat/store/state";
 
 import { useChatContext } from "./use-chat-context";
 

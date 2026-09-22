@@ -8,7 +8,8 @@ import {
   windowVisible,
 } from "./activity";
 import { type ConnectionOptions, type ConnectionState, createConnection } from "./connection";
-import type { ChatState, ChatStore, ConnectionView } from "@/lib/chat/store/chat-store";
+import type { ChatStore } from "@/lib/chat/store/chat-store";
+import type { ChatState, ConnectionView } from "@/lib/chat/store/state";
 
 export type RealtimeOptions = Pick<ConnectionOptions, "url" | "createSocket" | "revalidateSession" | "issueTicket"> &
   Partial<Pick<ConnectionOptions, "now" | "random" | "isOnline" | "watchNetwork">> & {
