@@ -1,14 +1,17 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { THEME_STORAGE_KEY } from "@/lib/theme";
+import { workspace } from "@/test/chat-data";
+import { renderWithChat } from "@/test/render-with-chat";
 import { type Handler, json, problem, testUser, tokens } from "@/test/fake-api";
 import { renderWithSession } from "@/test/render-with-session";
 
 import { AppearanceSection } from "./appearance/appearance-section";
 import { DevicesSection } from "./devices/devices-section";
+import { NotificationsSection } from "./notifications/notifications-section";
 import { ProfileSection } from "./profile/profile-section";
 import { SettingsShell } from "./settings-shell";
 
@@ -159,6 +162,49 @@ describe("the user settings screens", () => {
       await user.click(screen.getByRole("button", { name: "他のすべてのデバイスからログアウト" }));
       await waitFor(() => expect(api.paths()).toContain("DELETE /api/v1/auth/sessions"));
       expect(screen.getByText("Chrome · macOS")).toBeInTheDocument();
+    });
+  });
+
+  describe("notifications（ADR 0055）", () => {
+    beforeEach(() => {
+      nav.pathname = "/settings/notifications";
+    });
+
+    it("ワークスペースごとに通知する内容を選び、選んだらすぐ保存する", async () => {
+      let sent: unknown;
+      renderWithChat(<SettingsShell><NotificationsSection /></SettingsShell>, {
+        "GET /api/v1/workspaces": () => json(200, { workspaces: [workspace("ws-1", "hibari 開発"), workspace("ws-2", "個人メモ")] }),
+        "GET /api/v1/workspaces/ws-1/me/notifications": () => json(200, { level: "mentions" }),
+        "GET /api/v1/workspaces/ws-2/me/notifications": () => json(200, { level: "all" }),
+        "PUT /api/v1/workspaces/ws-2/me/notifications": (_url, init) => {
+          sent = JSON.parse(init.body as string);
+          return json(200, sent);
+        },
+      });
+
+      const memo = within(await screen.findByRole("group", { name: "個人メモ" }));
+      expect(within(screen.getByRole("group", { name: "hibari 開発" })).getByRole("radio", { name: /メンションと DM/ })).toBeChecked();
+      expect(memo.getByRole("radio", { name: /すべて/ })).toBeChecked();
+      expect(screen.getByRole("heading", { name: "通知" })).toBeInTheDocument();
+
+      await userEvent.click(memo.getByRole("radio", { name: /なし/ }));
+
+      await waitFor(() => expect(sent).toEqual({ level: "none" }));
+      expect(memo.getByRole("radio", { name: /なし/ })).toBeChecked();
+    });
+
+    it("保存できなかったら元の値に戻す", async () => {
+      renderWithChat(<SettingsShell><NotificationsSection /></SettingsShell>, {
+        "GET /api/v1/workspaces": () => json(200, { workspaces: [workspace("ws-1", "hibari 開発")] }),
+        "GET /api/v1/workspaces/ws-1/me/notifications": () => json(200, { level: "mentions" }),
+        "PUT /api/v1/workspaces/ws-1/me/notifications": () => problem(500, "internal"),
+      });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      await userEvent.click(await screen.findByRole("radio", { name: /すべて/ }));
+
+      await waitFor(() => expect(screen.getByRole("radio", { name: /メンションと DM/ })).toBeChecked());
+      expect(error).toHaveBeenCalled();
     });
   });
 

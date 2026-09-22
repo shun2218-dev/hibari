@@ -264,6 +264,31 @@ describe("createRealtime", () => {
     realtime.stop();
   });
 
+  it("after reconnecting, reads the rooms' and the workspace's notification settings again (ADR 0055)", async () => {
+    let level = "mentions";
+    let muted = false;
+    const { store, realtime, sockets } = setup({
+      "GET /api/v1/workspaces/ws-1/rooms": () =>
+        json(200, { rooms: [room("r1", "雑談", { notifications: { level: null, muted, muted_until: null } })], unread_thread_count: 0 }),
+      "GET /api/v1/workspaces/ws-1/threads?limit=200": () => json(200, { threads: [], next_cursor: null }),
+      "GET /api/v1/workspaces/ws-1/me/notifications": () => json(200, { level }),
+    });
+    await store.loadRooms("ws-1");
+    await store.loadNotificationLevel("ws-1");
+    // 切断中に別の端末で変えた（どちらも change_seq に乗らないので、取り直しで揃える）
+    level = "all";
+    muted = true;
+    store.setActiveWorkspace("ws-1");
+    realtime.start();
+    await vi.advanceTimersByTimeAsync(0);
+    sockets.last().open();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.getSnapshot().notificationLevels["ws-1"]).toBe("all");
+    expect(store.getSnapshot().rooms.r1?.notifications?.muted).toBe(true);
+    realtime.stop();
+  });
+
   it("keeps showing syncing until the missed changes are fetched", async () => {
     let release!: () => void;
     let calls = 0;

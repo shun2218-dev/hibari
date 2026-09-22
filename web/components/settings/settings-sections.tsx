@@ -6,6 +6,8 @@ import { RadioCard } from "@/components/ui/choice";
 import { TextField } from "@/components/ui/field";
 import { BrowserIcon, MonitorIcon, PhoneIcon } from "@/components/ui/icons";
 import { Spinner } from "@/components/ui/spinner";
+import type { NotifyLevel } from "@/lib/api/types.gen";
+import { notifyLevelLabels } from "@/lib/chat/notifications";
 import { cx } from "@/lib/cx";
 
 /**
@@ -241,13 +243,7 @@ export function AppearanceSettings({
 }
 
 /** 全体の通知する内容（ADR 0055 決定 1）。未設定なら mentions（Slack の既定と同じ）。 */
-export type NotificationLevel = "all" | "mentions" | "none";
-
-export const notificationLevelLabels: Record<NotificationLevel, string> = {
-  all: "すべて",
-  mentions: "メンションと DM",
-  none: "なし",
-};
+export type NotificationLevel = NotifyLevel;
 
 /** ユーザー設定の「通知」の 1 節（ワークスペース 1 つ分）。 */
 export type WorkspaceNotificationView = { id: string; name: string; level: NotificationLevel };
@@ -288,7 +284,7 @@ export function NotificationSettings({
               value={level}
               checked={workspace.level === level}
               onChange={() => onLevelChange?.(workspace.id, level)}
-              title={notificationLevelLabels[level]}
+              title={notifyLevelLabels[level]}
               description={levelDescriptions[level]}
             />
           ))}

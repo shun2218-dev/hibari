@@ -10,11 +10,13 @@ import type {
   Message,
   MessageAttachment,
   MessageList,
+  NotifyLevel,
   RemovalReason,
   Role,
   Room,
   RoomKind,
   RoomMember,
+  RoomNotifications,
   SavedItem,
   ServerEvent,
   SetStatusRequest,
@@ -36,6 +38,7 @@ import {
   mergeMessages,
   newestChannelSeq,
 } from "./messages";
+import { isMuted, nextMuteExpiry } from "./notifications";
 import { applyPinnedMessages } from "./pins";
 import { toggleReaction } from "./reactions";
 import { type SavedTab, type SavedTabState, applySavedItem } from "./saved";
@@ -187,6 +190,11 @@ export type ChatState = {
   removedRooms: Record<string, RemovalReason | undefined>;
   /** 自分が外されたワークスペース。一覧からは除き、その画面を開いている間だけ名前を残す（chat/workspace/removed-from-workspace.png）。 */
   removedWorkspaces: Record<string, { reason: RemovalReason; workspace: Workspace } | undefined>;
+  /**
+   * ワークスペースごとの、全体の通知の設定（ADR 0055 決定 2）。ルームのメニューとユーザー設定で使う。
+   * ルームごとの設定は、ルームの本体（rooms の notifications）にある。
+   */
+  notificationLevels: Record<string, NotifyLevel | undefined>;
   connection: ConnectionView;
 };
 
@@ -250,6 +258,7 @@ export function createChatStore(
     outgoing: {},
     removedRooms: {},
     removedWorkspaces: {},
+    notificationLevels: {},
     connection: { banner: null, unavailable: null },
   };
   const listeners = new Set<() => void>();
@@ -264,11 +273,49 @@ export function createChatStore(
   const sendQueues = new Map<string, string[]>();
   const sendLoops = new Map<string, Promise<void>>();
 
+  // いちばん早く来るミュートの期限に張るタイマー（ADR 0055 決定 5）。期限切れのイベントは来ないので、自分で戻す
+  let muteTimer: { at: number; timer: ReturnType<typeof setTimeout> } | null = null;
+
   function update(recipe: (s: ChatState) => ChatState) {
     const next = recipe(state);
     if (next === state) return;
+    const roomsChanged = next.rooms !== state.rooms;
     state = next;
+    if (roomsChanged) scheduleMuteExpiry();
     for (const listener of listeners) listener();
+  }
+
+  /**
+   * 期限つきのミュートが切れる時刻にタイマーを張り、切れたら手元の設定を「ミュートなし」に戻す。
+   * 表示の側で時計と比べるだけだと、描き直すきっかけがなく、期限が過ぎても薄いままになる（6.14a の DoD）。
+   */
+  function scheduleMuteExpiry() {
+    const at = nextMuteExpiry(
+      Object.values(state.rooms).map((r) => r?.notifications),
+      now(),
+    );
+    if (muteTimer?.at === at) return;
+    if (muteTimer) clearTimeout(muteTimer.timer);
+    muteTimer = null;
+    if (at === null) return;
+    muteTimer = {
+      at,
+      timer: setTimeout(() => {
+        muteTimer = null;
+        const t = now();
+        update((s) => {
+          let rooms = s.rooms;
+          for (const [id, room] of Object.entries(s.rooms)) {
+            const n = room?.notifications;
+            if (!room || !n?.muted || isMuted(n, t)) continue;
+            rooms = { ...rooms, [id]: { ...room, notifications: { ...n, muted: false, muted_until: null } } };
+          }
+          return rooms === s.rooms ? s : { ...s, rooms };
+        });
+        // 同じ時刻に切れるものがなかった（時計が戻ったなど）ときも、次の期限に張り直す
+        scheduleMuteExpiry();
+      }, at - now()),
+    };
   }
 
   function once(key: string, run: () => Promise<void>): Promise<void> {
@@ -1383,6 +1430,18 @@ export function createChatStore(
       case "saved.updated":
         receiveSaved(event.data);
         return;
+      case "notifications.updated":
+        // 本人の別のタブ・端末で変えた（ADR 0055 決定 5）
+        update((s) => ({
+          ...s,
+          notificationLevels: { ...s.notificationLevels, [event.data.workspace_id]: event.data.level },
+        }));
+        return;
+      case "room.notifications_updated": {
+        const { level, muted, muted_until } = event.data;
+        patchRoom(event.data.room_id, (room) => ({ ...room, notifications: { level, muted, muted_until } }));
+        return;
+      }
       case "thread.followed": {
         // 誰が参加するかはサーバーが決める。一覧の 1 行（親の冒頭など）はイベントにないので取り直す
         const { thread_root_id, last_read_thread_seq, workspace_id } = event.data;
@@ -1637,6 +1696,8 @@ export function createChatStore(
     dispose() {
       for (const timer of typingTimers.values()) clearTimeout(timer);
       typingTimers.clear();
+      if (muteTimer) clearTimeout(muteTimer.timer);
+      muteTimer = null;
     },
 
     loadWorkspaces(): Promise<void> {
@@ -1702,6 +1763,50 @@ export function createChatStore(
         else await api.setStatus(workspaceId, status);
       } catch (error) {
         patchMySettings(undefined, before, workspaceId);
+        throw error;
+      }
+    },
+
+    /**
+     * 全体の通知の設定を取る（ADR 0055）。再接続の後にも取り直す（realtime.ts。change_seq に乗らないため）。
+     * 取れなくても既定の mentions として描けるので、失敗はログだけにする。
+     */
+    loadNotificationLevel(workspaceId: string): Promise<void> {
+      return once(`notification-level:${workspaceId}`, async () => {
+        try {
+          const { level } = await api.getNotificationLevel(workspaceId);
+          update((s) => ({ ...s, notificationLevels: { ...s.notificationLevels, [workspaceId]: level } }));
+        } catch (err) {
+          console.error("failed to load notification level", err);
+        }
+      });
+    },
+
+    /** 全体の通知の設定を変える。手元で先に反映し、失敗したら元に戻して ApiError を投げる。 */
+    async setNotificationLevel(workspaceId: string, level: NotifyLevel): Promise<void> {
+      const before = state.notificationLevels[workspaceId];
+      update((s) => ({ ...s, notificationLevels: { ...s.notificationLevels, [workspaceId]: level } }));
+      try {
+        await api.setNotificationLevel(workspaceId, level);
+      } catch (error) {
+        update((s) => ({ ...s, notificationLevels: { ...s.notificationLevels, [workspaceId]: before } }));
+        throw error;
+      }
+    },
+
+    /**
+     * ルームごとの設定を全部の値で置き換える（ADR 0055 決定 4）。メニューで 1 つを変えるときも、手元の残りの値と一緒に送る。
+     * 手元で先に反映し、失敗したら元に戻して ApiError を投げる。応答（期限を落とした後の値）で上書きする。
+     */
+    async setRoomNotifications(roomId: string, next: RoomNotifications): Promise<void> {
+      const before = state.rooms[roomId]?.notifications;
+      if (before === undefined || before === null) return;
+      patchRoom(roomId, (room) => ({ ...room, notifications: next }));
+      try {
+        const saved = await api.setRoomNotifications(roomId, next);
+        patchRoom(roomId, (room) => ({ ...room, notifications: saved }));
+      } catch (error) {
+        patchRoom(roomId, (room) => ({ ...room, notifications: before }));
         throw error;
       }
     },

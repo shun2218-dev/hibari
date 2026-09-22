@@ -26,7 +26,10 @@ import type {
   Message,
   MessageLinks,
   MessageList,
+  NotificationLevel,
+  NotifyLevel,
   ReadState,
+  RoomNotifications,
   Role,
   Room,
   UpdateRoomRequest,
@@ -128,6 +131,17 @@ export function createChatApi(request: Session["request"]) {
     /** カスタムステータスを解除する。設定していなくても成功（冪等）。 */
     clearStatus: (workspaceId: string) =>
       request<void>("DELETE", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/me/status`),
+
+    /** そのワークスペースでの全体の通知の設定（ADR 0055 決定 2）。未設定なら mentions が返る。 */
+    getNotificationLevel: (workspaceId: string) =>
+      request<NotificationLevel>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/me/notifications`),
+
+    setNotificationLevel: (workspaceId: string, level: NotifyLevel) =>
+      request<NotificationLevel>("PUT", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/me/notifications`, { level }),
+
+    /** ルームごとの設定を全部の値で置き換える（PUT。決定 4）。参加していない public ルームは 403。 */
+    setRoomNotifications: (roomId: string, body: RoomNotifications) =>
+      request<RoomNotifications>("PUT", `/api/v1/rooms/${encodeURIComponent(roomId)}/me/notifications`, body),
 
     /** owner を譲渡する。自分は admin になる（ADR 0011）。 */
     transferOwnership: (workspaceId: string, userId: string) =>
