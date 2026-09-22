@@ -231,6 +231,8 @@ export function createRealtime({ store, createActivity: makeActivity, onEvent, .
     if (state.saved[workspaceId]?.cursor != null) tasks.push(store.syncSaved(workspaceId));
     // 全体の通知の設定も change_seq に乗らない（ADR 0055 決定 5）。ルームごとの設定はルーム一覧に入っている
     if (state.notificationLevels[workspaceId] !== undefined) tasks.push(store.loadNotificationLevel(workspaceId));
+    // アクティビティには差分のカーソルがないので、読み込んでいる一覧と未読の件数を取り直す（ADR 0058 決定 9）
+    if (state.activity[workspaceId]) tasks.push(store.reloadActivity(workspaceId));
     for (const { kind, id } of targets) {
       if (kind !== "room") continue;
       if (state.timelines[id]?.status === "ready") tasks.push(store.syncTimeline(id));

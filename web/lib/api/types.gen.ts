@@ -32,6 +32,8 @@ export type SavedItemStatus = "ok" | "unavailable";
 
 export type NotifyLevel = "all" | "mentions" | "none";
 
+export type ActivityFilter = "all" | "dm" | "mention" | "thread" | "reaction";
+
 export type ActivityItemType = "message" | "reaction";
 
 export type ActivityReason = "dm" | "mention" | "thread" | "channel" | "reaction";

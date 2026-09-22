@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dayKey, formatBytes, formatDate, formatListTime, formatTime } from "./format";
+import { dayKey, formatBytes, formatDate, formatDayLabel, formatListTime, formatTime } from "./format";
 
 const tz = "Asia/Tokyo";
 
@@ -44,3 +44,18 @@ describe("formatBytes", () => {
     expect(formatBytes(bytes)).toBe(want);
   });
 });
+
+describe("formatDayLabel（アクティビティの日付の区切り）", () => {
+  const tz = "Asia/Tokyo";
+  const now = new Date("2026-09-22T03:00:00Z"); // 東京の 9 月 22 日 12:00
+
+  it.each([
+    ["2026-09-21T16:00:00Z", "今日"], // 東京の 22 日 01:00
+    ["2026-09-21T14:59:00Z", "昨日"], // 東京の 21 日 23:59
+    ["2026-08-10T03:00:00Z", "8月10日"],
+    ["2025-12-31T03:00:00Z", "2025年12月31日"],
+  ])("%s → %s", (iso, want) => {
+    expect(formatDayLabel(new Date(iso), now, tz)).toBe(want);
+  });
+});
+

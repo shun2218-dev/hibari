@@ -1,6 +1,8 @@
 import type { ConnectionBannerStatus } from "@/components/chat/types";
 import { ApiError } from "@/lib/api/error";
 import type {
+  ActivityFilter,
+  ActivityItem,
   FollowedThread,
   Invite,
   InviteAcceptance,
@@ -27,7 +29,19 @@ import type {
 
 import { ulid } from "@/lib/ulid";
 
+import {
+  type ActivityListState,
+  activityListKey,
+  applyRoomReadToActivity,
+  applyThreadReadToActivity,
+  belongsTo,
+  insertActivity,
+  messageActivityItem,
+  parseActivityListKey,
+  removeActivity,
+} from "./activity-feed";
 import type { ChatApi } from "./api";
+import { notifyReasons } from "./desktop-notification";
 import {
   advanceCursor,
   applyMessageToRoom,
@@ -202,8 +216,17 @@ export type ChatState = {
    * ルームごとの設定は、ルームの本体（rooms の notifications）にある。
    */
   notificationLevels: Record<string, NotifyLevel | undefined>;
+  /**
+   * ワークスペースごとのアクティビティ（ADR 0058）。行を持たない API から取り、WebSocket のイベントで手元を動かす。
+   * - lists: タブと「未読メッセージ」の組（activityListKey）ごとの一覧。開いた組だけを持つ
+   * - unreadCount: 未読の件数（左のメニューのバッジ）。100 で打ち切られている。取る前は null
+   */
+  activity: Record<string, { lists: Record<string, ActivityListState | undefined>; unreadCount: number | null } | undefined>;
   connection: ConnectionView;
 };
+
+/** 未読のアクティビティの件数の上限（API と同じ。バッジは「99+」）。 */
+export const MAX_UNREAD_ACTIVITY = 100;
 
 export type ChatStoreOptions = {
   /** ログインしているユーザー。自分の送信・入力中・自分宛てのイベントの判定に使う。 */
@@ -266,6 +289,7 @@ export function createChatStore(
     removedRooms: {},
     removedWorkspaces: {},
     notificationLevels: {},
+    activity: {},
     connection: { banner: null, unavailable: null },
   };
   const listeners = new Set<() => void>();
@@ -511,6 +535,7 @@ export function createChatStore(
     );
     const workspaceId = state.rooms[roomId]?.workspace_id;
     if (workspaceId) patchThreadList(workspaceId, (list) => applyThreadRead(list, rootId, lastReadThreadSeq));
+    if (workspaceId) activityRead(workspaceId, (items) => applyThreadReadToActivity(items, rootId, lastReadThreadSeq));
   }
 
   /**
@@ -889,6 +914,164 @@ export function createChatStore(
         mentionCount: read.mention_count,
       }),
     );
+    roomReadAdvanced(roomId, read.last_read_user_seq);
+  }
+
+  // ---- アクティビティ（ADR 0058） ----
+
+  // 未読の件数に足したメッセージ。同じメッセージが送信の応答と message.created の両方で届いても、1 回だけ数える
+  const countedActivity = new Set<string>();
+
+  function patchActivity(
+    workspaceId: string,
+    recipe: (activity: NonNullable<ChatState["activity"][string]>) => NonNullable<ChatState["activity"][string]>,
+  ) {
+    update((s) => {
+      const current = s.activity[workspaceId] ?? { lists: {}, unreadCount: null };
+      const next = recipe(current);
+      return next === current ? s : { ...s, activity: { ...s.activity, [workspaceId]: next } };
+    });
+  }
+
+  /** 読み込んだ一覧すべての 1 件ずつを書き換える。変わらない一覧は作り直さない。 */
+  function patchActivityItems(workspaceId: string, recipe: (items: ActivityItem[], key: string) => ActivityItem[]) {
+    patchActivity(workspaceId, (activity) => {
+      let lists = activity.lists;
+      for (const [key, list] of Object.entries(activity.lists)) {
+        if (!list || list.status !== "ready") continue;
+        const items = recipe(list.items, key);
+        if (items === list.items) continue;
+        if (lists === activity.lists) lists = { ...activity.lists };
+        lists[key] = { ...list, items };
+      }
+      return lists === activity.lists ? activity : { ...activity, lists };
+    });
+  }
+
+  function loadActivityList(workspaceId: string, filter: ActivityFilter, unreadOnly: boolean, reload = false): Promise<void> {
+    const key = activityListKey(filter, unreadOnly);
+    if (!reload && state.activity[workspaceId]?.lists[key]?.status === "ready") return Promise.resolve();
+    return once(`activity:${workspaceId}:${key}`, async () => {
+      patchActivity(workspaceId, (activity) =>
+        activity.lists[key]
+          ? activity
+          : { ...activity, lists: { ...activity.lists, [key]: { status: "loading", items: [], nextCursor: null, loadingMore: false } } },
+      );
+      try {
+        const page = await api.listActivity(workspaceId, { filter, unreadOnly });
+        patchActivity(workspaceId, (activity) => ({
+          ...activity,
+          lists: {
+            ...activity.lists,
+            [key]: { status: "ready", items: page.items, nextCursor: page.next_cursor, loadingMore: false },
+          },
+        }));
+      } catch (err) {
+        patchActivity(workspaceId, (activity) => ({
+          ...activity,
+          lists: {
+            ...activity.lists,
+            [key]: { status: "error", items: activity.lists[key]?.items ?? [], nextCursor: null, loadingMore: false },
+          },
+        }));
+        console.error("failed to load activity", err);
+      }
+    });
+  }
+
+  function loadActivityUnreadCount(workspaceId: string): Promise<void> {
+    return once(`activity-count:${workspaceId}`, async () => {
+      try {
+        const { count } = await api.activityUnreadCount(workspaceId);
+        patchActivity(workspaceId, (activity) => (activity.unreadCount === count ? activity : { ...activity, unreadCount: count }));
+      } catch (err) {
+        console.error("failed to count unread activity", err);
+      }
+    });
+  }
+
+  /**
+   * 手元で合わせきれない変化（通知の設定・ルームから外れた・再接続）の後に、読み込んでいる一覧と件数を取り直す。
+   * 行を持たない API なので、差分のカーソルはない（決定 9）。
+   */
+  function reloadActivity(workspaceId: string): Promise<void> {
+    const activity = state.activity[workspaceId];
+    if (!activity) return Promise.resolve();
+    const tasks = Object.keys(activity.lists).map((key) => {
+      const { filter, unreadOnly } = parseActivityListKey(key);
+      return loadActivityList(workspaceId, filter, unreadOnly, true);
+    });
+    if (activity.unreadCount !== null) tasks.push(loadActivityUnreadCount(workspaceId));
+    return Promise.all(tasks).then(() => undefined);
+  }
+
+  /** 既読位置が進んだ。手元の 1 件の未読を求め直し、件数は取り直す（読み込んでいない 1 件もあるため）。 */
+  function activityRead(workspaceId: string, recipe: (items: ActivityItem[]) => ActivityItem[]) {
+    const activity = state.activity[workspaceId];
+    if (!activity) return;
+    patchActivityItems(workspaceId, (items, key) => {
+      const read = recipe(items);
+      // 「未読メッセージ」の一覧からは、読んだ 1 件を外す
+      return parseActivityListKey(key).unreadOnly ? removeActivity(read, (i) => !i.unread) : read;
+    });
+    if (activity.unreadCount !== null) void loadActivityUnreadCount(workspaceId);
+  }
+
+  function roomReadAdvanced(roomId: string, lastReadUserSeq: number) {
+    const workspaceId = state.rooms[roomId]?.workspace_id;
+    if (workspaceId) activityRead(workspaceId, (items) => applyRoomReadToActivity(items, roomId, lastReadUserSeq));
+  }
+
+  /**
+   * 届いたメッセージを、通知の規則（notifyReasons）で当てはまる一覧に足す（決定 9）。
+   * 手元にある値（ルームの設定・全体の設定・参加中のスレッド）で判断する。ずれは次に取り直したときに直る。
+   */
+  function receiveActivityMessage(message: Message) {
+    const room = state.rooms[message.room_id];
+    const workspaceId = room?.workspace_id;
+    if (!room || !workspaceId || !state.activity[workspaceId]) return;
+    const thread =
+      message.thread_root_id === null
+        ? undefined
+        : state.threadLists[workspaceId]?.list.find((t) => t.root.id === message.thread_root_id);
+    const reasons = notifyReasons(
+      { message, userId, room, level: state.notificationLevels[workspaceId], thread, now: now() },
+      { countHere: true },
+    );
+    if (reasons.length === 0) return;
+    const unread = inChannel(message)
+      ? message.user_seq > (room.last_read_user_seq ?? 0)
+      : thread !== undefined && thread.last_read_thread_seq !== null && (message.thread_seq ?? 0) > thread.last_read_thread_seq;
+    const item = messageActivityItem(message, room, reasons, unread);
+    patchActivityItems(workspaceId, (items, key) => {
+      const { filter, unreadOnly } = parseActivityListKey(key);
+      return belongsTo(item, filter, unreadOnly) ? insertActivity(items, item) : items;
+    });
+    if (unread && !countedActivity.has(message.id)) {
+      countedActivity.add(message.id);
+      patchActivity(workspaceId, (activity) =>
+        activity.unreadCount === null
+          ? activity
+          : { ...activity, unreadCount: Math.min(MAX_UNREAD_ACTIVITY, activity.unreadCount + 1) },
+      );
+    }
+  }
+
+  /** 編集・削除を一覧の 1 件に当てる。削除されたメッセージ（とそのリアクション）は外す。 */
+  function receiveActivityChange(message: Message) {
+    const workspaceId = state.rooms[message.room_id]?.workspace_id;
+    const activity = workspaceId ? state.activity[workspaceId] : undefined;
+    if (!workspaceId || !activity) return;
+    let removedUnread = false;
+    patchActivityItems(workspaceId, (items) => {
+      if (!items.some((i) => i.message.id === message.id)) return items;
+      if (message.deleted_at !== null) {
+        removedUnread ||= items.some((i) => i.message.id === message.id && i.unread);
+        return removeActivity(items, (i) => i.message.id === message.id);
+      }
+      return items.map((i) => (i.message.id === message.id ? { ...i, message } : i));
+    });
+    if (removedUnread && activity.unreadCount !== null) void loadActivityUnreadCount(workspaceId);
   }
 
   /**
@@ -1292,10 +1475,12 @@ export function createChatStore(
     switch (event.type) {
       case "message.created":
         receiveMessage(event.data, true);
+        receiveActivityMessage(event.data);
         return;
       case "message.updated":
       case "message.deleted":
         receiveMessage(event.data, false);
+        receiveActivityChange(event.data);
         return;
 
       case "member.joined": {
@@ -1333,6 +1518,8 @@ export function createChatStore(
       }
       case "room.member_removed":
         removedFromRoom(event.data.workspace_id, event.data.room_id, event.data.reason);
+        // 読めなくなったルームの 1 件は、取り直すと消える（決定 4）
+        void reloadActivity(event.data.workspace_id);
         return;
       case "room.read":
         patchRoom(event.data.room_id, (room) =>
@@ -1342,6 +1529,7 @@ export function createChatStore(
             mentionCount: event.data.mention_count,
           }),
         );
+        roomReadAdvanced(event.data.room_id, event.data.last_read_user_seq);
         return;
 
       case "workspace.updated": {
@@ -1445,6 +1633,8 @@ export function createChatStore(
         // 本人の別のタブ・端末で切り替えた（ADR 0056）。フォローで参加したときは、先に届く thread.followed で一覧を取り直している
         const { workspace_id, thread_root_id, notify_replies } = event.data;
         patchThreadList(workspace_id, (list) => applyThreadNotify(list, thread_root_id, notify_replies));
+        // 設定はそのときの値で当てはめるので（ADR 0058 決定 2）、過去の 1 件も増減する。取り直す
+        void reloadActivity(workspace_id);
         return;
       }
       case "notifications.updated":
@@ -1453,12 +1643,26 @@ export function createChatStore(
           ...s,
           notificationLevels: { ...s.notificationLevels, [event.data.workspace_id]: event.data.level },
         }));
+        void reloadActivity(event.data.workspace_id);
         return;
       case "room.notifications_updated": {
         const { level, muted, muted_until } = event.data;
         patchRoom(event.data.room_id, (room) => ({ ...room, notifications: { level, muted, muted_until } }));
+        void reloadActivity(event.data.workspace_id);
         return;
       }
+      case "activity.reaction_added": {
+        // 自分のメッセージへのリアクション（ADR 0058 決定 9）。未読を持たないので、件数は変わらない
+        const { item } = event.data;
+        patchActivityItems(event.data.workspace_id, (items, key) => {
+          const { filter, unreadOnly } = parseActivityListKey(key);
+          return belongsTo(item, filter, unreadOnly) ? insertActivity(items, item) : items;
+        });
+        return;
+      }
+      case "activity.reaction_removed":
+        patchActivityItems(event.data.workspace_id, (items) => removeActivity(items, (i) => i.id === event.data.id));
+        return;
       case "thread.followed": {
         // 誰が参加するかはサーバーが決める。一覧の 1 行（親の冒頭など）はイベントにないので取り直す
         const { thread_root_id, last_read_thread_seq, workspace_id } = event.data;
@@ -1798,6 +2002,44 @@ export function createChatStore(
         }
       });
     },
+
+    /** アクティビティの一覧を取る（ADR 0058）。取ってあれば取り直さない（イベントで最新に保っている）。 */
+    loadActivity(workspaceId: string, filter: ActivityFilter, unreadOnly: boolean): Promise<void> {
+      return loadActivityList(workspaceId, filter, unreadOnly);
+    },
+
+    /** 一覧の続きを取る。続きがない・取得中なら何もしない。 */
+    loadMoreActivity(workspaceId: string, filter: ActivityFilter, unreadOnly: boolean): Promise<void> {
+      const key = activityListKey(filter, unreadOnly);
+      const list = state.activity[workspaceId]?.lists[key];
+      if (list?.status !== "ready" || list.nextCursor === null || list.loadingMore) return Promise.resolve();
+      const before = list.nextCursor;
+      return once(`activity-more:${workspaceId}:${key}`, async () => {
+        const patchList = (recipe: (list: ActivityListState) => ActivityListState) =>
+          patchActivity(workspaceId, (activity) => {
+            const current = activity.lists[key];
+            return current ? { ...activity, lists: { ...activity.lists, [key]: recipe(current) } } : activity;
+          });
+        patchList((l) => ({ ...l, loadingMore: true }));
+        try {
+          const page = await api.listActivity(workspaceId, { filter, unreadOnly, before });
+          patchList((l) => ({
+            ...l,
+            items: page.items.reduce((items, item) => insertActivity(items, item), l.items),
+            nextCursor: page.next_cursor,
+            loadingMore: false,
+          }));
+        } catch (err) {
+          patchList((l) => ({ ...l, loadingMore: false }));
+          console.error("failed to load more activity", err);
+        }
+      });
+    },
+
+    /** 未読のアクティビティの件数（左のメニューのバッジ）を取る。 */
+    loadActivityUnreadCount,
+
+    reloadActivity,
 
     /** 全体の通知の設定を変える。手元で先に反映し、失敗したら元に戻して ApiError を投げる。 */
     async setNotificationLevel(workspaceId: string, level: NotifyLevel): Promise<void> {

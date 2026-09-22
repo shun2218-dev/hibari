@@ -18,6 +18,18 @@ export type Permalink = {
   threadRootId?: string;
 };
 
+/**
+ * URL に左のメニュー（`?side=`。ADR 0058 決定 1）を足す。ホーム（`home`）は付けない。
+ * 一覧からルームを開いても、サイドバーの中身をそのままにするために使う。
+ */
+export function withSide(href: string, side: string): string {
+  if (side === "home") return href;
+  const [path, query = ""] = href.split("?");
+  const params = new URLSearchParams(query);
+  params.set("side", side);
+  return `${path}?${params}`;
+}
+
 /** 1 つのメッセージに出すカードの上限（ADR 0040）。貼られた順に先頭から数える。 */
 export const MAX_LINK_CARDS = 3;
 

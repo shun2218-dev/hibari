@@ -4,7 +4,7 @@ import type { NotifyLevel, RoomNotifications } from "@/lib/api/types.gen";
 import { message, miyuki, naoki, room } from "@/test/chat-data";
 
 import rules from "../../../testdata/notification-rules.json";
-import { shouldNotify } from "./desktop-notification";
+import { notifyReasons, shouldNotify } from "./desktop-notification";
 
 /**
  * 通知とアクティビティの規則の表（testdata/notification-rules.json。ADR 0058 決定 6）。
@@ -46,7 +46,7 @@ describe("通知の規則の表（testdata/notification-rules.json）", () => {
       muted_until: c.muted === "expired" ? "2026-09-22T08:00:00Z" : null,
     };
     const reply = c.message !== "channel";
-    const got = shouldNotify({
+    const input = {
       message: message(5, {
         room_id: "r1",
         sender: c.from_self ? naoki : miyuki,
@@ -60,7 +60,9 @@ describe("通知の規則の表（testdata/notification-rules.json）", () => {
       level: c.global ?? undefined,
       thread: c.thread_member === null ? undefined : { notify_replies: c.thread_member } as never,
       now: NOW,
-    });
-    expect(got).toBe(c.notify);
+    };
+    expect(shouldNotify(input)).toBe(c.notify);
+    // アクティビティの理由（サーバーの activity_rules_test.go と同じ期待値）
+    expect(notifyReasons(input, { countHere: true })).toEqual(c.activity);
   });
 });

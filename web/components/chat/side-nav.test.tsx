@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import Link from "next/link";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SideNavBar, type SideNavItems, SideNavRail } from "./side-nav";
@@ -58,7 +59,17 @@ describe("SideNavRail のホバー（ADR 0058 の追記）", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  const previews = { dms: <p>DM の一覧</p>, activity: <p>アクティビティの一覧</p>, later: <p>後での一覧</p> };
+  const previews = {
+    dms: (
+      <div>
+        <p>DM の一覧</p>
+        <button type="button">未読メッセージ</button>
+        <Link href="/w/w1/r/d1">佐藤 直樹</Link>
+      </div>
+    ),
+    activity: <p>アクティビティの一覧</p>,
+    later: <p>後での一覧</p>,
+  };
 
   function renderRail(current: "home" | "dms" | "activity" | "later" = "home") {
     return render(<SideNavRail items={items} current={current} workspace={<span />} account={<span />} previews={previews} />);
@@ -89,18 +100,22 @@ describe("SideNavRail のホバー（ADR 0058 の追記）", () => {
     expect(screen.queryByText(/の一覧$/)).not.toBeInTheDocument();
   });
 
-  it("重ねた一覧の上に移っても閉じず、1 件を押したら閉じる", () => {
+  it("重ねた一覧の上に移っても閉じず、1 件（リンク）を押したら閉じる", () => {
     renderRail();
 
     hover("DM");
-    const panel = screen.getByText("DM の一覧");
+    const panel = screen.getByText("DM の一覧").closest("div")!.parentElement!;
     // メニューからパネルへ動かす間に閉じる予約が入っても、パネルに入れば取り消す
     fireEvent.mouseEnter(screen.getByRole("link", { name: /後で/ }).closest("li")!);
-    fireEvent.mouseEnter(panel.parentElement!);
+    fireEvent.mouseEnter(panel);
     act(() => vi.advanceTimersByTime(300));
     expect(screen.getByText("DM の一覧")).toBeInTheDocument();
 
-    fireEvent.click(panel);
+    // スイッチなど、リンクでないものを押しても閉じない
+    fireEvent.click(screen.getByRole("button", { name: "未読メッセージ" }));
+    expect(screen.getByText("DM の一覧")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: "佐藤 直樹" }));
     expect(screen.queryByText("DM の一覧")).not.toBeInTheDocument();
   });
 

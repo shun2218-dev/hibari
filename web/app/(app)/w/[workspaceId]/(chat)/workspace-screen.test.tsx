@@ -51,6 +51,8 @@ function routes(overrides: Record<string, Handler> = {}): Record<string, Handler
       json(200, { items: [], in_progress_count: 0, last_change_seq: 0, has_more: false }),
     // チャンネルの「通知」のメニューの「全体の設定に従う」の補足に使う（ADR 0055）
     "GET /api/v1/workspaces/ws-1/me/notifications": () => json(200, { level: "mentions" }),
+    // 左のメニューのアクティビティのバッジ（ADR 0058）
+    "GET /api/v1/workspaces/ws-1/activity/unread_count": () => json(200, { count: 0 }),
     ...overrides,
   };
 }
@@ -72,6 +74,11 @@ function openRoom(r: Room, messages = [message(1), message(2), message(3)]): Rec
 
 function sidebar() {
   return within(screen.getByRole("navigation", { name: "チャンネル" }));
+}
+
+/** md 以上の左のメニュー（ADR 0058）。モバイルの下のメニューも同じ名前なので、先に出る方（左の縦のメニュー）を取る。 */
+function rail() {
+  return within(screen.getAllByRole("navigation", { name: "メニュー" })[0]);
 }
 
 describe("WorkspaceScreen", () => {
@@ -440,7 +447,8 @@ describe("WorkspaceScreen", () => {
           "PUT /api/v1/users/me/presence": () => json(200, { away: true }),
         });
 
-        await userEvent.click(screen.getByRole("button", { name: "アカウントメニュー" }));
+        // md 以上ではアバターは左のメニューの下にある（ADR 0058）
+        await userEvent.click(rail().getByRole("button", { name: "アカウントメニュー" }));
         await userEvent.click(await screen.findByRole("button", { name: "離席中にする" }));
 
         await waitFor(() =>
@@ -454,7 +462,7 @@ describe("WorkspaceScreen", () => {
           "PUT /api/v1/workspaces/ws-1/me/status": () => json(200, { emoji: "📅", text: "会議中", expires_at: null }),
         });
 
-        await userEvent.click(screen.getByRole("button", { name: "アカウントメニュー" }));
+        await userEvent.click(rail().getByRole("button", { name: "アカウントメニュー" }));
         await userEvent.click(await screen.findByRole("button", { name: "ステータスを設定" }));
         await userEvent.click(await screen.findByRole("button", { name: "会議中" }));
         await userEvent.click(screen.getByRole("radio", { name: "1 時間" }));
@@ -1781,8 +1789,8 @@ describe("WorkspaceScreen", () => {
       await waitFor(() => expect(api.paths()).toContain("PUT /api/v1/rooms/r-design/messages/m-3/saved"));
     });
 
-    it("サイドバーの「後で」から一覧を開き、完了にすると完了済みへ移る", async () => {
-      nav.pathname = "/w/ws-1/saved";
+    it("左のメニューの「後で」で一覧をサイドバーの列に出し、完了にすると完了済みへ移る（ADR 0058）", async () => {
+      nav.search = "side=later";
       const { api } = renderWithChat(
         <WorkspaceScreen />,
         routes({
@@ -1795,7 +1803,9 @@ describe("WorkspaceScreen", () => {
       );
 
       const list = await screen.findByRole("list", { name: "進行中" });
-      expect(sidebar().getByRole("link", { name: "後で" })).toHaveAttribute("aria-current", "page");
+      expect(rail().getByRole("link", { name: "後で" })).toHaveAttribute("aria-current", "page");
+      // ホームのサイドバーからは「後で」の行がなくなった
+      expect(screen.queryByRole("navigation", { name: "チャンネル" })).not.toBeInTheDocument();
       expect(within(list).getAllByRole("listitem")).toHaveLength(2);
       expect(screen.getByRole("tab", { name: "進行中2" })).toHaveAttribute("aria-selected", "true");
 
@@ -1806,11 +1816,15 @@ describe("WorkspaceScreen", () => {
 
       await userEvent.click(screen.getByRole("tab", { name: "完了済み" }));
       const completed = await screen.findByRole("list", { name: "完了済み" });
-      expect(within(completed).getByRole("link", { name: /のメッセージへ移動/ })).toHaveAttribute("href", "/w/ws-1/r/room-1?m=m-2");
+      // 押してルームを開いても、サイドバーは「後で」のまま（?side= を残す）
+      expect(within(completed).getByRole("link", { name: /のメッセージへ移動/ })).toHaveAttribute(
+        "href",
+        "/w/ws-1/r/room-1?m=m-2&side=later",
+      );
     });
 
     it("読めない行を押すと確かめてから外す", async () => {
-      nav.pathname = "/w/ws-1/saved";
+      nav.search = "side=later";
       const { api } = renderWithChat(
         <WorkspaceScreen />,
         routes({
@@ -2152,4 +2166,98 @@ describe("WorkspaceScreen", () => {
       }
     });
   });
+
+  describe("左のメニューとアクティビティ（ADR 0058）", () => {
+    const dm2 = room("r-dm2", "", {
+      kind: "dm",
+      name: null,
+      dm_peer: { ...miyuki, presence: "offline" },
+      unread_count: 2,
+      last_message_at: "2026-09-13T03:00:00Z",
+      last_message: { id: "m-9", sender: miyuki, kind: "user", body: "モックのリンク送りますね", created_at: "2026-09-13T03:00:00Z", deleted: false },
+    });
+    const withDms = (overrides: Record<string, Handler> = {}) =>
+      routes({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [design, chat, dm, dm2], unread_thread_count: 0 }),
+        ...overrides,
+      });
+    const activityItem = {
+      id: "m:0190a",
+      type: "message" as const,
+      reasons: ["mention" as const],
+      unread: true,
+      occurred_at: "2026-09-13T02:00:00Z",
+      room: { id: "r-design", kind: "public" as const, name: "デザインレビュー", dm_peer: null },
+      message: message(7, { id: "m-7", room_id: "r-design", sender: miyuki, body: `<@${naoki.id}> 見てください`, mentions: [{ kind: "user", user: naoki }] }),
+      reaction: null,
+    };
+
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+      nav.pathname = "/w/ws-1/r/r-design";
+    });
+
+    it("左のメニューは今のルームのまま行き先を変え、DM とアクティビティにバッジを出す", async () => {
+      renderWithChat(
+        <WorkspaceScreen />,
+        withDms({ ...openRoom(design), "GET /api/v1/workspaces/ws-1/activity/unread_count": () => json(200, { count: 3 }) }),
+      );
+
+      await screen.findByRole("list", { name: "メッセージ" });
+      expect(rail().getByRole("link", { name: /ホーム/ })).toHaveAttribute("aria-current", "page");
+      expect(rail().getByRole("link", { name: /ホーム/ })).toHaveAttribute("href", "/w/ws-1/r/r-design");
+      expect(rail().getByRole("link", { name: /DM/ })).toHaveAttribute("href", "/w/ws-1/r/r-design?side=dms");
+      // DM は未読の会話の数（メッセージの数ではない）、アクティビティは未読の件数
+      expect(within(rail().getByRole("link", { name: /DM/ })).getByLabelText("未読 1 件")).toBeInTheDocument();
+      expect(await within(rail().getByRole("link", { name: /アクティビティ/ })).findByLabelText("未読 3 件")).toBeInTheDocument();
+    });
+
+    it("?side=dms で、DM を最後のメッセージの新しい順に並べ、押しても DM のままにする", async () => {
+      nav.search = "side=dms";
+      renderWithChat(<WorkspaceScreen />, withDms(openRoom(design)));
+
+      const list = await screen.findByRole("list", { name: "ダイレクトメッセージ" });
+      const links = within(list).getAllByRole("link");
+      expect(links.map((a) => a.getAttribute("href"))).toEqual(["/w/ws-1/r/r-dm2?side=dms", "/w/ws-1/r/r-dm?side=dms"]);
+      expect(links[0]).toHaveTextContent("モックのリンク送りますね");
+
+      // 「未読メッセージ」で未読のある DM だけにする
+      await userEvent.click(screen.getByRole("switch", { name: "未読メッセージ" }));
+      expect(within(screen.getByRole("list", { name: "ダイレクトメッセージ" })).getAllByRole("link")).toHaveLength(1);
+    });
+
+    it("?side=activity で、アクティビティを取って並べ、押すとそのメッセージへ飛ぶ（サイドバーはそのまま）", async () => {
+      nav.search = "side=activity";
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        withDms({
+          ...openRoom(design),
+          "GET /api/v1/workspaces/ws-1/activity?filter=all&limit=50": () =>
+            json(200, { items: [activityItem], next_cursor: null, has_more: false }),
+          "GET /api/v1/workspaces/ws-1/activity?filter=mention&limit=50": () =>
+            json(200, { items: [activityItem], next_cursor: null, has_more: false }),
+        }),
+      );
+
+      const list = await screen.findByRole("list", { name: "すべて" });
+      const card = within(list).getByRole("link");
+      expect(card).toHaveAttribute("href", "/w/ws-1/r/r-design?m=m-7&side=activity");
+      expect(card).toHaveTextContent("高橋 みゆき");
+      expect(card).toHaveTextContent("でメンション");
+      expect(within(card).getByText("未読")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("tab", { name: "メンション" }));
+      await waitFor(() => expect(api.paths()).toContain("GET /api/v1/workspaces/ws-1/activity?filter=mention&limit=50"));
+    });
+
+    it("「後で」の古い URL は ?side=later にしてルームを開く", async () => {
+      nav.params = { workspaceId: "ws-1" };
+      nav.pathname = "/w/ws-1";
+      nav.search = "side=later";
+      renderWithChat(<WorkspaceScreen />, routes());
+
+      await waitFor(() => expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1/r/r-chat?side=later"));
+    });
+  });
 });
+
