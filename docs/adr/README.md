@@ -62,7 +62,7 @@
 | [0053](0053-require-verified-email.md) | 未検証の email ではチャットを使えないようにする（Phase 6.10.5。検証の状態はアクセストークンで渡し、メールは SMTP で非同期に送る） | 採用 |
 | [0054](0054-pins-and-saved-messages.md) | ピン留めと保存（Phase 6.12。ピン留めはメッセージの change_seq、保存は本人ごとの change_seq で同期する） | 採用 |
 | [0055](0055-mute-and-notification-settings.md) | ミュートと通知の設定（Phase 6.14a。本人が選んだ設定として DB に持ち、本人宛てのイベントで揃える） | 採用 |
-| [0056](0056-thread-notifications.md) | スレッドの通知（Phase 6.14c。参加は残して「返信の通知」だけを切り替え、明示的なフォローを足す） | 提案 |
+| [0056](0056-thread-notifications.md) | スレッドの通知（Phase 6.14c。参加は残して「返信の通知」だけを切り替え、明示的なフォローを足す） | 採用 |
 
 ## テンプレート
 
