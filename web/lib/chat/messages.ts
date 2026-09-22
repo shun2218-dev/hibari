@@ -123,7 +123,7 @@ export function applyMessageToRoom(room: Room, message: Message, userId: string,
 }
 
 /** 自分宛てか。`@channel` / `@here` も自分宛てに数える（ADR 0041）。 */
-function mentionsUser(mentions: readonly Mention[], userId: string): boolean {
+export function mentionsUser(mentions: readonly Mention[], userId: string): boolean {
   return mentions.some((m) => (m.kind === "user" ? m.user?.id === userId : true));
 }
 

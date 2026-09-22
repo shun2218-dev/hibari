@@ -1,5 +1,7 @@
 import type { FollowedThread, Message } from "@/lib/api/types.gen";
 
+import { mentionsUser } from "./messages";
+
 /**
  * スレッド（ADR 0036）の状態を、届いたメッセージやイベントに合わせて作り直す関数。ストア（store.ts）から呼ぶ。
  *
@@ -78,10 +80,41 @@ export function applyThreadRead(
   const current = threads[index];
   if (!current || current.last_read_thread_seq >= lastReadThreadSeq) return threads as FollowedThread[];
   const next = withUnread({ ...current, last_read_thread_seq: lastReadThreadSeq });
+  // 全部を読んだら、未読の範囲のメンションもなくなる。途中までなら数え直せないので、次の取り直しで揃える
+  const read = next.unread_count === 0 && next.mention_count > 0 ? { ...next, mention_count: 0 } : next;
+  return threads.map((t, i) => (i === index ? read : t));
+}
+
+/**
+ * 届いた返信（message.created）を、参加中のスレッドの一覧に反映する（ADR 0056）。
+ * 返信の数は親の message.updated でも揃うが、自分宛てのメンションの数（`@N`）は本文を見ないと増やせないので、ここで足す。
+ * 親より先に届いた返信で last_thread_seq を進めておくので、同じ返信が 2 回届いても（イベントと差分）二重に足さない。
+ */
+export function applyReplyToThreads(threads: readonly FollowedThread[], reply: Message, userId: string): FollowedThread[] {
+  const index = threads.findIndex((t) => t.root.id === reply.thread_root_id);
+  const current = threads[index];
+  if (!current || reply.thread_seq === null || reply.thread_seq <= current.last_thread_seq) return threads as FollowedThread[];
+  const mentioned = reply.sender.id !== userId && mentionsUser(reply.mentions, userId);
+  const next = withUnread({
+    ...current,
+    last_thread_seq: reply.thread_seq,
+    mention_count: mentioned ? current.mention_count + 1 : current.mention_count,
+  });
   return threads.map((t, i) => (i === index ? next : t));
 }
 
-/** 未読の返信があるスレッドの数（サイドバーの「スレッド」のバッジ）。 */
+/** 返信の通知を切り替える（ADR 0056）。一覧にないスレッド（フォローした直後）は取り直しで加わる。 */
+export function applyThreadNotify(threads: readonly FollowedThread[], rootId: string, notify: boolean): FollowedThread[] {
+  const index = threads.findIndex((t) => t.root.id === rootId);
+  const current = threads[index];
+  if (!current || current.notify_replies === notify) return threads as FollowedThread[];
+  return threads.map((t, i) => (i === index ? { ...current, notify_replies: notify } : t));
+}
+
+/**
+ * 未読の返信があるスレッドの数（サイドバーの「スレッド」のバッジ）。
+ * 返信の通知をオフにしたスレッドは、未読のメンションがあるときだけ数える（ADR 0056 決定 2。サーバーの CountUnreadThreads と同じ）。
+ */
 export function countUnreadThreads(threads: readonly FollowedThread[]): number {
-  return threads.filter((t) => t.unread_count > 0).length;
+  return threads.filter((t) => t.unread_count > 0 && (t.notify_replies || t.mention_count > 0)).length;
 }

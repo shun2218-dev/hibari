@@ -42,7 +42,14 @@ import { isMuted, nextMuteExpiry } from "./notifications";
 import { applyPinnedMessages } from "./pins";
 import { toggleReaction } from "./reactions";
 import { type SavedTab, type SavedTabState, applySavedItem } from "./saved";
-import { applyRootToThreads, applyThreadRead, mergeReplies, mergeRepliesIntoWindow } from "./threads";
+import {
+  applyReplyToThreads,
+  applyRootToThreads,
+  applyThreadNotify,
+  applyThreadRead,
+  mergeReplies,
+  mergeRepliesIntoWindow,
+} from "./threads";
 
 /**
  * - loading: 取得中（まだ一度も取れていない）
@@ -723,6 +730,10 @@ export function createChatStore(
           const replies = mergeRepliesIntoWindow(t.replies, t, [message]);
           return replies === t.replies ? t : { ...t, replies };
         });
+        if (created) {
+          const workspaceId = state.rooms[message.room_id]?.workspace_id;
+          if (workspaceId) patchThreadList(workspaceId, (list) => applyReplyToThreads(list, message, userId));
+        }
         if (created && message.sender.id === userId && message.thread_seq !== null) {
           advanceThreadRead(message.room_id, rootId, message.thread_seq);
         }
@@ -1430,6 +1441,12 @@ export function createChatStore(
       case "saved.updated":
         receiveSaved(event.data);
         return;
+      case "thread.notifications_updated": {
+        // 本人の別のタブ・端末で切り替えた（ADR 0056）。フォローで参加したときは、先に届く thread.followed で一覧を取り直している
+        const { workspace_id, thread_root_id, notify_replies } = event.data;
+        patchThreadList(workspace_id, (list) => applyThreadNotify(list, thread_root_id, notify_replies));
+        return;
+      }
       case "notifications.updated":
         // 本人の別のタブ・端末で変えた（ADR 0055 決定 5）
         update((s) => ({
@@ -1809,6 +1826,22 @@ export function createChatStore(
         patchRoom(roomId, (room) => ({ ...room, notifications: before }));
         throw error;
       }
+    },
+
+    /**
+     * スレッドの返信の通知を切り替える（ADR 0056）。手元の一覧で先に反映し、失敗したら元に戻して ApiError を投げる。
+     * 参加していないスレッドを true にしたとき（フォロー）は、応答の後に一覧を取り直して加える（親の本文などは一覧の API にしかない）。
+     */
+    async setThreadNotifications(workspaceId: string, roomId: string, rootId: string, notify: boolean): Promise<void> {
+      const before = state.threadLists[workspaceId]?.list.find((t) => t.root.id === rootId)?.notify_replies;
+      patchThreadList(workspaceId, (list) => applyThreadNotify(list, rootId, notify));
+      try {
+        await api.setThreadNotifications(roomId, rootId, notify);
+      } catch (error) {
+        if (before !== undefined) patchThreadList(workspaceId, (list) => applyThreadNotify(list, rootId, before));
+        throw error;
+      }
+      if (notify && before === undefined) await reloadThreads(workspaceId);
     },
 
     /**

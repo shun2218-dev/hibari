@@ -9,7 +9,7 @@ import { DeleteAttachmentDialog, DeleteMessageDialog } from "@/components/chat/r
 import type { MessageActions } from "@/components/chat/timeline";
 import { ApiError } from "@/lib/api/error";
 import type { Message, Role, Room, UserProfile } from "@/lib/api/types.gen";
-import { useChatStore, useMedia, useMediaState } from "@/lib/chat/chat-provider";
+import { useChatState, useChatStore, useMedia, useMediaState } from "@/lib/chat/chat-provider";
 import { buildPermalink } from "@/lib/chat/links";
 import type { MentionCandidate } from "@/lib/chat/mentions";
 import { useOrigin } from "@/lib/chat/use-origin";
@@ -72,6 +72,7 @@ export function useMessageActions({
     actionsFor: (key: string) => MessageActions;
     copyLinkFor: (key: string) => { label: string; onClick: () => void } | undefined;
     pinFor: (key: string) => { label: string; onClick: () => void } | undefined;
+    threadNotifyFor: (key: string) => { notifying: boolean; onClick: () => void } | undefined;
     saveFor: (key: string) => { saved: boolean; onClick: () => void } | undefined;
     openMenuKey: string | undefined;
     onToggleMenu: (key: string) => void;
@@ -97,6 +98,8 @@ export function useMessageActions({
   // 拡大表示に出す画像の URL。タイムラインに出ている画像はすでに取ってある（ADR 0028 / 0045 決定 4）
   const attachmentUrls = useMediaState((s) => s.attachments);
   const [openMenuKey, setOpenMenuKey] = useState<string>();
+  // 参加中のスレッド（返信の通知の状態。ADR 0056）。ワークスペースを開いたときに取ってある
+  const followedThreads = useChatState((s) => s.threadLists[workspaceId]?.list);
   const [openPickerKey, setOpenPickerKey] = useState<string>();
   // emoji-mart はテーマを props で受け取るので、`data-theme` を購読して渡す（ADR 0031 / 0044）
   const theme = useSyncExternalStore(subscribeTheme, currentTheme, serverTheme);
@@ -183,6 +186,27 @@ export function useMessageActions({
           console.error("failed to copy a message link", err);
           setCopied({ messageId: message.id, ok: false });
         }
+      },
+    };
+  }
+
+  /**
+   * 「…」のスレッドの返信の通知（ADR 0056）。返信の付いた親にだけ出す（返信のない親はフォローできない）。
+   * 設定を持てるのはルームのメンバーだけ（参加していない public ルームでは出さない）。
+   * 参加していない・オフのスレッドは「新しい返信の通知を受け取る」、オンなら「返信の通知をオフにする」。
+   */
+  function threadNotifyFor(key: string): { notifying: boolean; onClick: () => void } | undefined {
+    const message = findMessage(key);
+    if (!room?.is_member || !message?.thread || message.thread.reply_count === 0) return undefined;
+    const notifying = followedThreads?.find((t) => t.root.id === message.id)?.notify_replies ?? false;
+    return {
+      notifying,
+      onClick: () => {
+        setOpenMenuKey(undefined);
+        void store.setThreadNotifications(workspaceId, roomId, message.id, !notifying).catch((err: unknown) => {
+          // 失敗の表示はデザインにない。手元の表示は元に戻っている
+          console.error("failed to change thread notifications", err);
+        });
       },
     };
   }
@@ -328,6 +352,7 @@ export function useMessageActions({
       actionsFor,
       copyLinkFor,
       pinFor,
+      threadNotifyFor,
       saveFor,
       openMenuKey,
       onToggleMenu: (key) => setOpenMenuKey((current) => (current === key ? undefined : key)),

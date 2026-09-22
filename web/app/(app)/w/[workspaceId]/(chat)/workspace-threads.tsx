@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { ThreadList } from "@/components/chat/thread-list";
-import { useAvatarUrls, useChatState } from "@/lib/chat/chat-provider";
+import { useAvatarUrls, useChatState, useChatStore } from "@/lib/chat/chat-provider";
 import { toMemberNames, toThreadListItemView } from "@/lib/chat/views";
 
 /**
@@ -11,6 +11,9 @@ import { toMemberNames, toThreadListItemView } from "@/lib/chat/views";
  * 一覧はサイドバーのバッジにも使うので、WorkspaceScreen がワークスペースを開いたときに取ってある。
  */
 export function WorkspaceThreads({ workspaceId, onBack }: { workspaceId: string; onBack: () => void }) {
+  const store = useChatStore();
+  // 「その他」を開いている行（ADR 0056）
+  const [openMenuKey, setOpenMenuKey] = useState<string>();
   const threadList = useChatState((s) => s.threadLists[workspaceId]);
   const threads = threadList?.list;
   const senderIds = useMemo(() => (threads ?? []).map((t) => t.root.sender.id), [threads]);
@@ -30,6 +33,17 @@ export function WorkspaceThreads({ workspaceId, onBack }: { workspaceId: string;
     <ThreadList
       threads={views}
       threadHref={(key) => `/w/${workspaceId}/r/${roomOf.get(key)}?t=${key}`}
+      // 返信の通知の切り替え（ADR 0056）。オフにしても一覧には残る
+      onToggleNotify={(key) => {
+        setOpenMenuKey(undefined);
+        const thread = threads?.find((t) => t.root.id === key);
+        if (!thread) return;
+        void store.setThreadNotifications(workspaceId, thread.room.id, key, !thread.notify_replies).catch((err: unknown) => {
+          console.error("failed to change thread notifications", err);
+        });
+      }}
+      openMenuKey={openMenuKey}
+      onToggleMenu={(key) => setOpenMenuKey((current) => (current === key ? undefined : key))}
       onBack={onBack}
     />
   );
