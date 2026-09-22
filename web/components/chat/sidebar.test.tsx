@@ -105,6 +105,28 @@ describe("Sidebar", () => {
     expect(screen.getByText("雑談")).not.toHaveClass("font-bold");
   });
 
+  it("ミュートしたルームは薄くし、未読を強調しないが、メンションの数は出す（ADR 0055 決定 6）", () => {
+    renderSidebar({
+      rooms: [
+        { id: "r1", kind: "public", name: "デザインレビュー", unreadCount: 7, mentionCount: 0, muted: true },
+        { id: "r2", kind: "private", name: "リリース準備", unreadCount: 3, mentionCount: 1, muted: true },
+        { id: "d1", kind: "dm", name: "佐藤 直樹", peer: { id: "u2", presence: "online" }, unreadCount: 2, mentionCount: 0, muted: true },
+      ],
+    });
+
+    // 未読があっても太字にしない。色で薄くし、読み上げには言葉で添える
+    const design = screen.getByRole("link", { name: /デザインレビュー/ });
+    expect(design).toHaveAccessibleName(expect.stringContaining("（ミュート中）"));
+    expect(within(design).getByText("デザインレビュー", { exact: false })).not.toHaveClass("font-bold");
+    expect(within(design).getByText("デザインレビュー", { exact: false })).toHaveClass("text-text-muted");
+
+    // 自分宛てのメンションはミュートしていても分かるようにする
+    expect(screen.getByLabelText("メンション 1 件")).toHaveTextContent("@1");
+
+    // ミュートした DM は、未読の数のバッジを出さない
+    expect(screen.queryByLabelText("未読 2 件")).not.toBeInTheDocument();
+  });
+
   it("shows presence only for online DM peers", () => {
     renderSidebar();
 

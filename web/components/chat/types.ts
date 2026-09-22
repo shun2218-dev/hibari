@@ -23,6 +23,9 @@ export type UserRef = { id: string; name: string; avatarUrl?: string; status?: U
 
 export type WorkspaceRef = { id: string; name: string };
 
+/** チャンネルごとの通知の上書き（ADR 0055 決定 3）。null は「全体の設定に従う」で、この型の外で表す。 */
+export type RoomNotifyLevel = "all" | "mentions";
+
 export type RoomSummaryView = {
   id: string;
   kind: RoomKind;
@@ -36,6 +39,11 @@ export type RoomSummaryView = {
   unreadCount: number;
   /** 自分宛ての未読のメンションの数（ADR 0041）。0 より大きいとバッジが `@N` になる（ADR 0043）。 */
   mentionCount: number;
+  /**
+   * ミュートしている（ADR 0055 決定 6）。名前を薄くし、未読があっても太字にせず、未読数のバッジを出さない。
+   * メンションの `@N` は出す。期限の切れたミュートは、データ層が `Clock` で落としてから渡す。
+   */
+  muted?: boolean;
 };
 
 export type MessageAttachmentView =

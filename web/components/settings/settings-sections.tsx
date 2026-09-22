@@ -239,3 +239,64 @@ export function AppearanceSettings({
     </div>
   );
 }
+
+/** 全体の通知する内容（ADR 0055 決定 1）。未設定なら mentions（Slack の既定と同じ）。 */
+export type NotificationLevel = "all" | "mentions" | "none";
+
+export const notificationLevelLabels: Record<NotificationLevel, string> = {
+  all: "すべて",
+  mentions: "メンションと DM",
+  none: "なし",
+};
+
+/** ユーザー設定の「通知」の 1 節（ワークスペース 1 つ分）。 */
+export type WorkspaceNotificationView = { id: string; name: string; level: NotificationLevel };
+
+const levelDescriptions: Record<NotificationLevel, string> = {
+  all: "参加しているチャンネルの新しい投稿をすべて通知する",
+  mentions: "メンション、DM、参加しているスレッドの返信を通知する",
+  none: "通知しない。未読とメンションの数はこれまでどおり出る",
+};
+
+/**
+ * ユーザー設定の「通知」。全体の設定はワークスペースごとなので（ADR 0055 決定 2）、所属するワークスペースごとに節を並べる。
+ * チャンネルごとの上書きとミュートは、ルームのヘッダーの「通知」から変える（Slack と同じ入口）。
+ *
+ * 設定が変えるのは「通知するか」だけで、未読とメンションの件数はどれを選んでも数える（決定 1）。
+ */
+export function NotificationSettings({
+  workspaces,
+  onLevelChange,
+}: {
+  workspaces: WorkspaceNotificationView[];
+  onLevelChange?: (workspaceId: string, level: NotificationLevel) => void;
+}) {
+  return (
+    <div className="flex max-w-100 flex-col gap-8">
+      {workspaces.map((workspace) => (
+        <fieldset key={workspace.id} className="flex flex-col gap-2">
+          <legend className="flex items-center gap-2 pb-3">
+            <Avatar id={workspace.id} name={workspace.name} size="xs" shape="square" />
+            <span className="text-base font-bold text-text">{workspace.name}</span>
+          </legend>
+          <p className="pb-1 text-xs text-text-secondary">通知する内容</p>
+          {(["all", "mentions", "none"] as const).map((level) => (
+            <RadioCard
+              key={level}
+              // ワークスペースごとに別のラジオのまとまりにする（name が同じだと、節をまたいで 1 つしか選べない）
+              name={`notification-level-${workspace.id}`}
+              value={level}
+              checked={workspace.level === level}
+              onChange={() => onLevelChange?.(workspace.id, level)}
+              title={notificationLevelLabels[level]}
+              description={levelDescriptions[level]}
+            />
+          ))}
+        </fieldset>
+      ))}
+      <p className="text-xs leading-relaxed text-text-muted">
+        チャンネルごとの設定とミュートは、チャンネルの上にある通知のアイコンから変えられます。
+      </p>
+    </div>
+  );
+}

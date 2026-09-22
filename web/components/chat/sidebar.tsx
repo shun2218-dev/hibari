@@ -224,6 +224,8 @@ function RoomSection({
 }
 
 function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string; selected: boolean }) {
+  // ミュートしたルームは隠さずに薄くする（ADR 0055 決定 6）。未読は太字にせず、メンションの @N だけを残す
+  const muted = room.muted ?? false;
   return (
     <li>
       <Link
@@ -245,7 +247,7 @@ function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string
             presence={room.peer?.presence}
           />
         ) : (
-          <span className="flex w-4 shrink-0 justify-center self-start pt-1 text-text-secondary">
+          <span className={cx("flex w-4 shrink-0 justify-center self-start pt-1", muted ? "text-text-muted" : "text-text-secondary")}>
             {room.kind === "public" ? (
               <HashIcon aria-label="公開" aria-hidden={false} role="img" className="size-4" />
             ) : (
@@ -258,7 +260,17 @@ function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string
             {/* 知らせの要らない未読は、バッジではなく名前の太字で示す（ADR 0043） */}
             {/* ステータスの絵文字は名前のすぐ横に置く。時刻と同じ並びに入れると、名前から離れて右端に寄ってしまう */}
             <span className="flex min-w-0 items-baseline gap-1">
-              <span className={cx("truncate text-base text-text", room.unreadCount > 0 ? "font-bold" : "font-semibold")}>{room.name}</span>
+              <span
+                className={cx(
+                  "truncate text-base",
+                  muted ? "text-text-muted" : "text-text",
+                  room.unreadCount > 0 && !muted ? "font-bold" : "font-semibold",
+                )}
+              >
+                {room.name}
+                {/* 薄い色だけでは読み上げで分からないので、言葉でも添える */}
+                {muted && <span className="sr-only">（ミュート中）</span>}
+              </span>
               {room.peer?.status && <StatusEmoji status={room.peer.status} className="text-xs" />}
             </span>
             {room.timeLabel && <span className="shrink-0 font-mono text-2xs text-text-muted">{room.timeLabel}</span>}
@@ -268,8 +280,9 @@ function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string
             {/*
               数字のバッジは知らせが要るものだけ（ADR 0043）。チャンネルは自分宛てのメンションの数、
               DM は 1 通が知らせなので未読の数をそのまま出す。ただの未読のチャンネルには出さない。
+              ミュートした DM は、チャンネルと同じくメンションの数だけにする（ADR 0055 決定 6）。
             */}
-            {room.kind === "dm" ? (
+            {room.kind === "dm" && !muted ? (
               <UnreadBadge count={room.unreadCount} />
             ) : (
               <UnreadBadge count={room.mentionCount} mention />

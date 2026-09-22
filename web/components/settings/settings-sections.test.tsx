@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { AppearanceSettings, type DeviceView, DevicesSettings, ProfileSettings } from "./settings-sections";
+import { AppearanceSettings, type DeviceView, DevicesSettings, NotificationSettings, ProfileSettings } from "./settings-sections";
 
 const devices: DeviceView[] = [
   { id: "s1", kind: "browser", name: "Chrome · macOS", lastActiveLabel: "現在アクティブ", current: true },
@@ -39,6 +39,30 @@ describe("AppearanceSettings", () => {
     expect(screen.getByRole("radio", { name: /ライト/ })).toBeChecked();
     await userEvent.click(screen.getByRole("radio", { name: /ダーク/ }));
     expect(onThemeChange).toHaveBeenCalledWith("dark");
+  });
+});
+
+describe("NotificationSettings", () => {
+  it("ワークスペースごとに通知する内容を選べる（ADR 0055 決定 2）", async () => {
+    const onLevelChange = vi.fn();
+    render(
+      <NotificationSettings
+        workspaces={[
+          { id: "w1", name: "hibari 開発", level: "mentions" },
+          { id: "w2", name: "個人メモ", level: "all" },
+        ]}
+        onLevelChange={onLevelChange}
+      />,
+    );
+
+    const dev = screen.getByRole("group", { name: "hibari 開発" });
+    const memo = screen.getByRole("group", { name: "個人メモ" });
+    // 節ごとに別のまとまりなので、どちらも選んだ値が残る
+    expect(within(dev).getByRole("radio", { name: /メンションと DM/ })).toBeChecked();
+    expect(within(memo).getByRole("radio", { name: /すべて/ })).toBeChecked();
+
+    await userEvent.click(within(memo).getByRole("radio", { name: /なし/ }));
+    expect(onLevelChange).toHaveBeenCalledWith("w2", "none");
   });
 });
 

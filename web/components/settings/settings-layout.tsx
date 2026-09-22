@@ -5,19 +5,33 @@ import { BackToChatLink } from "@/components/workspace/admin-layout";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
 
-export type SettingsSection = "profile" | "devices" | "appearance";
+export type SettingsSection = "profile" | "notifications" | "devices" | "appearance";
 
 export const settingsTitles: Record<SettingsSection, string> = {
   profile: "プロフィール",
+  notifications: "通知",
   devices: "ログイン中のデバイス",
   appearance: "外観",
 };
 
-const order: SettingsSection[] = ["profile", "devices", "appearance"];
+const order: SettingsSection[] = ["profile", "notifications", "devices", "appearance"];
+
+/**
+ * 設定の項目ごとの行き先。行き先のない項目はナビに出さない
+ * （画面をデザインに足してから、ページをつなぐまでの間、行き先のないリンクを出さないため）。
+ */
+export type SettingsHrefs = Partial<Record<SettingsSection, string>>;
+
+function sectionsOf(hrefs: SettingsHrefs): { key: SettingsSection; href: string }[] {
+  return order.flatMap((key) => {
+    const href = hrefs[key];
+    return href ? [{ key, href }] : [];
+  });
+}
 
 type SettingsLayoutProps = {
   section: SettingsSection;
-  hrefs: Record<SettingsSection, string>;
+  hrefs: SettingsHrefs;
   /** モバイルで項目の一覧に戻る先（`/settings`）。 */
   backHref: string;
   /** チャットに戻る先。左のナビの上に出す。 */
@@ -36,10 +50,10 @@ export function SettingsLayout({ section, hrefs, backHref, chatHref, children }:
         <BackToChatLink href={chatHref} />
         <nav aria-label="設定" className="p-2">
           <ul className="flex flex-col">
-            {order.map((key) => (
+            {sectionsOf(hrefs).map(({ key, href }) => (
               <li key={key}>
                 <Link
-                  href={hrefs[key]}
+                  href={href}
                   aria-current={key === section ? "page" : undefined}
                   className={cx(
                     "flex h-9.5 items-center rounded-md px-2.5 text-sm font-semibold",
@@ -77,7 +91,7 @@ export function SettingsMobileMenu({
   hrefs,
   chatHref,
 }: {
-  hrefs: Record<SettingsSection, string>;
+  hrefs: SettingsHrefs;
   /** チャットに戻る先。モバイルではここが設定のいちばん上の画面になる。 */
   chatHref: string;
 }) {
@@ -95,10 +109,10 @@ export function SettingsMobileMenu({
       </header>
       <nav aria-label="設定" className="p-2">
         <ul className="flex flex-col">
-          {order.map((key) => (
+          {sectionsOf(hrefs).map(({ key, href }) => (
             <li key={key}>
               <Link
-                href={hrefs[key]}
+                href={href}
                 className="flex h-9.5 items-center justify-between rounded-md px-2.5 text-sm font-semibold text-text hover:bg-surface-muted"
               >
                 {settingsTitles[key]}
