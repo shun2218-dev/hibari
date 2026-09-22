@@ -7,8 +7,9 @@ import {
   TransferOwnershipPickDialog,
 } from "@/components/workspace/member-dialogs";
 
-import { transferCandidates, users, workspaces } from "@/stories/fixtures";
-import { settingsPage } from "@/stories/screens";
+import { users } from "@/stories/fixtures/users";
+import { transferCandidates, workspaces } from "@/stories/fixtures/workspaces";
+import { settingsPage } from "@/stories/screens/workspace";
 
 /**
  * ワークスペースの管理 / 設定。

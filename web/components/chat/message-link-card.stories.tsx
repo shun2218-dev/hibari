@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { users } from "@/stories/fixtures";
+import { users } from "@/stories/fixtures/users";
 
 import { MessageLinkCard } from "./message-link-card";
 

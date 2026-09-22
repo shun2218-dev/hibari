@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { users, workspaces } from "@/stories/fixtures";
+import { users } from "@/stories/fixtures/users";
+import { workspaces } from "@/stories/fixtures/workspaces";
 
 import { InviteAccept } from "./invite-accept";
 

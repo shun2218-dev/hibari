@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { pendingMessageKey } from "@/stories/fixtures";
-import { chat } from "@/stories/screens";
+import { pendingMessageKey } from "@/stories/fixtures/timeline";
+import { chat } from "@/stories/screens/chat";
 
 /**
  * チャット / タイムライン。

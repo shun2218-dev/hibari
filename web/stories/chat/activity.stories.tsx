@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { chat } from "@/stories/screens";
+import { chat } from "@/stories/screens/chat";
 
 /**
  * チャット / アクティビティ（ADR 0058）。通知の対象のメッセージと、自分のメッセージへのリアクションをメッセージ単位で並べる。

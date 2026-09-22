@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { CreateInviteDialog, InviteCreatedDialog } from "@/components/workspace/invites";
 
-import { workspaces } from "@/stories/fixtures";
-import { invitesPage } from "@/stories/screens";
+import { workspaces } from "@/stories/fixtures/workspaces";
+import { invitesPage } from "@/stories/screens/workspace";
 
 /**
  * ワークスペースの管理 / 招待リンク。

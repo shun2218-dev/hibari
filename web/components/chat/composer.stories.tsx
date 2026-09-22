@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { mentionCandidates, users } from "@/stories/fixtures";
+import { mentionCandidates } from "@/stories/fixtures/timeline";
+import { users } from "@/stories/fixtures/users";
 
 import { Composer } from "./composer";
 

@@ -3,7 +3,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { ArchiveRoomDialog } from "@/components/chat/dialogs/archive-room";
 import { DeleteRoomDialog } from "@/components/chat/dialogs/delete-room";
 
-import { chat, roomSettingsDialog } from "@/stories/screens";
+import { chat } from "@/stories/screens/chat";
+import { roomSettingsDialog } from "@/stories/screens/chat-panels";
 
 /**
  * チャット / アーカイブと削除（ADR 0059）。

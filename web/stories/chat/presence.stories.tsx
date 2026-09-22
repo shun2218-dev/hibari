@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { chat } from "@/stories/screens";
+import { chat } from "@/stories/screens/chat";
 
 /**
  * チャット / 離席とカスタムステータス（Phase 6.8。ADR 0049）。

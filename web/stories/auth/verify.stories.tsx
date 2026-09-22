@@ -7,7 +7,8 @@ import {
   VerifyEmailPending,
 } from "@/components/auth/verify-email";
 
-import { auth, noop } from "@/stories/screens";
+import { auth } from "@/stories/screens/auth";
+import { noop } from "@/stories/screens/shared";
 
 /**
  * 認証 / メールの確認。

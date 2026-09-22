@@ -1,17 +1,8 @@
 "use client";
 
-/**
- * story から使う画面の組み立て。presentational コンポーネントにモックデータを渡して、
- * docs/ui/screenshots/ と同じ状態を描く（ADR 0047）。操作しても状態は変わらない（見た目の確認だけが目的）。
- *
- * 1 画面 = 1 story は stories/<グループ>.stories.tsx にあり、このファイルはそこから呼ぶ部品を持つ。
- */
-import type { ComponentProps, ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { AuthShell } from "@/components/auth/auth-shell";
-import { LoginForm } from "@/components/auth/login-form";
 import { AccountMenu } from "@/components/chat/account-menu";
-import { ActivityList } from "@/components/chat/activity-list";
 import { ChatLayout } from "@/components/chat/chat-layout";
 import {
   ArchivedRoomBar,
@@ -24,21 +15,16 @@ import {
 } from "@/components/chat/chat-states";
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
-import { DmList } from "@/components/chat/dm-list";
+import { RemoveSavedItemDialog } from "@/components/chat/dialogs/remove-saved-item";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
-import { ImageViewer } from "@/components/chat/image-viewer";
 import { MembersPanel } from "@/components/chat/members-panel";
 import { NotificationMenu } from "@/components/chat/notification-menu";
 import { NotificationPermissionBanner } from "@/components/chat/notification-permission-banner";
 import { PinsList } from "@/components/chat/pins-list";
 import { ProfileHoverCard } from "@/components/chat/profile-card";
-import { ProfilePanel } from "@/components/chat/profile-panel";
-import { RemoveSavedItemDialog } from "@/components/chat/dialogs/remove-saved-item";
-import { RoomSettingsDialog } from "@/components/chat/dialogs/room-settings";
 import { RoomHeader } from "@/components/chat/room-header";
 import { RoomTabs } from "@/components/chat/room-tabs";
-import { SavedList } from "@/components/chat/saved-list";
-import { SideNavBar, type SideNavItems, type SideNavKey, SideNavRail } from "@/components/chat/side-nav";
+import { SideNavBar, type SideNavKey } from "@/components/chat/side-nav";
 import { Sidebar } from "@/components/chat/sidebar";
 import { StatusDialog } from "@/components/chat/status-dialog/status-dialog";
 import { ThreadList } from "@/components/chat/thread-list";
@@ -46,104 +32,65 @@ import { ThreadPanel } from "@/components/chat/thread-panel";
 import { Timeline } from "@/components/chat/timeline";
 import type { ActivityFilter, AttachmentDraftView, ConnectionBannerStatus } from "@/components/chat/types";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
-import { SettingsLayout, type SettingsSection } from "@/components/settings/settings-layout";
-import { Avatar } from "@/components/ui/avatar";
-import { type AdminSection, WorkspaceAdminLayout } from "@/components/workspace/admin-layout";
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog";
-import { InviteList } from "@/components/workspace/invites";
-import { type MemberMenuState, MemberList } from "@/components/workspace/member-list";
-import type { WorkspaceRole } from "@/components/workspace/types";
-import { WorkspaceSettings } from "@/components/workspace/workspace-settings";
 import { notifyLevelLabels } from "@/lib/chat/notifications/notifications";
-
+import { attachmentMessageKey, timelineWithImages } from "@/stories/fixtures/attachments";
+import { timelineWithLinkCards } from "@/stories/fixtures/links";
+import { pinCandidateKey, pinnedMessageKey, pinnedMessages, timelineWithPins } from "@/stories/fixtures/pins";
+import { hoveredReaction, reactionPickerKey, timelineWithReactions } from "@/stories/fixtures/reactions";
 import {
-  activityItems,
-  dmRooms,
-  sideNavBadges,
-  attachmentMessageKey,
-  currentUser,
-  roomSettingsMembers,
-  invitesAs,
-  jumpTargetKey,
-  membersAs,
-  pendingMessageKey,
+  dmRoom,
   roomMembers,
+  roomMembersWithPresence,
   rooms,
+  roomsSearchedWithArchived,
+  roomsWithMentions,
+  roomsWithMuted,
+  roomsWithStatus,
   selectedRoom,
-  deletedThreadReplies,
+  typingNames,
+} from "@/stories/fixtures/rooms";
+import { saveCandidateKey, savedArchived, savedCompleted, savedInProgress } from "@/stories/fixtures/saved";
+import {
   deletedThreadRoot,
   threadItems,
   threadList,
   threadListWithNotifyOff,
   threadRootKey,
-  unreadThreadCountWithNotifyOff,
-  threadReplies,
-  threadRoot,
-  threadRepliesWithBroadcast,
-  threadRootWithoutReplies,
-  timeline,
-  timelineJumped,
-  timelineWithImages,
-  timelineWithLinkCards,
-  timelineWithAvatars,
-  timelineWithSystemMessages,
-  timelineArchived,
-  roomsSearchedWithArchived,
-  mentionCandidates,
-  hoveredReaction,
-  lastMessageKey,
-  reactionPickerKey,
-  timelineWithReactions,
-  myStatus,
-  profiles,
-  profileKeys,
-  timelineWithFormerMember,
-  roomMembersWithPresence,
-  roomsWithStatus,
-  timelineWithStatus,
-  roomsWithMentions,
-  roomsWithMuted,
-  dmRoom,
-  dmTimeline,
   timelineWithBroadcast,
-  timelineWithMentions,
-  timelineWithFormatting,
   timelineWithThreads,
   unreadThreadCount,
-  typingNames,
-  users,
-  workspaces,
-  pinCandidateKey,
-  pinnedMessageKey,
-  pinnedMessages,
-  saveCandidateKey,
-  savedArchived,
-  savedCompleted,
-  savedInProgress,
-  timelineWithPins,
-} from "./fixtures";
+  unreadThreadCountWithNotifyOff,
+} from "@/stories/fixtures/threads";
+import {
+  dmTimeline,
+  jumpTargetKey,
+  lastMessageKey,
+  mentionCandidates,
+  pendingMessageKey,
+  timeline,
+  timelineArchived,
+  timelineJumped,
+  timelineWithAvatars,
+  timelineWithFormatting,
+  timelineWithFormerMember,
+  timelineWithMentions,
+  timelineWithStatus,
+  timelineWithSystemMessages,
+} from "@/stories/fixtures/timeline";
+import { currentUser, myStatus, users } from "@/stories/fixtures/users";
+import { workspaces } from "@/stories/fixtures/workspaces";
 
-export const noHref = "#";
-const roomHref = () => noHref;
+import { sideNavItems, sidePane, sideRail } from "./chat-nav";
+import { profileHover, profilePanelContent, threadPanelContent } from "./chat-panels";
+import { noHref, noop, roomHref } from "./shared";
 
-// ---- 認証 ----
-
-export const goodStrength = { level: 3, label: "良い" } as const;
-
-// 渡したときだけ出る操作を、スクリーンショットと同じく出しておくための何もしないハンドラ。
-export const noop = () => {};
-
-export function auth(children: ReactNode, footer?: ReactNode) {
-  return <AuthShell footer={footer}>{children}</AuthShell>;
-}
-
-export function login(error?: "credentials" | "rate_limited") {
-  return auth(<LoginForm error={error} forgotPasswordHref={noHref} signupHref={noHref} />);
-}
-
+/**
+ * チャットの画面そのもの（サイドバー・ヘッダー・タイムライン・入力欄）。
+ */
 // ---- チャット ----
 
-type ChatOptions = {
+export type ChatOptions = {
   /** アバター画像を設定している人が混ざったタイムラインにする。 */
   avatars?: boolean;
   /** 参加や名前の変更のログを挟んだタイムライン（ADR 0033）。 */
@@ -306,56 +253,6 @@ type ChatOptions = {
   /** サイドバーの検索の結果に、アーカイブしたチャンネルを混ぜる（`search` と一緒に使う。ADR 0059）。 */
   archivedSearch?: boolean;
 };
-
-/** ホバーのカードを出すメッセージと、その中身。 */
-function profileHover(profile: NonNullable<ChatOptions["profile"]>) {
-  switch (profile) {
-    case "hover-self":
-      return { key: profileKeys.you, profile: profiles.you };
-    case "hover-former":
-      return { key: profileKeys.former, profile: profiles.former };
-    default:
-      return { key: profileKeys.naoki, profile: profiles.naoki };
-  }
-}
-
-/** 右のパネル（モバイルは全画面）。 */
-function profilePanelContent(profile: NonNullable<ChatOptions["profile"]>) {
-  switch (profile) {
-    case "panel-menu":
-      return <ProfilePanel profile={profiles.naoki} menuOpen />;
-    case "panel-manage":
-      return <ProfilePanel profile={profiles.ryo} menuOpen />;
-    case "panel-self":
-      return <ProfilePanel profile={profiles.you} />;
-    case "panel-loading":
-      return <ProfilePanel profile={profiles.miyukiLoading} />;
-    case "panel-unverified":
-      return <ProfilePanel profile={profiles.miyukiUnverified} />;
-    case "panel-former":
-      return <ProfilePanel profile={profiles.former} />;
-    case "panel-unknown":
-      return <ProfilePanel profile={{ kind: "unknown" }} />;
-    case "panel-from-members":
-      return <ProfilePanel profile={profiles.naoki} onBack={noop} />;
-    default:
-      return <ProfilePanel profile={profiles.naoki} />;
-  }
-}
-
-/** スレッドのパネルに出す親と返信。 */
-function threadPanelContent(thread: NonNullable<ChatOptions["thread"]>) {
-  switch (thread) {
-    case "replies":
-      return { root: threadRoot, replies: threadReplies, typing: [users.naoki.name] };
-    case "empty":
-      return { root: threadRootWithoutReplies, replies: [], typing: [] };
-    case "root-deleted":
-      return { root: deletedThreadRoot, replies: deletedThreadReplies, typing: [] };
-    case "broadcast":
-      return { root: threadRoot, replies: threadRepliesWithBroadcast, typing: [] };
-  }
-}
 
 /** スレッドの画面のタイムライン。親が削除されたスレッドは、その親（tombstone と「N 件の返信」）を先頭に足す。 */
 function threadTimeline(thread: NonNullable<ChatOptions["thread"]>) {
@@ -703,278 +600,5 @@ export function chat({
       )}
       <CreateWorkspaceDialog open={Boolean(createWorkspace)} />
     </>
-  );
-}
-
-/** 左のメニューの行き先とバッジ（ADR 0058 決定 1）。 */
-const sideNavItems: SideNavItems = {
-  home: { href: noHref },
-  dms: { href: noHref, badge: sideNavBadges.dms },
-  activity: { href: noHref, badge: sideNavBadges.activity },
-  later: { href: noHref },
-};
-
-/** md 以上の左のメニュー。ワークスペースの切り替えとアカウントのメニューは、ここから開く。 */
-function sideRail(
-  side: SideNavKey,
-  {
-    switcher,
-    accountMenu,
-    presence,
-    preview,
-  }: { switcher?: boolean; accountMenu?: boolean; presence?: boolean; preview?: ChatOptions["preview"] },
-) {
-  return (
-    <SideNavRail
-      items={sideNavItems}
-      current={side}
-      openPreview={preview}
-      previews={{
-        dms: <DmList variant="preview" rooms={dmRooms} roomHref={roomHref} />,
-        activity: <ActivityList variant="preview" filter="all" unreadOnly={false} items={activityItems} />,
-        later: <SavedList variant="preview" tab="in_progress" inProgressCount={savedInProgress.length} items={savedInProgress} />,
-      }}
-      workspace={
-        <>
-          <button type="button" aria-label="ワークスペースを切り替える" aria-expanded={Boolean(switcher)} aria-haspopup="dialog" className="rounded-sm">
-            <Avatar id={workspaces.dev.id} name={workspaces.dev.name} size="md" shape="square" />
-          </button>
-          {switcher && (
-            <WorkspaceSwitcher placement="rail" workspaces={[workspaces.dev, workspaces.memo]} currentWorkspaceId={workspaces.dev.id} />
-          )}
-        </>
-      }
-      account={
-        <>
-          <button type="button" aria-label="アカウントメニュー" aria-expanded={Boolean(accountMenu)} aria-haspopup="dialog" className="rounded-full">
-            <Avatar id={currentUser.id} name={currentUser.name} imageUrl={currentUser.avatarUrl} size="sm" />
-          </button>
-          {accountMenu && (
-            <AccountMenu placement="rail" user={{ ...users.you, handle: users.you.handle, status: presence ? myStatus : undefined }} away={presence} />
-          )}
-        </>
-      }
-    />
-  );
-}
-
-/** サイドバーの列の中身。左のメニューで選んだものを出す（ADR 0058 決定 1）。 */
-function sidePane(
-  side: SideNavKey,
-  home: ReactNode,
-  {
-    activity,
-    dmsEmpty,
-    dmsUnread,
-    saved,
-    savedTab,
-    savedItems,
-  }: {
-    activity?: ChatOptions["activity"];
-    dmsEmpty?: boolean;
-    dmsUnread?: boolean;
-    saved?: ChatOptions["saved"];
-    savedTab: ComponentProps<typeof SavedList>["tab"];
-    savedItems: NonNullable<ComponentProps<typeof SavedList>["items"]>;
-  },
-) {
-  switch (side) {
-    case "home":
-      return home;
-    case "dms":
-      return (
-        <DmList
-          rooms={dmsEmpty ? [] : dmsUnread ? dmRooms.filter((room) => room.unreadCount > 0) : dmRooms}
-          unreadOnly={dmsUnread}
-          roomHref={roomHref}
-          onStartDm={noop}
-        />
-      );
-    case "activity": {
-      const filter: ActivityFilter =
-        activity === "dm" || activity === "mention" || activity === "thread" || activity === "reaction" ? activity : "all";
-      const unreadOnly = activity === "unread" || activity === "unread-empty";
-      const items =
-        activity === "empty" || activity === "unread-empty"
-          ? []
-          : activityItems.filter(
-              (item) => (filter === "all" || item.reasons.includes(filter)) && (!unreadOnly || item.unread),
-            );
-      return (
-        <ActivityList
-          filter={filter}
-          unreadOnly={unreadOnly}
-          items={items}
-          hoveredKey={activity === "hover" ? activityItems[1].key : undefined}
-        />
-      );
-    }
-    case "later":
-      return (
-        <SavedList
-          tab={savedTab}
-          inProgressCount={saved === "empty" ? 0 : savedInProgress.length}
-          items={savedItems}
-          hoveredKey={saved === "row-hover" ? savedInProgress[0].key : undefined}
-          openMenuKey={saved === "menu" ? savedInProgress[0].key : saved === "archived-menu" ? savedArchived[0].key : undefined}
-        />
-      );
-  }
-}
-
-/** サイドバーだけを切り出したフレーム（足した「+」を見るため）。 */
-export function sidebarFrame() {
-  return (
-    <div className="h-140 w-80 border-r border-border">
-      <Sidebar
-        workspace={workspaces.dev}
-        currentUser={currentUser}
-        rooms={rooms}
-        selectedRoomId={selectedRoom.id}
-        roomHref={roomHref}
-        onCreateRoom={noop}
-        onStartDm={noop}
-      />
-    </div>
-  );
-}
-
-/** ルームのヘッダーだけを切り出したフレーム（足した設定のボタンを見るため）。 */
-export function roomHeaderFrame() {
-  return (
-    <div className="w-180 bg-surface">
-      <RoomHeader
-        kind={selectedRoom.kind}
-        name={selectedRoom.name}
-        memberCount={selectedRoom.memberCount}
-        onOpenSettings={noop}
-        onToggleMembers={noop}
-      />
-    </div>
-  );
-}
-
-// ---- ワークスペースの管理 ----
-
-const adminHrefs: Record<AdminSection, string> = { settings: noHref, members: noHref, invites: noHref };
-
-function admin(role: WorkspaceRole, section: AdminSection, children: ReactNode, overlay?: ReactNode) {
-  return (
-    <>
-      <WorkspaceAdminLayout
-        workspace={workspaces.yama}
-        currentUser={{ ...users.you, role }}
-        section={section}
-        memberCount={6}
-        activeInviteCount={1}
-        hrefs={adminHrefs}
-        backHref={noHref}
-      >
-        {children}
-      </WorkspaceAdminLayout>
-      {overlay}
-    </>
-  );
-}
-
-export function settingsPage(role: WorkspaceRole, overlay?: ReactNode) {
-  return admin(role, "settings", <WorkspaceSettings role={role} name={workspaces.yama.name} invitePolicy="admins_only" />, overlay);
-}
-
-export function membersPage(role: WorkspaceRole, openMenu: MemberMenuState = null, overlay?: ReactNode) {
-  return admin(role, "members", <MemberList members={membersAs(role)} openMenu={openMenu} />, overlay);
-}
-
-export function invitesPage(role: WorkspaceRole, policy: "admins_only" | "all_members" = "admins_only", overlay?: ReactNode) {
-  const canCreate = role !== "member" || policy === "all_members";
-  return admin(
-    role,
-    "invites",
-    <InviteList
-      invites={invitesAs(role)}
-      canCreate={canCreate}
-      createLockedReason={canCreate ? undefined : "管理者だけが招待リンクを作成できます。"}
-    />,
-    overlay,
-  );
-}
-
-// ---- ユーザー設定 ----
-
-export const settingsHrefs: Record<SettingsSection, string> = {
-  profile: noHref,
-  notifications: noHref,
-  devices: noHref,
-  appearance: noHref,
-};
-
-export function userSettings(section: SettingsSection, children: ReactNode) {
-  return (
-    <SettingsLayout section={section} hrefs={settingsHrefs} backHref={noHref} chatHref={noHref}>
-      {children}
-    </SettingsLayout>
-  );
-}
-
-export const invitePreview = {
-  workspace: { id: workspaces.yama.id, name: workspaces.yama.name, memberCount: 6, publicRoomCount: 8 },
-  inviter: { id: users.misaki.id, name: users.misaki.name },
-};
-
-export const inviteFooter = (
-  <>
-    別のアカウントで開きますか？{" "}
-    <button type="button" className="font-medium text-primary hover:underline">
-      ログアウト
-    </button>
-  </>
-);
-
-/**
- * 拡大表示（ADR 0045）。閉じる・送る・ダウンロードはどの画面でも同じなので、ここでまとめる。
- * 消せない人の画面だけ削除を出さない（決定 9）。
- */
-export function imageViewer(images: ComponentProps<typeof ImageViewer>["images"], index: number, canDelete = true) {
-  return (
-    <ImageViewer
-      images={images}
-      index={index}
-      onMove={noop}
-      onClose={noop}
-      onDownload={noop}
-      onDelete={canDelete ? noop : undefined}
-    />
-  );
-}
-
-/** チャンネルの設定のダイアログ。読み取り専用（member）のときだけ退出を出す。 */
-export function roomSettingsDialog({
-  canEdit,
-  onLeave,
-  archive,
-}: {
-  canEdit: boolean;
-  onLeave?: () => void;
-  /**
-   * アーカイブ・復元・削除の節（ADR 0059）。
-   * - member: アーカイブだけ（ルームのメンバーの member）
-   * - admin: アーカイブと削除
-   * - archived: アーカイブ中に admin が開いたところ（復元と削除）
-   */
-  archive?: "member" | "admin" | "archived";
-}) {
-  return (
-    <RoomSettingsDialog
-      open
-      kind="private"
-      name="リリース準備"
-      canEdit={canEdit}
-      members={roomSettingsMembers}
-      onLeave={onLeave}
-      archived={archive === "archived"}
-      onArchive={archive === "member" || archive === "admin" ? noop : undefined}
-      onUnarchive={archive === "archived" ? noop : undefined}
-      onDelete={archive === "admin" || archive === "archived" ? noop : undefined}
-    />
   );
 }

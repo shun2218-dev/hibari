@@ -5,8 +5,12 @@ import { CreateRoomDialog } from "@/components/chat/dialogs/create-room";
 import { LeaveRoomDialog } from "@/components/chat/dialogs/leave-room";
 import { StartDmDialog } from "@/components/chat/dialogs/start-dm";
 
-import { dmCandidates, users } from "@/stories/fixtures";
-import { chat, noop, roomHeaderFrame, roomSettingsDialog, sidebarFrame } from "@/stories/screens";
+import { dmCandidates } from "@/stories/fixtures/rooms";
+import { users } from "@/stories/fixtures/users";
+import { chat } from "@/stories/screens/chat";
+import { roomHeaderFrame, sidebarFrame } from "@/stories/screens/chat-nav";
+import { roomSettingsDialog } from "@/stories/screens/chat-panels";
+import { noop } from "@/stories/screens/shared";
 
 /**
  * チャット / チャンネルとメンバー。
