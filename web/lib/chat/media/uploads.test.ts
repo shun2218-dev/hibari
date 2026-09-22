@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type Attachment, type CreateAttachmentRequest, PROBLEM_TYPE_PREFIX } from "@/lib/api/types.gen";
-import { createSession } from "@/lib/auth/session";
+import { createSession } from "@/lib/auth/session/session";
 import { type Handler, TEST_API_BASE, fakeApi, json, tokens } from "@/test/fake-api";
 
 import { createChatApi } from "@/lib/chat/api/chat-api";

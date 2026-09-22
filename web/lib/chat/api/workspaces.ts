@@ -16,7 +16,7 @@ import type {
   Workspace,
   WorkspaceList,
 } from "@/lib/api/types.gen";
-import type { Session } from "@/lib/auth/session";
+import type { Session } from "@/lib/auth/session/session";
 
 import { listAll } from "./paging";
 

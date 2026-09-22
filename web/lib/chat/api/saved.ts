@@ -1,5 +1,5 @@
 import type { SavedItem, SavedList, SavedState } from "@/lib/api/types.gen";
-import type { Session } from "@/lib/auth/session";
+import type { Session } from "@/lib/auth/session/session";
 
 import { CHANGE_PAGE_SIZE, messagePath } from "./messages";
 

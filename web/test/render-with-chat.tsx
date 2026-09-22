@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
 
-import { createSession } from "@/lib/auth/session";
+import { createSession } from "@/lib/auth/session/session";
 import type { UploaderOptions } from "@/lib/chat/media/uploads";
 import { ChatProvider } from "@/providers/chat-provider";
 import { SessionProvider } from "@/providers/session-provider";

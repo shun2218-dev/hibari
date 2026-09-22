@@ -1,22 +1,7 @@
 import { ApiError, apiErrorFrom } from "@/lib/api/error";
-import type {
-  AvatarUpload,
-  EmailVerificationRequest,
-  AvatarUploadRequest,
-  CompleteAvatarUploadRequest,
-  LoginRequest,
-  OneTimeTokenRequest,
-  PasswordResetConfirmRequest,
-  PasswordResetRequest,
-  RegisterRequest,
-  RevokeSessionsResponse,
-  SessionList,
-  TokenResponse,
-  UpdateProfileRequest,
-  User,
-} from "@/lib/api/types.gen";
+import type { TokenResponse, User } from "@/lib/api/types.gen";
 
-import { type LockManagerLike, singleFlight } from "./single-flight";
+import { type LockManagerLike, singleFlight } from "@/lib/auth/single-flight";
 
 /**
  * 画面から見える認証の状態。Access Token は含めない（コンポーネントやログに渡らないように）。
@@ -46,16 +31,16 @@ const EXPIRY_MARGIN_MS = 30_000;
 /** Web Locks のロックの名前。オリジンごとに分かれるので、アプリの名前だけでよい。 */
 const REFRESH_LOCK = "hibari:refresh";
 
-export type Session = ReturnType<typeof createSession>;
-
 /**
- * Web クライアントの認証の状態と、Access Token を付けた API の呼び出し。
+ * セッションの土台。Access Token をメモリに持ち、期限が近ければ先に refresh し、API の呼び出しに付ける（ADR 0010 / 0024）。
  *
  * - Access Token はメモリにだけ持つ（localStorage に置かない。CLAUDE.md）。リロードしたら refresh で取り直す
  * - Refresh Token は httpOnly Cookie で、JS からは見えない。`X-Hibari-Client: web` を付けて Cookie 方式にする（ADR 0010）
  * - `useSyncExternalStore` で購読できる形（subscribe / getSnapshot）にする。スナップショットは状態が変わったときだけ作り直す
+ *
+ * エンドポイントごとの呼び出し（ログイン・メールの確認・プロフィール・デバイス）は、これを受け取る別のファイルに分けてある。
  */
-export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.now, locks }: SessionOptions) {
+export function createSessionCore({ baseUrl, fetch: fetchImpl = fetch, now = Date.now, locks }: SessionOptions) {
   let state: SessionState = { status: "loading" };
   let accessToken: { value: string; expiresAt: number } | undefined;
   let restoring: Promise<void> | undefined;
@@ -193,29 +178,25 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 
-  /**
-   * refresh して検証の状態を載せた Access Token を取り直し、user を読み直す。
-   * 検証済みなら確認待ちを解く。未検証のままなら、確認待ちかどうかは変えない（止めるのはサーバーの応答だけ）。
-   */
-  async function reloadVerification(): Promise<void> {
-    accessToken = undefined;
-    await refresh();
-    const user = await request<User>("GET", "/api/v1/users/me");
-    if (state.status !== "signed_in") return;
-    const emailUnverified = state.emailUnverified && !user.email_verified;
-    setState({ status: "signed_in", user, ...(emailUnverified ? { emailUnverified } : {}) });
-  }
-
-  async function signIn(path: "login" | "register", body: LoginRequest | RegisterRequest) {
-    const res = await authRequest(path, body);
-    if (!res.ok) throw await apiErrorFrom(res);
-    const tokens = (await res.json()) as TokenResponse;
-    acceptTokens(tokens);
-    // login と register は必ず user を返す。
-    setState({ status: "signed_in", user: tokens.user! });
-  }
-
   return {
+    /** いまの状態。置き換わるので、分けて取り出さずに毎回 core.state で読む。 */
+    get state() {
+      return state;
+    },
+    setState,
+    signOutLocally,
+    markEmailUnverified,
+    acceptTokens,
+    authRequest,
+    publicRequest,
+    refresh,
+    request,
+    /** 手元の Access Token を捨てる（refresh で取り直させる）。 */
+    dropAccessToken() {
+      accessToken = undefined;
+    },
+
+    actions: {
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -249,118 +230,6 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
       return restoring;
     },
 
-    /** 失敗したら ApiError（401 invalid-credentials / 429 rate-limited など）を投げる。 */
-    login(input: LoginRequest): Promise<void> {
-      return signIn("login", input);
-    },
-
-    /** 登録すると同時にログインする（ADR 0010）。`next` は確認メールのリンクに載る戻り先（ADR 0053 決定 3）。 */
-    register(input: RegisterRequest): Promise<void> {
-      return signIn("register", input);
-    },
-
-    /**
-     * このセッションだけを失効させる。サーバーに届かなくても、この画面ではログアウトした状態にする
-     * （Cookie は残るので、次に開いたときに refresh で戻る）。
-     */
-    async logout(): Promise<void> {
-      try {
-        await authRequest("logout");
-      } catch {
-        // 上のとおり、届かなくても画面の状態は変える。
-      }
-      signOutLocally();
-    },
-
-    /** アカウントがなくても成功する（存在の有無を明かさない）。失敗は 429 rate-limited など。 */
-    requestPasswordReset(input: PasswordResetRequest): Promise<void> {
-      return publicRequest("password-reset/request", input);
-    },
-
-    /**
-     * 成功すると、サーバーはそのユーザーの全セッションを失効させるので、このタブもログアウトした状態にする
-     * （手元の Access Token は期限まで検証を通ってしまう。ADR 0007）。リンクの持ち主が別のアカウントでも、ログインし直せば済むので区別しない。
-     * リンクが使えなければ 400 invalid-one-time-token、パスワードが制約を満たさなければ 422 validation-error（トークンは消費されない）。
-     */
-    async resetPassword(input: PasswordResetConfirmRequest): Promise<void> {
-      await publicRequest("password-reset/confirm", input);
-      signOutLocally();
-    },
-
-    /**
-     * リンクのトークンでメールアドレスを確認する。
-     * ログイン中なら refresh して user を取り直す。手元の Access Token は検証の前のもので、chat の API に止められるため（ADR 0053 決定 2）。
-     * トークンの持ち主がいまのユーザーとは限らないので、email_verified を決め打ちで書き換えない。
-     */
-    async verifyEmail(input: OneTimeTokenRequest): Promise<void> {
-      await publicRequest("verify-email/confirm", input);
-      if (state.status !== "signed_in") return;
-      try {
-        await reloadVerification();
-      } catch {
-        // 確認そのものは済んでいる。表示が古いだけなので、次に user を取ったときか 403 を受けたときに直る。
-      }
-    },
-
-    /**
-     * 確認メールを送り直す。`next` は検証のあとに進む先で、リンクに載る（ADR 0053 決定 3）。
-     * 失敗は ApiError（429 rate-limited、ログインしていなければ 401）。
-     */
-    requestEmailVerification(input: EmailVerificationRequest = {}): Promise<void> {
-      return request<void>("POST", "/api/v1/auth/verify-email/request", input.next ? input : undefined);
-    },
-
-    /**
-     * 確認待ちのまま、別のタブや端末で検証を済ませたかを確かめる。済んでいれば確認待ちを解く。
-     * 確認待ちの画面が、タブに戻ってきたときに呼ぶ。通信の失敗は投げる。
-     */
-    recheckEmailVerification(): Promise<void> {
-      return reloadVerification();
-    },
-
-    // ---- 設定（ADR 0019 / 0020 / 0031） ----
-
-    /**
-     * 表示名とハンドルを変える。応答の user で画面の状態も進める。
-     * 失敗したら ApiError（409 handle-taken、422 validation-error）を投げる。
-     */
-    async updateProfile(input: UpdateProfileRequest): Promise<void> {
-      const user = await request<User>("PATCH", "/api/v1/users/me", input);
-      setState({ status: "signed_in", user });
-    },
-
-    /** アバター画像の署名付き PUT URL を発行する（中身はサーバーを経由しない。ADR 0020）。 */
-    createAvatarUpload(input: AvatarUploadRequest): Promise<AvatarUpload> {
-      return request<AvatarUpload>("POST", "/api/v1/users/me/avatar", input);
-    },
-
-    /** PUT したオブジェクトを HEAD で検証し、プロフィールに反映する。 */
-    async completeAvatarUpload(input: CompleteAvatarUploadRequest): Promise<void> {
-      const user = await request<User>("POST", "/api/v1/users/me/avatar/complete", input);
-      setState({ status: "signed_in", user });
-    },
-
-    /** 画像を外す（頭文字の表示に戻る）。 */
-    async deleteAvatar(): Promise<void> {
-      const user = await request<User>("DELETE", "/api/v1/users/me/avatar");
-      setState({ status: "signed_in", user });
-    },
-
-    /** ログイン中のセッション（= 端末）の一覧。last_used_at の新しい順（ADR 0019）。 */
-    listSessions(): Promise<SessionList> {
-      return request<SessionList>("GET", "/api/v1/auth/sessions");
-    },
-
-    /** セッションを 1 つ失効させる。他人のものやすでに失効したものは 404。 */
-    revokeSession(sessionId: string): Promise<void> {
-      return request<void>("DELETE", `/api/v1/auth/sessions/${encodeURIComponent(sessionId)}`);
-    },
-
-    /** いま使っているセッション以外をすべて失効させる。 */
-    revokeOtherSessions(): Promise<RevokeSessionsResponse> {
-      return request<RevokeSessionsResponse>("DELETE", "/api/v1/auth/sessions");
-    },
-
     /**
      * 手元の Access Token を捨てて refresh し、セッションがまだ有効かを確かめる。
      *
@@ -380,6 +249,9 @@ export function createSession({ baseUrl, fetch: fetchImpl = fetch, now = Date.no
       }
     },
 
-    request,
+      request,
+    },
   };
 }
+
+export type SessionCore = ReturnType<typeof createSessionCore>;
