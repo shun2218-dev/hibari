@@ -35,6 +35,7 @@ import {
   mergeMessages,
   newestChannelSeq,
 } from "./messages";
+import { applyPinnedMessages } from "./pins";
 import { toggleReaction } from "./reactions";
 import { applyRootToThreads, applyThreadRead, mergeReplies, mergeRepliesIntoWindow } from "./threads";
 
@@ -157,6 +158,11 @@ export type ChatState = {
   unreadThreadCounts: Record<string, number | undefined>;
   /** スレッドの親の ID ごとの、そのスレッドで入力中の人。 */
   threadTyping: Record<string, TypingUser[] | undefined>;
+  /**
+   * ルームごとのピン留めの一覧（ADR 0054）。ピン留めした新しい順（API と同じ）。
+   * ヘッダーの件数に使うので、ルームを開いたときに取る。変化は message.updated と差分で直す（専用のイベントはない）。
+   */
+  pins: Record<string, { status: LoadStatus; messages: Message[] } | undefined>;
   /** 開いているスレッドのパネル。再接続の後に取り直す（realtime.ts）。 */
   threadFocus: { roomId: string; rootId: string } | null;
   /** ルームごとの、確定していない自分のメッセージ。入力した順（送る順）に並ぶ。 */
@@ -225,6 +231,7 @@ export function createChatStore(
     threads: {},
     threadLists: {},
     unreadThreadCounts: {},
+    pins: {},
     threadTyping: {},
     threadFocus: null,
     outgoing: {},
@@ -444,6 +451,43 @@ export function createChatStore(
    * - 返信: 開いたことのあるスレッドに足す。自分の返信なら、サーバーが自分の既読位置も進めている
    * - 親（thread を持つ）: スレッドの親と、参加中の一覧の返信数・未読数を書き換える
    */
+  /**
+   * 届いたメッセージで、取ってあるピン留めの一覧を直す（ADR 0054 決定 2）。
+   * ピン留めは message.updated と差分に乗るので、タイムラインと同じ経路でここにも通す。取っていないルームには何もしない。
+   */
+  function absorbPins(messages: readonly Message[]) {
+    const byRoom = new Map<string, Message[]>();
+    for (const m of messages) byRoom.set(m.room_id, [...(byRoom.get(m.room_id) ?? []), m]);
+    for (const [roomId, list] of byRoom) {
+      update((s) => {
+        const current = s.pins[roomId];
+        if (current?.status !== "ready") return s;
+        const next = applyPinnedMessages(current.messages, list);
+        return next === current.messages ? s : { ...s, pins: { ...s.pins, [roomId]: { ...current, messages: next } } };
+      });
+    }
+  }
+
+  /** ルームのピン留めの一覧を取る。取り直し（再接続・差分が追いつかない）では、取れるまで手元の一覧を見せる。 */
+  function loadPins(roomId: string): Promise<void> {
+    return once(`pins:${roomId}`, async () => {
+      update((s) => ({
+        ...s,
+        pins: { ...s.pins, [roomId]: s.pins[roomId] ?? { status: "loading", messages: [] } },
+      }));
+      try {
+        const { messages } = await api.listPins(roomId);
+        update((s) => ({ ...s, pins: { ...s.pins, [roomId]: { status: "ready", messages } } }));
+      } catch (err) {
+        update((s) => ({
+          ...s,
+          pins: { ...s.pins, [roomId]: { status: statusOf(err), messages: s.pins[roomId]?.messages ?? [] } },
+        }));
+        if (statusOf(err) === "error") console.error("failed to load pins", err);
+      }
+    });
+  }
+
   function absorbThreadMessages(messages: readonly Message[], created: boolean) {
     for (const message of messages) {
       const rootId = message.thread_root_id;
@@ -673,6 +717,7 @@ export function createChatStore(
 
     const page = await api.listChanges(roomId, timeline.changeSeq);
     absorbThreadMessages(page.messages, false);
+    absorbPins(page.messages);
     for (const message of page.messages) reflectChangeInRoom(message);
     if (!page.has_more) {
       update((s) => {
@@ -688,7 +733,8 @@ export function createChatStore(
     }
 
     // 手元との間が 1 ページ（100 件の変更）を超えた。全部たどると、読み込んでいない範囲の変更まで取ることになるので、
-    // 最新のページを読み直す。その間に届いたイベントは残す
+    // 最新のページを読み直す。その間に届いたイベントは残す。ピン留めの一覧も、たどらなかった変更の分を取り直す
+    if (state.pins[roomId]) void loadPins(roomId);
     const latest = await api.listMessages(roomId);
     update((s) => {
       const current = s.timelines[roomId];
@@ -842,6 +888,7 @@ export function createChatStore(
     }
     if (created && message.thread_root_id === null) removeTyping(roomId, message.sender.id);
     absorbThreadMessages([message], created);
+    absorbPins([message]);
 
     const timeline = state.timelines[roomId];
     if (!timeline) return;
@@ -1831,6 +1878,27 @@ export function createChatStore(
         );
         throw error;
       }
+    },
+
+    /** ルームのピン留めの一覧を取る（ADR 0054）。取ってあれば取り直さない（変化はイベントと差分で直す）。 */
+    loadPins(roomId: string): Promise<void> {
+      const current = state.pins[roomId];
+      if (current && current.status !== "error") return Promise.resolve();
+      return loadPins(roomId);
+    },
+
+    /**
+     * ピン留めを付け外しする（ADR 0054）。押すたびに反転する。
+     *
+     * 楽観的更新はしない。付けたときにチャンネルのログ（システムメッセージ）が一緒にできるので、
+     * 手元で先に付けても、ログはサーバーの応答を待つことになる（見た目が 2 段に分かれる）。応答（更新後のメッセージ）で確定させる。
+     */
+    async togglePin(roomId: string, messageId: string): Promise<void> {
+      const message = findMessage(roomId, messageId) ?? state.pins[roomId]?.messages.find((m) => m.id === messageId);
+      if (!message) return;
+      const updated =
+        message.pinned === null ? await api.pinMessage(roomId, messageId) : await api.unpinMessage(roomId, messageId);
+      receiveMessage(updated, false);
     },
 
     /**

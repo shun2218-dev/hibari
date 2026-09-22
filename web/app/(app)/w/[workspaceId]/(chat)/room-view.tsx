@@ -16,8 +16,10 @@ import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
 import { useMessageActions } from "./message-actions";
 import { type ProfileSender, useProfileHoverCard, useSenders } from "./profile";
+import { RoomPins } from "./room-pins";
 import { RoomSettings } from "./room-settings";
 import { RoomHeader } from "@/components/chat/room-header";
+import { type RoomTab, RoomTabs } from "@/components/chat/room-tabs";
 import { Timeline } from "@/components/chat/timeline";
 import { useSessionState } from "@/lib/auth/session-provider";
 import {
@@ -125,6 +127,8 @@ export function RoomView({
   const [scrollTo, setScrollTo] = useState<{ key: string; align: "center" | "start" }>();
   const [notFound, setNotFound] = useState(false);
   const visible = useDocumentVisible();
+  // ヘッダーの下の「メッセージ / ピン」（ADR 0054 決定 11 の追記）。ルームごとに作り直すので、別のルームでは「メッセージ」から始まる
+  const [tab, setTab] = useState<RoomTab>("messages");
 
   useEffect(() => {
     store.openRoom(roomId);
@@ -147,6 +151,8 @@ export function RoomView({
     if (jumpMessageId === undefined || jumpedRef.current === jumpMessageId) return;
     jumpedRef.current = jumpMessageId;
     setNotFound(false);
+    // ピンのカードから飛んだときも、タイムラインに戻して飛び先を見せる
+    setTab("messages");
     void store.jumpToMessage(roomId, jumpMessageId).then(({ found, threadRootId }) => {
       setNotFound(!found);
       if (found) {
@@ -237,6 +243,8 @@ export function RoomView({
     mentionCandidates,
     // 投稿できる人だけがリアクションを付けられる。参加していない public ルームは読めるだけ（ADR 0044 決定 6）
     canReact: room !== undefined && (room.kind !== "public" || room.is_member),
+    // ピン留めも同じ（ADR 0054 決定 4）
+    canPin: room !== undefined && (room.kind !== "public" || room.is_member),
   });
 
   const items = useMemo(
@@ -367,8 +375,11 @@ export function RoomView({
   return (
     <>
       {header}
+      <RoomTabs value={tab} onChange={setTab} />
       <ConnectionBanner status={banner} />
-      {unreadBarCount > 0 && (
+      {/* 「ピン」のタブではタイムラインと入力欄の代わりに一覧を出す（Slack と同じ。ADR 0054） */}
+      {tab === "pins" && <RoomPins workspaceId={workspaceId} roomId={roomId} onOpen={() => setTab("messages")} />}
+      {tab === "messages" && unreadBarCount > 0 && (
         <UnreadJumpBar
           count={unreadBarCount}
           onJump={() => {
@@ -379,7 +390,8 @@ export function RoomView({
       )}
       {notFound && <MessageNotFoundNotice onClose={() => setNotFound(false)} />}
       {/* 取得中と、取得できなかったとき（その画面はデザインにない）は、ヘッダーだけを出す */}
-      {ready &&
+      {tab === "messages" &&
+        ready &&
         (items.length === 0 ? (
           <EmptyMessages kind={room.kind} name={roomName(room)} />
         ) : (
@@ -412,7 +424,7 @@ export function RoomView({
             profileHoverCardFor={profileHoverCardFor}
           />
         ))}
-      {room.kind === "public" && !room.is_member ? (
+      {tab !== "messages" ? null : room.kind === "public" && !room.is_member ? (
         <JoinRoomBar joining={joining} onJoin={join} />
       ) : (
         ready && (

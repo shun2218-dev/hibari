@@ -18,6 +18,8 @@ hibari の配色の核は「**緑 = 操作できるもの**」「**琥珀 = い�
 - **primary（緑）**: ボタン、リンク、選択中のチャンネル、トグルやラジオのオン、フォーカスリング。
 - **attention（琥珀）**: 未読バッジ、未読の区切り線、入力中インジケータ、再接続中 / 同期中バナー、メール確認待ち。
 - 未読バッジは押せる要素ではないので primary にしない。逆に、琥珀の要素を押せるようにしない。
+- **pinned（黄土）** はピン留めしたメッセージだけに使う（ADR 0054。Slack の地の色に合わせてオーナーと足した）。
+  「いま起きていること」ではないので琥珀にしない。自分宛てのメンションや飛んできた先（琥珀の地）と重なったときは、そちらを優先する。
 - 「接続が復帰しました」バナーは、状態が落ち着いたことを示すので primary-subtle を使う。
 
 ### 一覧
@@ -42,6 +44,8 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 | `--color-attention-subtle` | `#fbf1dc` | `#2e2415` | `bg-attention-subtle` | 再接続中 / 同期中バナー、「オーナー」バッジ、注意書きの地 | `--live-tint` |
 | `--color-attention-text` | `#7a5410` | `#d9a441` | `text-attention-text` | 琥珀系の文字（入力中、バナー、「ここから未読」） | `--live-fg` |
 | `--color-on-attention` | `#16201d` | `#101614` | `text-on-attention` | 未読バッジの数字 | `--on-live` |
+| `--color-pinned` | `#9a7b2f` | `#cbb06a` | `text-pinned` | ピン留めしたメッセージの印のアイコン（ADR 0054） | — |
+| `--color-pinned-subtle` | `#f5f1e3` | `#25241b` | `bg-pinned-subtle` | ピン留めしたメッセージの行の地（ADR 0054） | — |
 | `--color-danger` | `#b23a2e` | `#d9705f` | `text-danger` / `bg-danger` | 送信失敗、アップロード失敗、ログアウト・削除・キックなど破壊的な操作 | `--danger` |
 | `--color-danger-subtle` | `#f8e7e4` | `#33201d` | `bg-danger-subtle` | ログインエラー、失敗したファイルチップ、「取り消し済み」バッジ | `--danger-tint` |
 | `--color-online` | `#3e9c7e` | `#4fb08f` | `bg-online` | presence のオンラインのドット（オフラインはドットを出さない） | `--online` |

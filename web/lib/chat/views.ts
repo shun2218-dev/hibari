@@ -4,6 +4,7 @@ import type {
   MessageLinkCardView,
   MessageReactionView,
   MessageView,
+  PinnedMessageView,
   RoleLabel,
   RoomKind,
   RoomMemberView,
@@ -60,6 +61,9 @@ export function systemMessageText(message: Pick<Message, "sender" | "system">): 
       return `${name} がチャンネルから外されました`;
     case "room_renamed":
       return `${name} がチャンネル名を ${message.system.old_name} から ${message.system.new_name} に変更しました`;
+    case "message_pinned":
+      // いまは書かれない（ADR 0054 決定 3 の追記）。改める前に書かれた行のための文言
+      return `${name} がこのチャンネルにメッセージをピン留めしました`;
     default:
       // 知らない種類（サーバーが先に増えた）。行を落とすより、何かが起きたことだけ出す
       return `${name} がチャンネルを更新しました`;
@@ -200,6 +204,8 @@ type Entry = {
   seq: number | null;
   /** システムメッセージ（ADR 0033）なら、その文言。人の発言では undefined。 */
   systemText?: string;
+  /** ピン留めした人の表示名（ADR 0054）。ピン留めされていなければ undefined。 */
+  pinnedBy?: string;
   sender: UserProfile;
   createdAt: Date;
   body: string;
@@ -277,6 +283,7 @@ function fromMessage(message: Message, broadcast: MessageView["broadcast"]): Ent
     key: message.id,
     seq: message.seq,
     systemText: message.kind === "system" ? systemMessageText(message) : undefined,
+    pinnedBy: message.pinned?.by.display_name,
     sender: message.sender,
     createdAt: new Date(message.created_at),
     body: message.body,
@@ -426,6 +433,7 @@ export function toTimelineItems(
           : undefined,
         broadcast: entry.broadcast,
         mentionNames: mentionNamesFor(entry, memberNames),
+        pinnedBy: entry.deleted ? undefined : entry.pinnedBy,
         // 自分の発言では自分に知らせない（ADR 0041）
         mentionsMe: me !== undefined && entry.sender.id !== me.id && mentionsUser(entry.mentions, me.id),
         attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
@@ -438,6 +446,43 @@ export function toTimelineItems(
     previous = entry.broadcast?.in === "channel" ? undefined : entry;
   }
   return items;
+}
+
+/**
+ * ピン留めの一覧の 1 行（ADR 0054）。押すと 6.11b の仕組みでそのメッセージへ飛ぶ（href はパーマリンクのパス）。
+ * 本文のメンションはルームのメンバーから名前を引き、メッセージ自身の mentions で補う（タイムラインと同じ）。
+ */
+export function toPinnedMessageView(
+  message: Message,
+  {
+    workspaceId,
+    now = new Date(),
+    timeZone,
+    avatarUrls = {},
+    memberNames,
+  }: {
+    workspaceId: string;
+    now?: Date;
+    timeZone?: string;
+    avatarUrls?: UrlTable;
+    memberNames?: Readonly<Record<string, string>>;
+  },
+): PinnedMessageView {
+  const threadRootId = message.thread_root_id ?? undefined;
+  return {
+    key: message.id,
+    href: permalinkPath({ workspaceId, roomId: message.room_id, messageId: message.id, ...(threadRootId ? { threadRootId } : {}) }),
+    sender: {
+      id: message.sender.id,
+      name: message.sender.display_name,
+      avatarUrl: avatarUrls[message.sender.id] ?? undefined,
+    },
+    timeLabel: formatListTime(new Date(message.created_at), now, timeZone),
+    body: message.body,
+    mentionNames: mentionNamesFor(fromMessage(message, undefined), memberNames),
+    attachmentCount: message.attachments.length,
+    inThread: message.thread_root_id !== null,
+  };
 }
 
 /**

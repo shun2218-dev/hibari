@@ -33,6 +33,7 @@ import {
   type LucideIcon,
   type LucideProps,
   Mail,
+  MessageCircle,
   Megaphone,
   MessagesSquare,
   Pencil,
@@ -122,6 +123,8 @@ export const UserMinusIcon = withDefaults(UserMinus);
 
 // ---- ピン留めと「後で」（ADR 0054） ----
 export const PinIcon = withDefaults(Pin);
+/** ルームの「メッセージ」のタブ（Slack と同じ吹き出し）。 */
+export const MessageIcon = withDefaults(MessageCircle);
 export const PinOffIcon = withDefaults(PinOff);
 /** 「後で」（Slack のブックマーク）。保存済みは塗りつぶして見分ける（`fill="currentColor"`）。 */
 export const BookmarkIcon = withDefaults(Bookmark);

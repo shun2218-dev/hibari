@@ -60,7 +60,9 @@ export function WorkspaceScreen() {
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [startingDm, setStartingDm] = useState(false);
-  const [membersOpen, setMembersOpen] = useState(false);
+  // 右の枠に出す、URL に持たないパネル（メンバー）。スレッドとプロフィールは URL に持つので、そちらが優先する
+  const [sidePanel, setSidePanel] = useState<"members" | null>(null);
+  const membersOpen = sidePanel === "members";
   const [statusOpen, setStatusOpen] = useState(false);
   // プロフィールをどこから開いたか。メンバーパネルからなら「メンバーに戻る」を出し、メッセージからなら送信者の値を
   // 一覧にいない人（外された人）の名前の手がかりにする。URL には持たない（開き直すと「戻る」と手がかりは消える）
@@ -144,7 +146,7 @@ export function WorkspaceScreen() {
   }, [roomList, rooms, search, avatarUrls, memberTable]);
 
   function openThread(rootId: string) {
-    setMembersOpen(false);
+    setSidePanel(null);
     // 飛び先（?m=）は残す。リンクで開いた返信のスレッドを、パネルの中でも同じ所に合わせるため（ADR 0042）
     const params = new URLSearchParams(searchParams);
     params.set("t", rootId);
@@ -160,20 +162,21 @@ export function WorkspaceScreen() {
     router.replace(`/w/${workspaceId}/r/${roomId}${query === "" ? "" : `?${query}`}`);
   }
 
-  function toggleMembers() {
-    // 右のパネルは 1 つ。メンバーを開くならスレッドとプロフィールを閉じる
-    if (threadId || profileId) {
+  /** メンバーのパネルを開け閉てする。右のパネルは 1 つなので、開くならスレッドとプロフィールを閉じる。 */
+  function toggleSidePanel(panel: "members") {
+    const covered = threadId !== undefined || profileId !== undefined;
+    if (covered) {
       const params = new URLSearchParams(searchParams);
       params.delete("t");
       params.delete("p");
       const query = params.toString();
       router.replace(`/w/${workspaceId}/r/${roomId}${query === "" ? "" : `?${query}`}`);
     }
-    setMembersOpen((open) => !open || threadId !== undefined || profileId !== undefined);
+    setSidePanel((open) => (open === panel && !covered ? null : panel));
   }
 
   function openProfile(userId: string, origin: { fromMembers: boolean; sender?: ProfileSender }) {
-    setMembersOpen(false);
+    setSidePanel(null);
     setProfileOrigin({ userId, ...origin });
     // スレッドと同じく push にして、モバイルの全画面をブラウザの「戻る」で閉じられるようにする
     const params = new URLSearchParams(searchParams);
@@ -294,7 +297,7 @@ export function WorkspaceScreen() {
                 profileOrigin?.userId === profileId && profileOrigin.fromMembers
                   ? () => {
                       closeProfile();
-                      setMembersOpen(true);
+                      setSidePanel("members");
                     }
                   : undefined
               }
@@ -312,7 +315,7 @@ export function WorkspaceScreen() {
           ) : roomId && membersOpen && !roomRemoved ? (
             <RoomMembers
               roomId={roomId}
-              onClose={() => setMembersOpen(false)}
+              onClose={() => setSidePanel(null)}
               onOpenProfile={(userId) => openProfile(userId, { fromMembers: true })}
             />
           ) : undefined
@@ -324,7 +327,7 @@ export function WorkspaceScreen() {
             workspaceId={workspaceId}
             roomId={roomId}
             membersOpen={membersOpen && !threadId && !profileId}
-            onToggleMembers={toggleMembers}
+            onToggleMembers={() => toggleSidePanel("members")}
             openThreadId={threadId}
             onOpenThread={openThread}
             jumpMessageId={jumpMessageId}

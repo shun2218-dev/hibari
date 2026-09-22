@@ -59,6 +59,9 @@ function openRoom(r: Room, messages = [message(1), message(2), message(3)]): Rec
     // `@` の補完のために、ルームを開いた時点でメンバーを引く（ADR 0043）
     [`GET /api/v1/rooms/${r.id}/members?limit=200`]: () =>
       json(200, { members: [roomMember(naoki, { role: "owner", presence: "active" }), roomMember(miyuki), roomMember(kei)], next_cursor: null }),
+    // ヘッダーのピン留めの件数に使う（ADR 0054）
+    [`GET /api/v1/rooms/${r.id}/pins`]: () =>
+      json(200, { messages: messages.filter((m) => m.pinned).map((m) => ({ ...m, room_id: r.id })) }),
   };
 }
 
@@ -1490,6 +1493,90 @@ describe("WorkspaceScreen", () => {
     });
   });
   // 添付ファイルの拡大表示と削除（ADR 0045）。
+  describe("ピン留め（ADR 0054）", () => {
+    beforeEach(() => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    });
+
+    const pin = { by: { id: miyuki.id, handle: "miyuki", display_name: "高橋 みゆき" }, at: "2026-09-22T01:00:00Z" };
+    const pinned = [message(1), message(2, { pinned: pin }), message(3)];
+    const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+
+    it("ピン留めされたメッセージに印を出し、「ピン」のタブで一覧をタイムラインの代わりに出す", async () => {
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(design, pinned)));
+      await screen.findByRole("list", { name: "メッセージ" });
+      expect(history().getByText("高橋 みゆき がピン留めしました")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("tab", { name: "ピン" }));
+
+      const cards = within(await screen.findByRole("list", { name: "ピン留めしたメッセージ" }));
+      expect(cards.getByRole("link", { name: /のメッセージへ移動/ })).toHaveAttribute("href", "/w/ws-1/r/r-design?m=m-2");
+      // タイムラインと入力欄は出さない（Slack と同じ）
+      expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("textbox", { name: /メッセージ/ })).not.toBeInTheDocument();
+
+      // カードを押すと「メッセージ」に戻る
+      await userEvent.click(cards.getByRole("link", { name: /のメッセージへ移動/ }));
+      expect(screen.getByRole("tab", { name: "メッセージ" })).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("「…」の「チャンネルへピン留めする」で PUT が飛び、印が付く", async () => {
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design),
+          "PUT /api/v1/rooms/r-design/messages/m-3/pin": () =>
+            json(200, message(3, { room_id: "r-design", change_seq: 4, pinned: { ...pin, by: naoki } })),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+
+      const row = history().getAllByRole("article").at(-1)!;
+      await userEvent.click(within(row).getByRole("button", { name: "その他の操作" }));
+      await userEvent.click(screen.getByRole("button", { name: "チャンネルへピン留めする" }));
+
+      await waitFor(() => expect(api.paths()).toContain("PUT /api/v1/rooms/r-design/messages/m-3/pin"));
+      expect(await history().findByText("佐藤 直樹 がピン留めしました")).toBeInTheDocument();
+    });
+
+    it("「ピン」のタブからピンを外すと DELETE が飛び、一覧と印から消える", async () => {
+      const { api } = renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, pinned),
+          "DELETE /api/v1/rooms/r-design/messages/m-2/pin": () =>
+            json(200, message(2, { room_id: "r-design", change_seq: 4, pinned: null })),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+      await userEvent.click(screen.getByRole("tab", { name: "ピン" }));
+
+      await userEvent.click(await screen.findByRole("button", { name: "ピンを外す" }));
+
+      await waitFor(() => expect(api.paths()).toContain("DELETE /api/v1/rooms/r-design/messages/m-2/pin"));
+      expect(await screen.findByText("ピン留めしたメッセージはありません")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("tab", { name: "メッセージ" }));
+      expect(history().queryByText("高橋 みゆき がピン留めしました")).not.toBeInTheDocument();
+    });
+
+    it("参加していない public ルームでは、ピン留めの操作を出さない", async () => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-chat" };
+      const notJoined = { ...chat, is_member: false };
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [design, notJoined, dm], unread_thread_count: 0 }),
+          ...openRoom(notJoined, pinned),
+        }),
+      );
+      await screen.findByRole("list", { name: "メッセージ" });
+      await userEvent.click(screen.getByRole("tab", { name: "ピン" }));
+
+      await screen.findByRole("list", { name: "ピン留めしたメッセージ" });
+      expect(screen.queryByRole("button", { name: "ピンを外す" })).not.toBeInTheDocument();
+    });
+  });
+
   describe("添付ファイルの拡大表示と削除（ADR 0045）", () => {
     beforeEach(() => {
       nav.params = { workspaceId: "ws-1", roomId: "r-design" };

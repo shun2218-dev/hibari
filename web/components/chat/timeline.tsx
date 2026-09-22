@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { type ReactNode, useEffectEvent, useLayoutEffect, useRef } from "react";
 
 import { TextButton } from "@/components/ui/button";
@@ -287,12 +286,6 @@ export function Timeline({
                   className="flex items-center justify-center gap-2 px-4 py-1.5 text-xs text-text-muted"
                 >
                   <span>{item.text}</span>
-                  {/* ピン留めのログから、対象のメッセージへ飛ぶ（ADR 0054 決定 3。飛ぶ仕組みは ADR 0042） */}
-                  {item.link && (
-                    <Link href={item.link.href} className="font-medium text-primary hover:underline">
-                      {item.link.label}
-                    </Link>
-                  )}
                   <span className="font-mono text-2xs">{item.timeLabel}</span>
                 </li>
               );

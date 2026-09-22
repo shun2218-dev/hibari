@@ -19,7 +19,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Timeline: Story = {
-  name: "ピン留めしたメッセージとチャンネルのログ",
+  name: "ピン留めしたメッセージ",
   tags: ["since:6.12"],
   render: () => chat({ pins: "timeline" }),
 };
@@ -28,7 +28,7 @@ export const TimelineDark: Story = {
   name: "ピン留めしたメッセージ（ダーク）",
   tags: ["since:6.12"],
   parameters: { theme: "dark" },
-  render: () => chat({ pins: "timeline" }),
+  render: () => chat({ pins: "timeline", dark: true }),
 };
 
 export const Menu: Story = {
@@ -43,23 +43,29 @@ export const MenuPinned: Story = {
   render: () => chat({ pins: "menu-pinned" }),
 };
 
-export const Panel: Story = {
-  name: "ピン留めの一覧",
+export const List: Story = {
+  name: "「ピン」のタブ",
   tags: ["since:6.12"],
-  render: () => chat({ pins: "panel" }),
+  render: () => chat({ pins: "list" }),
 };
 
-export const PanelDark: Story = {
-  name: "ピン留めの一覧（ダーク）",
+export const ListHover: Story = {
+  name: "「ピン」のタブ（カードのホバー）",
+  tags: ["since:6.12"],
+  render: () => chat({ pins: "list-hover" }),
+};
+
+export const ListDark: Story = {
+  name: "「ピン」のタブ（ダーク）",
   tags: ["since:6.12"],
   parameters: { theme: "dark" },
-  render: () => chat({ pins: "panel" }),
+  render: () => chat({ pins: "list", dark: true }),
 };
 
-export const PanelEmpty: Story = {
-  name: "ピン留めの一覧（まだない）",
+export const ListEmpty: Story = {
+  name: "「ピン」のタブ（まだない）",
   tags: ["since:6.12"],
-  render: () => chat({ pins: "panel-empty" }),
+  render: () => chat({ pins: "list-empty" }),
 };
 
 export const MobileTimeline: Story = {
@@ -70,10 +76,10 @@ export const MobileTimeline: Story = {
   render: () => chat({ pins: "timeline" }),
 };
 
-export const MobilePanel: Story = {
-  name: "ピン留めの一覧（モバイル）",
+export const MobileList: Story = {
+  name: "「ピン」のタブ（モバイル）",
   tags: ["since:6.12"],
   parameters: { screenshot: { size: "390x844" } },
   globals: { viewport: { value: "mobile" } },
-  render: () => chat({ pins: "panel" }),
+  render: () => chat({ pins: "list" }),
 };
