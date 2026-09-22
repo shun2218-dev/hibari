@@ -17,7 +17,8 @@ import { withSide } from "@/lib/chat/format/links";
 import { formatTime } from "@/lib/chat/format/time";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
 import { countUnreadThreads } from "@/lib/chat/store/threads";
-import { memberSettings, statusView, toRoomSummaryView } from "@/lib/chat/views/views";
+import { memberSettings, statusView } from "@/lib/chat/views/members";
+import { toRoomSummaryView } from "@/lib/chat/views/rooms";
 
 import { MyStatusDialog } from "./my-status";
 

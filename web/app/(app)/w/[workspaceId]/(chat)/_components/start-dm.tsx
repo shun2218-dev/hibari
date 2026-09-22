@@ -7,7 +7,7 @@ import { StartDmDialog } from "@/components/chat/room-dialogs";
 import { useSessionState } from "@/hooks/auth/use-session";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
-import { toDmCandidates } from "@/lib/chat/views/views";
+import { toDmCandidates } from "@/lib/chat/views/members";
 
 /**
  * ダイレクトメッセージを開く（`chat/room/dm-dialog.png`）。

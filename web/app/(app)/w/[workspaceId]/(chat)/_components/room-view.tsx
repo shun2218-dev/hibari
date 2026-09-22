@@ -46,19 +46,11 @@ import { draftsReady } from "@/lib/chat/media/uploads";
 import { mentionAll } from "@/lib/chat/format/mentions";
 import { useComposerToolbar } from "@/hooks/use-composer-toolbar";
 import { useOrigin } from "@/hooks/use-origin";
-import {
-  canPost,
-  mentionAllRecipients,
-  permalinksIn,
-  previewImageIds,
-  roomArchiveActions,
-  roomName,
-  toAttachmentDraftView,
-  memberSettings,
-  toMemberNames,
-  toMentionCandidates,
-  toTimelineItems,
-} from "@/lib/chat/views/views";
+import { memberSettings, mentionAllRecipients, toMemberNames, toMentionCandidates } from "@/lib/chat/views/members";
+import { permalinksIn, previewImageIds, toAttachmentDraftView } from "@/lib/chat/views/message";
+import { canPost, roomArchiveActions } from "@/lib/chat/views/permissions";
+import { roomName } from "@/lib/chat/views/rooms";
+import { toTimelineItems } from "@/lib/chat/views/timeline";
 import { useDocumentVisible } from "@/hooks/use-document-visible";
 
 /** 本文の上限（rune。ADR 0012）。超えたら送信できないようにする（送っても 422 で失敗にしかならない）。 */

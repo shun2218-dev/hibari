@@ -12,7 +12,9 @@ import {
 import { useSessionState } from "@/hooks/auth/use-session";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
-import { roomArchiveActions, roomName, toDmCandidates, toRoomMemberRows } from "@/lib/chat/views/views";
+import { toDmCandidates, toRoomMemberRows } from "@/lib/chat/views/members";
+import { roomArchiveActions } from "@/lib/chat/views/permissions";
+import { roomName } from "@/lib/chat/views/rooms";
 
 /**
  * チャンネルの設定（`chat/room/room-settings-dialog.png`）。名前の変更と、非公開チャンネルのメンバーの出し入れ。

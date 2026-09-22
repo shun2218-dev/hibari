@@ -5,7 +5,7 @@ import { useEffect, useMemo } from "react";
 import { MembersPanel } from "@/components/chat/members-panel";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
-import { toRoomMemberView } from "@/lib/chat/views/views";
+import { toRoomMemberView } from "@/lib/chat/views/members";
 
 /**
  * ルームのメンバーのパネル。開くたびに取り直す。
