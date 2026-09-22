@@ -44,6 +44,9 @@ const (
 	EventThreadRead             EventType = "thread.read"
 	EventThreadFollowed         EventType = "thread.followed"
 	EventSavedUpdated           EventType = "saved.updated"
+	// 本人の通知の設定（ADR 0055 決定 5）。どちらも本人のすべての接続にだけ届く。
+	EventNotificationsUpdated     EventType = "notifications.updated"
+	EventRoomNotificationsUpdated EventType = "room.notifications_updated"
 )
 
 // Audience はイベントの宛先。複数の経路で同じ接続に当たっても、実装は 1 回だけ届ける。
@@ -90,6 +93,8 @@ type Event struct {
 //	thread.read                         → ThreadRead
 //	thread.followed                     → ThreadFollowed
 //	saved.updated                       → SavedItem
+//	notifications.updated               → NotificationsUpdated
+//	room.notifications_updated          → RoomNotificationsUpdated
 
 // RemovalReason はメンバーから外れた理由。
 type RemovalReason string
@@ -198,6 +203,20 @@ type ThreadFollowed struct {
 	RoomID            ulid.ULID
 	ThreadRootID      ulid.ULID
 	LastReadThreadSeq int64
+}
+
+// NotificationsUpdated は、そのワークスペースでの全体の通知の設定が変わった（ADR 0055 決定 2・5）。
+type NotificationsUpdated struct {
+	WorkspaceID ulid.ULID
+	Level       NotifyLevel
+}
+
+// RoomNotificationsUpdated は、ルームごとの本人の設定が変わった（ADR 0055 決定 3・5）。
+// 期限の来たミュートの解除は配らない。クライアントが MutedUntil でタイマーを張って自分で戻す。
+type RoomNotificationsUpdated struct {
+	WorkspaceID   ulid.ULID
+	RoomID        ulid.ULID
+	Notifications RoomNotifications
 }
 
 // deliver はコミットの後にイベントを渡す。リクエストの ctx がレスポンスの直後にキャンセルされても配信は続ける。

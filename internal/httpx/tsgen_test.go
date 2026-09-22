@@ -75,6 +75,7 @@ var tsEnums = []tsEnum{
 		chat.SystemMessagePinned),
 	enumOf("SavedState", chat.SavedInProgress, chat.SavedArchived, chat.SavedCompleted, chat.SavedRemoved),
 	enumOf("SavedItemStatus", chat.SavedItemOK, chat.SavedItemUnavailable),
+	enumOf("NotifyLevel", chat.NotifyAll, chat.NotifyMentions, chat.NotifyNone),
 	enumOf("ProblemType",
 		problemBadRequest, problemValidationError, problemUnauthenticated, problemForbidden, problemNotFound, problemInternal,
 		problemRateLimited, problemInvalidCredentials, problemInvalidRefreshToken, problemInvalidOneTimeToken,
@@ -140,6 +141,9 @@ var tsDecls = []tsDecl{
 	request[manualAwayRequest]("ManualAwayRequest"),
 	response[manualAwayResponse]("ManualAwayResponse"),
 	request[setStatusRequest]("SetStatusRequest"),
+	// 通知の設定（ADR 0055）
+	response[notificationLevelBody]("NotificationLevel"),
+	response[roomNotificationsBody]("RoomNotifications"),
 	request[transferOwnershipRequest]("TransferOwnershipRequest"),
 	request[createInviteRequest]("CreateInviteRequest"),
 	response[inviteResponse]("Invite"),
@@ -213,6 +217,8 @@ var tsDecls = []tsDecl{
 	response[typingStartedData]("TypingStartedData"),
 	response[threadReadData]("ThreadReadData"),
 	response[threadFollowedData]("ThreadFollowedData"),
+	response[notificationsUpdatedData]("NotificationsUpdatedData"),
+	response[roomNotificationsUpdatedData]("RoomNotificationsUpdatedData"),
 }
 
 // tsSkipped は JSON のタグを持つが、クライアントの型にしない struct。
@@ -254,6 +260,8 @@ var tsEvents = []struct {
 	{chat.EventThreadRead, chat.ThreadRead{}},
 	{chat.EventThreadFollowed, chat.ThreadFollowed{}},
 	{chat.EventSavedUpdated, chat.SavedItem{}},
+	{chat.EventNotificationsUpdated, chat.NotificationsUpdated{}},
+	{chat.EventRoomNotificationsUpdated, chat.RoomNotificationsUpdated{}},
 }
 
 func TestTypeScriptTypes(t *testing.T) {

@@ -586,6 +586,19 @@ type threadFollowedData struct {
 	LastReadThreadSeq int64  `json:"last_read_thread_seq"`
 }
 
+// notificationsUpdatedData は全体の通知の設定（ADR 0055 決定 5）。本人にだけ届く。
+type notificationsUpdatedData struct {
+	WorkspaceID string           `json:"workspace_id"`
+	Level       chat.NotifyLevel `json:"level"`
+}
+
+// roomNotificationsUpdatedData はルームごとの本人の設定。値の形は REST の roomNotificationsBody と同じ。
+type roomNotificationsUpdatedData struct {
+	WorkspaceID string `json:"workspace_id"`
+	RoomID      string `json:"room_id"`
+	roomNotificationsBody
+}
+
 // encodeEvent はイベントを docs/events.md の JSON にする。
 func encodeEvent(ev chat.Event) ([]byte, error) {
 	data, err := eventData(ev.Data)
@@ -635,6 +648,10 @@ func eventData(d any) (any, error) {
 	case chat.SavedItem:
 		// 本人にしか届かないので、REST と同じ形（me / saved を含む）で配る（ADR 0054 決定 7）。
 		return newSavedItemResponse(d), nil
+	case chat.NotificationsUpdated:
+		return notificationsUpdatedData{d.WorkspaceID.String(), d.Level}, nil
+	case chat.RoomNotificationsUpdated:
+		return roomNotificationsUpdatedData{d.WorkspaceID.String(), d.RoomID.String(), newRoomNotificationsBody(d.Notifications)}, nil
 	default:
 		return nil, fmt.Errorf("unknown event data %T", d)
 	}

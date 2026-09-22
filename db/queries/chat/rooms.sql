@@ -94,6 +94,8 @@ SELECT user_id
 -- 未読数はクライアントにも出せるよう last_read_seq をそのまま返し、サービスで last_user_seq との差を取る
 -- （システムメッセージは数えない。ADR 0033）。
 SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq, rm.last_read_user_seq,
+       -- 本人のチャンネルごとの通知の設定（ADR 0055 決定 4）。参加していない public ルームでは NULL になる。
+       rm.notify_level, rm.muted, rm.muted_until,
        -- 自分宛ての未読のメンションの数（ADR 0041）。条件は CountRoomMentions（mentions.sql）と同じ。片方だけ直さないこと。
        -- 参加していない public ルームでは rm.user_id が NULL になるので 0 になる。
        (SELECT count(*) FROM message_mentions mm
@@ -122,6 +124,8 @@ SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_re
 -- name: GetRoomSummary :one
 -- 1 件のルームについて、ListRoomsForUser と同じ列（既読位置と最終メッセージ）を返す。読めるかどうかの判定は呼び出し側で済ませる。
 SELECT sqlc.embed(r), (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq, rm.last_read_user_seq,
+       -- 本人のチャンネルごとの通知の設定（ADR 0055 決定 4）。参加していない public ルームでは NULL になる。
+       rm.notify_level, rm.muted, rm.muted_until,
        -- 自分宛ての未読のメンションの数（ADR 0041）。条件は CountRoomMentions（mentions.sql）と同じ。片方だけ直さないこと。
        -- 参加していない public ルームでは rm.user_id が NULL になるので 0 になる。
        (SELECT count(*) FROM message_mentions mm

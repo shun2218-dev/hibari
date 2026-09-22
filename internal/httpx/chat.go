@@ -66,6 +66,9 @@ type ChatService interface {
 	SetManualAway(ctx context.Context, actor ulid.ULID, away bool) (bool, error)
 	SetStatus(ctx context.Context, actor, workspaceID ulid.ULID, status chat.UserStatus) (*chat.UserStatus, error)
 	ClearStatus(ctx context.Context, actor, workspaceID ulid.ULID) error
+	NotificationLevel(ctx context.Context, actor, workspaceID ulid.ULID) (chat.NotifyLevel, error)
+	SetNotificationLevel(ctx context.Context, actor, workspaceID ulid.ULID, level chat.NotifyLevel) (chat.NotifyLevel, error)
+	SetRoomNotifications(ctx context.Context, actor, roomID ulid.ULID, in chat.RoomNotifications) (chat.RoomNotifications, error)
 
 	CreateAttachment(ctx context.Context, actor, roomID ulid.ULID, in chat.AttachmentInput) (chat.CreatedAttachment, error)
 	CompleteAttachment(ctx context.Context, actor, attachmentID ulid.ULID) (chat.Attachment, error)
@@ -101,6 +104,11 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("PUT /api/v1/users/me/presence", h.setManualAway)
 	handle("PUT /api/v1/workspaces/{workspaceID}/me/status", h.setStatus)
 	handle("DELETE /api/v1/workspaces/{workspaceID}/me/status", h.clearStatus)
+	// 通知の設定（ADR 0055 決定 4）。全体の設定はカスタムステータスと同じくワークスペースごと、
+	// ミュートと上書きはルームのメンバーの行にあるのでルームの下に置く。
+	handle("GET /api/v1/workspaces/{workspaceID}/me/notifications", h.getNotificationLevel)
+	handle("PUT /api/v1/workspaces/{workspaceID}/me/notifications", h.setNotificationLevel)
+	handle("PUT /api/v1/rooms/{roomID}/me/notifications", h.setRoomNotifications)
 
 	handle("POST /api/v1/workspaces/{workspaceID}/invites", h.createInvite)
 	handle("GET /api/v1/workspaces/{workspaceID}/invites", h.listInvites)
@@ -463,6 +471,80 @@ func (h *chatHandlers) clearStatus(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// notificationLevelBody は全体の通知の設定。リクエストとレスポンスで同じ形。
+type notificationLevelBody struct {
+	Level chat.NotifyLevel `json:"level"`
+}
+
+func (h *chatHandlers) getNotificationLevel(w http.ResponseWriter, r *http.Request) {
+	wsID, err := pathID(r, "workspaceID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	level, err := h.svc.NotificationLevel(r.Context(), actorOf(r), wsID)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, notificationLevelBody{Level: level})
+}
+
+func (h *chatHandlers) setNotificationLevel(w http.ResponseWriter, r *http.Request) {
+	wsID, err := pathID(r, "workspaceID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	var req notificationLevelBody
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	level, err := h.svc.SetNotificationLevel(r.Context(), actorOf(r), wsID, req.Level)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, notificationLevelBody{Level: level})
+}
+
+// roomNotificationsBody はルームごとの本人の設定（ADR 0055 決定 4）。リクエストとレスポンスで同じ形。
+//
+// PUT は全部の値の置き換えなので、省いた値は既定（上書きなし・ミュートなし）として扱う。
+// muted_until を絶対の時刻にするのはクライアント（「明日まで」は端末のタイムゾーンで翌々日の 0:00）。
+type roomNotificationsBody struct {
+	// Level は null なら全体の設定に従う。DM では null だけ。
+	Level      *chat.NotifyLevel `json:"level"`
+	Muted      bool              `json:"muted"`
+	MutedUntil *time.Time        `json:"muted_until"`
+}
+
+func newRoomNotificationsBody(n chat.RoomNotifications) roomNotificationsBody {
+	return roomNotificationsBody{Level: n.Level, Muted: n.Muted, MutedUntil: n.MutedUntil}
+}
+
+func (h *chatHandlers) setRoomNotifications(w http.ResponseWriter, r *http.Request) {
+	roomID, err := pathID(r, "roomID")
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	var req roomNotificationsBody
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	saved, err := h.svc.SetRoomNotifications(r.Context(), actorOf(r), roomID, chat.RoomNotifications{
+		Level: req.Level, Muted: req.Muted, MutedUntil: req.MutedUntil,
+	})
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newRoomNotificationsBody(saved))
+}
+
 type changeMemberRoleRequest struct {
 	Role string `json:"role"`
 }
@@ -716,7 +798,9 @@ type roomResponse struct {
 	MentionCount int64 `json:"mention_count"`
 	// LastMessage はメッセージが 1 件もなければ null。
 	LastMessage *lastMessageResponse `json:"last_message"`
-	CreatedAt   time.Time            `json:"created_at"`
+	// Notifications は本人のチャンネルごとの通知の設定（ADR 0055 決定 4）。参加していない public ルームでは null。
+	Notifications *roomNotificationsBody `json:"notifications"`
+	CreatedAt     time.Time              `json:"created_at"`
 }
 
 // dmPeerResponse は DM の相手。presence は自動で決まる状態の初期値（ADR 0015 / 0049）。
@@ -772,6 +856,10 @@ func newRoomResponse(r chat.Room, withCount bool) roomResponse {
 	}
 	if withCount {
 		resp.MemberCount = &r.MemberCount
+	}
+	if n := r.Notifications; n != nil {
+		body := newRoomNotificationsBody(*n)
+		resp.Notifications = &body
 	}
 	if r.DMPeer != nil {
 		resp.DMPeer = &dmPeerResponse{userProfileResponse: newUserProfileResponse(*r.DMPeer), Presence: r.DMPeerPresence}

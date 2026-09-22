@@ -112,6 +112,7 @@ erDiagram
     text status_text "null 可。絵文字なしの文言は CHECK で禁止"
     timestamptz status_expires_at "null なら消えない。読むときに Clock で落とす"
     bigint last_saved_change_seq "本人の「後で」の変更番号の採番カウンタ（ADR 0054）"
+    text notify_level "全体の通知する内容 all / mentions / none。null は mentions（ADR 0055）"
   }
 
   user_presence_settings {
@@ -153,7 +154,9 @@ erDiagram
     uuid user_id PK, FK "複合主キー。INDEX(user_id)"
     bigint last_read_seq "参加時は rooms.last_message_seq で初期化"
     bigint last_read_user_seq "last_read_seq に対応する user_seq（ADR 0033）"
-    timestamptz muted_until "null 可"
+    text notify_level "all / mentions。null は全体の設定に従う（ADR 0055）"
+    boolean muted "既定 false"
+    timestamptz muted_until "期限つきのミュートの期限。muted でなければ null。期限切れは読むときに落とす"
     timestamptz joined_at "退出時は行を削除する"
   }
 

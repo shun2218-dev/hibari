@@ -35,6 +35,8 @@ export function room(id: string, name: string, overrides: Partial<Room> = {}): R
     unread_count: 0,
     mention_count: 0,
     last_message: null,
+    // 参加しているルームの既定（上書きなし・ミュートなし。ADR 0055）
+    notifications: { level: null, muted: false, muted_until: null },
     created_at: "2026-09-01T00:00:00Z",
     ...overrides,
   };

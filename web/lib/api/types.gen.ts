@@ -30,6 +30,8 @@ export type SavedState = "in_progress" | "archived" | "completed" | "removed";
 
 export type SavedItemStatus = "ok" | "unavailable";
 
+export type NotifyLevel = "all" | "mentions" | "none";
+
 export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified";
 
 export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "activity" | "ping";
@@ -253,6 +255,17 @@ export interface SetStatusRequest {
   expires_at?: string | null;
 }
 
+export interface NotificationLevel {
+  level: NotifyLevel;
+}
+
+export interface RoomNotifications {
+  /** level は null なら全体の設定に従う。DM では null だけ。 */
+  level: NotifyLevel | null;
+  muted: boolean;
+  muted_until: string | null;
+}
+
 export interface TransferOwnershipRequest {
   user_id: string;
 }
@@ -335,6 +348,8 @@ export interface Room {
   mention_count: number;
   /** last_message はメッセージが 1 件もなければ null。 */
   last_message: LastMessage | null;
+  /** notifications は本人のチャンネルごとの通知の設定（ADR 0055 決定 4）。参加していない public ルームでは null。 */
+  notifications: RoomNotifications | null;
   created_at: string;
 }
 
@@ -783,6 +798,20 @@ export interface ThreadFollowedData {
   last_read_thread_seq: number;
 }
 
+export interface NotificationsUpdatedData {
+  workspace_id: string;
+  level: NotifyLevel;
+}
+
+export interface RoomNotificationsUpdatedData {
+  workspace_id: string;
+  room_id: string;
+  /** level は null なら全体の設定に従う。DM では null だけ。 */
+  level: NotifyLevel | null;
+  muted: boolean;
+  muted_until: string | null;
+}
+
 /** サーバーからのイベント（docs/events.md）。type で data の型が決まる。 */
 export type ServerEvent =
   | { type: "message.created"; data: Message }
@@ -801,7 +830,9 @@ export type ServerEvent =
   | { type: "typing.started"; data: TypingStartedData }
   | { type: "thread.read"; data: ThreadReadData }
   | { type: "thread.followed"; data: ThreadFollowedData }
-  | { type: "saved.updated"; data: SavedItem };
+  | { type: "saved.updated"; data: SavedItem }
+  | { type: "notifications.updated"; data: NotificationsUpdatedData }
+  | { type: "room.notifications_updated"; data: RoomNotificationsUpdatedData };
 
 export type ServerEventType = ServerEvent["type"];
 
