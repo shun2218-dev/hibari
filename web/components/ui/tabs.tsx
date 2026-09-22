@@ -1,6 +1,6 @@
 "use client";
 
-import { type ComponentType, type KeyboardEvent, useRef } from "react";
+import { type ComponentType, type KeyboardEvent, useEffect, useRef } from "react";
 
 import { cx } from "@/lib/cx";
 
@@ -37,6 +37,22 @@ export function Tabs<T extends string>({
 }) {
   const list = useRef<HTMLDivElement>(null);
 
+  // 並びが横にスクロールする置き場所（サイドバーの列のアクティビティ・後で。ADR 0058）では、選んだタブが隠れないように見える位置へ寄せる。
+  // 収まっているときは何も動かない（nearest）。書体の読み込みでタブの幅が変わるので、読み込み後にもう一度寄せる。
+  // jsdom には scrollIntoView も document.fonts もないので、あるときだけ呼ぶ
+  useEffect(() => {
+    let active = true;
+    const reveal = () => {
+      if (!active) return;
+      list.current?.querySelector<HTMLElement>(`[data-value="${value}"]`)?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    };
+    reveal();
+    void document.fonts?.ready.then(reveal);
+    return () => {
+      active = false;
+    };
+  }, [value]);
+
   function onKeyDown(event: KeyboardEvent) {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
     event.preventDefault();
@@ -61,7 +77,7 @@ export function Tabs<T extends string>({
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange?.(item.value)}
             className={cx(
-              "relative -mb-px flex h-10 cursor-pointer items-center gap-1.5 text-base",
+              "relative -mb-px flex h-10 shrink-0 cursor-pointer items-center gap-1.5 text-base whitespace-nowrap",
               selected ? "font-semibold text-text" : "text-text-secondary hover:text-text",
             )}
           >

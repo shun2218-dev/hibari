@@ -20,8 +20,10 @@ import {
   UnreadJumpBar,
 } from "@/components/chat/chat-states";
 import { AccountMenu } from "@/components/chat/account-menu";
+import { ActivityList } from "@/components/chat/activity-list";
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
+import { DmList } from "@/components/chat/dm-list";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import { MembersPanel } from "@/components/chat/members-panel";
@@ -34,12 +36,14 @@ import { RoomHeader } from "@/components/chat/room-header";
 import { RoomTabs } from "@/components/chat/room-tabs";
 import { RemoveSavedItemDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
 import { SavedList } from "@/components/chat/saved-list";
+import { SideNavBar, type SideNavItems, type SideNavKey, SideNavRail } from "@/components/chat/side-nav";
 import { Sidebar } from "@/components/chat/sidebar";
 import { StatusDialog } from "@/components/chat/status-dialog";
 import { ThreadList } from "@/components/chat/thread-list";
 import { ThreadPanel } from "@/components/chat/thread-panel";
 import { Timeline } from "@/components/chat/timeline";
-import type { AttachmentDraftView, ConnectionBannerStatus } from "@/components/chat/types";
+import type { ActivityFilter, AttachmentDraftView, ConnectionBannerStatus } from "@/components/chat/types";
+import { Avatar } from "@/components/ui/avatar";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { SettingsLayout, type SettingsSection } from "@/components/settings/settings-layout";
 import { notifyLevelLabels } from "@/lib/chat/notifications";
@@ -51,6 +55,9 @@ import type { WorkspaceRole } from "@/components/workspace/types";
 import { WorkspaceSettings } from "@/components/workspace/workspace-settings";
 
 import {
+  activityItems,
+  dmRooms,
+  sideNavBadges,
   attachmentMessageKey,
   currentUser,
   roomSettingsMembers,
@@ -269,6 +276,21 @@ type ChatOptions = {
   /** サイドバーの上の「デスクトップ通知を有効にしますか？」の帯（ADR 0057）。 */
   permissionBanner?: boolean;
   /**
+   * 左のメニューで開いているもの（ADR 0058。既定はホーム）。md 以上はサイドバーの左に縦のメニュー、モバイルは一覧の下にタブを出し、
+   * サイドバーの列の中身を選んだメニューのものにする（ホーム・DM・アクティビティ・後で）。
+   * 「後で」は `saved` の一覧の状態（in_progress / menu / empty など）をそのまま使う。
+   */
+  side?: SideNavKey;
+  /**
+   * アクティビティの一覧（`side: "activity"`）。タブの値のほか、
+   * - unread: 「未読メッセージ」をオンにしたところ
+   * - hover: 1 件にポインタを乗せたところ
+   * - empty / unread-empty: 何もない・未読がない
+   */
+  activity?: ActivityFilter | "unread" | "hover" | "empty" | "unread-empty";
+  /** DM の一覧（`side: "dms"`）を空にする。 */
+  dmsEmpty?: boolean;
+  /**
    * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
    */
@@ -373,6 +395,9 @@ export function chat({
   saved,
   notifications,
   permissionBanner,
+  side = "home",
+  activity,
+  dmsEmpty,
   dark,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
@@ -383,7 +408,6 @@ export function chat({
   // ステータスの出ている画面の上に出す（名前の横の絵文字とカードの中身をそろえて見せる）
   const withStatus = presence || profile !== undefined;
   // 「後で」の一覧はスレッドの一覧と同じく、ルームの代わりにメインの領域に出す
-  const savedList = saved !== undefined && saved !== "hover" && saved !== "hover-saved";
   const savedTab = saved === "archived" || saved === "archived-menu" ? "archived" : saved === "completed" ? "completed" : "in_progress";
   const savedItems =
     saved === "empty"
@@ -415,11 +439,7 @@ export function chat({
             />
           ),
         };
-  return (
-    <>
-      <ChatLayout
-        mobileView={mobileView}
-        sidebar={
+  const home = (
           <Sidebar
             workspace={workspaces.dev}
             currentUser={currentUser}
@@ -438,9 +458,9 @@ export function chat({
                       ? roomsWithStatus
                       : rooms
             }
-            selectedRoomId={roomRemoved || threads || savedList ? undefined : room.id}
+            selectedRoomId={roomRemoved || threads ? undefined : room.id}
             threads={
-              thread || threads
+              thread || threads || side
                 ? { href: noHref, unreadCount:
                     threads === "empty"
                       ? 0
@@ -449,25 +469,32 @@ export function chat({
                         : unreadThreadCount, selected: Boolean(threads) }
                 : undefined
             }
-            saved={pins || saved ? { href: noHref, selected: savedList } : undefined}
+            railed
             roomHref={roomHref}
             notice={permissionBanner ? <NotificationPermissionBanner onEnable={noop} onDismiss={noop} /> : undefined}
             search={search}
             onCreateRoom={noop}
             onStartDm={noop}
-            accountMenuOpen={accountMenu}
+            accountMenuOpen={false}
             accountMenu={
               <AccountMenu
                 user={{ ...users.you, handle: users.you.handle, status: presence ? myStatus : undefined }}
                 away={presence}
               />
             }
-            switcherOpen={switcher}
+            switcherOpen={false}
             switcher={
               <WorkspaceSwitcher workspaces={[workspaces.dev, workspaces.memo]} currentWorkspaceId={workspaces.dev.id} />
             }
           />
-        }
+  );
+  return (
+    <>
+      <ChatLayout
+        mobileView={mobileView}
+        sidebar={sidePane(side, home, { activity, dmsEmpty, saved, savedTab, savedItems })}
+        rail={sideRail(side, { switcher, accountMenu, presence })}
+        tabBar={<SideNavBar items={sideNavItems} current={side} />}
         panel={
           members ? (
             <MembersPanel
@@ -502,18 +529,7 @@ export function chat({
             openMenuKey={threads === "row-menu" ? "m-chat-0930" : undefined}
           />
         )}
-        {savedList && (
-          <SavedList
-            tab={savedTab}
-            inProgressCount={saved === "empty" ? 0 : savedInProgress.length}
-            items={savedItems}
-            hoveredKey={saved === "row-hover" ? savedInProgress[0].key : undefined}
-            openMenuKey={
-              saved === "menu" ? savedInProgress[0].key : saved === "archived-menu" ? savedArchived[0].key : undefined
-            }
-          />
-        )}
-        {!roomRemoved && !threads && !savedList && (
+        {!roomRemoved && !threads && (
           <RoomHeader
             kind={room.kind}
             name={room.name}
@@ -524,7 +540,7 @@ export function chat({
           />
         )}
         {/* ルームのヘッダーの下には、いつも「メッセージ / ピン」のタブがある（ADR 0054） */}
-        {!roomRemoved && !threads && !savedList && <RoomTabs value={pinsTab ? "pins" : "messages"} />}
+        {!roomRemoved && !threads && <RoomTabs value={pinsTab ? "pins" : "messages"} />}
         {pinsTab && (
           <PinsList
             roomKind={selectedRoom.kind}
@@ -536,7 +552,7 @@ export function chat({
         <ConnectionBanner status={banner ?? null} />
         {jump === "unread-bar" && <UnreadJumpBar count={12} onJump={noop} />}
         {jump === "not-found" && <MessageNotFoundNotice onClose={noop} />}
-        {body === "timeline" && !threads && !savedList && !pinsTab && (
+        {body === "timeline" && !threads && !pinsTab && (
           <Timeline
             items={
               notifications === "menu-dm"
@@ -574,7 +590,7 @@ export function chat({
             hoveredKey={
               threadNotify
                 ? threadRootKey
-                : pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : saved ? saveCandidateKey : hoveredKey
+                : pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : saved === "hover" || saved === "hover-saved" ? saveCandidateKey : hoveredKey
             }
             pinFor={
               pins
@@ -584,7 +600,7 @@ export function chat({
                   })
                 : undefined
             }
-            saveFor={saved ? () => ({ saved: saved === "hover-saved", onClick: noop }) : undefined}
+            saveFor={saved === "hover" || saved === "hover-saved" ? () => ({ saved: saved === "hover-saved", onClick: noop }) : undefined}
             onToggleReaction={noop}
             onTogglePicker={noop}
             openPickerKey={
@@ -622,7 +638,7 @@ export function chat({
         {body === "empty" && <EmptyMessages kind={selectedRoom.kind} name={selectedRoom.name} />}
         {roomRemoved && <RoomUnavailable />}
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
-        {footer === "composer" && !threads && !savedList && !pinsTab && (
+        {footer === "composer" && !threads && !pinsTab && (
           <Composer
             value={composer === "formatted" || composer === "link-dialog" ? composerDraft : mentionQuery === undefined ? "" : "金曜の件、"}
             canSend={mentionQuery !== undefined || composer === "formatted" || composer === "link-dialog"}
@@ -664,6 +680,102 @@ export function chat({
       <CreateWorkspaceDialog open={Boolean(createWorkspace)} />
     </>
   );
+}
+
+/** 左のメニューの行き先とバッジ（ADR 0058 決定 1）。 */
+const sideNavItems: SideNavItems = {
+  home: { href: noHref },
+  dms: { href: noHref, badge: sideNavBadges.dms },
+  activity: { href: noHref, badge: sideNavBadges.activity },
+  later: { href: noHref },
+};
+
+/** md 以上の左のメニュー。ワークスペースの切り替えとアカウントのメニューは、ここから開く。 */
+function sideRail(
+  side: SideNavKey,
+  { switcher, accountMenu, presence }: { switcher?: boolean; accountMenu?: boolean; presence?: boolean },
+) {
+  return (
+    <SideNavRail
+      items={sideNavItems}
+      current={side}
+      workspace={
+        <>
+          <button type="button" aria-label="ワークスペースを切り替える" aria-expanded={Boolean(switcher)} aria-haspopup="dialog" className="rounded-sm">
+            <Avatar id={workspaces.dev.id} name={workspaces.dev.name} size="md" shape="square" />
+          </button>
+          {switcher && (
+            <WorkspaceSwitcher placement="rail" workspaces={[workspaces.dev, workspaces.memo]} currentWorkspaceId={workspaces.dev.id} />
+          )}
+        </>
+      }
+      account={
+        <>
+          <button type="button" aria-label="アカウントメニュー" aria-expanded={Boolean(accountMenu)} aria-haspopup="dialog" className="rounded-full">
+            <Avatar id={currentUser.id} name={currentUser.name} imageUrl={currentUser.avatarUrl} size="sm" />
+          </button>
+          {accountMenu && (
+            <AccountMenu placement="rail" user={{ ...users.you, handle: users.you.handle, status: presence ? myStatus : undefined }} away={presence} />
+          )}
+        </>
+      }
+    />
+  );
+}
+
+/** サイドバーの列の中身。左のメニューで選んだものを出す（ADR 0058 決定 1）。 */
+function sidePane(
+  side: SideNavKey,
+  home: ReactNode,
+  {
+    activity,
+    dmsEmpty,
+    saved,
+    savedTab,
+    savedItems,
+  }: {
+    activity?: ChatOptions["activity"];
+    dmsEmpty?: boolean;
+    saved?: ChatOptions["saved"];
+    savedTab: ComponentProps<typeof SavedList>["tab"];
+    savedItems: NonNullable<ComponentProps<typeof SavedList>["items"]>;
+  },
+) {
+  switch (side) {
+    case "home":
+      return home;
+    case "dms":
+      return <DmList rooms={dmsEmpty ? [] : dmRooms} roomHref={roomHref} onStartDm={noop} />;
+    case "activity": {
+      const filter: ActivityFilter =
+        activity === "dm" || activity === "mention" || activity === "thread" || activity === "reaction" ? activity : "all";
+      const unreadOnly = activity === "unread" || activity === "unread-empty";
+      const items =
+        activity === "empty" || activity === "unread-empty"
+          ? []
+          : activityItems.filter(
+              (item) => (filter === "all" || item.reasons.includes(filter)) && (!unreadOnly || item.unread),
+            );
+      return (
+        <ActivityList
+          filter={filter}
+          unreadOnly={unreadOnly}
+          items={items}
+          hoveredKey={activity === "hover" ? activityItems[1].key : undefined}
+        />
+      );
+    }
+    case "later":
+      return (
+        <SavedList
+          tab={savedTab}
+          inProgressCount={saved === "empty" ? 0 : savedInProgress.length}
+          items={savedItems}
+          hoveredKey={saved === "row-hover" ? savedInProgress[0].key : undefined}
+          openMenuKey={saved === "menu" ? savedInProgress[0].key : saved === "archived-menu" ? savedArchived[0].key : undefined}
+        />
+      );
+  }
 }
 
 /** サイドバーだけを切り出したフレーム（足した「+」を見るため）。 */

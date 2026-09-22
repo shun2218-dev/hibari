@@ -41,6 +41,11 @@ type SidebarProps = {
   saved?: { href: string; selected: boolean };
   /** 検索の下に置く帯（「デスクトップ通知を有効にする」。ADR 0057）。渡さなければ出さない。 */
   notice?: ReactNode;
+  /**
+   * md 以上で左のメニュー（`SideNavRail`）と並べる。自分のアバターはメニューの下に移るので、md 以上ではここに出さない（ADR 0058）。
+   * モバイルにはメニューの列がないので、いままでどおりここに出す。
+   */
+  railed?: boolean;
 };
 
 export function Sidebar({
@@ -62,6 +67,7 @@ export function Sidebar({
   threads,
   saved,
   notice,
+  railed = false,
 }: SidebarProps) {
   const channels = rooms.filter((room) => room.kind !== "dm");
   const dms = rooms.filter((room) => room.kind === "dm");
@@ -91,7 +97,7 @@ export function Sidebar({
           aria-label="アカウントメニュー"
           aria-expanded={accountMenuOpen}
           aria-haspopup="dialog"
-          className="rounded-full"
+          className={cx("rounded-full", railed && "md:hidden")}
         >
           <Avatar id={currentUser.id} name={currentUser.name} imageUrl={currentUser.avatarUrl} size="sm" />
         </button>
@@ -228,7 +234,7 @@ function RoomSection({
   );
 }
 
-function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string; selected: boolean }) {
+export function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string; selected: boolean }) {
   // ミュートしたルームは隠さずに薄くする（ADR 0055 決定 6）。未読は太字にせず、メンションの @N だけを残す
   const muted = room.muted ?? false;
   return (

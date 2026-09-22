@@ -26,6 +26,22 @@ describe("Tabs", () => {
     expect(screen.getByRole("tab", { name: "二つ目" })).toBeInTheDocument();
   });
 
+  it("選んでいるタブを、横にスクロールする並びの見える位置へ寄せる（ADR 0058）", () => {
+    const scrollIntoView = vi.fn();
+    // jsdom には scrollIntoView がないので、この test の間だけ足す
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const { rerender } = render(<Tabs label="タブ" items={items} value="a" />);
+      expect(scrollIntoView.mock.contexts.at(-1)).toBe(screen.getByRole("tab", { name: "一つ目3" }));
+
+      rerender(<Tabs label="タブ" items={items} value="c" />);
+      expect(scrollIntoView.mock.contexts.at(-1)).toBe(screen.getByRole("tab", { name: "三つ目" }));
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "nearest", inline: "nearest" });
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
   it("押したタブの値で onChange を呼ぶ", async () => {
     const onChange = vi.fn();
     render(<Tabs label="タブ" items={items} value="a" onChange={onChange} />);

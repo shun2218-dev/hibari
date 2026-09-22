@@ -92,4 +92,12 @@ describe("SavedList（ADR 0054）", () => {
 
     expect(screen.getByText(title)).toBeInTheDocument();
   });
+
+  it("戻るボタンは onBack を渡したときだけ出す（サイドバーの列では下のメニューで戻れる。ADR 0058）", () => {
+    const { rerender } = render(<SavedList tab="in_progress" inProgressCount={0} items={[]} />);
+    expect(screen.queryByRole("button", { name: "チャンネル一覧に戻る" })).not.toBeInTheDocument();
+
+    rerender(<SavedList tab="in_progress" inProgressCount={0} items={[]} onBack={() => {}} />);
+    expect(screen.getByRole("button", { name: "チャンネル一覧に戻る" })).toBeInTheDocument();
+  });
 });

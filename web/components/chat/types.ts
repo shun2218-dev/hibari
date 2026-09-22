@@ -204,6 +204,43 @@ export type SavedItemView =
       attachmentCount: number;
     };
 
+/** アクティビティのタブ（ADR 0058 決定 3）。`all` 以外は 1 件の理由（`reasons`）で絞る。 */
+export type ActivityFilter = "all" | "dm" | "mention" | "thread" | "reaction";
+
+/**
+ * アクティビティに並べる理由（ADR 0058 決定 2）。1 件が複数に当たることがある（DM で自分がメンションされたなど）。
+ * `channel` は「すべての新しい投稿」に設定したチャンネルの投稿。
+ */
+export type ActivityReason = "dm" | "mention" | "thread" | "channel" | "reaction";
+
+/**
+ * アクティビティの一覧の 1 件（ADR 0058）。メッセージ 1 つか、自分のメッセージに付いたリアクション 1 つ。
+ * 並びは新しい順で、日付の区切りは一覧が `dateLabel` の変わり目に入れる（整形はデータ層）。
+ */
+export type ActivityItemView = {
+  key: string;
+  /** 押したときの行き先（パーマリンク。ADR 0042）。 */
+  href: string;
+  reasons: readonly ActivityReason[];
+  /** 未読（ルームやスレッドの既読位置から導く。決定 5）。リアクションは常に false。 */
+  unread: boolean;
+  room: { kind: RoomKind; name: string };
+  /** 送信者。リアクションのときは付けた人。 */
+  actor: UserRef;
+  /** スレッドの返信なら、親の本文の抜粋（「〜 のスレッド」と出す）。 */
+  threadRootExcerpt?: string;
+  /** リアクションの絵文字。リアクションのときだけ。 */
+  reactionEmoji?: string;
+  /** メッセージの本文。リアクションのときは、付けられた自分のメッセージの本文。 */
+  body: string;
+  mentionNames?: Readonly<Record<string, string>>;
+  attachmentCount: number;
+  /** 「8月10日 (月)」など、区切りに出す日付。 */
+  dateLabel: string;
+  /** 右に出す時刻。 */
+  timeLabel: string;
+};
+
 export type TimelineItem =
   | { type: "date"; key: string; label: string }
   | { type: "unread"; key: string }

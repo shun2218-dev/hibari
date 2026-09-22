@@ -21,68 +21,68 @@ type Story = StoryObj<typeof meta>;
 export const Hover: Story = {
   name: "メッセージのホバーの「後で」",
   tags: ["since:6.12"],
-  render: () => chat({ saved: "hover" }),
+  render: () => chat({ side: "home", saved: "hover" }),
 };
 
 export const HoverSaved: Story = {
   name: "メッセージのホバーの「後で」（保存済み）",
   tags: ["since:6.12"],
-  render: () => chat({ saved: "hover-saved" }),
+  render: () => chat({ side: "home", saved: "hover-saved" }),
 };
 
 export const List: Story = {
   name: "「後で」の進行中",
   tags: ["since:6.12"],
-  render: () => chat({ saved: "in_progress" }),
+  render: () => chat({ side: "later", saved: "in_progress" }),
 };
 
 export const RowHover: Story = {
   name: "「後で」の行のホバー",
   tags: ["since:6.12"],
-  render: () => chat({ saved: "row-hover" }),
+  render: () => chat({ side: "later", saved: "row-hover" }),
 };
 
 export const Menu: Story = {
   name: "「後で」の行の「その他」",
   tags: ["since:6.12"],
-  render: () => chat({ saved: "menu" }),
+  render: () => chat({ side: "later", saved: "menu" }),
 };
 
 export const Archived: Story = {
   name: "「後で」のアーカイブ済み",
   tags: ["since:6.12"],
-  render: () => chat({ saved: "archived" }),
+  render: () => chat({ side: "later", saved: "archived" }),
 };
 
 export const ArchivedMenu: Story = {
   name: "アーカイブ済みの行の「その他」",
   tags: ["since:6.12"],
-  render: () => chat({ saved: "archived-menu" }),
+  render: () => chat({ side: "later", saved: "archived-menu" }),
 };
 
 export const Completed: Story = {
   name: "「後で」の完了済み",
   tags: ["since:6.12"],
-  render: () => chat({ saved: "completed" }),
+  render: () => chat({ side: "later", saved: "completed" }),
 };
 
 export const Empty: Story = {
   name: "「後で」（何も保存していない）",
   tags: ["since:6.12"],
-  render: () => chat({ saved: "empty" }),
+  render: () => chat({ side: "later", saved: "empty" }),
 };
 
 export const Confirm: Story = {
   name: "読めない行を外すときの確認",
   tags: ["since:6.12"],
-  render: () => chat({ saved: "confirm" }),
+  render: () => chat({ side: "later", saved: "confirm" }),
 };
 
 export const ListDark: Story = {
   name: "「後で」の進行中（ダーク）",
   tags: ["since:6.12"],
   parameters: { theme: "dark" },
-  render: () => chat({ saved: "in_progress" }),
+  render: () => chat({ side: "later", saved: "in_progress" }),
 };
 
 export const MobileList: Story = {
@@ -90,5 +90,5 @@ export const MobileList: Story = {
   tags: ["since:6.12"],
   parameters: { screenshot: { size: "390x844" } },
   globals: { viewport: { value: "mobile" } },
-  render: () => chat({ saved: "in_progress" }),
+  render: () => chat({ side: "later", saved: "in_progress", mobileView: "list" }),
 };
