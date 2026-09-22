@@ -11,8 +11,6 @@ import (
 	"github.com/shun2218-dev/hibari/internal/chat/mention"
 )
 
-// メッセージの API（ロードマップ Phase 3b / ADR 0012）。ルートの登録は registerChatRoutes にまとめている。
-
 // threadSummaryResponse は親のメッセージに付く「N 件の返信」（ADR 0036）。
 type threadSummaryResponse struct {
 	// ReplyCount は削除されていない返信の数（表示用）。
@@ -72,34 +70,6 @@ type messagePinResponse struct {
 	// By はピン留めした人。ID だけにしないのは sender と同じ理由（抜けた人の名前も出せるように）。
 	By userProfileResponse `json:"by"`
 	At time.Time           `json:"at"`
-}
-
-// messageReactionResponse は 1 つの絵文字ぶんの集計（ADR 0044 決定 3）。
-type messageReactionResponse struct {
-	Emoji string `json:"emoji"`
-	// Count は付けた人の数。
-	Count int64 `json:"count"`
-	// Me は閲覧者が付けているか。**REST のレスポンスにだけ入る。**
-	// WebSocket の配信は 1 つのペイロードを購読者に配るので、受け取る人ごとの値は載せられない
-	// （mentions の「自分宛てか」と同じ理由。ADR 0015 / 0016）。
-	// クライアントは、me の無い更新では手元の値をそのまま保つ（me が変わるのは自分の操作のときだけで、
-	// そのときは PUT / DELETE の応答が me 付きで返る）。
-	Me *bool `json:"me,omitzero"`
-	// Users は付けた人の先頭 8 人（最初に付いた順）。ホバーの「A、B 他 N 人」に使う。count より少ないことがある。
-	Users []string `json:"users"`
-}
-
-func newReactionsResponse(rs []chat.MessageReaction) []messageReactionResponse {
-	out := make([]messageReactionResponse, len(rs))
-	for i, r := range rs {
-		users := make([]string, len(r.Users))
-		for j, u := range r.Users {
-			users[j] = u.String()
-		}
-		me := r.Me
-		out[i] = messageReactionResponse{Emoji: r.Emoji, Count: r.Count, Me: &me, Users: users}
-	}
-	return out
 }
 
 // mentionResponse は本文にあるメンション 1 件（ADR 0041）。
@@ -421,144 +391,4 @@ func (h *chatHandlers) deleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-type markRoomReadRequest struct {
-	Seq *int64 `json:"seq"`
-}
-
-type readStateResponse struct {
-	LastReadSeq int64 `json:"last_read_seq"`
-	// LastReadUserSeq は既読位置に対応する user_seq。クライアントが未読数を求め直すのに使う（ADR 0033）。
-	LastReadUserSeq int64 `json:"last_read_user_seq"`
-	UnreadCount     int64 `json:"unread_count"`
-	// MentionCount は既読を進めた後の、自分宛ての未読のメンションの数（ADR 0041）。
-	MentionCount int64 `json:"mention_count"`
-}
-
-// markRoomRead は既読位置を進め、切り詰めた後の既読位置と未読数を返す。
-func (h *chatHandlers) markRoomRead(w http.ResponseWriter, r *http.Request) {
-	roomID, err := pathID(r, "roomID")
-	if err != nil {
-		writeError(h.logger, w, r, err)
-		return
-	}
-	var req markRoomReadRequest
-	if err := decodeJSON(w, r, &req); err != nil {
-		writeError(h.logger, w, r, err)
-		return
-	}
-	if req.Seq == nil {
-		// 省略を 0 として扱うと、書き忘れが「何も起きない成功」になって気付けないので、必須にする。
-		writeError(h.logger, w, r, &chat.ValidationError{Fields: []chat.FieldError{{Field: "seq", Reason: chat.ReasonRequired}}})
-		return
-	}
-	st, err := h.svc.MarkRoomRead(r.Context(), actorOf(r), roomID, *req.Seq)
-	if err != nil {
-		writeError(h.logger, w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, readStateResponse{
-		LastReadSeq: st.LastReadSeq, LastReadUserSeq: st.LastReadUserSeq, UnreadCount: st.UnreadCount,
-		MentionCount: st.MentionCount,
-	})
-}
-
-// changeReaction は PUT / DELETE の共通部分（ADR 0044 決定 4）。
-//
-// どちらも冪等で、現在のメッセージを 200 で返す。すでに付いている状態の PUT と、
-// 付いていない状態の DELETE も 200 になる（URL の形がそのまま「その行があること / ないこと」を表す）。
-func (h *chatHandlers) changeReaction(w http.ResponseWriter, r *http.Request, add bool) {
-	roomID, err := pathID(r, "roomID")
-	if err != nil {
-		writeError(h.logger, w, r, err)
-		return
-	}
-	messageID, err := pathID(r, "messageID")
-	if err != nil {
-		writeError(h.logger, w, r, err)
-		return
-	}
-	// 絵文字はパーセントエンコードして置かれる（%F0%9F%91%8D）。ServeMux が戻したものをそのまま渡し、
-	// 絵文字として正しいかは chat が判断する（ADR 0044 決定 5）。正規化はしない。
-	emoji := r.PathValue("emoji")
-	act := h.svc.AddReaction
-	if !add {
-		act = h.svc.RemoveReaction
-	}
-	msg, err := act(r.Context(), actorOf(r), roomID, messageID, emoji)
-	if err != nil {
-		writeError(h.logger, w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, newMessageResponse(msg))
-}
-
-// addReaction は絵文字のリアクションを付ける。すでに付いていても 200（ADR 0044）。
-func (h *chatHandlers) addReaction(w http.ResponseWriter, r *http.Request) {
-	h.changeReaction(w, r, true)
-}
-
-// removeReaction は絵文字のリアクションを外す。付いていなくても 200（ADR 0044）。
-func (h *chatHandlers) removeReaction(w http.ResponseWriter, r *http.Request) {
-	h.changeReaction(w, r, false)
-}
-
-// pinMessage はメッセージをピン留めする。すでにピン留め済みでも 200（ADR 0054 決定 5）。
-func (h *chatHandlers) pinMessage(w http.ResponseWriter, r *http.Request) {
-	h.changePin(w, r, true)
-}
-
-// unpinMessage はピンを外す。ピン留めされていなくても 200（ADR 0054 決定 5）。
-func (h *chatHandlers) unpinMessage(w http.ResponseWriter, r *http.Request) {
-	h.changePin(w, r, false)
-}
-
-// changePin は PUT / DELETE の共通部分。リアクションと同じく、URL の形が「ピンがあること / ないこと」を表す（どちらも冪等）。
-func (h *chatHandlers) changePin(w http.ResponseWriter, r *http.Request, pin bool) {
-	roomID, err := pathID(r, "roomID")
-	if err != nil {
-		writeError(h.logger, w, r, err)
-		return
-	}
-	messageID, err := pathID(r, "messageID")
-	if err != nil {
-		writeError(h.logger, w, r, err)
-		return
-	}
-	act := h.svc.PinMessage
-	if !pin {
-		act = h.svc.UnpinMessage
-	}
-	msg, err := act(r.Context(), actorOf(r), roomID, messageID)
-	if err != nil {
-		writeError(h.logger, w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, newMessageResponse(msg))
-}
-
-// pinListResponse はルームのピン留めの一覧（ADR 0054 決定 5）。上限が 100 件なのでカーソルを持たない。
-type pinListResponse struct {
-	// Messages はピン留めした時刻の新しい順。
-	Messages []messageResponse `json:"messages"`
-}
-
-// listPins はルームのピン留めを返す。読める人なら誰でも（参加していない public も）。
-func (h *chatHandlers) listPins(w http.ResponseWriter, r *http.Request) {
-	roomID, err := pathID(r, "roomID")
-	if err != nil {
-		writeError(h.logger, w, r, err)
-		return
-	}
-	msgs, err := h.svc.ListPins(r.Context(), actorOf(r), roomID)
-	if err != nil {
-		writeError(h.logger, w, r, err)
-		return
-	}
-	resp := pinListResponse{Messages: make([]messageResponse, len(msgs))}
-	for i, m := range msgs {
-		resp.Messages[i] = newMessageResponse(m)
-	}
-	writeJSON(w, http.StatusOK, resp)
 }
