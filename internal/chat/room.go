@@ -62,7 +62,9 @@ type Room struct {
 	MentionCount int64
 	// LastMessage はサイドバーに出す最終メッセージ。メッセージがなければ nil。
 	LastMessage *MessagePreview
-	CreatedAt   time.Time
+	// Notifications は actor のチャンネルごとの通知の設定（ADR 0055 決定 4）。ルームのメンバーでなければ nil。
+	Notifications *RoomNotifications
+	CreatedAt     time.Time
 }
 
 // MessagePreview はサイドバーに出す最終メッセージ。
@@ -81,7 +83,8 @@ type MessagePreview struct {
 
 // toRoom はルームの行と、actor の既読位置・最終メッセージを JOIN した行から Room を作る。
 // GetRoomSummary の行は、同じ列の store.ListRoomsForUserRow に変換してから渡す。
-func toRoom(r store.ListRoomsForUserRow) Room {
+// now は期限の来たミュートを落とすのに使う（ADR 0055 決定 3）。
+func toRoom(r store.ListRoomsForUserRow, now time.Time) Room {
 	room := Room{
 		ID:              r.Room.ID,
 		WorkspaceID:     r.Room.WorkspaceID,
@@ -95,6 +98,10 @@ func toRoom(r store.ListRoomsForUserRow) Room {
 		LastReadUserSeq: r.LastReadUserSeq,
 		MentionCount:    r.MentionCount,
 		CreatedAt:       r.Room.CreatedAt,
+	}
+	// 参加していない public ルームは room_members の行がなく、muted も NULL になる。設定を持てないので nil にする。
+	if r.IsMember && r.Muted != nil {
+		room.Notifications = roomNotificationsOf(r.NotifyLevel, *r.Muted, r.MutedUntil, now)
 	}
 	if r.Room.Name != nil {
 		room.Name = *r.Room.Name
@@ -127,12 +134,12 @@ func toRoom(r store.ListRoomsForUserRow) Room {
 }
 
 // roomSummary は actor から見たルームを 1 件読む（既読位置と最終メッセージを含む）。読めるかどうかの判定は呼び出し側で済ませる。
-func roomSummary(ctx context.Context, q *store.Queries, actor, roomID ulid.ULID) (Room, error) {
+func roomSummary(ctx context.Context, q *store.Queries, actor, roomID ulid.ULID, now time.Time) (Room, error) {
 	row, err := q.GetRoomSummary(ctx, store.GetRoomSummaryParams{UserID: actor, RoomID: roomID})
 	if err != nil {
 		return Room{}, fmt.Errorf("get room summary: %w", err)
 	}
-	return toRoom(store.ListRoomsForUserRow(row)), nil
+	return toRoom(store.ListRoomsForUserRow(row), now), nil
 }
 
 // RoomMember はルームのメンバー。
@@ -349,7 +356,7 @@ func (s *Service) createNamedRoom(ctx context.Context, q *store.Queries, actor, 
 	if _, err := s.writeSystemMessage(ctx, q, r.ID, actor, SystemEvent{Type: SystemRoomCreated}); err != nil {
 		return Room{}, err
 	}
-	room, err := roomSummary(ctx, q, actor, r.ID)
+	room, err := roomSummary(ctx, q, actor, r.ID, s.clock.Now())
 	if err != nil {
 		return Room{}, err
 	}
@@ -422,7 +429,7 @@ func (s *Service) createDM(ctx context.Context, q *store.Queries, actor, workspa
 		}
 	}
 	// 既存の DM ならメッセージがありうるので、既読位置と最終メッセージも読む。
-	room, err = roomSummary(ctx, q, actor, r.ID)
+	room, err = roomSummary(ctx, q, actor, r.ID, s.clock.Now())
 	if err != nil {
 		return Room{}, false, nil, err
 	}
@@ -442,13 +449,14 @@ func (s *Service) ListRooms(ctx context.Context, actor, workspaceID ulid.ULID) (
 		return nil, notFoundIfNoRows(err, "get role")
 	}
 	rows, err := q.ListRoomsForUser(ctx, store.ListRoomsForUserParams{WorkspaceID: workspaceID, UserID: actor})
+	now := s.clock.Now()
 	if err != nil {
 		return nil, fmt.Errorf("list rooms: %w", err)
 	}
 	rooms := make([]Room, len(rows))
 	dmKeys := make([]*string, len(rows))
 	for i, r := range rows {
-		rooms[i] = toRoom(r)
+		rooms[i] = toRoom(r, now)
 		dmKeys[i] = r.Room.DmKey
 	}
 	if err := attachDMPeers(ctx, q, actor, rooms, dmKeys); err != nil {
@@ -526,7 +534,7 @@ func (s *Service) online(ctx context.Context, userIDs []ulid.ULID) map[ulid.ULID
 
 // GetRoom はルームを返す。読めなければ ErrNotFound。
 func (s *Service) GetRoom(ctx context.Context, actor, roomID ulid.ULID) (Room, error) {
-	room, err := getRoom(ctx, store.New(s.db), actor, roomID)
+	room, err := getRoom(ctx, store.New(s.db), actor, roomID, s.clock.Now())
 	if err != nil {
 		return Room{}, err
 	}
@@ -537,12 +545,12 @@ func (s *Service) GetRoom(ctx context.Context, actor, roomID ulid.ULID) (Room, e
 
 // getRoom はロックせずにルームを読む。書き込みの後で結果を返すときは、同じトランザクションの q を渡す。
 // dm の相手の presence は付けない（トランザクションの中で Redis を読まないため）。必要なら呼び出し側がコミットの後に付ける。
-func getRoom(ctx context.Context, q *store.Queries, actor, roomID ulid.ULID) (Room, error) {
+func getRoom(ctx context.Context, q *store.Queries, actor, roomID ulid.ULID, now time.Time) (Room, error) {
 	a, err := loadRoomAccess(ctx, q, noLock, roomID, actor)
 	if err != nil {
 		return Room{}, err
 	}
-	room, err := roomSummary(ctx, q, actor, roomID)
+	room, err := roomSummary(ctx, q, actor, roomID, now)
 	if err != nil {
 		return Room{}, err
 	}
@@ -608,7 +616,7 @@ func (s *Service) UpdateRoom(ctx context.Context, actor, roomID ulid.ULID, in Ro
 				systemEvents = append(systemEvents, renamed)
 			}
 		}
-		room, err = getRoom(ctx, q, actor, roomID)
+		room, err = getRoom(ctx, q, actor, roomID, s.clock.Now())
 		return err
 	})
 	if err != nil {
@@ -658,7 +666,7 @@ func (s *Service) JoinRoom(ctx context.Context, actor, roomID ulid.ULID) (Room, 
 			}
 			events = append(events, joined)
 		}
-		room, err = getRoom(ctx, q, actor, roomID)
+		room, err = getRoom(ctx, q, actor, roomID, s.clock.Now())
 		return err
 	})
 	if err != nil {

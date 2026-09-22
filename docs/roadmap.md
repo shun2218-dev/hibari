@@ -1020,7 +1020,8 @@ Push 通知（APNs / FCM）は Phase 7 以降のまま。ここで作るのは�
 1. 設計: ADR 0055 ← 完了
 2. デザイン: ヘッダーの「通知」のメニュー（チャンネル / DM）、一時的なミュート、サイドバーの薄い表示、ユーザー設定の「通知」。story に描いて `docs/ui/` に足し、オーナーに見てもらう ← 完了（`docs/ui/README.md` の「Phase 6.14a で足した画面」）
    「明日まで」は明日いっぱい（`muted_until` は翌々日の 0:00。端末のタイムゾーンで区切る。オーナーの判断、2026-09-22）
-3. DB と API
+3. DB と API: マイグレーション、`GET` / `PUT /workspaces/{id}/me/notifications`、`PUT /rooms/{id}/me/notifications`、ルームの応答の `notifications`、`notifications.updated` / `room.notifications_updated` ← 完了
+   期限の来たミュートを落とすのは Go の `roomNotificationsOf` 1 か所（カスタムステータスの `statusOf` と同じ）
 4. Web
 
 **DoD**

@@ -22,6 +22,7 @@ func TestWireRoundTrip(t *testing.T) {
 	at := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
 	edited := at.Add(time.Minute)
 	width := 640
+	mentions := chat.NotifyMentions
 	user := chat.UserProfile{ID: u(), Handle: "alice", DisplayName: "Alice"}
 	threadRootID, threadSeq := u(), int64(3)
 	message := chat.Message{
@@ -70,6 +71,12 @@ func TestWireRoundTrip(t *testing.T) {
 		{
 			Type: chat.EventSavedUpdated, To: chat.Audience{Users: []ulid.ULID{user.ID}},
 			Data: chat.SavedItem{ID: u(), MessageID: u(), RoomID: u(), State: chat.SavedRemoved, ChangeSeq: 4, SavedAt: time.Unix(1, 0).UTC(), Status: chat.SavedItemUnavailable},
+		},
+		{Type: chat.EventNotificationsUpdated, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.NotificationsUpdated{WorkspaceID: u(), Level: chat.NotifyNone}},
+		{
+			// 期限つきのミュートと、上書きの level（ポインタ）が往復で落ちないこと（ADR 0055）
+			Type: chat.EventRoomNotificationsUpdated, To: chat.Audience{Users: []ulid.ULID{user.ID}},
+			Data: chat.RoomNotificationsUpdated{WorkspaceID: u(), RoomID: u(), Notifications: chat.RoomNotifications{Level: &mentions, Muted: true, MutedUntil: &edited}},
 		},
 	}
 	if len(events) != len(dataDecoders) {

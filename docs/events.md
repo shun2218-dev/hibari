@@ -91,6 +91,8 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | `thread.read` | 本人 | 自分のスレッドの既読位置が進んだ（別の端末を含む。ADR 0036） |
 | `thread.followed` | 本人 | 自分がスレッドに参加した（自分の返信、自分の投稿への最初の返信、スレッドの中でのメンション。ADR 0041） |
 | `saved.updated` | 本人 | 自分の「後で」が変わった（保存・タブの移動・外す。別の端末を含む。ADR 0054） |
+| `notifications.updated` | 本人 | ワークスペースでの全体の通知の設定が変わった（別の端末を含む。ADR 0055） |
+| `room.notifications_updated` | 本人 | ルームごとの通知の設定（ミュート・通知する内容）が変わった（別の端末を含む。ADR 0055） |
 
 #### `message.created` / `message.updated` / `message.deleted`
 
@@ -232,6 +234,20 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 メッセージの `saved`（自分が保存しているか）は REST にだけ入り、`message.*` のイベントでは省く（`me` と同じ）。
 クライアントは `saved` の無い更新では手元の値を保ち、`saved.updated` と保存の差分で直す。
 
+#### `notifications.updated` / `room.notifications_updated`
+
+本人が選んだ通知の設定（ADR 0055）。値の形は REST（`PUT /workspaces/{id}/me/notifications`、`PUT /rooms/{id}/me/notifications`）と同じ。
+
+```json
+{ "workspace_id": "01J8...", "level": "all" }
+{ "workspace_id": "01J8...", "room_id": "01J8...", "level": null, "muted": true, "muted_until": "2026-09-24T15:00:00Z" }
+```
+
+- `level`（全体）は `all` / `mentions` / `none`。ルームの `level` は `all` / `mentions` / `null`（全体の設定に従う）で、DM では常に `null`
+- `muted_until` は期限つきのミュートの期限（`null` なら期限なし）。**期限が来ても解除のイベントは配らない。**
+  クライアントは `muted_until` でタイマーを張り、自分で薄い表示を戻す（カスタムステータスと同じ。ADR 0049）
+- 未読数とメンションの件数は設定によらず数える。このイベントで件数は変わらない
+
 #### `room.read`
 
 ```json
@@ -362,7 +378,9 @@ WebSocket の配信は落ちうるので、クライアントはルームごと�
    - 受け取ったメッセージは `id` で上書きし、表示は `seq` で並べる
 5. 開いているパネルのルームのメンバー一覧（`presence` を含む）を REST で取り直す
 6. ワークスペースのメンバー一覧を REST で取り直す（`presence` / `away` / `status` は `change_seq` に乗らないので、取りこぼしは取り直しで回復する。ADR 0049）
-7. 「後で」の差分を `GET /api/v1/workspaces/{id}/saved?after_change_seq=<保存のカーソル>` で `has_more` が false になるまで読む。
+7. 開いているワークスペースの全体の通知の設定を `GET /api/v1/workspaces/{id}/me/notifications` で取り直す
+   （ルームごとの設定は 3 のルーム一覧の `notifications` に入る。どちらも `change_seq` に乗らない。ADR 0055 決定 5）
+8. 「後で」の差分を `GET /api/v1/workspaces/{id}/saved?after_change_seq=<保存のカーソル>` で `has_more` が false になるまで読む。
    カーソルは、最初に一覧を読んだときの `last_change_seq` と、受け取った `change_seq` の最大値（ADR 0054 決定 7）
 
 接続中にメッセージのイベントを受け取ったら:

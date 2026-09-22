@@ -270,6 +270,14 @@ func TestCanMarkRoomRead(t *testing.T) {
 	})
 }
 
+func TestCanSetRoomNotifications(t *testing.T) {
+	checkRoom(t, "CanSetRoomNotifications", CanSetRoomNotifications, func(c roomCase) bool {
+		// 設定は room_members にあるので、参加していない public では持てない（ADR 0055 決定 3）。
+		known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
+		return known && isWorkspaceMember(c.role) && c.isRoomMember
+	})
+}
+
 func TestCanEditMessage(t *testing.T) {
 	checkRoom(t, "CanEditMessage(sender)", func(k RoomKind, ra RoomActor) bool { return CanEditMessage(k, ra, true) },
 		func(c roomCase) bool {

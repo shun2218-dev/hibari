@@ -208,6 +208,12 @@ func CanMarkRoomRead(kind RoomKind, a RoomActor) bool {
 	return CanReadRoom(kind, a) && a.IsRoomMember
 }
 
+// CanSetRoomNotifications はルームごとの通知の設定（ミュートと通知する内容。ADR 0055 決定 3）を変えられるかを返す。
+// 設定は room_members の行にあるので、既読位置と同じく、読めるが参加していない public ルームでは持てない。
+func CanSetRoomNotifications(kind RoomKind, a RoomActor) bool {
+	return CanReadRoom(kind, a) && a.IsRoomMember
+}
+
 // ---- メッセージ ----
 
 // CanEditMessage はメッセージを編集できるかを返す。送信者本人で、いまも投稿できる場合だけ（ADR 0012）。

@@ -371,6 +371,8 @@ func (q *Queries) GetRoomMemberships(ctx context.Context, arg GetRoomMemberships
 
 const getRoomSummary = `-- name: GetRoomSummary :one
 SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq, r.last_user_seq, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq, rm.last_read_user_seq,
+       -- 本人のチャンネルごとの通知の設定（ADR 0055 決定 4）。参加していない public ルームでは NULL になる。
+       rm.notify_level, rm.muted, rm.muted_until,
        -- 自分宛ての未読のメンションの数（ADR 0041）。条件は CountRoomMentions（mentions.sql）と同じ。片方だけ直さないこと。
        -- 参加していない public ルームでは rm.user_id が NULL になるので 0 になる。
        (SELECT count(*) FROM message_mentions mm
@@ -405,6 +407,9 @@ type GetRoomSummaryRow struct {
 	IsMember                     bool
 	LastReadSeq                  *int64
 	LastReadUserSeq              *int64
+	NotifyLevel                  *string
+	Muted                        *bool
+	MutedUntil                   *time.Time
 	MentionCount                 int64
 	LastMessageID                *ulid.ULID
 	LastMessageSenderID          *ulid.ULID
@@ -439,6 +444,9 @@ func (q *Queries) GetRoomSummary(ctx context.Context, arg GetRoomSummaryParams) 
 		&i.IsMember,
 		&i.LastReadSeq,
 		&i.LastReadUserSeq,
+		&i.NotifyLevel,
+		&i.Muted,
+		&i.MutedUntil,
 		&i.MentionCount,
 		&i.LastMessageID,
 		&i.LastMessageSenderID,
@@ -551,6 +559,8 @@ func (q *Queries) ListRoomMembers(ctx context.Context, arg ListRoomMembersParams
 
 const listRoomsForUser = `-- name: ListRoomsForUser :many
 SELECT r.id, r.workspace_id, r.kind, r.name, r.dm_key, r.is_default, r.created_by, r.last_message_seq, r.last_message_at, r.created_at, r.archived_at, r.last_change_seq, r.last_user_seq, (rm.user_id IS NOT NULL)::boolean AS is_member, rm.last_read_seq, rm.last_read_user_seq,
+       -- 本人のチャンネルごとの通知の設定（ADR 0055 決定 4）。参加していない public ルームでは NULL になる。
+       rm.notify_level, rm.muted, rm.muted_until,
        -- 自分宛ての未読のメンションの数（ADR 0041）。条件は CountRoomMentions（mentions.sql）と同じ。片方だけ直さないこと。
        -- 参加していない public ルームでは rm.user_id が NULL になるので 0 になる。
        (SELECT count(*) FROM message_mentions mm
@@ -587,6 +597,9 @@ type ListRoomsForUserRow struct {
 	IsMember                     bool
 	LastReadSeq                  *int64
 	LastReadUserSeq              *int64
+	NotifyLevel                  *string
+	Muted                        *bool
+	MutedUntil                   *time.Time
 	MentionCount                 int64
 	LastMessageID                *ulid.ULID
 	LastMessageSenderID          *ulid.ULID
@@ -634,6 +647,9 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, arg ListRoomsForUserPara
 			&i.IsMember,
 			&i.LastReadSeq,
 			&i.LastReadUserSeq,
+			&i.NotifyLevel,
+			&i.Muted,
+			&i.MutedUntil,
 			&i.MentionCount,
 			&i.LastMessageID,
 			&i.LastMessageSenderID,
