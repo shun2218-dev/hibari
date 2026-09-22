@@ -520,6 +520,8 @@ export interface PinList {
 export interface SavedItem {
   /** id は保存し直すたびに振り直す ULID。一覧の ?before= のカーソルに使う。 */
   id: string;
+  /** workspace_id は保存の行のワークスペース。saved.updated を受け取ったクライアントが、どの「後で」を直すかを決める。 */
+  workspace_id: string;
   message_id: string;
   room_id: string;
   state: SavedState;

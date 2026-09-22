@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSession } from "@/lib/auth/session";
-import { message, naoki, room, roomMember } from "@/test/chat-data";
+import { message, naoki, room, roomMember, savedItem } from "@/test/chat-data";
 import { type Handler, TEST_API_BASE, fakeApi, json, tokens } from "@/test/fake-api";
 import { fakeSockets } from "@/test/fake-socket";
 
@@ -234,6 +234,33 @@ describe("createRealtime", () => {
     expect(store.getSnapshot().connection.banner).toBe("restored");
     await vi.advanceTimersByTimeAsync(3000);
     expect(store.getSnapshot().connection.banner).toBeNull();
+    realtime.stop();
+  });
+
+  it("after reconnecting, catches up with the saved messages from the cursor (ADR 0054)", async () => {
+    const { store, realtime, sockets, log } = setup({
+      "GET /api/v1/workspaces/ws-1/rooms": roomsOf("r1"),
+      "GET /api/v1/workspaces/ws-1/threads?limit=200": () => json(200, { threads: [], next_cursor: null }),
+      "GET /api/v1/workspaces/ws-1/saved?state=in_progress&limit=50": () =>
+        json(200, { items: [savedItem(1)], in_progress_count: 1, last_change_seq: 3, has_more: false }),
+      "GET /api/v1/workspaces/ws-1/saved?after_change_seq=3&limit=100": () =>
+        json(200, {
+          items: [savedItem(1, { state: "archived", change_seq: 4 })],
+          in_progress_count: 0,
+          last_change_seq: 4,
+          has_more: false,
+        }),
+    });
+    await store.loadRooms("ws-1");
+    await store.loadSaved("ws-1", "in_progress");
+    store.setActiveWorkspace("ws-1");
+    realtime.start();
+    await vi.advanceTimersByTimeAsync(0);
+    sockets.last().open();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(log).toContain("GET /api/v1/workspaces/ws-1/saved?after_change_seq=3&limit=100");
+    expect(store.getSnapshot().saved["ws-1"]).toMatchObject({ cursor: 4, inProgressCount: 0 });
     realtime.stop();
   });
 

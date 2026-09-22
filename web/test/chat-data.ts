@@ -1,4 +1,4 @@
-import type { Invite, Member, Message, Room, RoomMember, UserProfile, Workspace } from "@/lib/api/types.gen";
+import type { Invite, Member, Message, Room, RoomMember, SavedItem, UserProfile, Workspace } from "@/lib/api/types.gen";
 
 /** lib/chat とチャットのページのテストで使う API のレスポンスの組み立て。 */
 
@@ -91,6 +91,23 @@ export function invite(id: string, overrides: Partial<Invite> = {}): Invite {
     revoked_at: null,
     created_at: "2026-09-13T00:00:00Z",
     status: "active",
+    ...overrides,
+  };
+}
+
+/** 「後で」の 1 件（ADR 0054）。読める状態で、中身は message(seq)。 */
+export function savedItem(seq: number, overrides: Partial<SavedItem> = {}): SavedItem {
+  return {
+    id: `s-${String(seq).padStart(3, "0")}`,
+    workspace_id: "ws-1",
+    message_id: `m-${seq}`,
+    room_id: "room-1",
+    state: "in_progress",
+    change_seq: seq,
+    saved_at: "2026-09-22T01:00:00Z",
+    status: "ok",
+    room: { id: "room-1", kind: "public", name: "雑談", dm_peer: null },
+    message: message(seq, { saved: true }),
     ...overrides,
   };
 }

@@ -217,6 +217,8 @@ export function createRealtime({ store, createActivity: makeActivity, ...connect
     // presence / away / status は change_seq に乗らないので、取りこぼしは取り直しで回復する（ADR 0049 決定 9）。
     // 名前の横のステータスは、ルームのメンバー一覧に載らない人のぶんも要るので、ワークスペースの一覧を取り直す
     if (state.members[workspaceId]) tasks.push(store.loadMembers(workspaceId));
+    // 「後で」は本人ごとの change_seq の差分で追いつく（ADR 0054 決定 7。docs/events.md の「同期」の 7）
+    if (state.saved[workspaceId]?.cursor != null) tasks.push(store.syncSaved(workspaceId));
     for (const { kind, id } of targets) {
       if (kind !== "room") continue;
       if (state.timelines[id]?.status === "ready") tasks.push(store.syncTimeline(id));

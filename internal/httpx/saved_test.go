@@ -11,12 +11,13 @@ import (
 // 「後で」の API（ロードマップ Phase 6.12 / ADR 0054 決定 9）。
 
 type savedItemBody struct {
-	ID        string `json:"id"`
-	MessageID string `json:"message_id"`
-	State     string `json:"state"`
-	ChangeSeq int64  `json:"change_seq"`
-	Status    string `json:"status"`
-	Room      *struct {
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
+	MessageID   string `json:"message_id"`
+	State       string `json:"state"`
+	ChangeSeq   int64  `json:"change_seq"`
+	Status      string `json:"status"`
+	Room        *struct {
 		Name string `json:"name"`
 	} `json:"room"`
 	Message *struct {
@@ -56,7 +57,7 @@ func TestSavedFlow(t *testing.T) {
 		r := c.as(alice, http.MethodPut, savePath, nil)
 		expectStatus(t, r, http.StatusOK)
 		item := decode[savedItemBody](t, r)
-		if item.State != "in_progress" || item.Status != "ok" || item.Room == nil || item.Room.Name != "雑談" ||
+		if item.State != "in_progress" || item.Status != "ok" || item.WorkspaceID != ws.ID || item.Room == nil || item.Room.Name != "雑談" ||
 			item.Message == nil || item.Message.Saved == nil || !*item.Message.Saved {
 			t.Fatalf("item = %s", r.body)
 		}

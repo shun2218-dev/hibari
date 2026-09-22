@@ -15,10 +15,12 @@ import (
 // 読めないのか削除されたのかは区別しない（決定 8）。
 type savedItemResponse struct {
 	// ID は保存し直すたびに振り直す ULID。一覧の ?before= のカーソルに使う。
-	ID        string          `json:"id"`
-	MessageID string          `json:"message_id"`
-	RoomID    string          `json:"room_id"`
-	State     chat.SavedState `json:"state"`
+	ID string `json:"id"`
+	// WorkspaceID は保存の行のワークスペース。saved.updated を受け取ったクライアントが、どの「後で」を直すかを決める。
+	WorkspaceID string          `json:"workspace_id"`
+	MessageID   string          `json:"message_id"`
+	RoomID      string          `json:"room_id"`
+	State       chat.SavedState `json:"state"`
 	// ChangeSeq は本人ごとの変更番号。再接続の差分（?after_change_seq=）のカーソルに使う（決定 7）。
 	ChangeSeq int64                `json:"change_seq"`
 	SavedAt   time.Time            `json:"saved_at"`
@@ -30,7 +32,7 @@ type savedItemResponse struct {
 
 func newSavedItemResponse(it chat.SavedItem) savedItemResponse {
 	resp := savedItemResponse{
-		ID: it.ID.String(), MessageID: it.MessageID.String(), RoomID: it.RoomID.String(),
+		ID: it.ID.String(), WorkspaceID: it.WorkspaceID.String(), MessageID: it.MessageID.String(), RoomID: it.RoomID.String(),
 		State: it.State, ChangeSeq: it.ChangeSeq, SavedAt: it.SavedAt, Status: it.Status,
 	}
 	if room := it.Room; room != nil {

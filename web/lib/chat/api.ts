@@ -12,6 +12,9 @@ import type {
   Invite,
   InviteAcceptance,
   PinList,
+  SavedItem,
+  SavedList,
+  SavedState,
   InviteList,
   InvitePreview,
   ManualAwayRequest,
@@ -57,10 +60,17 @@ export const AVATAR_BATCH_SIZE = 200;
 /** メッセージへのリンクのカードを 1 回で取れる件数。API の上限（ADR 0040）。 */
 export const LINK_BATCH_SIZE = 20;
 
+/** 「後で」の 1 ページの件数（サーバーの既定と同じ。ADR 0054 決定 9）。 */
+export const SAVED_PAGE_SIZE = 50;
+
 /** メンバー・招待の一覧の 1 ページの数。API の上限（ADR 0011）にして、往復を減らす。 */
 const PAGE_SIZE = 200;
 
 /** リアクションの PUT / DELETE のパス。絵文字はパーセントエンコードして置く（ADR 0044 決定 4）。 */
+function savedPath(workspaceId: string, messageId: string): string {
+  return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/saved/${encodeURIComponent(messageId)}`;
+}
+
 function messagePath(roomId: string, messageId: string): string {
   return `/api/v1/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}`;
 }
@@ -228,6 +238,30 @@ export function createChatApi(request: Session["request"]) {
 
     /** ピン留めした新しい順。上限が 100 件なのでページングしない（ADR 0054 決定 5）。 */
     listPins: (roomId: string) => request<PinList>("GET", `/api/v1/rooms/${encodeURIComponent(roomId)}/pins`),
+
+    /** 「後で」に保存する（ADR 0054 決定 9）。保存済みなら状態を変えずに 200（冪等）。 */
+    saveMessage: (roomId: string, messageId: string) =>
+      request<SavedItem>("PUT", `${messagePath(roomId, messageId)}/saved`),
+
+    /** 保存をタブの間で動かす。読めなくなったメッセージの保存でも動かせる。 */
+    moveSaved: (workspaceId: string, messageId: string, state: Exclude<SavedState, "removed">) =>
+      request<SavedItem>("PATCH", savedPath(workspaceId, messageId), { state }),
+
+    /** 「後で」から外す。保存していなくても 204（冪等）。 */
+    removeSaved: (workspaceId: string, messageId: string) => request<void>("DELETE", savedPath(workspaceId, messageId)),
+
+    /** タブの一覧（保存した新しい順）。before は前のページの最後の保存の ID。 */
+    listSaved: (workspaceId: string, state: Exclude<SavedState, "removed">, before?: string) => {
+      const params = new URLSearchParams({ state, limit: String(SAVED_PAGE_SIZE) });
+      if (before !== undefined) params.set("before", before);
+      return request<SavedList>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/saved?${params}`);
+    },
+
+    /** 再接続の差分（ADR 0054 決定 7）。外した行（removed）も返る。 */
+    listSavedChanges: (workspaceId: string, afterChangeSeq: number) => {
+      const params = new URLSearchParams({ after_change_seq: String(afterChangeSeq), limit: String(CHANGE_PAGE_SIZE) });
+      return request<SavedList>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/saved?${params}`);
+    },
 
     /** 削除済みでも 204（冪等。ADR 0012）。 */
     deleteMessage: (roomId: string, messageId: string) =>

@@ -72,6 +72,7 @@ export function useMessageActions({
     actionsFor: (key: string) => MessageActions;
     copyLinkFor: (key: string) => { label: string; onClick: () => void } | undefined;
     pinFor: (key: string) => { label: string; onClick: () => void } | undefined;
+    saveFor: (key: string) => { saved: boolean; onClick: () => void } | undefined;
     openMenuKey: string | undefined;
     onToggleMenu: (key: string) => void;
     onEdit: (key: string) => void;
@@ -212,6 +213,22 @@ export function useMessageActions({
     };
   }
 
+  /**
+   * ホバーの「後で」（ADR 0054）。読める人なら誰でも保存できる（参加していない public ルームも）。
+   * 印の楽観的更新と戻すのはデータ層（store）の仕事。失敗の表示はデザインにないので、戻った結果をそのまま見せる。
+   */
+  function saveFor(key: string): { saved: boolean; onClick: () => void } | undefined {
+    const message = findMessage(key);
+    if (!message || message.deleted_at !== null || message.kind === "system") return undefined;
+    return {
+      saved: message.saved ?? false,
+      onClick: () =>
+        void store.toggleSaved(workspaceId, roomId, message.id).catch((err: unknown) => {
+          console.error("failed to toggle a saved message", err);
+        }),
+    };
+  }
+
   async function saveEdit() {
     if (!activeEditing || !editingMessage) return;
     // 編集欄の値は送る形のテキスト（ADR 0052 決定 3）
@@ -311,6 +328,7 @@ export function useMessageActions({
       actionsFor,
       copyLinkFor,
       pinFor,
+      saveFor,
       openMenuKey,
       onToggleMenu: (key) => setOpenMenuKey((current) => (current === key ? undefined : key)),
       onEdit: (key) => {

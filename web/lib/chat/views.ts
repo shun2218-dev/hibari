@@ -5,6 +5,7 @@ import type {
   MessageReactionView,
   MessageView,
   PinnedMessageView,
+  SavedItemView,
   RoleLabel,
   RoomKind,
   RoomMemberView,
@@ -16,6 +17,7 @@ import type {
 import type { DmCandidateView, RoomMemberRowView } from "@/components/chat/room-dialogs";
 import type {
   FollowedThread,
+  SavedItem,
   Member,
   Mention,
   Message,
@@ -482,6 +484,50 @@ export function toPinnedMessageView(
     mentionNames: mentionNamesFor(fromMessage(message, undefined), memberNames),
     attachmentCount: message.attachments.length,
     inThread: message.thread_root_id !== null,
+  };
+}
+
+/**
+ * 「後で」の一覧の 1 行（ADR 0054）。読めない・削除済みは区別せずに unavailable の行にする（決定 8）。
+ * 押すと 6.11b の仕組みでそのメッセージへ飛ぶ（href はパーマリンクのパス）。
+ */
+export function toSavedItemView(
+  item: SavedItem,
+  {
+    now = new Date(),
+    timeZone,
+    avatarUrls = {},
+    memberNames,
+  }: {
+    now?: Date;
+    timeZone?: string;
+    avatarUrls?: UrlTable;
+    /** 本文の `<@ID>` に使う表示名（ワークスペースのメンバー一覧から）。メッセージ自身の mentions で補う。 */
+    memberNames?: Readonly<Record<string, string>>;
+  } = {},
+): SavedItemView {
+  const { message, room } = item;
+  if (item.status !== "ok" || !message || !room) return { key: item.message_id, status: "unavailable" };
+  const threadRootId = message.thread_root_id ?? undefined;
+  return {
+    key: item.message_id,
+    status: "ok",
+    href: permalinkPath({
+      workspaceId: item.workspace_id,
+      roomId: item.room_id,
+      messageId: item.message_id,
+      ...(threadRootId ? { threadRootId } : {}),
+    }),
+    room: { kind: room.kind, name: room.kind === "dm" ? (room.dm_peer?.display_name ?? "") : room.name },
+    sender: {
+      id: message.sender.id,
+      name: message.sender.display_name,
+      avatarUrl: avatarUrls[message.sender.id] ?? undefined,
+    },
+    timeLabel: formatListTime(new Date(message.created_at), now, timeZone),
+    body: message.body,
+    mentionNames: mentionNamesFor(fromMessage(message, undefined), memberNames),
+    attachmentCount: message.attachments.length,
   };
 }
 
