@@ -188,6 +188,8 @@ var tsDecls = []tsDecl{
 	response[threadRoomResponse]("ThreadRoom"),
 	response[followedThreadResponse]("FollowedThread"),
 	response[threadListResponse]("ThreadList"),
+	request[threadNotificationsRequest]("ThreadNotificationsRequest"),
+	response[threadNotificationsResponse]("ThreadNotifications"),
 	// メッセージへのリンクのカード（ADR 0040）
 	request[messageLinkRef]("MessageLinkRef"),
 	request[messageLinksRequest]("MessageLinksRequest"),
@@ -219,6 +221,7 @@ var tsDecls = []tsDecl{
 	response[threadFollowedData]("ThreadFollowedData"),
 	response[notificationsUpdatedData]("NotificationsUpdatedData"),
 	response[roomNotificationsUpdatedData]("RoomNotificationsUpdatedData"),
+	response[threadNotificationsUpdatedData]("ThreadNotificationsUpdatedData"),
 }
 
 // tsSkipped は JSON のタグを持つが、クライアントの型にしない struct。
@@ -262,6 +265,7 @@ var tsEvents = []struct {
 	{chat.EventSavedUpdated, chat.SavedItem{}},
 	{chat.EventNotificationsUpdated, chat.NotificationsUpdated{}},
 	{chat.EventRoomNotificationsUpdated, chat.RoomNotificationsUpdated{}},
+	{chat.EventThreadNotificationsUpdated, chat.ThreadNotificationsUpdated{}},
 }
 
 func TestTypeScriptTypes(t *testing.T) {

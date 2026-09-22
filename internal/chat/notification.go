@@ -148,3 +148,67 @@ func notifyLevelOf(level *string) NotifyLevel {
 	}
 	return NotifyLevel(*level)
 }
+
+// ThreadNotifications は、スレッドの本人の設定（ADR 0056 決定 7 の応答）。
+type ThreadNotifications struct {
+	NotifyReplies bool
+	// LastReadThreadSeq は参加していれば既読位置。参加していなければ nil。
+	LastReadThreadSeq *int64
+}
+
+// SetThreadNotifications はスレッドの返信の通知を切り替える（ADR 0056 決定 5・7）。
+//
+// true は「新しい返信の通知を受け取る」で、参加していなければ参加する（明示的なフォロー）。既読位置は親の last_thread_seq にし、
+// 押した時点までの返信を未読にしない。false は「返信の通知をオフにする」で、参加は残す（決定 1）。
+// 参加していないスレッドへの false は、何もしないで成功にする（もともと通知されないので、頼まれたとおりの状態になっている）。
+//
+// 返信のない親はフォローできない（一覧は最後の返信の時刻で並べるので、返信のないスレッドを置けない。ErrNotFound）。
+func (s *Service) SetThreadNotifications(ctx context.Context, actor, roomID, rootID ulid.ULID, notify bool) (ThreadNotifications, error) {
+	q := store.New(s.db)
+	a, err := loadRoomAccess(ctx, q, noLock, roomID, actor)
+	if err != nil {
+		return ThreadNotifications{}, err
+	}
+	if !authz.CanFollowThread(a.kind(), a.actor(actor)) {
+		return ThreadNotifications{}, ErrForbidden
+	}
+	root, err := q.GetMessageView(ctx, store.GetMessageViewParams{RoomID: roomID, ID: rootID})
+	if err != nil {
+		return ThreadNotifications{}, notFoundIfNoRows(err, "get thread root")
+	}
+	if !isThreadRoot(root.Kind, root.ThreadRootID) || root.LastThreadSeq == 0 {
+		return ThreadNotifications{}, ErrNotFound
+	}
+
+	var events []Event
+	if notify {
+		// 参加していなければ参加する。ルームから外された直後なら FK の条件で入らず 0 になるので、下の UPDATE も行を返さない。
+		followed, err := q.FollowThread(ctx, store.FollowThreadParams{
+			ThreadRootID: rootID, LastReadThreadSeq: root.LastThreadSeq, Now: s.clock.Now(), RoomID: roomID, UserID: actor,
+		})
+		if err != nil {
+			return ThreadNotifications{}, fmt.Errorf("follow thread: %w", err)
+		}
+		if followed == 1 {
+			// 一覧に加えるきっかけ（ADR 0036 の thread.followed）。既存の経路で別のタブの一覧も取り直される
+			events = append(events, threadFollowedEvent(a.room.WorkspaceID, roomID, rootID, actor, root.LastThreadSeq))
+		}
+	}
+	lastRead, err := q.SetThreadNotifyReplies(ctx, store.SetThreadNotifyRepliesParams{NotifyReplies: notify, ThreadRootID: rootID, UserID: actor})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows) && !notify:
+		return ThreadNotifications{NotifyReplies: false}, nil
+	case errors.Is(err, pgx.ErrNoRows):
+		// 判定の後にルームから外された。判定の時点に合わせて拒否する（MarkRoomRead と同じ）
+		return ThreadNotifications{}, ErrForbidden
+	case err != nil:
+		return ThreadNotifications{}, fmt.Errorf("set thread notify replies: %w", err)
+	}
+	events = append(events, Event{
+		Type: EventThreadNotificationsUpdated,
+		To:   Audience{Users: []ulid.ULID{actor}},
+		Data: ThreadNotificationsUpdated{WorkspaceID: a.room.WorkspaceID, RoomID: roomID, ThreadRootID: rootID, NotifyReplies: notify},
+	})
+	s.deliver(ctx, events...)
+	return ThreadNotifications{NotifyReplies: notify, LastReadThreadSeq: &lastRead}, nil
+}

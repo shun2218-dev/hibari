@@ -214,6 +214,12 @@ func CanSetRoomNotifications(kind RoomKind, a RoomActor) bool {
 	return CanReadRoom(kind, a) && a.IsRoomMember
 }
 
+// CanFollowThread はスレッドに参加して返信の通知を切り替えられるかを返す（ADR 0056 決定 5）。
+// 参加は thread_members の行で、room_members への FK があるので、参加していない public ルームでは持てない。
+func CanFollowThread(kind RoomKind, a RoomActor) bool {
+	return CanReadRoom(kind, a) && a.IsRoomMember
+}
+
 // ---- メッセージ ----
 
 // CanEditMessage はメッセージを編集できるかを返す。送信者本人で、いまも投稿できる場合だけ（ADR 0012）。

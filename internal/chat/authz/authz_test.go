@@ -278,6 +278,14 @@ func TestCanSetRoomNotifications(t *testing.T) {
 	})
 }
 
+func TestCanFollowThread(t *testing.T) {
+	checkRoom(t, "CanFollowThread", CanFollowThread, func(c roomCase) bool {
+		// 参加は thread_members にあり、room_members への FK がある（ADR 0056 決定 5）。
+		known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
+		return known && isWorkspaceMember(c.role) && c.isRoomMember
+	})
+}
+
 func TestCanEditMessage(t *testing.T) {
 	checkRoom(t, "CanEditMessage(sender)", func(k RoomKind, ra RoomActor) bool { return CanEditMessage(k, ra, true) },
 		func(c roomCase) bool {

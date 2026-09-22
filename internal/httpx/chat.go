@@ -69,6 +69,7 @@ type ChatService interface {
 	NotificationLevel(ctx context.Context, actor, workspaceID ulid.ULID) (chat.NotifyLevel, error)
 	SetNotificationLevel(ctx context.Context, actor, workspaceID ulid.ULID, level chat.NotifyLevel) (chat.NotifyLevel, error)
 	SetRoomNotifications(ctx context.Context, actor, roomID ulid.ULID, in chat.RoomNotifications) (chat.RoomNotifications, error)
+	SetThreadNotifications(ctx context.Context, actor, roomID, rootID ulid.ULID, notify bool) (chat.ThreadNotifications, error)
 
 	CreateAttachment(ctx context.Context, actor, roomID ulid.ULID, in chat.AttachmentInput) (chat.CreatedAttachment, error)
 	CompleteAttachment(ctx context.Context, actor, attachmentID ulid.ULID) (chat.Attachment, error)
@@ -149,6 +150,8 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("POST /api/v1/rooms/{roomID}/read", h.markRoomRead)
 	handle("GET /api/v1/rooms/{roomID}/threads/{rootID}/messages", h.listThreadMessages)
 	handle("POST /api/v1/rooms/{roomID}/threads/{rootID}/read", h.markThreadRead)
+	// スレッドの返信の通知（ADR 0056 決定 7）。true は明示的なフォローを兼ねる。
+	handle("PUT /api/v1/rooms/{roomID}/threads/{rootID}/me/notifications", h.setThreadNotifications)
 	handle("GET /api/v1/workspaces/{workspaceID}/threads", h.listThreads)
 
 	handle("POST /api/v1/rooms/{roomID}/attachments", h.createAttachment)

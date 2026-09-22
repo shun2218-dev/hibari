@@ -599,6 +599,14 @@ type roomNotificationsUpdatedData struct {
 	roomNotificationsBody
 }
 
+// threadNotificationsUpdatedData はスレッドの返信の通知（ADR 0056）。本人にだけ届く。
+type threadNotificationsUpdatedData struct {
+	WorkspaceID   string `json:"workspace_id"`
+	RoomID        string `json:"room_id"`
+	ThreadRootID  string `json:"thread_root_id"`
+	NotifyReplies bool   `json:"notify_replies"`
+}
+
 // encodeEvent はイベントを docs/events.md の JSON にする。
 func encodeEvent(ev chat.Event) ([]byte, error) {
 	data, err := eventData(ev.Data)
@@ -652,6 +660,8 @@ func eventData(d any) (any, error) {
 		return notificationsUpdatedData{d.WorkspaceID.String(), d.Level}, nil
 	case chat.RoomNotificationsUpdated:
 		return roomNotificationsUpdatedData{d.WorkspaceID.String(), d.RoomID.String(), newRoomNotificationsBody(d.Notifications)}, nil
+	case chat.ThreadNotificationsUpdated:
+		return threadNotificationsUpdatedData{d.WorkspaceID.String(), d.RoomID.String(), d.ThreadRootID.String(), d.NotifyReplies}, nil
 	default:
 		return nil, fmt.Errorf("unknown event data %T", d)
 	}

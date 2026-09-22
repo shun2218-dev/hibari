@@ -93,6 +93,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | `saved.updated` | 本人 | 自分の「後で」が変わった（保存・タブの移動・外す。別の端末を含む。ADR 0054） |
 | `notifications.updated` | 本人 | ワークスペースでの全体の通知の設定が変わった（別の端末を含む。ADR 0055） |
 | `room.notifications_updated` | 本人 | ルームごとの通知の設定（ミュート・通知する内容）が変わった（別の端末を含む。ADR 0055） |
+| `thread.notifications_updated` | 本人 | スレッドの返信の通知が変わった（別の端末を含む。ADR 0056） |
 
 #### `message.created` / `message.updated` / `message.deleted`
 
@@ -119,7 +120,9 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 
 **「自分宛てか」はイベントに載らない。** 配信は 1 つのペイロードを購読者に配る形なので（ADR 0015 / 0016）、受け取る人ごとの値を入れられない。
 クライアントは `mentions` を見て自分で判断し、手元のバッジを増やす。`kind` が `channel` / `here` なら「自分も対象かもしれない」として増やすが、
-**スレッドだけの返信（`thread_root_id` があって `also_in_channel` が false）では増やさない**（サーバーが数えないため。Slack と同じ）。
+**スレッドだけの返信（`thread_root_id` があって `also_in_channel` が false）では、そのスレッドに参加しているときだけ増やす。**
+サーバーは `@channel` / `@here` の対象の人をスレッドに参加させて数える（ADR 0056 決定 4。以前は誰も数えなかった）。
+参加したことは同じ返信の後に届く `thread.followed` で分かるので、クライアントはそれを受けてから数えてもよい（正しい値は REST で揃う）。
 正しい値はルームの `mention_count`（REST）で、ルームを開くか一覧を取り直せば揃う。
 
 #### 絵文字のリアクション（`reactions`。ADR 0044）
@@ -247,6 +250,16 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 - `muted_until` は期限つきのミュートの期限（`null` なら期限なし）。**期限が来ても解除のイベントは配らない。**
   クライアントは `muted_until` でタイマーを張り、自分で薄い表示を戻す（カスタムステータスと同じ。ADR 0049）
 - 未読数とメンションの件数は設定によらず数える。このイベントで件数は変わらない
+
+#### `thread.notifications_updated`
+
+```json
+{ "workspace_id": "01J8...", "room_id": "01J8...", "thread_root_id": "01J8...", "notify_replies": false }
+```
+
+- スレッドの返信の通知が変わった（ADR 0056）。オフでも参加は残り、未読も数える。見せ方だけを変える
+- 参加していないスレッドを「新しい返信の通知を受け取る」でフォローしたときは、先に `thread.followed` が届く（参加中のスレッドの一覧に加える）
+- 再接続では、参加中のスレッドの一覧（`notify_replies` / `mention_count` を含む）を取り直せば揃う
 
 #### `room.read`
 

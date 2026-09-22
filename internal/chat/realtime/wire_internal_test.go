@@ -78,6 +78,7 @@ func TestWireRoundTrip(t *testing.T) {
 			Type: chat.EventRoomNotificationsUpdated, To: chat.Audience{Users: []ulid.ULID{user.ID}},
 			Data: chat.RoomNotificationsUpdated{WorkspaceID: u(), RoomID: u(), Notifications: chat.RoomNotifications{Level: &mentions, Muted: true, MutedUntil: &edited}},
 		},
+		{Type: chat.EventThreadNotificationsUpdated, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ThreadNotificationsUpdated{WorkspaceID: u(), RoomID: u(), ThreadRootID: u(), NotifyReplies: false}},
 	}
 	if len(events) != len(dataDecoders) {
 		t.Fatalf("test covers %d event types, dataDecoders has %d", len(events), len(dataDecoders))

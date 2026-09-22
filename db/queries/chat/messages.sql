@@ -239,6 +239,25 @@ SELECT rm.room_id, sqlc.arg(thread_root_id), rm.user_id, sqlc.arg(last_read_thre
 ON CONFLICT (thread_root_id, user_id) DO NOTHING
 RETURNING user_id;
 
+-- name: FollowThreadForRoomMembers :many
+-- ルームのメンバー全員をスレッドに参加させる（ADR 0056）。スレッドの @channel（決定 4）と、DM のスレッドの最初の返信（決定 6）で使う。
+-- 新しく参加した人の user_id だけを返す。すでに参加していた人には、既読位置と返信の通知を戻さないよう何もしない。
+-- 大きなルームでも 1 文で入れる（件数の上限は設けない。ADR 0041 の @here と同じ扱い）。
+INSERT INTO thread_members (room_id, thread_root_id, user_id, last_read_thread_seq, created_at)
+SELECT rm.room_id, sqlc.arg(thread_root_id), rm.user_id, sqlc.arg(last_read_thread_seq), sqlc.arg(now)::timestamptz
+  FROM room_members rm
+ WHERE rm.room_id = sqlc.arg(room_id)
+ON CONFLICT (thread_root_id, user_id) DO NOTHING
+RETURNING user_id;
+
+-- name: SetThreadNotifyReplies :one
+-- 返信の通知を切り替える（ADR 0056 決定 5・7）。参加していなければ行を返さない。
+UPDATE thread_members
+   SET notify_replies = sqlc.arg(notify_replies)
+ WHERE thread_root_id = sqlc.arg(thread_root_id)
+   AND user_id = sqlc.arg(user_id)
+RETURNING last_read_thread_seq;
+
 -- name: AdvanceThreadReadToThreadSeq :exec
 -- 自分の返信の送信で、自分の既読位置をその返信まで進める（後退させない）。
 UPDATE thread_members
@@ -264,7 +283,7 @@ UPDATE thread_members tm
 RETURNING tm.last_read_thread_seq, r.last_thread_seq;
 
 -- name: GetThreadMembership :one
-SELECT last_read_thread_seq
+SELECT last_read_thread_seq, notify_replies
   FROM thread_members
  WHERE thread_root_id = sqlc.arg(thread_root_id)
    AND user_id = sqlc.arg(user_id);
@@ -277,7 +296,14 @@ SELECT m.id, m.room_id, m.seq, m.sender_id, m.body, m.last_thread_seq, m.thread_
        m.created_at, m.deleted_at,
        u.handle AS sender_handle, u.display_name AS sender_display_name,
        r.kind AS room_kind, r.name AS room_name, r.dm_key AS room_dm_key,
-       tm.last_read_thread_seq
+       tm.last_read_thread_seq, tm.notify_replies,
+       -- 未読の範囲にある自分宛てのメンションの数（ADR 0056 決定 2）。返信の通知をオフにした行でも `@N` を出すため。
+       -- スレッドの返信（thread_seq を持つ行）だけを見る。@channel は user_id が NULL の 1 行（ADR 0041）。
+       (SELECT count(*) FROM message_mentions mm
+          JOIN messages t ON t.room_id = mm.room_id AND t.id = mm.message_id
+         WHERE t.thread_root_id = tm.thread_root_id
+           AND (mm.user_id IS NULL OR mm.user_id = tm.user_id)
+           AND t.thread_seq > tm.last_read_thread_seq)::bigint AS mention_count
   FROM thread_members tm
   JOIN messages m ON m.id = tm.thread_root_id
   JOIN rooms r ON r.id = tm.room_id
@@ -291,10 +317,18 @@ SELECT m.id, m.room_id, m.seq, m.sender_id, m.body, m.last_thread_seq, m.thread_
 
 -- name: CountUnreadThreads :one
 -- 未読の返信がある参加中のスレッドの数（サイドバーの「スレッド」のバッジ。ADR 0036）。
+-- 返信の通知をオフにしたスレッドは、未読の範囲に自分宛てのメンションがあるときだけ数える（ADR 0056 決定 2）。
+-- 条件は ListFollowedThreads の mention_count と同じ。片方だけ直さないこと。
 SELECT count(*)
   FROM thread_members tm
   JOIN messages m ON m.id = tm.thread_root_id
   JOIN rooms r ON r.id = tm.room_id
  WHERE tm.user_id = sqlc.arg(user_id)
    AND r.workspace_id = sqlc.arg(workspace_id)
-   AND m.last_thread_seq > tm.last_read_thread_seq;
+   AND m.last_thread_seq > tm.last_read_thread_seq
+   AND (tm.notify_replies OR EXISTS (
+         SELECT 1 FROM message_mentions mm
+           JOIN messages t ON t.room_id = mm.room_id AND t.id = mm.message_id
+          WHERE t.thread_root_id = tm.thread_root_id
+            AND (mm.user_id IS NULL OR mm.user_id = tm.user_id)
+            AND t.thread_seq > tm.last_read_thread_seq));
