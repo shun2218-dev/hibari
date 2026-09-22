@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { ArchiveRoomDialog, DeleteRoomDialog } from "@/components/chat/room-dialogs";
+import { ArchiveRoomDialog } from "@/components/chat/dialogs/archive-room";
+import { DeleteRoomDialog } from "@/components/chat/dialogs/delete-room";
 
 import { chat, roomSettingsDialog } from "@/stories/screens";
 

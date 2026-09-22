@@ -1,6 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { AddRoomMemberDialog, CreateRoomDialog, LeaveRoomDialog, StartDmDialog } from "@/components/chat/room-dialogs";
+import { AddRoomMemberDialog } from "@/components/chat/dialogs/add-room-member";
+import { CreateRoomDialog } from "@/components/chat/dialogs/create-room";
+import { LeaveRoomDialog } from "@/components/chat/dialogs/leave-room";
+import { StartDmDialog } from "@/components/chat/dialogs/start-dm";
 
 import { dmCandidates, users } from "@/stories/fixtures";
 import { chat, noop, roomHeaderFrame, roomSettingsDialog, sidebarFrame } from "@/stories/screens";

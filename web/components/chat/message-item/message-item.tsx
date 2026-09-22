@@ -2,42 +2,26 @@
 
 import { type ReactNode, useRef, useState } from "react";
 
-import { AnchoredPanel } from "@/components/ui/anchored-panel";
+import { MessageBody } from "@/components/chat/message-body";
+import { MessageLinkCard } from "@/components/chat/message-link-card";
+import { MessageReactions } from "@/components/chat/message-reactions";
+import { ProfileHoverPopup } from "@/components/chat/profile-card";
+import type { MessageView } from "@/components/chat/types";
+import { StatusEmoji } from "@/components/chat/user-status";
 import { Avatar } from "@/components/ui/avatar";
-import { Button, IconButton, TextButton } from "@/components/ui/button";
-import {
-  BellIcon,
-  BellOffIcon,
-  BookmarkIcon,
-  ChevronRightIcon,
-  ClockIcon,
-  DownloadIcon,
-  FileIcon,
-  LinkIcon,
-  MoreIcon,
-  PencilIcon,
-  PinIcon,
-  PinOffIcon,
-  ReplyIcon,
-  SmilePlusIcon,
-  ThreadIcon,
-  TrashIcon,
-} from "@/components/ui/icons";
-import { MenuItem } from "@/components/ui/menu-item";
-import { Popover } from "@/components/ui/popover";
-import { Portal } from "@/components/ui/portal";
+import { TextButton } from "@/components/ui/button";
+import { ClockIcon, PinIcon, ThreadIcon } from "@/components/ui/icons";
 import { useHoverIntent } from "@/hooks/use-hover-intent";
 import { DESKTOP_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import type { MentionCandidate } from "@/lib/chat/format/mentions";
 import { cx } from "@/lib/cx";
 
-import { RichTextInput } from "./editor/rich-text-input";
-import { MessageBody } from "./message-body";
-import { MessageLinkCard } from "./message-link-card";
-import { MessageReactions } from "./message-reactions";
-import { ProfileHoverPopup } from "./profile-card";
-import type { MessageAttachmentView, MessageView } from "./types";
-import { StatusEmoji } from "./user-status";
+import { Attachment } from "./attachment";
+import { HoverActions } from "./hover-actions";
+import { MessageEditor } from "./message-editor";
+import { MessageMenu } from "./message-menu";
+import { ReactionPicker } from "./reaction-picker";
+import { ThreadSummary } from "./thread-summary";
 
 /** 編集中の本文。null（既定）なら編集していない。編集できるのは自分のメッセージだけ（ADR 0012）。 */
 export type MessageEditingView = {
@@ -402,49 +386,18 @@ export function MessageItem({
       </div>
 
       {actionable && (
-        <div
-          className={cx(
-            "absolute -top-3 right-4 items-center rounded-sm border border-border bg-surface p-0.5",
-            forceHover ? "flex" : "hidden group-hover:flex group-focus-within:flex",
-          )}
-        >
-          {canReact && (
-            <IconButton
-              label="リアクションを追加"
-              aria-expanded={pickerOpen}
-              onClick={onTogglePicker}
-              className={cx("size-7", pickerOpen && "bg-surface-muted")}
-            >
-              <SmilePlusIcon className="size-4" />
-            </IconButton>
-          )}
-          {canReply && (
-            <IconButton label="返信" onClick={onReply} className="size-7">
-              <ReplyIcon className="size-4" />
-            </IconButton>
-          )}
-          {canSave && (
-            <IconButton
-              label={save.saved ? "「後で」から外す" : "「後で」に保存"}
-              aria-pressed={save.saved}
-              onClick={save.onClick}
-              className="size-7"
-            >
-              {/* IconButton の文字色（text-secondary）より後に効かせるため、色はアイコンの側に付ける */}
-              <BookmarkIcon className={cx("size-4", save.saved && "text-primary")} fill={save.saved ? "currentColor" : "none"} />
-            </IconButton>
-          )}
-          {hasMenu && (
-            <IconButton
-              label="その他の操作"
-              aria-expanded={menuOpen}
-              onClick={onToggleMenu}
-              className={cx("size-7", menuOpen && "bg-surface-muted")}
-            >
-              <MoreIcon className="size-4" />
-            </IconButton>
-          )}
-        </div>
+        <HoverActions
+          forceHover={forceHover}
+          canReact={canReact}
+          pickerOpen={pickerOpen}
+          onTogglePicker={onTogglePicker}
+          canReply={canReply}
+          onReply={onReply}
+          save={canSave ? save : undefined}
+          hasMenu={hasMenu}
+          menuOpen={menuOpen}
+          onToggleMenu={onToggleMenu}
+        />
       )}
 
       {hoverCardShown && (
@@ -457,207 +410,23 @@ export function MessageItem({
         </ProfileHoverPopup>
       )}
 
-      {pickerOpen &&
-        (desktopPicker ? (
-          // 画面に浮かせる（fixed）。タイムラインの中に absolute で置くと、スクロールできる範囲が
-          // ピッカーのぶん広がって、いちばん下のメッセージで開いたときに下に余白ができる。
-          // 入力欄より上に出すのも狙いどおり（絵文字を選んでいる間は入力しない）。
-          // 中身（emoji-mart）が自前の地と角丸を持つので、枠は外側で足すだけにして二重の額縁を避ける
-          <AnchoredPanel
-            anchorRef={rowRef}
-            label="リアクションを選ぶ"
-            onDismiss={onTogglePicker}
-            className="w-88 overflow-hidden rounded-md border border-border bg-surface shadow-overlay"
-          >
-            {picker}
-          </AnchoredPanel>
-        ) : (
-          // モバイルは下から出るシート（メンバーのシートと同じ形）。画面が狭く、浮かせる余地がない
-          <Portal>
-            <div aria-hidden className="fixed inset-0 z-40 bg-overlay" onClick={onTogglePicker} />
-            <div
-              role="dialog"
-              aria-label="リアクションを選ぶ"
-              className="fixed inset-x-0 bottom-0 z-50 overflow-hidden rounded-t-lg bg-surface"
-            >
-              {picker}
-            </div>
-          </Portal>
-        ))}
+      {pickerOpen && (
+        <ReactionPicker desktop={desktopPicker} rowRef={rowRef} picker={picker} onTogglePicker={onTogglePicker} />
+      )}
 
       {menuOpen && hasMenu && (
-        <Popover label="メッセージの操作" className="top-6 right-4 w-64" onDismiss={onToggleMenu}>
-          {copyLink && (
-            <MenuItem icon={LinkIcon} onClick={copyLink.onClick}>
-              {copyLink.label}
-            </MenuItem>
-          )}
-          {pin && (
-            <MenuItem icon={pinnedBy ? PinOffIcon : PinIcon} onClick={pin.onClick}>
-              {pin.label}
-            </MenuItem>
-          )}
-          {threadNotify && (
-            <MenuItem icon={threadNotify.notifying ? BellOffIcon : BellIcon} onClick={threadNotify.onClick}>
-              {threadNotify.notifying ? "返信の通知をオフにする" : "新しい返信の通知を受け取る"}
-            </MenuItem>
-          )}
-          {canEdit && (
-            <MenuItem icon={PencilIcon} onClick={onEdit}>
-              メッセージを編集
-            </MenuItem>
-          )}
-          {canDelete && (
-            <MenuItem icon={TrashIcon} onClick={onDelete} danger>
-              メッセージを削除
-            </MenuItem>
-          )}
-        </Popover>
+        <MessageMenu
+          copyLink={copyLink}
+          pin={pin}
+          pinnedBy={pinnedBy}
+          threadNotify={threadNotify}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onToggleMenu={onToggleMenu}
+        />
       )}
     </article>
-  );
-}
-
-/**
- * 親のメッセージの下の「N 件の返信」。押すとスレッドを開く（押せるので緑。docs/ui/tokens.md）。
- * 親が削除されていても、返信は残るので出す（ADR 0036）。
- */
-function ThreadSummary({ thread, onOpen }: { thread: NonNullable<MessageView["thread"]>; onOpen?: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="group/thread mt-1.5 -ml-1.5 flex h-7 items-center gap-2 rounded-sm px-1.5 text-xs hover:bg-surface"
-    >
-      <span className="font-semibold text-primary group-hover/thread:underline">{thread.replyCount} 件の返信</span>
-      <span className="font-mono text-2xs text-text-muted">最終返信 {thread.lastReplyLabel}</span>
-      <ChevronRightIcon className="size-3.5 text-text-muted" />
-    </button>
-  );
-}
-
-/** 本文をその場で書き換える。Enter で保存、Esc で取りやめ（改行は Shift + Enter）。 */
-function MessageEditor({ editing, mentionNames }: { editing: MessageEditingView; mentionNames?: Readonly<Record<string, string>> }) {
-  return (
-    <div className="flex flex-col gap-1.5 pt-0.5">
-      {/* 入力欄と同じリッチテキストの欄（ADR 0052）。編集ではツールバーを出さず、記号の入力とショートカットで書式を付ける */}
-      <div className="rounded-md border border-border bg-surface px-1.5 py-1 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-primary">
-        <RichTextInput
-          value={editing.value}
-          onChange={editing.onChange}
-          onSubmit={() => {
-            if (editing.value.trim() !== "") editing.onSave?.();
-          }}
-          onEscape={editing.onCancel}
-          mentionNames={mentionNames}
-          mentionCandidates={editing.mentionCandidates}
-          toolbar={false}
-          label="メッセージを編集"
-          autoFocus
-        />
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-2xs text-text-muted">Enter で保存 / Esc でキャンセル</span>
-        <div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={editing.onCancel}>
-            キャンセル
-          </Button>
-          <Button size="sm" onClick={editing.onSave} disabled={editing.saving || editing.value.trim() === ""}>
-            保存
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Attachment({
-  attachment,
-  onDownload,
-  onImageError,
-  onOpen,
-  onDelete,
-  menuOpen = false,
-  onToggleMenu,
-}: {
-  attachment: MessageAttachmentView;
-  onDownload?: (attachmentId: string) => void;
-  onImageError?: (attachmentId: string, url: string) => void;
-  onOpen?: (attachmentId: string) => void;
-  onDelete?: (attachmentId: string) => void;
-  menuOpen?: boolean;
-  onToggleMenu?: (attachmentId: string) => void;
-}) {
-  if (attachment.kind === "image") {
-    // 寸法が分かっていれば先に枠を確保し、画像の読み込みでタイムラインがずれないようにする（ADR 0013）
-    const aspectRatio = attachment.width && attachment.height ? `${attachment.width} / ${attachment.height}` : undefined;
-    const frame = (
-      <div
-        // 縦に長い画像がタイムラインを占めないよう、高さを抑えて切り取る
-        className="flex max-h-80 w-65 max-w-full items-center justify-center overflow-hidden rounded-md border border-border bg-surface-muted"
-        style={{ aspectRatio: aspectRatio ?? "13 / 8" }}
-      >
-        {attachment.url ? (
-          // 署名付き URL は短時間で失効し、next/image の最適化（サーバー経由の取得）も使えないので img を使う
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={attachment.url}
-            alt={attachment.fileName}
-            // 画面の外の画像は、見えるまで読み込まない（1 枚で最大 25 MiB。ADR 0013）
-            loading="lazy"
-            onError={() => onImageError?.(attachment.id, attachment.url!)}
-            className="size-full object-cover"
-          />
-        ) : (
-          <span className="font-mono text-2xs text-text-muted">{attachment.fileName}</span>
-        )}
-      </div>
-    );
-
-    // 押して開けるのは、実際に画像が出ているときだけ（送信中の添付はまだ GET URL がない。ADR 0045 決定 1）
-    if (!onOpen || !attachment.url) return frame;
-    return (
-      <button
-        type="button"
-        aria-label={`${attachment.fileName} を拡大表示`}
-        onClick={() => onOpen(attachment.id)}
-        // 画像はボタンに見えないので、ポインタで「押すと開く」ことを示す（Tailwind v4 の button は cursor: default）
-        className="block cursor-zoom-in rounded-md"
-      >
-        {frame}
-      </button>
-    );
-  }
-
-  return (
-    <div className="relative flex w-90 max-w-full items-center gap-3 rounded-md border border-border bg-surface px-3.5 py-2.5">
-      <FileIcon className="size-4.5 shrink-0 text-text-secondary" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-text">{attachment.fileName}</p>
-        <p className="font-mono text-2xs text-text-muted">{attachment.sizeLabel}</p>
-      </div>
-      {/* 拡大表示の中のダウンロードと同じアイコン（ADR 0045）。文字のボタンより行が軽くなる（オーナーの要望、2026-09-21） */}
-      <IconButton label="ダウンロード" title="ダウンロード" onClick={() => onDownload?.(attachment.id)} className="size-7">
-        <DownloadIcon className="size-4" />
-      </IconButton>
-      {/* 画像でない添付の削除は、この行の「…」から（画像は拡大表示の中にある。ADR 0045 決定 9） */}
-      {onDelete && (
-        <IconButton
-          label="ファイルの操作"
-          aria-expanded={menuOpen}
-          onClick={() => onToggleMenu?.(attachment.id)}
-          className={cx("size-7", menuOpen && "bg-surface-muted")}
-        >
-          <MoreIcon className="size-4" />
-        </IconButton>
-      )}
-      {menuOpen && onDelete && (
-        <Popover label="ファイルの操作" className="top-11 right-0 w-44" onDismiss={() => onToggleMenu?.(attachment.id)}>
-          <MenuItem icon={TrashIcon} onClick={() => onDelete(attachment.id)} danger>
-            ファイルを削除
-          </MenuItem>
-        </Popover>
-      )}
-    </div>
   );
 }

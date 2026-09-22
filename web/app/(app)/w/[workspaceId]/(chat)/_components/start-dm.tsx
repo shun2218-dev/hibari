@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { StartDmDialog } from "@/components/chat/room-dialogs";
+import { StartDmDialog } from "@/components/chat/dialogs/start-dm";
 import { useSessionState } from "@/hooks/auth/use-session";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";

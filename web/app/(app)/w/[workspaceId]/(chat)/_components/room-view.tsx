@@ -14,7 +14,7 @@ import {
 } from "@/components/chat/chat-states";
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
-import { ConfirmMentionAllDialog } from "@/components/chat/room-dialogs";
+import { ConfirmMentionAllDialog } from "@/components/chat/dialogs/confirm-mention-all";
 import { useMessageActions } from "@/hooks/chat/use-message-actions";
 import { type ProfileSender, useSenders } from "@/hooks/chat/use-senders";
 import { useProfileHoverCard } from "@/hooks/chat/use-profile-hover-card";

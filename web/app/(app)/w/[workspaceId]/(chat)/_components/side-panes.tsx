@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ActivityList } from "@/components/chat/activity-list";
 import { DmList } from "@/components/chat/dm-list";
-import { RemoveSavedItemDialog } from "@/components/chat/room-dialogs";
+import { RemoveSavedItemDialog } from "@/components/chat/dialogs/remove-saved-item";
 import { SavedList } from "@/components/chat/saved-list";
 import type { SavedTab } from "@/components/chat/types";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";

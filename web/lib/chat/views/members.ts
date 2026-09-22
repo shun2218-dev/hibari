@@ -1,4 +1,5 @@
-import type { DmCandidateView, RoomMemberRowView } from "@/components/chat/room-dialogs";
+import type { RoomMemberRowView } from "@/components/chat/dialogs/room-settings";
+import type { DmCandidateView } from "@/components/chat/dialogs/start-dm";
 import type { RoleLabel, RoomKind, RoomMemberView, UserStatusView } from "@/components/chat/types";
 import type { Member, Presence, Role, RoomMember, UserStatus } from "@/lib/api/types.gen";
 import type { MentionCandidate } from "@/lib/chat/format/mentions";

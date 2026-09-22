@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { DeleteMessageDialog } from "@/components/chat/room-dialogs";
+import { DeleteMessageDialog } from "@/components/chat/dialogs/delete-message";
 
 import { pendingMessageKey } from "@/stories/fixtures";
 import { chat } from "@/stories/screens";

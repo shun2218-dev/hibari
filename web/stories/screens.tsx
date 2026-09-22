@@ -33,7 +33,8 @@ import { NotificationPermissionBanner } from "@/components/chat/notification-per
 import { PinsList } from "@/components/chat/pins-list";
 import { ProfileHoverCard } from "@/components/chat/profile-card";
 import { ProfilePanel } from "@/components/chat/profile-panel";
-import { RemoveSavedItemDialog, RoomSettingsDialog } from "@/components/chat/room-dialogs";
+import { RemoveSavedItemDialog } from "@/components/chat/dialogs/remove-saved-item";
+import { RoomSettingsDialog } from "@/components/chat/dialogs/room-settings";
 import { RoomHeader } from "@/components/chat/room-header";
 import { RoomTabs } from "@/components/chat/room-tabs";
 import { SavedList } from "@/components/chat/saved-list";
