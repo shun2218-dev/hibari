@@ -290,6 +290,10 @@ type ChatOptions = {
   activity?: ActivityFilter | "unread" | "hover" | "empty" | "unread-empty";
   /** DM の一覧（`side: "dms"`）を空にする。 */
   dmsEmpty?: boolean;
+  /** DM の一覧の「未読メッセージ」をオンにする（ADR 0058 の追記）。 */
+  dmsUnread?: boolean;
+  /** 左のメニューにポインタを乗せて、一覧を重ねて出したところ（ADR 0058 の追記）。 */
+  preview?: "dms" | "activity" | "later";
   /**
    * ダークで描く画面。ふだんは囲いの `data-theme` だけで足りるが、
    * emoji-mart のようにテーマを JS の props で受け取る部品には、こちらから渡す必要がある（ADR 0044 決定 7）。
@@ -398,6 +402,8 @@ export function chat({
   side = "home",
   activity,
   dmsEmpty,
+  dmsUnread,
+  preview,
   dark,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
@@ -492,8 +498,8 @@ export function chat({
     <>
       <ChatLayout
         mobileView={mobileView}
-        sidebar={sidePane(side, home, { activity, dmsEmpty, saved, savedTab, savedItems })}
-        rail={sideRail(side, { switcher, accountMenu, presence })}
+        sidebar={sidePane(side, home, { activity, dmsEmpty, dmsUnread, saved, savedTab, savedItems })}
+        rail={sideRail(side, { switcher, accountMenu, presence, preview })}
         tabBar={<SideNavBar items={sideNavItems} current={side} />}
         panel={
           members ? (
@@ -693,12 +699,23 @@ const sideNavItems: SideNavItems = {
 /** md 以上の左のメニュー。ワークスペースの切り替えとアカウントのメニューは、ここから開く。 */
 function sideRail(
   side: SideNavKey,
-  { switcher, accountMenu, presence }: { switcher?: boolean; accountMenu?: boolean; presence?: boolean },
+  {
+    switcher,
+    accountMenu,
+    presence,
+    preview,
+  }: { switcher?: boolean; accountMenu?: boolean; presence?: boolean; preview?: ChatOptions["preview"] },
 ) {
   return (
     <SideNavRail
       items={sideNavItems}
       current={side}
+      openPreview={preview}
+      previews={{
+        dms: <DmList variant="preview" rooms={dmRooms} roomHref={roomHref} />,
+        activity: <ActivityList variant="preview" filter="all" unreadOnly={false} items={activityItems} />,
+        later: <SavedList variant="preview" tab="in_progress" inProgressCount={savedInProgress.length} items={savedInProgress} />,
+      }}
       workspace={
         <>
           <button type="button" aria-label="ワークスペースを切り替える" aria-expanded={Boolean(switcher)} aria-haspopup="dialog" className="rounded-sm">
@@ -730,12 +747,14 @@ function sidePane(
   {
     activity,
     dmsEmpty,
+    dmsUnread,
     saved,
     savedTab,
     savedItems,
   }: {
     activity?: ChatOptions["activity"];
     dmsEmpty?: boolean;
+    dmsUnread?: boolean;
     saved?: ChatOptions["saved"];
     savedTab: ComponentProps<typeof SavedList>["tab"];
     savedItems: NonNullable<ComponentProps<typeof SavedList>["items"]>;
@@ -745,7 +764,14 @@ function sidePane(
     case "home":
       return home;
     case "dms":
-      return <DmList rooms={dmsEmpty ? [] : dmRooms} roomHref={roomHref} onStartDm={noop} />;
+      return (
+        <DmList
+          rooms={dmsEmpty ? [] : dmsUnread ? dmRooms.filter((room) => room.unreadCount > 0) : dmRooms}
+          unreadOnly={dmsUnread}
+          roomHref={roomHref}
+          onStartDm={noop}
+        />
+      );
     case "activity": {
       const filter: ActivityFilter =
         activity === "dm" || activity === "mention" || activity === "thread" || activity === "reaction" ? activity : "all";

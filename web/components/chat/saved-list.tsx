@@ -48,6 +48,11 @@ type SavedListProps = {
   onBack?: () => void;
   /** いちばん下の近くまでスクロールした（続きを読み込むきっかけ）。続きがあるか・取得中かの判断は呼ぶ側が行う。 */
   onReachEnd?: () => void;
+  /**
+   * pane はサイドバーの列に出す形。preview は左のメニューにポインタを乗せたときに重ねて出す形（ADR 0058 の追記）で、
+   * タブを出さずに「進行中」だけを並べる。
+   */
+  variant?: "pane" | "preview";
 };
 
 const TABS: readonly { value: SavedTab; label: string }[] = [
@@ -93,22 +98,26 @@ export function SavedList({
   hoveredKey,
   onBack,
   onReachEnd,
+  variant = "pane",
 }: SavedListProps) {
+  const preview = variant === "preview";
   return (
     // サイドバーの列（h-full）でも、いまのメインの領域（flex-1）でも縦いっぱいに広がるように両方を当てる
     <section aria-label="後で" className="flex h-full min-h-0 flex-1 flex-col bg-surface">
-      <header className="flex h-16 shrink-0 items-center gap-1 px-4">
+      <header className={cx("flex shrink-0 items-center gap-1 px-4", preview ? "h-14 border-b border-border" : "h-16")}>
         {onBack && (
           <IconButton label="チャンネル一覧に戻る" onClick={onBack} className="-ml-2 md:hidden">
             <ChevronLeftIcon className="size-5" />
           </IconButton>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-bold text-text">後で</h1>
-          <p className="text-2xs text-text-muted">自分だけに見える保存したメッセージ</p>
+          <h1 className={cx("font-bold text-text", preview ? "text-lg" : "text-xl")}>後で</h1>
+          {!preview && <p className="text-2xs text-text-muted">自分だけに見える保存したメッセージ</p>}
         </div>
       </header>
 
+      {!preview && (
+        <>
       {/* サイドバーの列の幅に収まらないときは、横にスクロールさせる（アクティビティのタブと同じ） */}
       <div className="shrink-0 overflow-x-auto border-b border-border px-4 scrollbar-none">
         <Tabs
@@ -120,8 +129,10 @@ export function SavedList({
           bordered={false}
         />
       </div>
+        </>
+      )}
 
-      <div id={PANEL_ID} role="tabpanel" className="flex min-h-0 flex-1 flex-col">
+      <div id={preview ? undefined : PANEL_ID} role={preview ? undefined : "tabpanel"} className="flex min-h-0 flex-1 flex-col">
         {items === undefined ? null : items.length === 0 ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
             <BookmarkIcon className="size-6 text-text-muted" />

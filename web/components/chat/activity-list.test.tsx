@@ -83,8 +83,8 @@ describe("ActivityList", () => {
     await user.click(screen.getByRole("tab", { name: "リアクション" }));
     expect(onChangeFilter).toHaveBeenCalledWith("reaction");
 
-    const toggle = screen.getByRole("button", { name: "未読メッセージ" });
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    const toggle = screen.getByRole("switch", { name: "未読メッセージ" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
     await user.click(toggle);
     expect(onToggleUnreadOnly).toHaveBeenCalled();
   });
@@ -105,5 +105,14 @@ describe("ActivityList", () => {
 
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
     expect(screen.queryByText("アクティビティはまだありません")).not.toBeInTheDocument();
+  });
+
+  it("shows no tabs in the preview and puts the switch next to the heading (ADR 0058 の追記)", () => {
+    renderList({ variant: "preview" });
+
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    const header = screen.getByRole("heading", { name: "アクティビティ" }).parentElement!;
+    expect(within(header).getByRole("switch", { name: "未読メッセージ" })).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "すべて" })).getAllByRole("link")).toHaveLength(items.length);
   });
 });

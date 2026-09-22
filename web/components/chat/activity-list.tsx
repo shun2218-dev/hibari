@@ -5,6 +5,7 @@ import { type ComponentType, Fragment } from "react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { AtSignIcon, BellIcon, DmIcon, HashIcon, LockIcon, PaperclipIcon, SmileIcon, ThreadIcon } from "@/components/ui/icons";
+import { Switch } from "@/components/ui/switch";
 import { Tabs } from "@/components/ui/tabs";
 import { cx } from "@/lib/cx";
 
@@ -23,6 +24,11 @@ type ActivityListProps = {
   hoveredKey?: string;
   /** いちばん下の近くまでスクロールした（続きを読み込むきっかけ）。 */
   onReachEnd?: () => void;
+  /**
+   * pane はサイドバーの列に出す形。preview は左のメニューにポインタを乗せたときに重ねて出す形（ADR 0058 の追記）で、
+   * タブを出さず（「すべて」だけ）、見出しの右に「未読メッセージ」を置く（Slack と同じ）。
+   */
+  variant?: "pane" | "preview";
 };
 
 const TABS: readonly { value: ActivityFilter; label: string }[] = [
@@ -59,35 +65,31 @@ export function ActivityList({
   items,
   hoveredKey,
   onReachEnd,
+  variant = "pane",
 }: ActivityListProps) {
+  const preview = variant === "preview";
+  const unreadSwitch = <Switch label="未読メッセージ" checked={unreadOnly} onChange={() => onToggleUnreadOnly?.()} />;
   return (
-    <section aria-labelledby="activity-title" className="flex h-full flex-col bg-surface">
-      <header className="flex h-16 shrink-0 items-center px-4">
-        <h1 id="activity-title" className="text-xl font-bold text-text">
+    <section aria-labelledby={`activity-title-${variant}`} className="flex h-full flex-col bg-surface">
+      <header className={cx("flex shrink-0 items-center justify-between gap-2 px-4", preview ? "h-14 border-b border-border" : "h-16")}>
+        <h1 id={`activity-title-${variant}`} className={cx("font-bold text-text", preview ? "text-lg" : "text-xl")}>
           アクティビティ
         </h1>
+        {preview && unreadSwitch}
       </header>
 
-      {/* 5 つのタブはサイドバーの幅に収まらないので、横にスクロールさせる */}
-      <div className="shrink-0 overflow-x-auto border-b border-border px-4 scrollbar-none">
-        <Tabs label="アクティビティ" items={TABS} value={filter} onChange={onChangeFilter} panelId={PANEL_ID} bordered={false} />
-      </div>
+      {!preview && (
+        <>
+          {/* 5 つのタブはサイドバーの幅に収まらないので、横にスクロールさせる */}
+          <div className="shrink-0 overflow-x-auto border-b border-border px-4 scrollbar-none">
+            <Tabs label="アクティビティ" items={TABS} value={filter} onChange={onChangeFilter} panelId={PANEL_ID} bordered={false} />
+          </div>
+          {/* 見出しの右にはサイドバーの幅では収まらないので、一覧の上に置く */}
+          <div className="flex shrink-0 justify-end px-4 pt-3 pb-1">{unreadSwitch}</div>
+        </>
+      )}
 
-      <div className="flex shrink-0 px-4 pt-3 pb-1">
-        <button
-          type="button"
-          aria-pressed={unreadOnly}
-          onClick={onToggleUnreadOnly}
-          className={cx(
-            "flex h-8 cursor-pointer items-center gap-1.5 rounded-sm border px-2.5 text-sm",
-            unreadOnly ? "border-primary bg-primary-subtle font-semibold text-primary" : "border-border text-text-secondary hover:bg-surface-muted",
-          )}
-        >
-          未読メッセージ
-        </button>
-      </div>
-
-      <div id={PANEL_ID} role="tabpanel" className="flex min-h-0 flex-1 flex-col">
+      <div id={preview ? undefined : PANEL_ID} role={preview ? undefined : "tabpanel"} className="flex min-h-0 flex-1 flex-col">
         {items === undefined ? null : items.length === 0 ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
             <BellIcon className="size-6 text-text-muted" />
@@ -99,7 +101,7 @@ export function ActivityList({
         ) : (
           <ol
             aria-label={TABS.find((tab) => tab.value === filter)?.label}
-            className="min-h-0 flex-1 overflow-y-auto px-3 pb-4"
+            className={cx("min-h-0 flex-1 overflow-y-auto px-3 pb-4", preview && "pt-1")}
             onScroll={(e) => {
               const el = e.currentTarget;
               if (el.scrollHeight - el.scrollTop - el.clientHeight < REACH_END_PX) onReachEnd?.();

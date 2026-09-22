@@ -1,5 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SideNavBar, type SideNavItems, SideNavRail } from "./side-nav";
 
@@ -51,5 +51,64 @@ describe("SideNavBar", () => {
     const links = screen.getAllByRole("link");
     expect(links.map((link) => link.textContent)).toEqual(["ホーム", "2DM", "アクティビティ", "後で"]);
     expect(screen.getByRole("link", { current: "page" })).toHaveTextContent("DM");
+  });
+});
+
+describe("SideNavRail のホバー（ADR 0058 の追記）", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const previews = { dms: <p>DM の一覧</p>, activity: <p>アクティビティの一覧</p>, later: <p>後での一覧</p> };
+
+  function renderRail(current: "home" | "dms" | "activity" | "later" = "home") {
+    return render(<SideNavRail items={items} current={current} workspace={<span />} account={<span />} previews={previews} />);
+  }
+
+  function hover(name: string) {
+    fireEvent.mouseEnter(screen.getByRole("link", { name: new RegExp(name) }).closest("li")!);
+    act(() => vi.advanceTimersByTime(200));
+  }
+
+  it("ポインタを乗せると、そのメニューの一覧を重ねて出し、外すと閉じる", () => {
+    renderRail();
+
+    hover("アクティビティ");
+    expect(screen.getByText("アクティビティの一覧")).toBeInTheDocument();
+
+    fireEvent.mouseLeave(screen.getByRole("navigation", { name: "メニュー" }));
+    act(() => vi.advanceTimersByTime(300));
+    expect(screen.queryByText("アクティビティの一覧")).not.toBeInTheDocument();
+  });
+
+  it("今いるメニューと、中身のないホームでは出さない", () => {
+    renderRail("activity");
+
+    hover("アクティビティ");
+    expect(screen.queryByText("アクティビティの一覧")).not.toBeInTheDocument();
+    hover("ホーム");
+    expect(screen.queryByText(/の一覧$/)).not.toBeInTheDocument();
+  });
+
+  it("重ねた一覧の上に移っても閉じず、1 件を押したら閉じる", () => {
+    renderRail();
+
+    hover("DM");
+    const panel = screen.getByText("DM の一覧");
+    // メニューからパネルへ動かす間に閉じる予約が入っても、パネルに入れば取り消す
+    fireEvent.mouseEnter(screen.getByRole("link", { name: /後で/ }).closest("li")!);
+    fireEvent.mouseEnter(panel.parentElement!);
+    act(() => vi.advanceTimersByTime(300));
+    expect(screen.getByText("DM の一覧")).toBeInTheDocument();
+
+    fireEvent.click(panel);
+    expect(screen.queryByText("DM の一覧")).not.toBeInTheDocument();
+  });
+
+  it("押したら重ねた一覧を閉じる（サイドバーが同じ一覧に切り替わる）", () => {
+    renderRail();
+
+    hover("後で");
+    fireEvent.click(screen.getByRole("link", { name: /後で/ }));
+    expect(screen.queryByText("後での一覧")).not.toBeInTheDocument();
   });
 });

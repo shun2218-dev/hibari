@@ -1,5 +1,7 @@
+"use client";
+
 import Link from "next/link";
-import type { ComponentType, ReactNode } from "react";
+import { type ComponentType, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { UnreadBadge } from "@/components/ui/badge";
 import { BellIcon, BookmarkIcon, DmIcon, HomeIcon } from "@/components/ui/icons";
@@ -32,32 +34,83 @@ type SideNavProps = {
   current: SideNavKey;
 };
 
+/** ポインタを乗せてから一覧を出すまで・外してから閉じるまでの間（メニューとパネルの間を動かしたときに閉じないように）。 */
+const OPEN_DELAY_MS = 150;
+const CLOSE_DELAY_MS = 200;
+
 /**
  * md 以上でサイドバーの左に置く縦のメニュー（Slack と同じく、アイコンの下に文字）。
  * 押すとサイドバーの中身が切り替わる。上にワークスペース、下に自分のアバターを置く（どのメニューを開いていても届くように）。
+ *
+ * ポインタを乗せると、そのメニューの一覧をサイドバーの上に重ねて出す（ADR 0058 の追記。Slack と同じ）。
+ * 今いるメニューと、`previews` に中身を渡さないメニュー（ホーム）では出さない。ポインタの操作だけの近道なので、
+ * キーボードのフォーカスでは出さない（押せばサイドバーが同じ一覧に切り替わる）。
  */
 export function SideNavRail({
   items,
   current,
   workspace,
   account,
+  previews = {},
+  openPreview,
 }: SideNavProps & {
   /** 上のワークスペースのボタン（切り替えのポップオーバーを含む）。 */
   workspace: ReactNode;
   /** 下の自分のアバターのボタン（アカウントのメニューを含む）。 */
   account: ReactNode;
+  /** ポインタを乗せたときに重ねて出す一覧（DM・アクティビティ・後での preview の形）。 */
+  previews?: Partial<Record<SideNavKey, ReactNode>>;
+  /** 重ねた一覧を開いたまま描く（story で状態を再現するため）。 */
+  openPreview?: SideNavKey;
 }) {
+  const [hovered, setHovered] = useState<SideNavKey | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  function schedule(next: SideNavKey | null) {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setHovered(next), next === null ? CLOSE_DELAY_MS : OPEN_DELAY_MS);
+  }
+
+  const shown = openPreview ?? hovered;
+  const preview = shown !== null && shown !== current ? previews[shown] : undefined;
+
   return (
-    <nav aria-label="メニュー" className="flex h-full w-18 shrink-0 flex-col items-center gap-4 border-r border-border bg-surface-muted py-3">
+    <nav
+      aria-label="メニュー"
+      onMouseLeave={() => schedule(null)}
+      className="relative flex h-full w-18 shrink-0 flex-col items-center gap-4 border-r border-border bg-surface-muted py-3"
+    >
       <div className="relative">{workspace}</div>
       <ul className="flex flex-1 flex-col items-center gap-3">
         {ITEMS.map((item) => (
-          <li key={item.key}>
-            <RailItem {...item} href={items[item.key].href} badge={items[item.key].badge} selected={item.key === current} />
+          <li key={item.key} onMouseEnter={() => schedule(item.key)}>
+            <RailItem
+              {...item}
+              href={items[item.key].href}
+              badge={items[item.key].badge}
+              selected={item.key === current}
+              previewing={item.key === shown && preview !== undefined}
+              onNavigate={() => {
+                clearTimeout(timer.current);
+                setHovered(null);
+              }}
+            />
           </li>
         ))}
       </ul>
       <div className="relative">{account}</div>
+      {preview !== undefined && (
+        // パネルの上ではポインタが外れても閉じない（nav の中なので mouseleave は nav を出たときだけ）。
+        // 一覧の 1 件を押したらルームを開くので、閉じる
+        <div
+          onMouseEnter={() => clearTimeout(timer.current)}
+          onClick={() => setHovered(null)}
+          className="absolute top-2 bottom-2 left-full z-30 ml-1 w-96 overflow-hidden rounded-lg border border-border bg-surface shadow-overlay"
+        >
+          {preview}
+        </div>
+      )}
     </nav>
   );
 }
@@ -68,20 +121,30 @@ function RailItem({
   href,
   badge = 0,
   selected,
+  previewing,
+  onNavigate,
 }: {
   label: string;
   icon: ComponentType<{ className?: string }>;
   href: string;
   badge?: number;
   selected: boolean;
+  /** このメニューの一覧を重ねて出している。 */
+  previewing: boolean;
+  onNavigate: () => void;
 }) {
   return (
-    <Link href={href} aria-current={selected ? "page" : undefined} className="group flex w-18 flex-col items-center gap-1">
+    <Link
+      href={href}
+      onClick={onNavigate}
+      aria-current={selected ? "page" : undefined}
+      className="group flex w-18 flex-col items-center gap-1"
+    >
       <span
         className={cx(
           "relative flex size-9 items-center justify-center rounded-md",
           // 今いるメニューは地の色で示す。押せるものなので緑（docs/ui/tokens.md）
-          selected ? "bg-primary-subtle text-primary" : "text-text-secondary group-hover:bg-surface",
+          selected ? "bg-primary-subtle text-primary" : previewing ? "bg-surface text-text" : "text-text-secondary group-hover:bg-surface",
         )}
       >
         <Icon className="size-5" />

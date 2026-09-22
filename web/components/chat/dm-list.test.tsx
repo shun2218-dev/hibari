@@ -50,4 +50,24 @@ describe("DmList", () => {
     for (const button of screen.getAllByRole("button", { name: "ダイレクトメッセージを開く" })) await user.click(button);
     expect(onStartDm).toHaveBeenCalledTimes(2);
   });
+
+  it("toggles unread only with the switch and says when nothing is unread (ADR 0058 の追記)", async () => {
+    const user = userEvent.setup();
+    const onToggleUnreadOnly = vi.fn();
+    render(<DmList rooms={[]} roomHref={(id) => id} unreadOnly onToggleUnreadOnly={onToggleUnreadOnly} />);
+
+    const toggle = screen.getByRole("switch", { name: "未読メッセージ" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText("未読のダイレクトメッセージはありません")).toBeInTheDocument();
+    await user.click(toggle);
+    expect(onToggleUnreadOnly).toHaveBeenCalled();
+  });
+
+  it("puts the switch next to the heading and drops the + in the preview", () => {
+    render(<DmList variant="preview" rooms={rooms} roomHref={(id) => id} />);
+
+    const header = screen.getByRole("heading", { name: "ダイレクトメッセージ" }).parentElement!;
+    expect(within(header).getByRole("switch", { name: "未読メッセージ" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "ダイレクトメッセージを開く" })).not.toBeInTheDocument();
+  });
 });

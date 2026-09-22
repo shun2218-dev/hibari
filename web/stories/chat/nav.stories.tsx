@@ -73,3 +73,33 @@ export const MobileDms: Story = {
   render: () => chat({ side: "dms", mobileView: "list" }),
 };
 
+export const DmsUnread: Story = {
+  name: "DM の一覧（未読メッセージだけ）",
+  tags: ["since:6.14.5"],
+  render: () => chat({ side: "dms", dmsUnread: true }),
+};
+
+export const PreviewDms: Story = {
+  name: "左のメニューにポインタを乗せて DM を重ねて出す",
+  tags: ["since:6.14.5"],
+  render: () => chat({ side: "home", preview: "dms" }),
+};
+
+export const PreviewActivity: Story = {
+  name: "左のメニューにポインタを乗せてアクティビティを重ねて出す",
+  tags: ["since:6.14.5"],
+  render: () => chat({ side: "home", preview: "activity" }),
+};
+
+export const PreviewActivityDark: Story = {
+  name: "左のメニューにポインタを乗せてアクティビティを重ねて出す（ダーク）",
+  tags: ["since:6.14.5"],
+  parameters: { theme: "dark" },
+  render: () => chat({ side: "home", preview: "activity", dark: true }),
+};
+
+export const PreviewLater: Story = {
+  name: "左のメニューにポインタを乗せて「後で」を重ねて出す",
+  tags: ["since:6.14.5"],
+  render: () => chat({ side: "home", preview: "later" }),
+};
