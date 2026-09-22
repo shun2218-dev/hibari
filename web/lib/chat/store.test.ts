@@ -2050,3 +2050,41 @@ describe("ミュートと通知の設定（ADR 0055）", () => {
     store.dispose();
   });
 });
+
+describe("スレッドの返信の通知（ADR 0056）", () => {
+  const thread = {
+    room: { id: "r1", kind: "public" as const, name: "雑談" },
+    root: { id: "m-1", sender: miyuki, kind: "user" as const, body: "親", created_at: "2026-09-13T01:00:00Z", deleted: false },
+    root_seq: 1,
+    reply_count: 1,
+    last_reply_at: "2026-09-13T01:00:00Z",
+    last_thread_seq: 1,
+    last_read_thread_seq: 1,
+    unread_count: 0,
+    notify_replies: true,
+    mention_count: 0,
+  };
+
+  it("thread.notifications_updated を一覧に当てる（別のタブで切り替えた）", async () => {
+    const { store } = setup({ "GET /api/v1/workspaces/ws-1/threads?limit=200": () => json(200, { threads: [thread], next_cursor: null }) });
+    await store.reloadThreads("ws-1");
+
+    store.applyEvent({
+      type: "thread.notifications_updated",
+      data: { workspace_id: "ws-1", room_id: "r1", thread_root_id: "m-1", notify_replies: false },
+    });
+
+    expect(store.getSnapshot().threadLists["ws-1"]?.list[0].notify_replies).toBe(false);
+  });
+
+  it("失敗したら元に戻して投げる", async () => {
+    const { store } = setup({
+      "GET /api/v1/workspaces/ws-1/threads?limit=200": () => json(200, { threads: [thread], next_cursor: null }),
+      "PUT /api/v1/rooms/r1/threads/m-1/me/notifications": () => problem(500, "internal"),
+    });
+    await store.reloadThreads("ws-1");
+
+    await expect(store.setThreadNotifications("ws-1", "r1", "m-1", false)).rejects.toThrow();
+    expect(store.getSnapshot().threadLists["ws-1"]?.list[0].notify_replies).toBe(true);
+  });
+});

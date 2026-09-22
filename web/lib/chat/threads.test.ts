@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { FollowedThread } from "@/lib/api/types.gen";
-import { message, miyuki } from "@/test/chat-data";
+import { message, miyuki, naoki } from "@/test/chat-data";
 
-import { applyRootToThreads, applyThreadRead, countUnreadThreads, mergeRepliesIntoWindow } from "./threads";
+import {
+  applyReplyToThreads,
+  applyRootToThreads,
+  applyThreadNotify,
+  applyThreadRead,
+  countUnreadThreads,
+  mergeRepliesIntoWindow,
+} from "./threads";
 
 function followed(id: string, overrides: Partial<FollowedThread> = {}): FollowedThread {
   return {
@@ -71,5 +78,45 @@ describe("applyThreadRead / countUnreadThreads", () => {
     expect(read[0]).toMatchObject({ last_read_thread_seq: 3, unread_count: 0 });
     expect(countUnreadThreads(read)).toBe(0);
     expect(applyThreadRead(read, "a", 2)).toBe(read);
+  });
+});
+
+describe("返信の通知（ADR 0056）", () => {
+  it("オフのスレッドは、未読のメンションがあるときだけバッジに数える", () => {
+    const list = [
+      followed("a", { last_thread_seq: 3, last_read_thread_seq: 1, unread_count: 2, notify_replies: false }),
+      followed("b", { last_thread_seq: 3, last_read_thread_seq: 1, unread_count: 2, notify_replies: false, mention_count: 1 }),
+      followed("c", { last_thread_seq: 3, last_read_thread_seq: 2, unread_count: 1 }),
+    ];
+    expect(countUnreadThreads(list)).toBe(2);
+  });
+
+  it("届いた返信で、自分宛てならメンションの数を足す。同じ返信が 2 回届いても 1 回だけ", () => {
+    const list = [followed("m-1", { last_thread_seq: 1, last_read_thread_seq: 1, notify_replies: false })];
+    const reply = message(9, {
+      thread_root_id: "m-1",
+      thread_seq: 2,
+      sender: miyuki,
+      mentions: [{ kind: "channel" }],
+    });
+
+    const once = applyReplyToThreads(list, reply, naoki.id);
+    expect(once[0]).toMatchObject({ last_thread_seq: 2, unread_count: 1, mention_count: 1 });
+    expect(applyReplyToThreads(once, reply, naoki.id)).toBe(once);
+    // 自分の返信はメンションに数えない
+    const mine = applyReplyToThreads(list, { ...reply, sender: naoki }, naoki.id);
+    expect(mine[0].mention_count).toBe(0);
+  });
+
+  it("全部を読んだら、メンションの数も 0 にする", () => {
+    const list = [followed("a", { last_thread_seq: 3, last_read_thread_seq: 1, unread_count: 2, mention_count: 1 })];
+    expect(applyThreadRead(list, "a", 2)[0].mention_count).toBe(1);
+    expect(applyThreadRead(list, "a", 3)[0].mention_count).toBe(0);
+  });
+
+  it("切り替えは一覧にあるスレッドだけに当てる", () => {
+    const list = [followed("a")];
+    expect(applyThreadNotify(list, "a", false)[0].notify_replies).toBe(false);
+    expect(applyThreadNotify(list, "x", false)).toBe(list);
   });
 });

@@ -30,6 +30,7 @@ import type {
   NotifyLevel,
   ReadState,
   RoomNotifications,
+  ThreadNotifications,
   Role,
   Room,
   UpdateRoomRequest,
@@ -142,6 +143,17 @@ export function createChatApi(request: Session["request"]) {
     /** ルームごとの設定を全部の値で置き換える（PUT。決定 4）。参加していない public ルームは 403。 */
     setRoomNotifications: (roomId: string, body: RoomNotifications) =>
       request<RoomNotifications>("PUT", `/api/v1/rooms/${encodeURIComponent(roomId)}/me/notifications`, body),
+
+    /**
+     * スレッドの返信の通知（ADR 0056 決定 7）。true は「新しい返信の通知を受け取る」で、参加していなければ参加する。
+     * 返信のない親・読めないルームは 404、参加していない public ルームは 403。
+     */
+    setThreadNotifications: (roomId: string, rootId: string, notify: boolean) =>
+      request<ThreadNotifications>(
+        "PUT",
+        `/api/v1/rooms/${encodeURIComponent(roomId)}/threads/${encodeURIComponent(rootId)}/me/notifications`,
+        { notify_replies: notify },
+      ),
 
     /** owner を譲渡する。自分は admin になる（ADR 0011）。 */
     transferOwnership: (workspaceId: string, userId: string) =>

@@ -1057,16 +1057,23 @@ Push 通知（APNs / FCM）は Phase 7 以降のまま。ここで作るのは�
 
 **構築順**（PR を分ける）
 1. 設計: ADR 0056（ADR 0041 の改め） ← 完了
-2. デザイン: スレッドの「…」の「返信の通知をオフにする」/「新しい返信の通知を受け取る」、スレッドの一覧のオフの行
+2. デザイン: スレッドの「…」の「返信の通知をオフにする」/「新しい返信の通知を受け取る」、スレッドの一覧のオフの行 ← 完了（`docs/ui/README.md` の「Phase 6.14c で足した画面」）
 3. DB と API（スレッドの `@channel` / `@here` の参加、DM のスレッドのマイグレーションを含む） ← 完了
    返信のない親はフォローできない（参加中のスレッドの一覧は最後の返信の時刻で並べるため。404）。編集で足したメンションでは参加させない（送信のときだけ）
-4. Web
+4. Web: 「…」と一覧の「その他」の切り替え、`thread.notifications_updated`、一覧の `@N` とサイドバーのバッジ ← 完了
 
 **DoD**
-- [ ] スレッドの返信の通知をオフにすると、そのスレッドは一覧で強調されず、サイドバーのバッジにも数えられない。メンションの件数は出る
-- [ ] 参加していないスレッドをフォローすると、一覧に加わり、以後の返信が未読になる
-- [ ] スレッドの中の `@channel` / `@here` で、対象の人がスレッドの参加者になる
-- [ ] 設定の変更が本人のほかのタブにも揃い、切断中の変更も再接続で揃う
+- [x] スレッドの返信の通知をオフにすると、そのスレッドは一覧で強調されず、サイドバーのバッジにも数えられない。メンションの件数は出る
+      （`internal/chat/thread_notifications_test.go` の `TestSetThreadNotifications`、`thread-list.test.tsx`、`threads.test.ts` の「返信の通知」、
+      `workspace-screen.test.tsx` の「返信の通知（ADR 0056）」）
+- [x] 参加していないスレッドをフォローすると、一覧に加わり、以後の返信が未読になる
+      （`TestSetThreadNotifications` の「参加していないスレッドをフォローすると…」、`workspace-screen.test.tsx` の「新しい返信の通知を受け取る」）
+- [x] スレッドの中の `@channel` / `@here` で、対象の人がスレッドの参加者になる（`mention_test.go` の `TestMentionInThread` / `TestMentionHereInThread`）
+- [x] 設定の変更が本人のほかのタブにも揃い、切断中の変更も再接続で揃う
+      （`internal/httpx/notification_test.go` の `TestThreadNotificationsAPI`、`store.test.ts` の `thread.notifications_updated`。
+      再接続では参加中のスレッドの一覧を取り直す（これまでどおり。`notify_replies` も一緒に揃う））
+
+実物での確認は未実施（ローカルのワークスペースにチャンネルがない）。
 
 ### Phase 6.14b — ブラウザ通知
 

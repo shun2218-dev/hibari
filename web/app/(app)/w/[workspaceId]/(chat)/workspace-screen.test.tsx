@@ -744,6 +744,8 @@ describe("WorkspaceScreen", () => {
           last_thread_seq: 2,
           last_read_thread_seq: 2 - unread,
           unread_count: unread,
+          notify_replies: true,
+          mention_count: 0,
         });
 
         it("opens the thread from the reply action and from the reply count", async () => {
@@ -924,6 +926,80 @@ describe("WorkspaceScreen", () => {
             data: { workspace_id: "ws-1", room_id: "r-design", thread_root_id: "m-2", last_read_thread_seq: 3, unread_count: 0 },
           });
           await waitFor(() => expect(within(threadsLink()).queryByLabelText(/未読/)).not.toBeInTheDocument());
+        });
+
+        describe("返信の通知（ADR 0056）", () => {
+          it("参加しているスレッドの親の「…」で通知をオフにすると PUT が飛び、サイドバーのバッジから外れる", async () => {
+            let sent: unknown;
+            await connected({
+              ...openRoom(design, [message(1), root, message(3)]),
+              "GET /api/v1/workspaces/ws-1/threads?limit=200": () => json(200, { threads: [followed(1)], next_cursor: null }),
+              "PUT /api/v1/rooms/r-design/threads/m-2/me/notifications": (_url, init) => {
+                sent = JSON.parse(init.body as string);
+                return json(200, { notify_replies: false, last_read_thread_seq: 1 });
+              },
+            });
+            const threadsRow = () => sidebar().getByRole("link", { name: /スレッド/ });
+            await waitFor(() => expect(within(threadsRow()).getByLabelText("未読 1 件")).toBeInTheDocument());
+
+            const article = history().getAllByRole("article")[1]!;
+            await userEvent.click(within(article).getByRole("button", { name: "その他の操作", hidden: true }));
+            await userEvent.click(screen.getByRole("button", { name: "返信の通知をオフにする" }));
+
+            expect(sent).toEqual({ notify_replies: false });
+            // 未読は残るが、オフのスレッドはバッジに数えない（未読のメンションがないため）
+            await waitFor(() => expect(within(threadsRow()).queryByLabelText(/未読/)).not.toBeInTheDocument());
+          });
+
+          it("参加していないスレッドは「新しい返信の通知を受け取る」で参加し、一覧を取り直す", async () => {
+            // 参加するまでは一覧に出ない。参加した後の取り直しで加わる
+            let following = false;
+            let listsAfterFollow = 0;
+            const { api } = await connected({
+              ...openRoom(design, [message(1), root, message(3)]),
+              "GET /api/v1/workspaces/ws-1/threads?limit=200": () => {
+                if (following) listsAfterFollow++;
+                return json(200, { threads: following ? [followed(0)] : [], next_cursor: null });
+              },
+              "PUT /api/v1/rooms/r-design/threads/m-2/me/notifications": () => {
+                following = true;
+                return json(200, { notify_replies: true, last_read_thread_seq: 2 });
+              },
+            });
+
+            const article = history().getAllByRole("article")[1]!;
+            await userEvent.click(within(article).getByRole("button", { name: "その他の操作", hidden: true }));
+            await userEvent.click(screen.getByRole("button", { name: "新しい返信の通知を受け取る" }));
+
+            await waitFor(() => expect(listsAfterFollow).toBeGreaterThan(0));
+            expect(api.calls.some((c) => c.method === "PUT" && JSON.parse(c.init.body as string).notify_replies === true)).toBe(true);
+          });
+
+          it("スレッドの一覧の行の「その他」からも切り替えられる", async () => {
+            nav.params = { workspaceId: "ws-1" };
+            nav.pathname = "/w/ws-1/threads";
+            let sent: unknown;
+            renderWithChat(
+              <WorkspaceScreen />,
+              routes({
+                "GET /api/v1/workspaces/ws-1/threads?limit=200": () =>
+                  json(200, { threads: [{ ...followed(1), notify_replies: false }], next_cursor: null }),
+                "PUT /api/v1/rooms/r-design/threads/m-2/me/notifications": (_url, init) => {
+                  sent = JSON.parse(init.body as string);
+                  return json(200, { notify_replies: true, last_read_thread_seq: 1 });
+                },
+              }),
+            );
+
+            const list = within(await screen.findByRole("list", { name: "参加しているスレッド" }));
+            const row = list.getByRole("listitem");
+            expect(within(row).getByRole("img", { name: "返信の通知はオフ" })).toBeInTheDocument();
+            await userEvent.click(within(row).getByRole("button", { name: "その他の操作" }));
+            await userEvent.click(screen.getByRole("button", { name: "新しい返信の通知を受け取る" }));
+
+            expect(sent).toEqual({ notify_replies: true });
+            await waitFor(() => expect(within(row).queryByRole("img", { name: "返信の通知はオフ" })).not.toBeInTheDocument());
+          });
         });
 
         it("lists the followed threads and links each to its room with the panel open", async () => {

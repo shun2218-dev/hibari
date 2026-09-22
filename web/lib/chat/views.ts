@@ -593,9 +593,8 @@ export function toThreadListItemView(
     replyCount: thread.reply_count,
     lastReplyLabel: formatListTime(new Date(thread.last_reply_at), now, timeZone),
     unreadCount: thread.unread_count,
-    // 返信の通知とスレッドのメンションの数は、API に足すまで既定の値で描く（ADR 0056。Phase 6.14c の構築順 3・4）
-    notifyReplies: true,
-    mentionCount: 0,
+    notifyReplies: thread.notify_replies,
+    mentionCount: thread.mention_count,
   };
 }
 
