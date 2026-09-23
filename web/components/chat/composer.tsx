@@ -78,7 +78,9 @@ export function Composer({
   );
 
   return (
-    <div className="border-t border-border px-3 pt-2 pb-2 md:px-4">
+    // 上に線を引かず、上の余白も取らない（Slack と同じ。オーナーの指摘。2026-09-24）。
+    // 入力中の行（h-6）が常に高さを取るので、タイムラインの下の余白と合わせて、それだけで区切りになる。
+    <div className="px-3 pb-2 md:px-4">
       <TypingIndicator names={typingNames} />
       {attachments.length > 0 && (
         <ul aria-label="添付ファイル" className="flex flex-wrap gap-2 pb-2">
