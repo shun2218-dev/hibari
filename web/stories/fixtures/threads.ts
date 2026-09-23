@@ -14,7 +14,7 @@ export const threadRootKey = "m-0941";
  * 返信はチャンネルに出ず、親の下に「N 件の返信」が出る。
  */
 export const timelineWithThreads: TimelineItem[] = [
-  { type: "date", key: "d-0913", label: "2026年9月13日" },
+  { type: "date", key: "d-0913", label: "9月13日" },
   message(threadRootKey, you, "09:41", "おはようございます。昨日の続きで、未読まわりを琥珀に寄せてみました。", {
     thread: { replyCount: 3, lastReplyLabel: "10:18" },
   }),

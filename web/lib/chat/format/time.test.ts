@@ -10,9 +10,24 @@ describe("formatTime / formatDate / dayKey", () => {
     const date = new Date("2026-09-12T15:05:00Z");
 
     expect(formatTime(date, tz)).toBe("00:05");
-    expect(formatDate(date, tz)).toBe("2026年9月13日");
     expect(dayKey(date, tz)).toBe("2026-9-13");
     expect(dayKey(date, "UTC")).toBe("2026-9-12");
+  });
+});
+
+describe("formatDate", () => {
+  it.each([
+    // 今年は年を省く
+    ["this year omits the year", "2026-09-12T15:05:00Z", "2026-09-24T03:00:00Z", "9月13日"],
+    ["last year shows the year", "2025-09-13T03:00:00Z", "2026-09-24T03:00:00Z", "2025年9月13日"],
+    // 年をまたぐ境目。東京の 12/31 と、元日から見た前日
+    ["new year's eve seen on new year's eve", "2026-12-31T14:00:00Z", "2026-12-31T14:30:00Z", "12月31日"],
+    ["new year's eve seen on new year's day", "2026-12-31T14:00:00Z", "2026-12-31T15:00:00Z", "2026年12月31日"],
+    ["new year's day seen on new year's day", "2026-12-31T15:00:00Z", "2026-12-31T15:30:00Z", "1月1日"],
+    // 「今年」は UTC ではなく見る人の暦で決める（UTC ではまだ 2026 年の 12/31）
+    ["the year is the viewer's, not UTC's", "2026-12-31T16:00:00Z", "2026-12-31T16:00:00Z", "1月1日"],
+  ])("%s", (_, iso, nowIso, want) => {
+    expect(formatDate(new Date(iso), new Date(nowIso), tz)).toBe(want);
   });
 });
 

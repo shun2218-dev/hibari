@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { TimelineItem } from "@/components/chat/types";
 import { systemMessageText } from "@/lib/chat/views/message";
@@ -22,6 +22,14 @@ import {
   tz,
 } from "@/test/views";
 
+// 日付の区切りは「今年なら年を省く」ので、今日を固定する（東京で 2026/9/24）
+beforeAll(() => {
+  vi.useFakeTimers({ now: new Date("2026-09-24T03:00:00Z"), toFake: ["Date"] });
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
+
 describe("toTimelineItems", () => {
   it("inserts a date divider whenever the local day changes", () => {
     const items = toTimelineItems(
@@ -32,7 +40,19 @@ describe("toTimelineItems", () => {
       { unreadAfterSeq: null, timeZone: tz },
     );
 
-    expect(outline(items)).toEqual(["[2026年9月12日]", "a", "[2026年9月13日]", "b"]);
+    expect(outline(items)).toEqual(["[9月12日]", "a", "[9月13日]", "b"]);
+  });
+
+  it("shows the year on date dividers only for other years", () => {
+    const items = toTimelineItems(
+      [
+        message(1, { body: "a", created_at: "2025-12-31T03:00:00Z" }),
+        message(2, { body: "b", created_at: "2026-01-01T03:00:00Z", sender: naoki }),
+      ],
+      { unreadAfterSeq: null, timeZone: tz, now: new Date("2026-09-24T03:00:00Z") },
+    );
+
+    expect(outline(items)).toEqual(["[2025年12月31日]", "a", "[1月1日]", "b"]);
   });
 
   it("groups consecutive messages from the same sender within five minutes", () => {
@@ -47,7 +67,7 @@ describe("toTimelineItems", () => {
       { unreadAfterSeq: null, timeZone: tz },
     );
 
-    expect(outline(items)).toEqual(["[2026年9月13日]", "a", "+b", "c", "d", "+e"]);
+    expect(outline(items)).toEqual(["[9月13日]", "a", "+b", "c", "d", "+e"]);
   });
 
   it("leaves thread replies out of the channel timeline (ADR 0036)", () => {
@@ -61,7 +81,7 @@ describe("toTimelineItems", () => {
     );
 
     // 返信（seq 2）は出さず、未読の区切りは次のチャンネルの発言の前に出す
-    expect(outline(items)).toEqual(["[2026年9月13日]", "親", "[unread]", "チャンネル"]);
+    expect(outline(items)).toEqual(["[9月13日]", "親", "[unread]", "チャンネル"]);
   });
 
   it("puts the unread divider before the first message after the last read seq and breaks the group there", () => {
@@ -70,7 +90,7 @@ describe("toTimelineItems", () => {
       timeZone: tz,
     });
 
-    expect(outline(items)).toEqual(["[2026年9月13日]", "a", "[unread]", "b", "+c"]);
+    expect(outline(items)).toEqual(["[9月13日]", "a", "[unread]", "b", "+c"]);
   });
 
   it("has no unread divider when everything is read", () => {
@@ -126,7 +146,7 @@ describe("toTimelineItems", () => {
       { unreadAfterSeq: 1, timeZone: tz },
     );
 
-    expect(outline(items)).toEqual(["[2026年9月13日]", "a", "[unread]", "c"]);
+    expect(outline(items)).toEqual(["[9月13日]", "a", "[unread]", "c"]);
   });
 
   it("maps edited messages and attachments", () => {
@@ -182,7 +202,7 @@ describe("toTimelineItems", () => {
     });
     const messages = items.flatMap((item) => (item.type === "message" ? [item.message] : []));
 
-    expect(outline(items)).toEqual(["[2026年9月13日]", "a", "[unread]", "b", "送信中", "+失敗"]);
+    expect(outline(items)).toEqual(["[9月13日]", "a", "[unread]", "b", "送信中", "+失敗"]);
     expect(messages[2]).toMatchObject({
       key: "c-x",
       status: "pending",
@@ -219,7 +239,7 @@ describe("システムメッセージ（ADR 0033）", () => {
     );
 
     expect(outline(items)).toEqual([
-      "[2026年9月13日]",
+      "[9月13日]",
       "おはよう",
       "[system: 佐藤 直樹 がチャンネルに参加しました]",
       // ログを挟んだので、同じ人の発言でも続けて表示（+）にしない
@@ -239,7 +259,7 @@ describe("システムメッセージ（ADR 0033）", () => {
 
     // 区切りはログを飛ばして、未読の「人の発言」の前に出す
     expect(outline(items)).toEqual([
-      "[2026年9月13日]",
+      "[9月13日]",
       "既読の発言",
       "[system: 佐藤 直樹 がチャンネルに参加しました]",
       "[unread]",
@@ -403,7 +423,7 @@ describe("チャンネルにも投稿する（ADR 0039）", () => {
     });
 
     // 流した返信だけがチャンネルに並ぶ。普通の返信は手元にあっても出さない（ADR 0036）
-    expect(outline(items)).toEqual(["[2026年9月13日]", "親", "流した返信", "あと"]);
+    expect(outline(items)).toEqual(["[9月13日]", "親", "流した返信", "あと"]);
   });
 
   it("labels the channel row so it opens the thread, and does not group it with the message above", () => {
@@ -423,7 +443,7 @@ describe("チャンネルにも投稿する（ADR 0039）", () => {
   it("counts a reply sent to the channel as unread in the channel", () => {
     const items = toTimelineItems([root, broadcast], { unreadAfterSeq: 1, timeZone: tz });
 
-    expect(outline(items)).toEqual(["[2026年9月13日]", "親", "[unread]", "流した返信"]);
+    expect(outline(items)).toEqual(["[9月13日]", "親", "[unread]", "流した返信"]);
   });
 
   it("adds the note to the thread panel row instead, and only when the wording is given", () => {
@@ -463,7 +483,7 @@ describe("チャンネルにも投稿する（ADR 0039）", () => {
       { me: naoki, outgoing, timeZone: tz, broadcastDoneLabel: alsoInChannelDoneLabel("public") },
     );
 
-    expect(outline(channel)).toEqual(["[2026年9月13日]", "親", "送信中の返信"]);
+    expect(outline(channel)).toEqual(["[9月13日]", "親", "送信中の返信"]);
     expect(channel.flatMap((i) => (i.type === "message" ? [i.message] : []))[1]!.broadcast).toEqual({ in: "channel" });
     expect(outline(thread)).toEqual(["親", "[2 replies]", "送信中の返信"]);
   });

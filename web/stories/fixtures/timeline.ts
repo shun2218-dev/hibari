@@ -23,14 +23,14 @@ export function message(
 export const pendingMessageKey = "m-1052";
 
 export const timeline: TimelineItem[] = [
-  { type: "date", key: "d-0912", label: "2026年9月12日" },
+  { type: "date", key: "d-0912", label: "9月12日" },
   message("m-1402", miyuki, "14:02", "新しいチャンネル一覧のモック、共有フォルダに置きました。行の高さを少し詰めた版も一緒に入れてあります。", {
     attachments: [{ kind: "image", id: "a-1", fileName: "サイドバー改訂 01", width: 260, height: 160 }],
   }),
   message("m-1402b", miyuki, "14:02", "未読バッジの色だけ、まだ迷っています。", { grouped: true }),
   message("m-1411", naoki, "14:11", "", { deleted: true }),
   message("m-1420", ryo, "14:20", "未読バッジは押せる要素ではないので、ボタンと同じ色にしないほうがいいと思います。"),
-  { type: "date", key: "d-0913", label: "2026年9月13日" },
+  { type: "date", key: "d-0913", label: "9月13日" },
   message("m-0941", you, "09:41", "おはようございます。昨日の続きで、未読まわりを琥珀に寄せてみました。"),
   message("m-0941b", you, "09:41", "緑はボタンとリンク、選択中のチャンネルだけに残しています。", { grouped: true }),
   message("m-0941c", you, "09:41", "「いま起きていること」は琥珀、「操作できるもの」は緑、という分け方です。", { grouped: true }),
@@ -67,7 +67,7 @@ export const timelineJumped: TimelineItem[] = timeline.filter((item) => item.typ
  * ログは人の発言ではないので、アバターも名前も出さず、中央に控えめに置く。
  */
 export const timelineWithSystemMessages: TimelineItem[] = [
-  { type: "date", key: "d-0913", label: "2026年9月13日" },
+  { type: "date", key: "d-0913", label: "9月13日" },
   { type: "system", key: "s-created", text: "あなた がこのチャンネルを作成しました", timeLabel: "09:30" },
   { type: "system", key: "s-joined-naoki", text: "佐藤 直樹 がチャンネルに参加しました", timeLabel: "09:31" },
   { type: "system", key: "s-joined-miyuki", text: "高橋 みゆき がチャンネルに参加しました", timeLabel: "09:33" },
@@ -85,7 +85,7 @@ export const timelineWithSystemMessages: TimelineItem[] = [
 
 /** アーカイブしたルームのタイムライン（chat/archive/room.png。ADR 0059）。最後の行がアーカイブのログになる。 */
 export const timelineArchived: TimelineItem[] = [
-  { type: "date", key: "d-0912", label: "2026年9月12日" },
+  { type: "date", key: "d-0912", label: "9月12日" },
   message("m-1402", miyuki, "14:02", "新しいチャンネル一覧のモック、共有フォルダに置きました。"),
   message("m-1410", naoki, "14:10", "ありがとうございます。今日中に見ます。"),
   message("m-1655", you, "16:55", "レビューは全部終わったので、このチャンネルはアーカイブしておきます。続きは #雑談 でお願いします。"),
@@ -115,7 +115,7 @@ export function messageView(item: TimelineItem): MessageView {
  * 自分宛て（`mentionsMe`）の行だけ琥珀にする。
  */
 export const timelineWithMentions: TimelineItem[] = [
-  { type: "date", key: "d-0913m", label: "2026年9月13日" },
+  { type: "date", key: "d-0913m", label: "9月13日" },
   message("m-m01", miyuki, "10:02", `<@${users.you.id}> サイドバーのバッジの色、決まりました？`, {
     mentionNames: { [users.you.id]: users.you.name },
     mentionsMe: true,
@@ -136,7 +136,7 @@ export const timelineWithMentions: TimelineItem[] = [
  * 最後の行は、HTML を書いても文字のまま出ることを見せる。
  */
 export const timelineWithFormatting: TimelineItem[] = [
-  { type: "date", key: "d-0914f", label: "2026年9月14日" },
+  { type: "date", key: "d-0914f", label: "9月14日" },
   message(
     "m-f01",
     naoki,
@@ -178,7 +178,7 @@ export const timelineWithFormerMember: TimelineItem[] = timelineWithStatus.map((
 
 /** DM のタイムライン。 */
 export const dmTimeline: TimelineItem[] = [
-  { type: "date", key: "d-0912", label: "2026年9月12日" },
+  { type: "date", key: "d-0912", label: "9月12日" },
   message("m-dm-1010", naoki, "10:10", "サイドバーの縦バー、選択中だけ緑にする案で進めてよさそうです。"),
   message("m-dm-1012", you, "10:12", "ありがとうございます。ホバーの色も合わせて直しておきます。"),
   message("m-dm-1014", naoki, "10:14", "縦バーの件、あとで画面で見ます"),

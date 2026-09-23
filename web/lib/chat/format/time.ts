@@ -49,9 +49,14 @@ export function formatTime(date: Date, timeZone?: string): string {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-/** タイムラインの日付の区切り（`2026年9月13日`）。 */
-export function formatDate(date: Date, timeZone?: string): string {
+/**
+ * タイムラインの日付の区切り。今年なら月日（`9月13日`）、今年でなければ年も付ける（`2025年9月13日`）。
+ * 毎日の区切りに同じ年が並ぶとうるさいので省く（Slack と同じ。オーナーの指摘。2026-09-24）。
+ * 「今年」は見る人のタイムゾーンの暦で決める。
+ */
+export function formatDate(date: Date, now: Date, timeZone?: string): string {
   const { year, month, day } = localParts(date, timeZone);
+  if (year === localParts(now, timeZone).year) return `${month}月${day}日`;
   return `${year}年${month}月${day}日`;
 }
 
