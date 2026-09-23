@@ -1,3 +1,5 @@
+import type { Ref } from "react";
+
 import { SmilePlusIcon } from "@/components/ui/icons";
 import { reactionNamesLabel } from "@/lib/chat/rules/reactions";
 import { cx } from "@/lib/cx";
@@ -10,6 +12,10 @@ type MessageReactionsProps = {
   onToggle?: (emoji: string) => void;
   /** 行末の「＋」を押した（ピッカーを開く）。渡さなければ「＋」を出さない（投稿できない人）。 */
   onAdd?: () => void;
+  /** 「＋」の要素。ピッカーをこのボタンの近くに出すための基準。 */
+  addRef?: Ref<HTMLButtonElement>;
+  /** 「＋」から開いたピッカーが開いているか。 */
+  addExpanded?: boolean;
   /** ホバーの名前を固定で出す絵文字（story で状態を再現するため）。 */
   forceHoverEmoji?: string;
 };
@@ -23,7 +29,14 @@ type MessageReactionsProps = {
  * 数は props の値をそのまま出す。楽観的更新（ADR 0044 決定 8）で先に動かすのはデータ層の仕事で、
  * ここは受け取った数を描くだけにする。
  */
-export function MessageReactions({ reactions, onToggle, onAdd, forceHoverEmoji }: MessageReactionsProps) {
+export function MessageReactions({
+  reactions,
+  onToggle,
+  onAdd,
+  addRef,
+  addExpanded = false,
+  forceHoverEmoji,
+}: MessageReactionsProps) {
   if (reactions.length === 0 && onAdd === undefined) return null;
 
   return (
@@ -66,8 +79,10 @@ export function MessageReactions({ reactions, onToggle, onAdd, forceHoverEmoji }
       {onAdd !== undefined && (
         <li>
           <button
+            ref={addRef}
             type="button"
             aria-label="リアクションを追加"
+            aria-expanded={addExpanded}
             onClick={onAdd}
             className="flex h-7 items-center rounded-full border border-border bg-surface px-2 text-text-muted hover:border-text-muted hover:text-text-secondary"
           >

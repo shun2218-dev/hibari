@@ -54,6 +54,31 @@ export function placePanel(
   return { top: Math.max(MARGIN, Math.min(top, Math.max(MARGIN, maxTop))), left, below: fitsBelow };
 }
 
+/** ボタンのすぐ下（上）に出すときの、ボタンとの間隔。 */
+const NEAR_GAP = 4;
+
+/**
+ * パネルを、押したボタンの**すぐ下**に、左端をそろえて開く。下に入りきらなければ**すぐ上**に開く。
+ *
+ * メッセージの下のリアクションの「＋」から開いたピッカー用。行の右上（`placePanel`）に開くと、
+ * 押したボタンから離れたところに出て、何が開いたのか目で追えない（Slack は押したボタンの近くに出す。オーナーの指摘。2026-09-24）。
+ * 横は画面からはみ出さない位置まで寄せる。上下どちらにも入らなければ、上端に貼り付く。
+ */
+export function placeNear(
+  anchor: AnchorRect,
+  panel: { width: number; height: number },
+  viewport: { width: number; height: number },
+): PanelPlacement {
+  const maxLeft = viewport.width - MARGIN - panel.width;
+  const left = Math.max(MARGIN, Math.min(anchor.left, maxLeft));
+
+  const maxTop = viewport.height - MARGIN - panel.height;
+  const below = anchor.bottom + NEAR_GAP;
+  const fitsBelow = below <= maxTop;
+  const top = fitsBelow ? below : anchor.top - NEAR_GAP - panel.height;
+  return { top: Math.max(MARGIN, Math.min(top, Math.max(MARGIN, maxTop))), left, below: fitsBelow };
+}
+
 /** アンカーの横に出すときの、アンカーとの間隔。 */
 const BESIDE_GAP = 8;
 

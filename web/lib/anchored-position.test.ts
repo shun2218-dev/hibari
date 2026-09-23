@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { placeBeside, placePanel, placeAboveCaret } from "./anchored-position";
+import { placeAboveCaret, placeBeside, placeNear, placePanel } from "./anchored-position";
 
 const viewport = { width: 1280, height: 800 };
 const panel = { width: 352, height: 440 };
@@ -102,5 +102,32 @@ describe("placeAboveCaret（ADR 0052 決定 4）", () => {
 
   it("右にはみ出すなら画面の中まで寄せる", () => {
     expect(placeAboveCaret({ top: 700, bottom: 720, left: 1200, right: 1200 }, panel, viewport).left).toBe(1280 - 8 - 288);
+  });
+});
+
+describe("placeNear", () => {
+  // リアクションの「＋」くらいの大きさのボタン
+  const button = { top: 300, bottom: 328, left: 500, right: 540 };
+
+  it("下に入るときは、ボタンのすぐ下に左端をそろえて開く", () => {
+    expect(placeNear(button, panel, viewport)).toEqual({ top: 332, left: 500, below: true });
+  });
+
+  it("下に入りきらなければ、ボタンのすぐ上に開く", () => {
+    const got = placeNear({ top: 600, bottom: 628, left: 500, right: 540 }, panel, viewport);
+
+    expect(got).toEqual({ top: 600 - 4 - 440, left: 500, below: false });
+  });
+
+  it("右に寄ったボタンでも、画面の右からはみ出さない", () => {
+    const got = placeNear({ ...button, left: 1200, right: 1240 }, panel, viewport);
+
+    expect(got.left).toBe(1280 - 8 - 352);
+  });
+
+  it("上下どちらにも入らなければ、上端に寄せる", () => {
+    const got = placeNear({ top: 100, bottom: 128, left: 500, right: 540 }, panel, { width: 1280, height: 420 });
+
+    expect(got.top).toBe(8);
   });
 });

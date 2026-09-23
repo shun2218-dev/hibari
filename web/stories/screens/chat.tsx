@@ -42,7 +42,7 @@ import { notifyLevelLabels } from "@/lib/chat/notifications/mute";
 import { attachmentMessageKey, timelineWithImages } from "@/stories/fixtures/attachments";
 import { timelineWithLinkCards } from "@/stories/fixtures/links";
 import { pinCandidateKey, pinnedMessageKey, pinnedMessages, timelineWithPins } from "@/stories/fixtures/pins";
-import { hoveredReaction, reactionPickerKey, timelineWithReactions } from "@/stories/fixtures/reactions";
+import { hoveredReaction, reactedMessageKey, reactionPickerKey, timelineWithReactions } from "@/stories/fixtures/reactions";
 import {
   dmRoom,
   roomMembers,
@@ -170,8 +170,9 @@ export type ChatOptions = {
    * - names: チップにホバーして「誰が付けたか」を出したところ
    * - picker: ピッカーを開いたところ
    * - picker-above: いちばん下のメッセージで開いて、上に開いたところ
+   * - picker-from-reactions: リアクションの行の「＋」から開いて、その「＋」のすぐ下に出たところ
    */
-  reactions?: "row" | "names" | "picker" | "picker-above";
+  reactions?: "row" | "names" | "picker" | "picker-above" | "picker-from-reactions";
   /**
    * 添付ファイル（ADR 0045）。画像を 3 枚とファイルを 1 件付けたメッセージのあるタイムラインにする。
    * - images: そのまま（拡大表示の画面の後ろに出す）
@@ -587,8 +588,15 @@ export function chat({
             onToggleReaction={noop}
             onTogglePicker={noop}
             openPickerKey={
-              reactions === "picker" ? reactionPickerKey : reactions === "picker-above" ? lastMessageKey : undefined
+              reactions === "picker"
+                ? reactionPickerKey
+                : reactions === "picker-above"
+                  ? lastMessageKey
+                  : reactions === "picker-from-reactions"
+                    ? reactedMessageKey
+                    : undefined
             }
+            openPickerFrom={reactions === "picker-from-reactions" ? "reactions" : undefined}
             reactionPicker={<EmojiPicker onPick={noop} theme={dark ? "dark" : "light"} />}
             onOpenProfile={profile ? noop : undefined}
             profileHoverCardFor={hover ? () => <ProfileHoverCard profile={hover.profile} /> : undefined}
