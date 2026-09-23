@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
+
 import { HashIcon, SearchIcon } from "@/components/ui/icons";
+import { useDismiss } from "@/hooks/use-dismiss";
 import { cx } from "@/lib/cx";
 
 /**
@@ -36,8 +39,14 @@ export function SearchPanel({
   activeSuggestion?: "all" | "room";
 }) {
   const typed = value.trim().length > 0;
+  // 外を押す・Esc で閉じる（アプリで共通の振る舞い）
+  const [panel, setPanel] = useState<HTMLDivElement | null>(null);
+  useDismiss(panel, onClose);
   return (
-    <div className="absolute inset-x-0 top-0 z-30 overflow-hidden rounded-sm border border-border bg-surface shadow-overlay">
+    <div
+      ref={setPanel}
+      className="absolute inset-x-0 top-0 z-30 overflow-hidden rounded-sm border border-border bg-surface shadow-overlay"
+    >
       <label className="flex h-8.5 items-center gap-2 px-2.5">
         <SearchIcon className="size-4 shrink-0 text-text-secondary" />
         <input
@@ -47,9 +56,9 @@ export function SearchPanel({
           placeholder={`${workspaceName} 内を検索する`}
           value={value}
           onChange={(e) => onChange?.(e.target.value)}
+          // Esc はここで拾わない（useDismiss が外を押すのと一緒に面倒を見る。二重に呼ばないため）
           onKeyDown={(e) => {
             if (e.key === "Enter") onSubmit?.();
-            if (e.key === "Escape") onClose?.();
           }}
           className="min-w-0 flex-1 bg-transparent text-sm text-text placeholder:text-text-muted focus-visible:outline-none"
         />

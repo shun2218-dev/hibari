@@ -4,10 +4,14 @@ import Link from "next/link";
 
 import { Avatar } from "@/components/ui/avatar";
 import { CloseIcon, DmIcon, FilterIcon, HashIcon, LockIcon, PaperclipIcon, ThreadIcon } from "@/components/ui/icons";
+import { dateLabel, type SearchFilters } from "@/lib/chat/search/search-query";
 import { cx } from "@/lib/cx";
 
 import { MessageBody } from "./message-body";
-import type { SearchFilters, SearchResultView } from "./types";
+import type { SearchResultView } from "./types";
+
+/** 外せる絞り込み。日付は `after` と `before` をまとめて外すので、ひとまとめの名前にする。 */
+export type SearchFilterKey = "sender" | "room" | "date";
 
 /**
  * 検索結果の画面（ADR 0061）。Slack と同じく、サイドバーを畳んでメインの領域を全幅で使う。
@@ -29,6 +33,7 @@ export function SearchResults({
   onClearFilter,
   onReachEnd,
   highlightTerms,
+  today,
 }: {
   /** 検索した語（修飾子を除いた本文の条件）。 */
   query: string;
@@ -36,11 +41,13 @@ export function SearchResults({
   /** 新しい順に並べた結果。取得中は undefined。 */
   results?: SearchResultView[];
   onOpenFilters?: () => void;
-  onClearFilter?: (key: keyof SearchFilters) => void;
+  onClearFilter?: (key: SearchFilterKey) => void;
   /** いちばん下の近くまでスクロールした（続きを読み込むきっかけ）。 */
   onReachEnd?: () => void;
   /** 本文の中で塗る語。空なら塗らない。 */
   highlightTerms: readonly string[];
+  /** 端末の今日（`YYYY-MM-DD`）。日付のチップの文言（「過去 7 日間」）を出すのに使う。 */
+  today: string;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
@@ -64,7 +71,7 @@ export function SearchResults({
           />
           <FilterChip
             label="日付"
-            value={filters.date?.label}
+            value={dateLabel(filters, today)}
             onOpen={onOpenFilters}
             onClear={() => onClearFilter?.("date")}
           />

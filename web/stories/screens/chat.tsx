@@ -62,6 +62,7 @@ import {
   searchRoomOptions,
   searchSenderOptions,
   searchTerms,
+  searchToday,
 } from "@/stories/fixtures/search";
 import {
   deletedThreadRoot,
@@ -491,6 +492,7 @@ export function chat({
             filters={messageSearch === "results-filtered" || messageSearch === "filters" ? searchFilters : {}}
             results={messageSearch === "results-empty" ? [] : searchResults}
             highlightTerms={searchTerms}
+            today={searchToday}
             onOpenFilters={noop}
             onClearFilter={noop}
           />

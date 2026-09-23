@@ -6,19 +6,14 @@ import { ChoiceChip } from "@/components/ui/choice";
 import { Dialog } from "@/components/ui/dialog";
 import { TextField } from "@/components/ui/field";
 import { CheckIcon, HashIcon, LockIcon } from "@/components/ui/icons";
+import {
+  SEARCH_DATE_CHOICES,
+  type SearchDateChoice,
+  type SearchFilters,
+} from "@/lib/chat/search/search-query";
 import { cx } from "@/lib/cx";
 
-import type { SearchFilters, UserRef } from "@/components/chat/types";
-
-/** 日付の選択肢（ADR 0061 決定 5 の `before:` / `after:` / `on:` を、よく使う形にまとめたもの）。 */
-export const DATE_CHOICES = [
-  { value: "any", label: "いつでも" },
-  { value: "today", label: "今日" },
-  { value: "7d", label: "過去 7 日間" },
-  { value: "30d", label: "過去 30 日間" },
-] as const;
-
-export type DateChoice = (typeof DATE_CHOICES)[number]["value"];
+import type { UserRef } from "@/components/chat/types";
 
 export type RoomOption = { id: string; kind: "public" | "private" | "dm"; name: string };
 
@@ -55,12 +50,12 @@ export function SearchFiltersDialog({
   senderOptions: UserRef[];
   roomQuery: string;
   roomOptions: RoomOption[];
-  date: DateChoice;
+  date: SearchDateChoice;
   onChangeSenderQuery?: (value: string) => void;
   onSelectSender?: (user: UserRef) => void;
   onChangeRoomQuery?: (value: string) => void;
   onSelectRoom?: (room: RoomOption) => void;
-  onChangeDate?: (value: DateChoice) => void;
+  onChangeDate?: (value: SearchDateChoice) => void;
   onClear?: () => void;
   onClose?: () => void;
   onSubmit?: () => void;
@@ -138,13 +133,13 @@ export function SearchFiltersDialog({
         <fieldset className="flex flex-col gap-2">
           <legend className="text-xs font-medium text-text">日付</legend>
           <div className="flex flex-wrap gap-2">
-            {DATE_CHOICES.map((choice) => (
+            {SEARCH_DATE_CHOICES.map((choice) => (
               <ChoiceChip
                 key={choice.value}
                 name="search-date"
                 value={choice.value}
                 checked={date === choice.value}
-                onChange={(value) => onChangeDate?.(value as DateChoice)}
+                onChange={(value) => onChangeDate?.(value as SearchDateChoice)}
               >
                 {choice.label}
               </ChoiceChip>

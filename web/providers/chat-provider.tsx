@@ -6,6 +6,7 @@ import { useSession } from "@/hooks/auth/use-session";
 import { getApiBaseUrl } from "@/lib/api/base-url";
 import type { ServerEvent } from "@/lib/api/types.gen";
 import { createChatApi } from "@/lib/chat/api/chat-api";
+import { createSearchStore, type SearchStore } from "@/lib/chat/search/search-store";
 import { type LinkCardStore, createLinkCardStore } from "@/lib/chat/format/link-cards";
 import { type MediaStore, createMediaStore } from "@/lib/chat/media/media-store";
 import { type AttachmentUploader, type UploaderOptions, createAttachmentUploader } from "@/lib/chat/media/uploads";
@@ -28,6 +29,11 @@ export type ChatContextValue = {
   desktop: { notifier: DesktopNotifier; setOpen: (open: (url: string) => void) => void } | null;
   media: MediaStore;
   linkCards: LinkCardStore;
+  /**
+   * 検索の結果（ADR 0061）。チャットの本体のストアとは別に持つ。
+   * 結果は要求した時点のもので、WebSocket でも再接続の同期でも触らない（決定 8）。
+   */
+  search: SearchStore;
   createUploader: (roomId: string) => AttachmentUploader;
 };
 
@@ -77,12 +83,14 @@ export function ChatProvider({
     });
     const media = createMediaStore(api);
     const linkCards = createLinkCardStore(api);
+    const search = createSearchStore(api);
     return {
       store,
       realtime,
       desktop,
       media,
       linkCards,
+      search,
       createUploader: (roomId) => createAttachmentUploader(api, roomId, upload),
     };
   });
