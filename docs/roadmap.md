@@ -1205,14 +1205,14 @@ Push 通知（APNs / FCM）は Phase 7 以降のまま。ここで作るのは�
 1. 設計: ADR 0061 ← 完了
 2. 基盤: pg_bigm 入りの Postgres イメージ（compose・CI・`docs/deploy.md`）と、拡張・索引のマイグレーション ← 完了
 3. デザイン: 検索の入力欄・結果の画面・フィルター・0 件の表示。story に描いて `docs/ui/` に足し、オーナーに見てもらう ← 完了（`docs/ui/README.md` の「Phase 6.16 で足した画面」。入口は上部の帯。ADR 0061 決定 9 の追記）
-4. サーバー: 検索の API（authz の CTE・条件の組み立て・カーソル）
+4. サーバー: 検索の API（authz の CTE・条件の組み立て・カーソル）← 完了
 5. Web: 修飾子の解釈と整形・結果の画面・結果から飛ぶ
 
 **DoD**
-- [ ] 日本語と英語で検索でき、読めないルームのメッセージは結果に出ない（API のテスト）
+- [x] 日本語と英語で検索でき、読めないルームのメッセージは結果に出ない（`internal/chat/search_test.go` の `TestSearchMessagesAuthz`（public 未参加 / private / DM / ワークスペースの外）と `TestSearchMessagesMatching`、`internal/httpx/search_test.go` の `TestSearchAPI`）
 - [x] 2 文字の日本語で索引が使われる（`db/search_index_test.go` の `TestMessageSearchUsesIndex`。`enable_seqscan = off` で索引の道を選ばせ、計画に `messages_body_search_idx` が出ることを見る）
 - [x] 大文字小文字と全角半角の違いを吸収する（`Deploy` / `ｄｅｐｌｏｙ` で `deploy` が見つかる: `TestMessageSearchNormalization`）
-- [ ] 削除したメッセージは結果に出ず、編集後の本文で見つかる
+- [x] 削除したメッセージは結果に出ず、編集後の本文で見つかる（`TestSearchMessagesDeletedAndEdited`。参加のログも出さない）
 - [ ] 修飾子とフィルターの UI が同じ状態を編集する（`parseSearchQuery` / `formatSearchQuery` の往復のテスト）
 - [ ] 結果から元のメッセージへ飛べる
 

@@ -186,6 +186,9 @@ var tsDecls = []tsDecl{
 	response[savedItemResponse]("SavedItem"),
 	response[savedListResponse]("SavedList"),
 	request[moveSavedRequest]("MoveSavedRequest"),
+	// メッセージの検索（ADR 0061）
+	response[searchResultResponse]("SearchResult"),
+	response[searchResponse]("Search"),
 	// アクティビティ（ADR 0058）
 	response[activityItemResponse]("ActivityItem"),
 	response[activityReactionResponse]("ActivityReaction"),

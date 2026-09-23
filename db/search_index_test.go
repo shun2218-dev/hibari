@@ -29,9 +29,13 @@ func insertBody(t *testing.T, tx pgx.Tx, roomID, sender ulid.ULID, seq int64, bo
 }
 
 // searchIDs は検索の条件に当たるメッセージの ID を返す。
-func searchIDs(t *testing.T, tx pgx.Tx, term string) []ulid.ULID {
+//
+// **ルームで絞る。** テスト用 DB は全パッケージで共有していて、ほかのテストが残した行も同じ表にある
+// （このテストの行はロールバックで消えるが、ほかのテストの行は残る）。絞らないと、他人の「面談」まで拾う。
+func searchIDs(t *testing.T, tx pgx.Tx, roomID ulid.ULID, term string) []ulid.ULID {
 	t.Helper()
-	rows, err := tx.Query(t.Context(), `SELECT id FROM messages WHERE `+searchCond+` ORDER BY seq`, "%"+term+"%")
+	rows, err := tx.Query(t.Context(),
+		`SELECT id FROM messages WHERE room_id = $2 AND `+searchCond+` ORDER BY seq`, "%"+term+"%", roomID)
 	if err != nil {
 		t.Fatalf("search %q: %v", term, err)
 	}
@@ -122,7 +126,7 @@ func TestMessageSearchNormalization(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got := searchIDs(t, tx, tt.term)
+				got := searchIDs(t, tx, room, tt.term)
 				if tt.want {
 					if len(got) != 1 || got[0] != target {
 						t.Fatalf("search %q: got %v, want [%v]", tt.term, got, target)
@@ -157,7 +161,7 @@ func TestMessageSearchExcludesDeletedAndSystem(t *testing.T) {
 		system := insertBody(t, tx, room, owner, 3, "面談さんがチャンネルに参加しました")
 		mustExec(t, tx, `UPDATE messages SET kind = 'system', system_type = 'member_joined' WHERE id = $1`, system)
 
-		got := searchIDs(t, tx, "面談")
+		got := searchIDs(t, tx, room, "面談")
 		if len(got) != 1 || got[0] != alive {
 			t.Fatalf("search: got %v, want [%v]（削除済みとシステムメッセージは出さない）", got, alive)
 		}

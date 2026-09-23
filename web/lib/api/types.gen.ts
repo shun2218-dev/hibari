@@ -570,6 +570,29 @@ export interface MoveSavedRequest {
   state: SavedState;
 }
 
+export interface SearchResult {
+  id: string;
+  room_id: string;
+  /** seq はルーム内の番号。飛んだ先でページを取り直すのに使う（ADR 0042）。 */
+  seq: number;
+  room: LinkedRoom;
+  sender: UserProfile;
+  body: string;
+  /** thread_root_id はスレッドの返信なら親。押したらスレッドを開く。 */
+  thread_root_id: string | null;
+  created_at: string;
+  edited_at: string | null;
+  attachment_count: number;
+}
+
+export interface Search {
+  items: SearchResult[];
+  /** next_cursor は続きがあるときだけ入り、次の ?cursor= にそのまま渡す。 */
+  next_cursor: string | null;
+  /** terms は本文に当たった語（決定 7）。クライアントはこれを本文の上に重ねて塗る。 `q` の解釈（引用符・除外）はサーバーにしかないので、塗る語もサーバーが返す。 */
+  terms: string[];
+}
+
 export interface ActivityItem {
   /** id は一覧の中で 1 件を決める値（activity.reaction_removed の id と同じ）。 */
   id: string;
