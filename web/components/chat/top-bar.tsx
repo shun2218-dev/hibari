@@ -39,17 +39,24 @@ export function TopBar({
   panel?: ReactNode;
 }) {
   return (
-    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface-muted px-2">
-      <NavButton label="戻る" onClick={onBack} disabled={!canGoBack}>
-        <ArrowLeftIcon className="size-4" />
-      </NavButton>
-      <NavButton label="進む" onClick={onForward} disabled={!canGoForward}>
-        <ArrowRightIcon className="size-4" />
-      </NavButton>
+    <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-surface-muted px-2">
+      {/*
+        左右に同じだけ伸びる余白を置いて、検索欄を画面の真ん中に保つ。
+        矢印は左の余白の中で**右寄せ**にして、検索欄のすぐ左に付ける（Slack の実物と同じ。オーナーの指摘。2026-09-24）。
+        画面の左端に置くと、検索欄との間が大きく空いて、何の矢印なのか分からなくなる。
+      */}
+      <div className="flex min-w-0 flex-1 justify-end gap-1">
+        <NavButton label="戻る" onClick={onBack} disabled={!canGoBack}>
+          <ArrowLeftIcon className="size-4" />
+        </NavButton>
+        <NavButton label="進む" onClick={onForward} disabled={!canGoForward}>
+          <ArrowRightIcon className="size-4" />
+        </NavButton>
+      </div>
 
-      {/* 検索欄は画面の真ん中に置く。左右のボタンの幅が違っても中央からずれないよう、外側の箱で中央に寄せる */}
-      <div className="flex min-w-0 flex-1 justify-center">
-        <div className="relative w-full max-w-160">
+      {/* 幅は 640px まで。狭い画面では縮む（両側の余白は basis が 0 なので、先にこちらが縮む） */}
+      <div className="w-160 max-w-full min-w-0">
+        <div className="relative">
           {panel ?? (
             <div className="relative">
               <button
@@ -84,8 +91,8 @@ export function TopBar({
         </div>
       </div>
 
-      {/* 右側は空けておく。左のボタン 2 つと同じ幅を取って、検索欄を画面の中央に保つ */}
-      <div className="hidden w-16 shrink-0 md:block" aria-hidden />
+      {/* 左と同じだけ伸びる余白。これで検索欄が画面の中央に来る */}
+      <div className="min-w-0 flex-1" aria-hidden />
     </div>
   );
 }
