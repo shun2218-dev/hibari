@@ -39,25 +39,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    # DB を使う処理はモックにせず、サービスコンテナの実物でテストする。
-    # イメージは compose.yaml と揃える。
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: hibari
-          POSTGRES_PASSWORD: hibari
-          POSTGRES_DB: hibari_test
-          # 認証方式を明示し、initdb の「trust を有効にした」警告を消す（compose.yaml と同じ）。
-          # 値は公式イメージの既定と同じで、振る舞いは変わらない。
-          POSTGRES_INITDB_ARGS: --auth-local=trust --auth-host=scram-sha-256
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U hibari -d hibari_test"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 30
+    # DB を使う処理はモックにせず、実物の Postgres でテストする（下のステップで起動する）。
     env:
       # CI=true（GitHub Actions が設定する）のとき、接続先がなければテストはスキップせずに失敗する（internal/platform/testenv）。
       TEST_DATABASE_URL: postgres://hibari:hibari@localhost:5432/hibari_test?sslmode=disable
@@ -74,6 +56,19 @@ jobs:
           cache-dependency-path: |
             go.sum
             tools/go.sum
+      - name: Postgres を起動する
+        # pg_bigm 入りの自前のイメージ（ADR 0061 決定 1）を使う。サービスコンテナは既存のイメージしか指定できないので、
+        # Redis / MinIO と同じく docker build → docker run にする。Dockerfile は compose.yaml と同じものを使う。
+        run: |
+          docker build -t hibari-postgres:16 db/postgres
+          docker run -d --name postgres -p 5432:5432 \
+            -e POSTGRES_USER=hibari -e POSTGRES_PASSWORD=hibari -e POSTGRES_DB=hibari_test \
+            -e POSTGRES_INITDB_ARGS="--auth-local=trust --auth-host=scram-sha-256" \
+            hibari-postgres:16
+          for _ in $(seq 30); do
+            docker exec postgres pg_isready -U hibari -d hibari_test && break
+            sleep 2
+          done
       - name: Redis を起動する
         # サービスコンテナは起動コマンドを渡せず、起動する前にホストのカーネルの設定も変えられないので、docker run で起動する。
         # イメージは compose.yaml と揃える。
