@@ -133,7 +133,12 @@ type MessageItemProps = {
   forceHover?: boolean;
   /** ホバーの操作の名前の吹き出しを固定で出す（story で状態を再現するため）。 */
   forceHoverActionTooltip?: HoverAction;
+  /** ピッカーをどのボタンから開いたことにするか（story で状態を再現するため）。 */
+  forcePickerFrom?: PickerFrom;
 };
+
+/** ピッカーを開いたボタン。行の右上の操作か、メッセージの下のリアクションの「＋」か。置き場所が変わる。 */
+export type PickerFrom = "actions" | "reactions";
 
 export function MessageItem({
   message,
@@ -171,10 +176,19 @@ export function MessageItem({
   forceHoverReaction,
   forceHover,
   forceHoverActionTooltip,
+  forcePickerFrom,
 }: MessageItemProps) {
   const { sender, status, deleted } = message;
   // ピッカーの置き場所の基準。行そのものを測って、画面に浮かせる位置を決める（ADR 0044）
   const rowRef = useRef<HTMLElement>(null);
+  // 開いたボタンの近くに出すため、どちらから開いたかを覚えておく。開いているかどうかは親が持つ（openPickerKey）
+  const addReactionRef = useRef<HTMLButtonElement>(null);
+  const [pickerFromState, setPickerFrom] = useState<PickerFrom>("actions");
+  const pickerFrom = forcePickerFrom ?? pickerFromState;
+  function togglePickerFrom(from: PickerFrom) {
+    setPickerFrom(from);
+    onTogglePicker?.();
+  }
   // ホバーのカードの基準。乗せた方（アバターか名前）の横に出す
   const avatarRef = useRef<HTMLButtonElement>(null);
   const nameRef = useRef<HTMLButtonElement>(null);
@@ -364,7 +378,9 @@ export function MessageItem({
           <MessageReactions
             reactions={reactions}
             onToggle={onToggleReaction}
-            onAdd={canReact ? onTogglePicker : undefined}
+            onAdd={canReact ? () => togglePickerFrom("reactions") : undefined}
+            addRef={addReactionRef}
+            addExpanded={pickerOpen && pickerFrom === "reactions"}
             forceHoverEmoji={forceHoverReaction}
           />
         )}
@@ -393,8 +409,8 @@ export function MessageItem({
           forceHover={forceHover}
           forceTooltip={forceHoverActionTooltip}
           canReact={canReact}
-          pickerOpen={pickerOpen}
-          onTogglePicker={onTogglePicker}
+          pickerOpen={pickerOpen && pickerFrom === "actions"}
+          onTogglePicker={() => togglePickerFrom("actions")}
           canReply={canReply}
           onReply={onReply}
           save={canSave ? save : undefined}
@@ -415,7 +431,14 @@ export function MessageItem({
       )}
 
       {pickerOpen && (
-        <ReactionPicker desktop={desktopPicker} rowRef={rowRef} picker={picker} onTogglePicker={onTogglePicker} />
+        <ReactionPicker
+          desktop={desktopPicker}
+          rowRef={rowRef}
+          // 「＋」はリアクションがあるときだけ描かれる。消えていたら行の右上に戻す
+          addButtonRef={pickerFrom === "reactions" && reactions.length > 0 ? addReactionRef : undefined}
+          picker={picker}
+          onTogglePicker={onTogglePicker}
+        />
       )}
 
       {menuOpen && hasMenu && (

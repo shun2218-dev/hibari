@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { useState } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HOVER_OPEN_DELAY_MS } from "@/hooks/use-hover-intent";
 
@@ -661,5 +662,71 @@ describe("MessageItem のピン留めと「後で」（ADR 0054）", () => {
     render(<MessageItem message={message(overrides)} save={{ saved: false, onClick: () => {} }} />);
 
     expect(screen.queryByRole("button", { name: "「後で」に保存" })).not.toBeInTheDocument();
+  });
+});
+
+describe("MessageItem のピッカーの置き場所", () => {
+  const reactions = [{ emoji: "👍", count: 1, me: false, names: ["佐藤 直樹"] }];
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // 開け閉てを親の代わりに持つ（本物は Timeline の openPickerKey）
+  function Harness() {
+    const [open, setOpen] = useState(false);
+    return (
+      <MessageItem
+        message={message({ reactions })}
+        onTogglePicker={() => setOpen((v) => !v)}
+        pickerOpen={open}
+        picker={<p>ピッカーの中身</p>}
+      />
+    );
+  }
+
+  function setup() {
+    // 浮かせるのは md 以上だけ。jsdom には matchMedia が無いので、デスクトップとして当てる
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    render(<Harness />);
+    // jsdom は大きさを測れないので、「＋」だけ画面の中ほどにあることにする（行は 0 のまま）
+    // DOM の順は本文の下の行が先、ホバーの操作が後
+    const [rowAddButton, actionsButton] = screen.getAllByRole("button", { name: "リアクションを追加", hidden: true });
+    vi.spyOn(rowAddButton, "getBoundingClientRect").mockReturnValue({ top: 300, bottom: 328, left: 500, right: 540 } as DOMRect);
+    return { actionsButton, rowAddButton };
+  }
+
+  it("リアクションの「＋」から開くと、その「＋」のすぐ下に出す", async () => {
+    const { rowAddButton } = setup();
+
+    await userEvent.click(rowAddButton);
+
+    const dialog = screen.getByRole("dialog", { name: "リアクションを選ぶ" });
+    expect(dialog).toHaveStyle({ top: "332px", left: "500px" });
+    expect(rowAddButton).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("行の右上の操作から開くと、いままでどおり行に合わせて出す", async () => {
+    const { actionsButton, rowAddButton } = setup();
+
+    await userEvent.click(actionsButton);
+
+    const dialog = screen.getByRole("dialog", { name: "リアクションを選ぶ" });
+    expect(dialog).not.toHaveStyle({ left: "500px" });
+    expect(rowAddButton).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("「＋」をもう一度押すと閉じる", async () => {
+    const { rowAddButton } = setup();
+
+    await userEvent.click(rowAddButton);
+    await userEvent.click(rowAddButton);
+
+    expect(screen.queryByRole("dialog", { name: "リアクションを選ぶ" })).not.toBeInTheDocument();
   });
 });

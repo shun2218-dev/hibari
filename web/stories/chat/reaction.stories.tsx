@@ -62,6 +62,12 @@ export const ReactionPickerAbove: Story = {
   render: () => chat({ reactions: "picker-above" }),
 };
 
+export const ReactionPickerFromReactions: Story = {
+  name: "リアクション: 行の「＋」から開いたピッカー",
+  tags: ["since:6.16"],
+  render: () => chat({ reactions: "picker-from-reactions" }),
+};
+
 export const MobileReactions: Story = {
   name: "絵文字のリアクション（モバイル）",
   tags: ["since:6.7"],

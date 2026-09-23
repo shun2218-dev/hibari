@@ -4,7 +4,7 @@ import { type ReactNode, type RefObject, useLayoutEffect, useState } from "react
 
 import { Portal } from "@/components/ui/portal";
 import { useDismiss } from "@/hooks/use-dismiss";
-import { type PanelAlign, type PanelPlacement, placeBeside, placePanel } from "@/lib/anchored-position";
+import { type PanelAlign, type PanelPlacement, placeBeside, placeNear, placePanel } from "@/lib/anchored-position";
 import { cx } from "@/lib/cx";
 
 /**
@@ -30,6 +30,8 @@ export function AnchoredPanel({
   onDismiss,
   align,
   beside = false,
+  near = false,
+  ignoreRef,
 }: {
   /** 位置の基準。メッセージの行（article）を渡す。 */
   anchorRef: RefObject<HTMLElement | null>;
@@ -39,6 +41,10 @@ export function AnchoredPanel({
   align?: PanelAlign;
   /** 行に重ねずに、アンカーの横に出す（プロフィールのカード。`placeBeside`）。`align` は使わない。 */
   beside?: boolean;
+  /** 押したボタンのすぐ下（入らなければすぐ上）に、左端をそろえて出す（`placeNear`）。`align` は使わない。 */
+  near?: boolean;
+  /** 外を押したと数えない範囲。既定はアンカー。アンカーがボタンでも、行の中は「外」にしたくないときに渡す。 */
+  ignoreRef?: RefObject<HTMLElement | null>;
   children: ReactNode;
   /**
    * 外を押した、または Esc を押したので閉じる。
@@ -60,7 +66,13 @@ export function AnchoredPanel({
       const rect = anchor.getBoundingClientRect();
       const size = { width: panel.offsetWidth, height: panel.offsetHeight };
       const viewport = { width: window.innerWidth, height: window.innerHeight };
-      setPlacement(beside ? placeBeside(rect, size, viewport) : placePanel(rect, size, viewport, align));
+      setPlacement(
+        beside
+          ? placeBeside(rect, size, viewport)
+          : near
+            ? placeNear(rect, size, viewport)
+            : placePanel(rect, size, viewport, align),
+      );
     }
     place();
 
@@ -75,10 +87,10 @@ export function AnchoredPanel({
       window.removeEventListener("resize", place);
       document.removeEventListener("scroll", place, true);
     };
-  }, [align, anchorRef, beside, panel]);
+  }, [align, anchorRef, beside, near, panel]);
 
   // 外を押す / Esc で閉じる（Popover と共通。hooks/use-dismiss.ts）。アンカー（メッセージの行）の中は「外」に数えない
-  useDismiss(panel, onDismiss, anchorRef);
+  useDismiss(panel, onDismiss, ignoreRef ?? anchorRef);
 
   return (
     <Portal>

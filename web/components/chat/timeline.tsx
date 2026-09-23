@@ -4,7 +4,7 @@ import { type ReactNode, useEffectEvent, useLayoutEffect, useRef } from "react";
 
 import { TextButton } from "@/components/ui/button";
 
-import { type MessageEditingView, MessageItem } from "@/components/chat/message-item/message-item";
+import { type MessageEditingView, MessageItem, type PickerFrom } from "@/components/chat/message-item/message-item";
 import type { HoverAction } from "@/components/chat/message-item/hover-actions";
 import type { TimelineItem } from "./types";
 
@@ -70,6 +70,8 @@ type TimelineProps = {
   onTogglePicker?: (key: string) => void;
   /** ピッカーを開いているメッセージ（1 度に 1 件）。 */
   openPickerKey?: string;
+  /** ピッカーを開いたボタン（story 用。既定は行の右上の操作）。 */
+  openPickerFrom?: PickerFrom;
   /** 送信者のアバターや名前、メンションを押した（右のプロフィールのパネルを開く。ADR 0050）。 */
   onOpenProfile?: (userId: string) => void;
   /** 送信者にポインタを乗せたときのカードの中身（ADR 0050 決定 6 の追記）。渡さなければカードは出ない。 */
@@ -168,6 +170,7 @@ export function Timeline({
   onToggleReaction,
   onTogglePicker,
   openPickerKey,
+  openPickerFrom,
   reactionPicker,
   onOpenProfile,
   profileHoverCardFor,
@@ -344,6 +347,7 @@ export function Timeline({
                     onTogglePicker={onTogglePicker === undefined ? undefined : () => onTogglePicker(key)}
                     pickerOpen={openPickerKey === key}
                     picker={openPickerKey === key ? reactionPicker : undefined}
+                    forcePickerFrom={openPickerKey === key ? openPickerFrom : undefined}
                     onOpenProfile={onOpenProfile}
                     profileHoverCard={
                       profileHoverCardFor === undefined
