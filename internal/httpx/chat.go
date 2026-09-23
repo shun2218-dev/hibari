@@ -54,6 +54,7 @@ type ChatService interface {
 	MoveSaved(ctx context.Context, actor, workspaceID, messageID ulid.ULID, to chat.SavedState) (chat.SavedItem, error)
 	RemoveSaved(ctx context.Context, actor, workspaceID, messageID ulid.ULID) error
 	ListSaved(ctx context.Context, actor, workspaceID ulid.ULID, q chat.SavedQuery) (chat.SavedPage, error)
+	SearchMessages(ctx context.Context, actor, workspaceID ulid.ULID, q chat.SearchQuery) (chat.SearchPage, error)
 	ListActivity(ctx context.Context, actor, workspaceID ulid.ULID, q chat.ActivityQuery) (chat.ActivityPage, error)
 	CountUnreadActivity(ctx context.Context, actor, workspaceID ulid.ULID) (int64, error)
 	MarkRoomRead(ctx context.Context, actor, roomID ulid.ULID, seq int64) (chat.ReadState, error)
@@ -150,6 +151,7 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("PATCH /api/v1/workspaces/{workspaceID}/saved/{messageID}", h.moveSaved)
 	handle("DELETE /api/v1/workspaces/{workspaceID}/saved/{messageID}", h.removeSaved)
 	handle("GET /api/v1/workspaces/{workspaceID}/saved", h.listSaved)
+	handle("GET /api/v1/workspaces/{workspaceID}/search/messages", h.searchMessages)
 	handle("GET /api/v1/workspaces/{workspaceID}/activity", h.listActivity)
 	handle("GET /api/v1/workspaces/{workspaceID}/activity/unread_count", h.activityUnreadCount)
 	handle("POST /api/v1/rooms/{roomID}/read", h.markRoomRead)
