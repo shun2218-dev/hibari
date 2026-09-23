@@ -5,6 +5,7 @@ import { type ReactNode, useEffectEvent, useLayoutEffect, useRef } from "react";
 import { TextButton } from "@/components/ui/button";
 
 import { type MessageEditingView, MessageItem } from "@/components/chat/message-item/message-item";
+import type { HoverAction } from "@/components/chat/message-item/hover-actions";
 import type { TimelineItem } from "./types";
 
 /**
@@ -81,6 +82,8 @@ type TimelineProps = {
   hoveredKey?: string;
   /** リアクションのホバーの名前を固定で出す（story 用）。 */
   hoveredReaction?: { key: string; emoji: string };
+  /** ホバーの操作の名前の吹き出しを固定で出す（story 用）。 */
+  hoveredActionTooltip?: { key: string; action: HoverAction };
   /**
    * いちばん上の近くまでスクロールした（古いメッセージを読み込むきっかけ）。
    * 内容が画面に収まってスクロールできないときも呼ぶ。もうないか、取得中かの判断は呼ぶ側が行う。
@@ -171,6 +174,7 @@ export function Timeline({
   hoveredProfileKey,
   hoveredKey,
   hoveredReaction,
+  hoveredActionTooltip,
   onReachStart,
   onReachEnd,
   scrollToKey,
@@ -348,6 +352,7 @@ export function Timeline({
                     }
                     forceProfileHover={hoveredProfileKey === key}
                     forceHoverReaction={hoveredReaction?.key === key ? hoveredReaction.emoji : undefined}
+                    forceHoverActionTooltip={hoveredActionTooltip?.key === key ? hoveredActionTooltip.action : undefined}
                   />
                 </li>
               );

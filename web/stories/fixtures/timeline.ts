@@ -53,6 +53,9 @@ export const timeline: TimelineItem[] = [
  */
 export const lastMessageKey = "m-1105";
 
+/** ホバーの操作の名前を出すメッセージ（chat/message/hover-tooltip.png）。 */
+export const hoverTooltipKey = "m-1030";
+
 /** 飛んできた先の key（chat/link/jump-highlight.png。ADR 0042）。 */
 export const jumpTargetKey = "m-1012";
 

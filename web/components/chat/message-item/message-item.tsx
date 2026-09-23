@@ -17,7 +17,7 @@ import type { MentionCandidate } from "@/lib/chat/format/mentions";
 import { cx } from "@/lib/cx";
 
 import { Attachment } from "./attachment";
-import { HoverActions } from "./hover-actions";
+import { type HoverAction, HoverActions } from "./hover-actions";
 import { MessageEditor } from "./message-editor";
 import { MessageMenu } from "./message-menu";
 import { ReactionPicker } from "./reaction-picker";
@@ -131,6 +131,8 @@ type MessageItemProps = {
   forceHoverReaction?: string;
   /** ホバーしたときの見た目を固定で出す（story で状態を再現するため）。 */
   forceHover?: boolean;
+  /** ホバーの操作の名前の吹き出しを固定で出す（story で状態を再現するため）。 */
+  forceHoverActionTooltip?: HoverAction;
 };
 
 export function MessageItem({
@@ -168,6 +170,7 @@ export function MessageItem({
   picker,
   forceHoverReaction,
   forceHover,
+  forceHoverActionTooltip,
 }: MessageItemProps) {
   const { sender, status, deleted } = message;
   // ピッカーの置き場所の基準。行そのものを測って、画面に浮かせる位置を決める（ADR 0044）
@@ -388,6 +391,7 @@ export function MessageItem({
       {actionable && (
         <HoverActions
           forceHover={forceHover}
+          forceTooltip={forceHoverActionTooltip}
           canReact={canReact}
           pickerOpen={pickerOpen}
           onTogglePicker={onTogglePicker}

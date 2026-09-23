@@ -14,6 +14,7 @@ import {
   UnreadJumpBar,
 } from "@/components/chat/chat-states";
 import { Composer } from "@/components/chat/composer";
+import type { HoverAction } from "@/components/chat/message-item/hover-actions";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { RemoveSavedItemDialog } from "@/components/chat/dialogs/remove-saved-item";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
@@ -111,6 +112,8 @@ export type ChatOptions = {
   banner?: ConnectionBannerStatus;
   attachments?: AttachmentDraftView[];
   hoveredKey?: string;
+  /** ホバーの操作の名前の吹き出しを固定で出す（`hoveredKey` と一緒に渡す）。 */
+  hoveredActionTooltip?: { key: string; action: HoverAction };
   noRooms?: boolean;
   search?: string;
   accountMenu?: boolean;
@@ -294,6 +297,7 @@ export function chat({
   banner,
   attachments,
   hoveredKey,
+  hoveredActionTooltip,
   noRooms,
   search,
   accountMenu,
@@ -590,6 +594,7 @@ export function chat({
             profileHoverCardFor={hover ? () => <ProfileHoverCard profile={hover.profile} /> : undefined}
             hoveredProfileKey={hover?.key}
             hoveredReaction={reactions === "names" ? hoveredReaction : undefined}
+            hoveredActionTooltip={hoveredActionTooltip}
             onReply={noop}
             onOpenImage={noop}
             onDeleteAttachment={noop}
