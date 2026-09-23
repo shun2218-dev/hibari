@@ -193,4 +193,34 @@ describe("MessageBody の書式（ADR 0051）", () => {
     expect(link).toHaveAttribute("href", `/w/${ids}A/r/${ids}B?m=${ids}C`);
     expect(link).not.toHaveAttribute("target");
   });
+
+  // 検索で一致した部分（ADR 0061 決定 7）
+  const marks = () => screen.queryAllByText((_, el) => el?.tagName === "MARK").map((el) => el.textContent);
+
+  it("highlight を渡さなければ、何も塗らない", () => {
+    render(<MessageBody body="明日の面談の資料" />);
+
+    expect(marks()).toEqual([]);
+  });
+
+  it("書式を解釈したあとの地の文を塗る（太字の中も塗る）", () => {
+    render(<MessageBody body="明日の*面談*の資料" highlight={["面談"]} />);
+
+    expect(marks()).toEqual(["面談"]);
+    expect(screen.getByText("面談").closest("strong")).not.toBeNull();
+  });
+
+  it("記法そのものには当たらない（`*` を打っても塗られない）", () => {
+    render(<MessageBody body="*面談*" highlight={["*面談*"]} />);
+
+    expect(marks()).toEqual([]);
+  });
+
+  it("コードの中は塗らない（そのままの文字を見せる所なので）", () => {
+    render(<MessageBody body="`面談` の面談" highlight={["面談"]} />);
+
+    // 地の文の 1 つだけが塗られる
+    expect(marks()).toEqual(["面談"]);
+    expect(screen.getByText("面談", { selector: "code" })).toBeInTheDocument();
+  });
 });

@@ -6,7 +6,10 @@ import { ResizeHandle } from "@/components/ui/resize-handle";
 import { cx } from "@/lib/cx";
 
 type ChatLayoutProps = {
-  sidebar: ReactNode;
+  /** 画面のいちばん上に置く全幅の帯（`TopBar`。ADR 0061）。 */
+  topBar?: ReactNode;
+  /** 渡さなければサイドバーの列ごと出さない（検索結果の画面。Slack と同じく全幅で使う）。 */
+  sidebar?: ReactNode;
   /** md 以上でサイドバーの左に置く縦のメニュー（`SideNavRail`。ADR 0058）。 */
   rail?: ReactNode;
   /** モバイルで一覧の下に置くタブ（`SideNavBar`）。一覧と一緒に隠れるので、ルームを開いている間は出ない。 */
@@ -24,12 +27,15 @@ type ChatLayoutProps = {
   mobileView: "list" | "room";
 };
 
-export function ChatLayout({ sidebar, rail, tabBar, children, panel, mobileView }: ChatLayoutProps) {
+export function ChatLayout({ topBar, sidebar, rail, tabBar, children, panel, mobileView }: ChatLayoutProps) {
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="relative flex h-dvh overflow-hidden bg-surface">
-      {rail && <div className="hidden md:flex">{rail}</div>}
+    <div className="flex h-dvh flex-col overflow-hidden bg-surface">
+      {topBar}
+      <div className="relative flex min-h-0 flex-1">
+        {rail && <div className="hidden md:flex">{rail}</div>}
+        {sidebar !== undefined && (
       <div
         ref={sidebarRef}
         className={cx(
@@ -49,15 +55,18 @@ export function ChatLayout({ sidebar, rail, tabBar, children, panel, mobileView 
         )}
         <ResizeHandle pane="sidebar" grow="right" measure={sidebarRef} />
       </div>
-      <main
-        className={cx(
-          "absolute inset-0 flex min-w-0 flex-col bg-surface transition duration-280 ease-slide md:visible md:static md:flex-1 md:translate-x-0",
-          mobileView === "list" && "invisible translate-x-full",
         )}
-      >
-        {children}
-      </main>
-      {panel}
+        <main
+          className={cx(
+            "absolute inset-0 flex min-w-0 flex-col bg-surface transition duration-280 ease-slide md:visible md:static md:flex-1 md:translate-x-0",
+            // サイドバーがなければ、モバイルでも隠す相手がいないので常に見せる
+            sidebar !== undefined && mobileView === "list" && "invisible translate-x-full",
+          )}
+        >
+          {children}
+        </main>
+        {panel}
+      </div>
     </div>
   );
 }

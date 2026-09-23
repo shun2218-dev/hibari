@@ -23,6 +23,10 @@ import { NotificationPermissionBanner } from "@/components/chat/notification-per
 import { PinsList } from "@/components/chat/pins-list";
 import { ProfileHoverCard } from "@/components/chat/profile-card";
 import { RoomHeader } from "@/components/chat/room-header";
+import { SearchFiltersDialog } from "@/components/chat/dialogs/search-filters";
+import { SearchPanel } from "@/components/chat/search-panel";
+import { SearchResults } from "@/components/chat/search-results";
+import { TopBar } from "@/components/chat/top-bar";
 import { RoomTabs } from "@/components/chat/room-tabs";
 import { SideNavBar, type SideNavKey } from "@/components/chat/side-nav";
 import { Sidebar } from "@/components/chat/sidebar";
@@ -51,6 +55,14 @@ import {
   typingNames,
 } from "@/stories/fixtures/rooms";
 import { saveCandidateKey, savedArchived, savedCompleted, savedInProgress } from "@/stories/fixtures/saved";
+import {
+  searchFilters,
+  searchQuery,
+  searchResults,
+  searchRoomOptions,
+  searchSenderOptions,
+  searchTerms,
+} from "@/stories/fixtures/search";
 import {
   deletedThreadRoot,
   threadItems,
@@ -252,6 +264,16 @@ export type ChatOptions = {
   dark?: boolean;
   /** サイドバーの検索の結果に、アーカイブしたチャンネルを混ぜる（`search` と一緒に使う。ADR 0059）。 */
   archivedSearch?: boolean;
+  /**
+   * メッセージの検索（ADR 0061）。サイドバーの `search`（チャンネルの絞り込み）とは別物。
+   * - panel: 帯の検索欄を押して、候補のパネルを開いたところ（まだ何も打っていない）
+   * - panel-typed: 語を打って、候補が 2 つ出たところ
+   * - results: 結果の画面（サイドバーを畳んで全幅）
+   * - results-filtered: 送信者と場所で絞り込んだところ
+   * - results-empty: 一致が 0 件
+   * - filters: 結果の画面の上に「検索フィルター」のダイアログ
+   */
+  messageSearch?: "panel" | "panel-typed" | "results" | "results-filtered" | "results-empty" | "filters";
 };
 
 /** スレッドの画面のタイムライン。親が削除されたスレッドは、その親（tombstone と「N 件の返信」）を先頭に足す。 */
@@ -309,6 +331,7 @@ export function chat({
   preview,
   dark,
   archivedSearch,
+  messageSearch,
 }: ChatOptions = {}) {
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
   const roomRemoved = body === "removed-room";
@@ -351,6 +374,28 @@ export function chat({
             />
           ),
         };
+  // メッセージの検索（ADR 0061）。結果の画面ではサイドバーを畳んで全幅で使う（Slack と同じ）
+  const searchResultsView = messageSearch !== undefined && messageSearch !== "panel" && messageSearch !== "panel-typed";
+  const searchPanelValue = messageSearch === "panel-typed" ? searchQuery : "";
+  const topBar = (
+    <TopBar
+      workspaceName={workspaces.dev.name}
+      query={searchResultsView ? searchQuery : undefined}
+      canGoBack
+      panel={
+        messageSearch === "panel" || messageSearch === "panel-typed" ? (
+          <SearchPanel
+            value={searchPanelValue}
+            workspaceName={workspaces.dev.name}
+            roomName={selectedRoom.name}
+            onSubmit={noop}
+            onSearchInRoom={noop}
+          />
+        ) : undefined
+      }
+    />
+  );
+
   const home = (
           <Sidebar
             workspace={workspaces.dev}
@@ -407,8 +452,11 @@ export function chat({
   return (
     <>
       <ChatLayout
+        topBar={topBar}
         mobileView={mobileView}
-        sidebar={sidePane(side, home, { activity, dmsEmpty, dmsUnread, saved, savedTab, savedItems })}
+        sidebar={
+          searchResultsView ? undefined : sidePane(side, home, { activity, dmsEmpty, dmsUnread, saved, savedTab, savedItems })
+        }
         rail={sideRail(side, { switcher, accountMenu, presence, preview })}
         tabBar={<SideNavBar items={sideNavItems} current={side} />}
         panel={
@@ -437,7 +485,17 @@ export function chat({
           ) : undefined
         }
       >
-        {threads && (
+        {searchResultsView && (
+          <SearchResults
+            query={searchQuery}
+            filters={messageSearch === "results-filtered" || messageSearch === "filters" ? searchFilters : {}}
+            results={messageSearch === "results-empty" ? [] : searchResults}
+            highlightTerms={searchTerms}
+            onOpenFilters={noop}
+            onClearFilter={noop}
+          />
+        )}
+        {!searchResultsView && threads && (
           <ThreadList
             threads={threads === "empty" ? [] : threads === "list" ? threadList : threadListWithNotifyOff}
             threadHref={roomHref}
@@ -445,7 +503,7 @@ export function chat({
             openMenuKey={threads === "row-menu" ? "m-chat-0930" : undefined}
           />
         )}
-        {!roomRemoved && !threads && (
+        {!searchResultsView && !roomRemoved && !threads && (
           <RoomHeader
             archived={archivedRoom}
             kind={room.kind}
@@ -457,8 +515,8 @@ export function chat({
           />
         )}
         {/* ルームのヘッダーの下には、いつも「メッセージ / ピン」のタブがある（ADR 0054） */}
-        {!roomRemoved && !threads && <RoomTabs value={pinsTab ? "pins" : "messages"} />}
-        {pinsTab && (
+        {!searchResultsView && !roomRemoved && !threads && <RoomTabs value={pinsTab ? "pins" : "messages"} />}
+        {!searchResultsView && pinsTab && (
           <PinsList
             roomKind={selectedRoom.kind}
             pins={pins === "list-empty" ? [] : pinnedMessages}
@@ -469,7 +527,7 @@ export function chat({
         <ConnectionBanner status={banner ?? null} />
         {jump === "unread-bar" && <UnreadJumpBar count={12} onJump={noop} />}
         {jump === "not-found" && <MessageNotFoundNotice onClose={noop} />}
-        {body === "timeline" && !threads && !pinsTab && (
+        {body === "timeline" && !searchResultsView && !threads && !pinsTab && (
           <Timeline
             items={
               archivedRoom
@@ -557,7 +615,7 @@ export function chat({
         {body === "empty" && <EmptyMessages kind={selectedRoom.kind} name={selectedRoom.name} />}
         {roomRemoved && <RoomUnavailable />}
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
-        {footer === "composer" && !threads && !pinsTab && (
+        {footer === "composer" && !searchResultsView && !threads && !pinsTab && (
           <Composer
             value={composer === "formatted" || composer === "link-dialog" ? composerDraft : mentionQuery === undefined ? "" : "金曜の件、"}
             canSend={mentionQuery !== undefined || composer === "formatted" || composer === "link-dialog"}
@@ -575,6 +633,15 @@ export function chat({
       </ChatLayout>
       {dialog}
       <RemoveSavedItemDialog open={saved === "confirm"} />
+      <SearchFiltersDialog
+        open={messageSearch === "filters"}
+        filters={searchFilters}
+        senderQuery="佐藤"
+        senderOptions={searchSenderOptions}
+        roomQuery="リリース"
+        roomOptions={searchRoomOptions}
+        date="any"
+      />
       {statusDialog && (
         <StatusDialog
           open
