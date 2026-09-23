@@ -26,9 +26,10 @@ describe("threads (ADR 0036)", () => {
       me: naoki,
       outgoing: [{ clientMsgId: "c-t", body: "スレッドへ", threadRootId: "m-1", alsoInChannel: false, attachments: [], status: "pending", createdAt: "2026-09-13T01:01:00Z" }],
       timeZone: tz,
+      now: new Date("2026-09-24T03:00:00Z"),
     });
 
-    expect(outline(items)).toEqual(["[2026年9月13日]", "本文 1"]);
+    expect(outline(items)).toEqual(["[9月13日]", "本文 1"]);
   });
 
   it("lays out the thread panel as root, divider, replies and my unsent replies, without dates or the root's summary", () => {

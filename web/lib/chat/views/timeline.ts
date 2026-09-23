@@ -230,7 +230,7 @@ export function toTimelineItems(
     let breakGroup = false;
 
     if (day !== previousDay) {
-      items.push({ type: "date", key: `date-${day}`, label: formatDate(entry.createdAt, timeZone) });
+      items.push({ type: "date", key: `date-${day}`, label: formatDate(entry.createdAt, now, timeZone) });
       previousDay = day;
       breakGroup = true;
     }
