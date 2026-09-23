@@ -8,7 +8,7 @@ import { cx } from "@/lib/cx";
 /**
  * 画面のいちばん上の帯（ADR 0061 決定 9。Slack と同じ置き場所）。
  *
- * 左に「戻る・進む」、真ん中に検索欄を置く。rail もサイドバーもこの帯の下から始まる。
+ * 左に「戻る・進む」、その右に検索欄を置く。rail もサイドバーもこの帯の下から始まる。
  * ワークスペースの切り替えと自分のアバターは、いままでどおり rail の上下に残す（オーナーの判断。2026-09-23）。
  *
  * 検索欄は入力欄ではなくボタンにする。押すと `panel`（候補つきの本物の入力欄）が同じ位置に重なって開く。
@@ -39,17 +39,27 @@ export function TopBar({
   panel?: ReactNode;
 }) {
   return (
-    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface-muted px-2">
-      <NavButton label="戻る" onClick={onBack} disabled={!canGoBack}>
-        <ArrowLeftIcon className="size-4" />
-      </NavButton>
-      <NavButton label="進む" onClick={onForward} disabled={!canGoForward}>
-        <ArrowRightIcon className="size-4" />
-      </NavButton>
+    <div className="flex h-12 shrink-0 items-center border-b border-border bg-surface-muted px-2 md:pl-0">
+      {/*
+        md 以上では、左の箱を rail（72px）＋ サイドバーの**既定の幅**（288px）＝ 360px に固定し、
+        検索欄の左端をサイドバーの右端にそろえる（オーナーの指摘。2026-09-24）。
+        矢印は箱の中で右寄せにして、検索欄のすぐ左に付ける（Slack の実物と同じ）。
+        `--pane-sidebar` を参照しないのは、ユーザーがサイドバーを引っ張ると `<html>` で上書きされ、
+        帯まで一緒に動いてしまうため。帯は窓の大きさだけで決まる位置に置く。
+        モバイルはサイドバーが全画面になり幅も足りないので、箱ごと出さずに検索欄を全幅にする（戻るはブラウザで代用できる）。
+      */}
+      <div className="hidden w-90 shrink-0 justify-end gap-1 pr-2 md:flex">
+        <NavButton label="戻る" onClick={onBack} disabled={!canGoBack}>
+          <ArrowLeftIcon className="size-4" />
+        </NavButton>
+        <NavButton label="進む" onClick={onForward} disabled={!canGoForward}>
+          <ArrowRightIcon className="size-4" />
+        </NavButton>
+      </div>
 
-      {/* 検索欄は画面の真ん中に置く。左右のボタンの幅が違っても中央からずれないよう、外側の箱で中央に寄せる */}
-      <div className="flex min-w-0 flex-1 justify-center">
-        <div className="relative w-full max-w-160">
+      {/* 幅は 640px まで。狭い画面では縮む */}
+      <div className="w-160 max-w-full min-w-0">
+        <div className="relative">
           {panel ?? (
             <div className="relative">
               <button
@@ -83,9 +93,6 @@ export function TopBar({
           )}
         </div>
       </div>
-
-      {/* 右側は空けておく。左のボタン 2 つと同じ幅を取って、検索欄を画面の中央に保つ */}
-      <div className="hidden w-16 shrink-0 md:block" aria-hidden />
     </div>
   );
 }
@@ -108,8 +115,7 @@ function NavButton({
       onClick={onClick}
       disabled={disabled}
       className={cx(
-        // モバイルは幅が足りないので出さない（ブラウザの戻るで代用できる）
-        "hidden size-8 shrink-0 items-center justify-center rounded-sm md:flex",
+        "flex size-8 shrink-0 items-center justify-center rounded-sm",
         disabled ? "text-text-muted" : "text-text-secondary hover:bg-surface hover:text-text",
         "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
       )}
