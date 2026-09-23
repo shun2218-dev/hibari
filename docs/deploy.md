@@ -183,6 +183,17 @@ email を検証するまで、chat の API と WebSocket は 403（`email-unveri
   許可オリジンは `APP_BASE_URL`、メソッドは `PUT` と `GET`、許可ヘッダは `content-type`。
 - コードは環境で分岐しない（`internal/platform/storage` の設定値だけが変わる）。
 
+## Postgres のイメージ（ADR 0061）
+
+**Postgres は自前でビルドしたイメージを使う。** 素の `postgres:16-alpine` に pg_bigm を足したもので、
+Dockerfile は `db/postgres/Dockerfile`。日本語の検索に 2-gram の索引が要るため（ADR 0061 決定 1）。
+
+- ローカル（compose）・CI（`.github/workflows/go.yml`）・本番（Fly）が、同じ Dockerfile をビルドして使う。
+- pg_bigm の版は Dockerfile の `PG_BIGM_VERSION` で固定する。上げるときは、先にローカルでビルドしてテストを通す。
+- **Postgres のメジャーバージョンを上げるときは、このイメージのビルドが通ることを先に確かめる。**
+  pg_bigm がその版に対応していないと、ビルドが落ちるか、拡張が読み込めずに起動後の `CREATE EXTENSION` で落ちる。
+- 素の `postgres:16-alpine` に向けると、マイグレーション 00019（`CREATE EXTENSION pg_bigm`）で失敗する。
+
 ## Postgres のバックアップ（ADR 0046）
 
 自前で持つので、バックアップも自前。

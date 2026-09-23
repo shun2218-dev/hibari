@@ -11,7 +11,11 @@ name: hibari
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # pg_bigm を足した自前のイメージ（ADR 0061 決定 1）。素の postgres:16-alpine では検索の索引が作れない。
+    # CI も同じ Dockerfile をビルドして使う（.github/workflows/go.yml）。
+    build:
+      context: ./db/postgres
+    image: hibari-postgres:16
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-hibari}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hibari}
