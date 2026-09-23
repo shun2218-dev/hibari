@@ -8,7 +8,7 @@ import { cx } from "@/lib/cx";
 /**
  * 画面のいちばん上の帯（ADR 0061 決定 9。Slack と同じ置き場所）。
  *
- * 左に「戻る・進む」、真ん中に検索欄を置く。rail もサイドバーもこの帯の下から始まる。
+ * 左に「戻る・進む」、その右に検索欄を置く。rail もサイドバーもこの帯の下から始まる。
  * ワークスペースの切り替えと自分のアバターは、いままでどおり rail の上下に残す（オーナーの判断。2026-09-23）。
  *
  * 検索欄は入力欄ではなくボタンにする。押すと `panel`（候補つきの本物の入力欄）が同じ位置に重なって開く。
@@ -39,13 +39,16 @@ export function TopBar({
   panel?: ReactNode;
 }) {
   return (
-    <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-surface-muted px-2">
+    <div className="flex h-12 shrink-0 items-center border-b border-border bg-surface-muted px-2 md:pl-0">
       {/*
-        左右に同じだけ伸びる余白を置いて、検索欄を画面の真ん中に保つ。
-        矢印は左の余白の中で**右寄せ**にして、検索欄のすぐ左に付ける（Slack の実物と同じ。オーナーの指摘。2026-09-24）。
-        画面の左端に置くと、検索欄との間が大きく空いて、何の矢印なのか分からなくなる。
+        md 以上では、左の箱を rail（72px）＋ サイドバーの**既定の幅**（288px）＝ 360px に固定し、
+        検索欄の左端をサイドバーの右端にそろえる（オーナーの指摘。2026-09-24）。
+        矢印は箱の中で右寄せにして、検索欄のすぐ左に付ける（Slack の実物と同じ）。
+        `--pane-sidebar` を参照しないのは、ユーザーがサイドバーを引っ張ると `<html>` で上書きされ、
+        帯まで一緒に動いてしまうため。帯は窓の大きさだけで決まる位置に置く。
+        モバイルはサイドバーが全画面になり幅も足りないので、箱ごと出さずに検索欄を全幅にする（戻るはブラウザで代用できる）。
       */}
-      <div className="flex min-w-0 flex-1 justify-end gap-1">
+      <div className="hidden w-90 shrink-0 justify-end gap-1 pr-2 md:flex">
         <NavButton label="戻る" onClick={onBack} disabled={!canGoBack}>
           <ArrowLeftIcon className="size-4" />
         </NavButton>
@@ -54,7 +57,7 @@ export function TopBar({
         </NavButton>
       </div>
 
-      {/* 幅は 640px まで。狭い画面では縮む（両側の余白は basis が 0 なので、先にこちらが縮む） */}
+      {/* 幅は 640px まで。狭い画面では縮む */}
       <div className="w-160 max-w-full min-w-0">
         <div className="relative">
           {panel ?? (
@@ -90,9 +93,6 @@ export function TopBar({
           )}
         </div>
       </div>
-
-      {/* 左と同じだけ伸びる余白。これで検索欄が画面の中央に来る */}
-      <div className="min-w-0 flex-1" aria-hidden />
     </div>
   );
 }
@@ -115,8 +115,7 @@ function NavButton({
       onClick={onClick}
       disabled={disabled}
       className={cx(
-        // モバイルは幅が足りないので出さない（ブラウザの戻るで代用できる）
-        "hidden size-8 shrink-0 items-center justify-center rounded-sm md:flex",
+        "flex size-8 shrink-0 items-center justify-center rounded-sm",
         disabled ? "text-text-muted" : "text-text-secondary hover:bg-surface hover:text-text",
         "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
       )}
