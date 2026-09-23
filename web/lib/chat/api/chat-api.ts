@@ -8,6 +8,7 @@ import { createThreadApi } from "./threads";
 import { createPinApi } from "./pins";
 import { createSavedApi } from "./saved";
 import { createActivityApi } from "./activity";
+import { createSearchApi } from "./search";
 import { createMediaApi } from "./media";
 import { createRealtimeApi } from "./realtime";
 
@@ -27,6 +28,7 @@ export function createChatApi(request: Session["request"]) {
     ...createPinApi(request),
     ...createSavedApi(request),
     ...createActivityApi(request),
+    ...createSearchApi(request),
     ...createMediaApi(request),
     ...createRealtimeApi(request),
   };

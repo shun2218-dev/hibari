@@ -31,7 +31,7 @@ const results: SearchResultView[] = [
 
 describe("SearchResults（ADR 0061）", () => {
   it("受け取った順にカードを並べ、そのメッセージへのリンクを出す（6.11 の仕組みで飛ぶ）", () => {
-    render(<SearchResults query="面談" filters={{}} results={results} highlightTerms={["面談"]} />);
+    render(<SearchResults query="面談" filters={{}} results={results} highlightTerms={["面談"]} today="2026-09-23" />);
 
     const cards = within(screen.getByRole("list", { name: "検索結果" })).getAllByRole("listitem");
     expect(cards).toHaveLength(2);
@@ -42,7 +42,7 @@ describe("SearchResults（ADR 0061）", () => {
   });
 
   it("一致した部分をマーカーで塗る（大文字小文字と全角半角は正規化して当てる）", () => {
-    render(<SearchResults query="deploy" filters={{}} results={results} highlightTerms={["ｄｅｐｌｏｙ", "面談"]} />);
+    render(<SearchResults query="deploy" filters={{}} results={results} highlightTerms={["ｄｅｐｌｏｙ", "面談"]} today="2026-09-23" />);
 
     const marks = screen.getAllByText((_, el) => el?.tagName === "MARK").map((el) => el.textContent);
     expect(marks).toContain("Deploy");
@@ -50,20 +50,20 @@ describe("SearchResults（ADR 0061）", () => {
   });
 
   it("塗る語がなければ mark を出さない", () => {
-    render(<SearchResults query="面談" filters={{}} results={results} highlightTerms={[]} />);
+    render(<SearchResults query="面談" filters={{}} results={results} highlightTerms={[]} today="2026-09-23" />);
 
     expect(screen.queryAllByText((_, el) => el?.tagName === "MARK")).toHaveLength(0);
   });
 
   it("0 件なら、打ち直しと絞り込みを外すことを促す", () => {
-    render(<SearchResults query="ハチドリ" filters={{}} results={[]} highlightTerms={["ハチドリ"]} />);
+    render(<SearchResults query="ハチドリ" filters={{}} results={[]} highlightTerms={["ハチドリ"]} today="2026-09-23" />);
 
     expect(screen.getByText("「ハチドリ」に一致するメッセージはありません")).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "検索結果" })).not.toBeInTheDocument();
   });
 
   it("取得中（results が undefined）は、0 件の知らせを出さない", () => {
-    render(<SearchResults query="面談" filters={{}} highlightTerms={["面談"]} />);
+    render(<SearchResults query="面談" filters={{}} highlightTerms={["面談"]} today="2026-09-23" />);
 
     expect(screen.queryByText(/一致するメッセージはありません/)).not.toBeInTheDocument();
   });
@@ -75,7 +75,7 @@ describe("SearchResults（ADR 0061）", () => {
         query="面談"
         filters={{ sender: { id: "u1", name: "佐藤 直樹" }, room: { id: "r2", kind: "private", name: "リリース準備" } }}
         results={results}
-        highlightTerms={["面談"]}
+        highlightTerms={["面談"]} today="2026-09-23"
         onClearFilter={onClearFilter}
       />,
     );
@@ -93,7 +93,7 @@ describe("SearchResults（ADR 0061）", () => {
   it("チップと「フィルター」は、どちらも同じダイアログを開く", async () => {
     const onOpenFilters = vi.fn();
     render(
-      <SearchResults query="面談" filters={{}} results={results} highlightTerms={["面談"]} onOpenFilters={onOpenFilters} />,
+      <SearchResults query="面談" filters={{}} results={results} highlightTerms={["面談"]} today="2026-09-23" onOpenFilters={onOpenFilters} />,
     );
 
     await userEvent.click(screen.getByRole("button", { name: "送信者" }));
@@ -102,7 +102,7 @@ describe("SearchResults（ADR 0061）", () => {
   });
 
   it("件数も並べ替えも出さない（ADR 0061 決定 4。O(1) で出せないため）", () => {
-    render(<SearchResults query="面談" filters={{}} results={results} highlightTerms={["面談"]} />);
+    render(<SearchResults query="面談" filters={{}} results={results} highlightTerms={["面談"]} today="2026-09-23" />);
 
     expect(screen.queryByText(/件の結果/)).not.toBeInTheDocument();
     expect(screen.queryByText(/並べ替え/)).not.toBeInTheDocument();

@@ -31,7 +31,7 @@ describe("SearchPanel（ADR 0061）", () => {
     expect(screen.queryByText(/で検索する/)).not.toBeInTheDocument();
   });
 
-  it("Enter で onSubmit、Esc で onClose を呼ぶ", async () => {
+  it("Enter で onSubmit、Esc で onClose を呼ぶ（Esc は useDismiss が 1 回だけ拾う）", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
     render(<SearchPanel value="面談" workspaceName="hibari 開発" onSubmit={onSubmit} onClose={onClose} />);

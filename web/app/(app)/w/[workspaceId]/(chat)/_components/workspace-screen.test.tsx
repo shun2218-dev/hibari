@@ -379,7 +379,8 @@ describe("WorkspaceScreen", () => {
     it("switches to another workspace", async () => {
       renderWithChat(<WorkspaceScreen />, routes(openRoom(design)));
 
-      await userEvent.click(await screen.findByRole("button", { name: /hibari 開発/ }));
+      // 帯の検索欄も「hibari 開発 内を検索する」なので、名前は完全一致で指す（ADR 0061 決定 9）
+      await userEvent.click(await screen.findByRole("button", { name: "hibari 開発" }));
       await userEvent.click(screen.getByRole("button", { name: /個人メモ/ }));
 
       expect(nav.router.push).toHaveBeenCalledWith("/w/ws-2");
@@ -2373,5 +2374,88 @@ describe("WorkspaceScreen", () => {
       expect(lastRoomId("ws-1")).toBeUndefined();
     });
   });
-});
+  describe("メッセージの検索（ADR 0061）", () => {
+    const hit = {
+      id: "m-hit",
+      room_id: "r-design",
+      seq: 7,
+      room: { id: "r-design", kind: "public", name: "デザインレビュー", dm_peer: null },
+      sender: naoki,
+      body: "明日の面談の資料を共有します",
+      thread_root_id: null,
+      created_at: "2026-09-13T02:00:00Z",
+      edited_at: null,
+      attachment_count: 0,
+    };
+    /** URL のクエリの組み立ては URLSearchParams に任せる（空白は `+` になる）。 */
+    const searchUrl = (path: string, q: string) => `${path}?${new URLSearchParams({ q })}`;
+    const searchRoute = (items: unknown[] = [hit], terms = ["面談"]) => ({
+      "GET /api/v1/workspaces/ws-1/search/messages?q=%E9%9D%A2%E8%AB%87&limit=20": () =>
+        json(200, { items, next_cursor: null, terms }),
+    });
 
+    it("帯の検索欄を押して打つと、条件が URL に載る", async () => {
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(design)));
+
+      await userEvent.click(await screen.findByRole("button", { name: "hibari 開発 内を検索する" }));
+      await userEvent.type(screen.getByRole("textbox", { name: "メッセージを検索" }), "面談{Enter}");
+
+      expect(nav.router.push).toHaveBeenCalledWith(searchUrl("/w/ws-1", "面談"));
+    });
+
+    it("今いるチャンネルに絞る近道は、条件に in: を足す", async () => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+      nav.pathname = "/w/ws-1/r/r-design";
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(design)));
+
+      await userEvent.click(await screen.findByRole("button", { name: "hibari 開発 内を検索する" }));
+      await userEvent.type(screen.getByRole("textbox", { name: "メッセージを検索" }), "面談");
+      await userEvent.click(screen.getByRole("button", { name: /デザインレビュー で検索する/ }));
+
+      expect(nav.router.push).toHaveBeenCalledWith(searchUrl("/w/ws-1/r/r-design", "in:#デザインレビュー 面談"));
+    });
+
+    it("?q= があると、サイドバーを畳んで結果を出す（押すとそのメッセージへ飛ぶ）", async () => {
+      nav.search = "q=面談";
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+      nav.pathname = "/w/ws-1/r/r-design";
+      renderWithChat(<WorkspaceScreen />, routes({ ...openRoom(design), ...searchRoute() }));
+
+      const results = within(await screen.findByRole("list", { name: "検索結果" }));
+      expect(results.getByRole("link")).toHaveAttribute("href", "/w/ws-1/r/r-design?m=m-hit");
+      // 一致した部分はマーカーで塗る（決定 7）
+      expect(results.getAllByText((_, el) => el?.tagName === "MARK").map((el) => el.textContent)).toContain("面談");
+      // 検索中はサイドバーを畳む（決定 9）
+      expect(screen.queryByRole("navigation", { name: "チャンネル" })).not.toBeInTheDocument();
+    });
+
+    it("0 件なら、打ち直しを促す", async () => {
+      nav.search = "q=面談";
+      renderWithChat(<WorkspaceScreen />, routes({ ...openRoom(design), ...searchRoute([], []) }));
+
+      expect(await screen.findByText("「面談」に一致するメッセージはありません")).toBeInTheDocument();
+    });
+
+    it("× を押すと検索をやめる（開いていたチャンネルに戻る）", async () => {
+      nav.search = "q=面談";
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+      nav.pathname = "/w/ws-1/r/r-design";
+      renderWithChat(<WorkspaceScreen />, routes({ ...openRoom(design), ...searchRoute() }));
+
+      await userEvent.click(await screen.findByRole("button", { name: "検索をやめる" }));
+
+      expect(nav.router.push).toHaveBeenCalledWith("/w/ws-1/r/r-design");
+    });
+
+    it("フィルターで送信者を選ぶと、入力欄の修飾子にも出る（同じ状態を編集する）", async () => {
+      nav.search = "q=面談";
+      renderWithChat(<WorkspaceScreen />, routes({ ...openRoom(design), ...searchRoute() }));
+
+      await userEvent.click(await screen.findByRole("button", { name: "フィルター" }));
+      await userEvent.type(within(await screen.findByRole("dialog")).getByLabelText("送信者"), "佐藤");
+      await userEvent.click(screen.getByRole("button", { name: naoki.display_name }));
+
+      expect(nav.router.push).toHaveBeenCalledWith(searchUrl("/w/ws-1", `from:"@${naoki.display_name}" 面談`));
+    });
+  });
+});

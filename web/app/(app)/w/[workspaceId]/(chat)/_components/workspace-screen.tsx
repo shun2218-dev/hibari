@@ -7,13 +7,16 @@ import { AccountMenu } from "@/components/chat/account-menu";
 import { ChatLayout } from "@/components/chat/chat-layout";
 import { RemovedFromWorkspace, ServerUnavailable } from "@/components/chat/chat-states";
 import { SideNavBar, type SideNavItems, type SideNavKey, SideNavRail } from "@/components/chat/side-nav";
+import { SearchPanel } from "@/components/chat/search-panel";
 import { Sidebar } from "@/components/chat/sidebar";
+import { TopBar } from "@/components/chat/top-bar";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { Avatar } from "@/components/ui/avatar";
 import { useSession, useSessionState } from "@/hooks/auth/use-session";
 import { useChatState, useChatStore, useRealtime } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
 import { withSide } from "@/lib/chat/format/links";
+import { formatSearchQuery, parseSearchQuery, type SearchQuery } from "@/lib/chat/search/search-query";
 import { formatTime } from "@/lib/chat/format/time";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
 import { countUnreadThreads } from "@/lib/chat/rules/threads";
@@ -32,6 +35,7 @@ import { RoomMembers } from "./room-members";
 import { RoomThread } from "./room-thread";
 import { RoomView } from "./room-view";
 import { ActivityPane, DmPane, LaterPane } from "./side-panes";
+import { WorkspaceSearch } from "./workspace-search";
 import { WorkspaceThreads } from "./workspace-threads";
 
 const SIDES: readonly SideNavKey[] = ["home", "dms", "activity", "later"];
@@ -75,6 +79,12 @@ export function WorkspaceScreen() {
   );
 
   const [search, setSearch] = useState("");
+  // メッセージの検索（ADR 0061）。条件は URL（`?q=`）が正で、リロードしても同じ結果に戻る。
+  // パスはそのままにして重ねるので、検索をやめれば開いていたルームに戻る
+  const searchText = searchParams.get("q") ?? "";
+  const searching = searchText.trim() !== "";
+  // 帯の検索欄を押して開いているパネル。中身は打っている途中の文字（URL にはまだ載せない）
+  const [searchDraft, setSearchDraft] = useState<string | null>(null);
   // ワークスペースの切り替えとアカウントのメニューは、サイドバーの上（header）と左のメニュー（rail）の 2 か所から開ける
   const [switcherFrom, setSwitcherFrom] = useState<"header" | "rail" | null>(null);
   const [accountMenuFrom, setAccountMenuFrom] = useState<"header" | "rail" | null>(null);
@@ -202,6 +212,39 @@ export function WorkspaceScreen() {
     const query = params.toString();
     router.replace(`/w/${workspaceId}/r/${roomId}${query === "" ? "" : `?${query}`}`);
   }
+
+  /**
+   * 検索の条件を URL に載せる（ADR 0061）。空にすると検索をやめて、開いていたルームに戻る。
+   * 検索中は右のパネル（スレッド・プロフィール）と飛び先を閉じる。結果を押せばまたそこへ飛ぶ。
+   */
+  function goSearch(text: string) {
+    const params = new URLSearchParams(searchParams);
+    if (text.trim() === "") params.delete("q");
+    else params.set("q", text);
+    params.delete("t");
+    params.delete("p");
+    params.delete("m");
+    const query = params.toString();
+    router.push(`${pathname}${query === "" ? "" : `?${query}`}`);
+  }
+
+  /** 名前から ID を引くための表（決定 5）。クライアントが知らないルーム = 読めないルーム。 */
+  const searchLookup = useMemo(
+    () => ({
+      rooms: (roomList?.ids ?? []).flatMap((id) => {
+        const room = rooms[id];
+        if (!room) return [];
+        const name = room.kind === "dm" ? (room.dm_peer?.display_name ?? "") : (room.name ?? "");
+        return name === "" ? [] : [{ id: room.id, kind: room.kind, name }];
+      }),
+      members: (members?.list ?? []).map((m) => ({ id: m.user.id, name: m.user.display_name })),
+    }),
+    [roomList, rooms, members],
+  );
+  const searchQuery: SearchQuery = useMemo(
+    () => parseSearchQuery(searchText, searchLookup),
+    [searchText, searchLookup],
+  );
 
   /** メンバーのパネルを開け閉てする。右のパネルは 1 つなので、開くならスレッドとプロフィールを閉じる。 */
   function toggleSidePanel(panel: "members") {
@@ -357,6 +400,40 @@ export function WorkspaceScreen() {
   return (
     <>
       <ChatLayout
+        topBar={
+          <TopBar
+            workspaceName={workspace.name}
+            query={searching ? searchText : undefined}
+            onOpenSearch={() => setSearchDraft(searchText)}
+            onClearQuery={() => goSearch("")}
+            // 履歴に行き先があるかはブラウザから読めないので、いつも押せるままにする（押しても何も起きないことがある）
+            canGoBack
+            canGoForward
+            onBack={() => router.back()}
+            onForward={() => router.forward()}
+            panel={
+              searchDraft === null ? undefined : (
+                <SearchPanel
+                  value={searchDraft}
+                  workspaceName={workspace.name}
+                  roomName={roomId ? roomViews.find((r) => r.id === roomId)?.name : undefined}
+                  onChange={setSearchDraft}
+                  onSubmit={() => {
+                    goSearch(searchDraft);
+                    setSearchDraft(null);
+                  }}
+                  onSearchInRoom={() => {
+                    const room = roomId ? searchLookup.rooms.find((r) => r.id === roomId) : undefined;
+                    if (!room) return;
+                    goSearch(formatSearchQuery({ ...parseSearchQuery(searchDraft, searchLookup), room }));
+                    setSearchDraft(null);
+                  }}
+                  onClose={() => setSearchDraft(null)}
+                />
+              )
+            }
+          />
+        }
         mobileView={mainKey !== undefined && listShownFor !== mainKey ? "room" : "list"}
         rail={
           <SideNavRail
@@ -404,9 +481,10 @@ export function WorkspaceScreen() {
         }
         // モバイルの下のメニュー。押したら、開いているルームはそのままにして一覧を見せる
         tabBar={<SideNavBar items={sideItems} current={side} onNavigate={() => setListShownFor(mainKey)} />}
-        sidebar={sidePane}
+        // 検索中はサイドバーを畳んで、メインの領域を全幅で使う（Slack と同じ。ADR 0061 決定 9）
+        sidebar={searching ? undefined : sidePane}
         panel={
-          roomId && profileId && !roomRemoved ? (
+          searching ? undefined : roomId && profileId && !roomRemoved ? (
             <RoomProfile
               key={profileId}
               workspaceId={workspaceId}
@@ -441,7 +519,15 @@ export function WorkspaceScreen() {
           ) : undefined
         }
       >
-        {roomId && (
+        {searching && (
+          <WorkspaceSearch
+            workspaceId={workspaceId}
+            query={searchQuery}
+            side={side}
+            onChangeQuery={(next) => goSearch(formatSearchQuery(next))}
+          />
+        )}
+        {!searching && roomId && (
           <RoomView
             key={roomId}
             workspaceId={workspaceId}
@@ -456,10 +542,10 @@ export function WorkspaceScreen() {
             onOpenProfile={(userId, sender) => openProfile(userId, { fromMembers: false, sender })}
           />
         )}
-        {threadsView && !removedFromWorkspace && (
+        {!searching && threadsView && !removedFromWorkspace && (
           <WorkspaceThreads workspaceId={workspaceId} onBack={() => setListShownFor(mainKey)} />
         )}
-        {!roomId && removedFromWorkspace && (
+        {!searching && !roomId && removedFromWorkspace && (
           <RemovedFromWorkspace workspaceName={workspace.name} onMove={leaveRemovedWorkspace} />
         )}
       </ChatLayout>

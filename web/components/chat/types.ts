@@ -208,19 +208,6 @@ export type SavedItemView =
       attachmentCount: number;
     };
 
-/**
- * 検索の絞り込み（ADR 0061 決定 5）。入力欄の修飾子（`in:` `from:` `before:`）と
- * フィルターのダイアログは、どちらもこの 1 つの値を編集する。
- */
-export type SearchFilters = {
-  /** 送信者（`from:`）。表示名で見せ、API には ID で送る。 */
-  sender?: { id: string; name: string };
-  /** 場所（`in:`）。チャンネルか DM。 */
-  room?: { id: string; kind: RoomKind; name: string };
-  /** 日付（`before:` / `after:` / `on:` / `during:` をまとめた見せ方）。 */
-  date?: { label: string };
-};
-
 /** 検索結果の 1 件（ADR 0061 決定 7）。押すと 6.11 の仕組みでそのメッセージへ飛ぶ。 */
 export type SearchResultView = {
   key: string;

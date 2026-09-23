@@ -1,5 +1,6 @@
 import type { RoomOption } from "@/components/chat/dialogs/search-filters";
-import type { SearchFilters, SearchResultView } from "@/components/chat/types";
+import type { SearchResultView } from "@/components/chat/types";
+import type { SearchFilters } from "@/lib/chat/search/search-query";
 
 import { miyuki, naoki, ryo, users, you } from "./users";
 
@@ -60,6 +61,9 @@ export const searchFilters: SearchFilters = {
   sender: { id: users.naoki.id, name: users.naoki.name },
   room: { id: "01J8ZH5KROOM0000000000002", kind: "private", name: "リリース準備" },
 };
+
+/** story の「今日」。日付のチップの文言を出すのに渡す。 */
+export const searchToday = "2026-09-23";
 
 /** フィルターのダイアログで「場所」に打ったときに出る候補。 */
 export const searchRoomOptions: RoomOption[] = [
