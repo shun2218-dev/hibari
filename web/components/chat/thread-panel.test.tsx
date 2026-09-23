@@ -57,7 +57,7 @@ describe("ThreadPanel", () => {
       </ThreadPanel>,
     );
 
-    expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "スレッドで返信する", hidden: true })).not.toBeInTheDocument();
   });
 
   it("says there are no replies yet", () => {

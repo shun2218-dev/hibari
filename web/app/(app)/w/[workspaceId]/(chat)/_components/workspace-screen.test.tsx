@@ -765,7 +765,7 @@ describe("WorkspaceScreen", () => {
           await userEvent.click(within(article).getByRole("button", { name: /2 件の返信/ }));
           expect(nav.router.push).toHaveBeenLastCalledWith("/w/ws-1/r/r-design?t=m-2");
 
-          await userEvent.click(within(article).getByRole("button", { name: "返信", hidden: true }));
+          await userEvent.click(within(article).getByRole("button", { name: "スレッドで返信する", hidden: true }));
           expect(nav.router.push).toHaveBeenCalledTimes(2);
         });
 
@@ -782,7 +782,7 @@ describe("WorkspaceScreen", () => {
           expect(panel().getByText("親のメッセージ")).toBeInTheDocument();
           expect(panel().getByText("2 件の返信")).toBeInTheDocument();
           // パネルの中では「返信」を出さない（入れ子にしない）
-          expect(panel().queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
+          expect(panel().queryByRole("button", { name: "スレッドで返信する", hidden: true })).not.toBeInTheDocument();
           await waitFor(() =>
             expect(api.calls.filter((c) => c.path === "/api/v1/rooms/r-design/threads/m-2/read").map((c) => JSON.parse(c.init.body as string))).toEqual([{ seq: 5 }]),
           );

@@ -102,7 +102,7 @@ describe("MessageItem", () => {
     expect(within(article).getByText("賛成です。")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "送信中" })).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "返信", hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "スレッドで返信する", hidden: true })).toBeInTheDocument();
   });
 
   // ADR 0049: 名前の横に出すのは絵文字だけで、文言はホバー（title）と読み上げで読む
@@ -162,7 +162,7 @@ describe("MessageItem", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("送信できませんでした");
     // 送信失敗には専用の操作があるので、ホバーの操作は出さない
-    expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "スレッドで返信する", hidden: true })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "再送する" }));
     await userEvent.click(screen.getByRole("button", { name: "削除" }));
@@ -184,7 +184,7 @@ describe("MessageItem", () => {
 
     expect(screen.getByText("このメッセージは削除されました")).toBeInTheDocument();
     expect(screen.queryByText("secret.pdf")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "スレッドで返信する", hidden: true })).not.toBeInTheDocument();
   });
 
   it("labels an edited message", () => {
@@ -306,7 +306,7 @@ describe("MessageItem actions", () => {
     expect(valueOf(editor)).toBe("賛成です。");
     // 編集中は本文・添付・ホバーの操作を出さない
     expect(screen.queryByText("x.pdf")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "スレッドで返信する", hidden: true })).not.toBeInTheDocument();
 
     await typeInEditor(editor, "！");
     expect(onChange).toHaveBeenLastCalledWith("賛成です。！");
@@ -404,11 +404,11 @@ describe("MessageItem actions", () => {
 
   it("hides the reply action inside a thread (threads are not nested)", () => {
     const { rerender } = render(<MessageItem message={message()} canReply={false} />);
-    expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "スレッドで返信する", hidden: true })).not.toBeInTheDocument();
 
     // 編集・削除の「…」は、返信を出さなくても残る
     rerender(<MessageItem message={message()} canReply={false} canEdit />);
-    expect(screen.queryByRole("button", { name: "返信", hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "スレッドで返信する", hidden: true })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "その他の操作", hidden: true })).toBeInTheDocument();
   });
 
