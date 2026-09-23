@@ -8,6 +8,8 @@
 import {
   AppWindow,
   Archive,
+  ArrowLeft,
+  ArrowRight,
   AtSign,
   Bell,
   BellOff,
@@ -31,6 +33,7 @@ import {
   Italic,
   Link,
   List,
+  ListFilter,
   ListOrdered,
   Lock,
   LogOut,
@@ -78,6 +81,8 @@ function withDefaults(Icon: LucideIcon) {
 export const BrowserIcon = withDefaults(AppWindow);
 export const CheckIcon = withDefaults(Check);
 export const ChevronDownIcon = withDefaults(ChevronDown);
+export const ArrowLeftIcon = withDefaults(ArrowLeft);
+export const ArrowRightIcon = withDefaults(ArrowRight);
 export const ChevronLeftIcon = withDefaults(ChevronLeft);
 export const ChevronRightIcon = withDefaults(ChevronRight);
 export const AlertIcon = withDefaults(CircleAlert);
@@ -94,6 +99,7 @@ export const MonitorIcon = withDefaults(Monitor);
 export const PaperclipIcon = withDefaults(Paperclip);
 export const PlusIcon = withDefaults(Plus);
 export const ReplyIcon = withDefaults(Reply);
+export const FilterIcon = withDefaults(ListFilter);
 export const SearchIcon = withDefaults(Search);
 export const SettingsIcon = withDefaults(Settings);
 export const PhoneIcon = withDefaults(Smartphone);

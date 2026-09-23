@@ -46,6 +46,7 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 | `--color-on-attention` | `#16201d` | `#101614` | `text-on-attention` | 未読バッジの数字 | `--on-live` |
 | `--color-pinned` | `#9a7b2f` | `#cbb06a` | `text-pinned` | ピン留めしたメッセージの印のアイコン（ADR 0054） | — |
 | `--color-pinned-subtle` | `#f5f1e3` | `#25241b` | `bg-pinned-subtle` | ピン留めしたメッセージの行の地（ADR 0054） | — |
+| `--color-highlight` | `#f3e2a9` | `#4d431c` | `bg-highlight` | 検索で一致した部分の地（ADR 0061。オーナーの確認: 2026-09-23）。マーカーで塗ったように見せる。琥珀・黄土より彩度を上げて、未読の印やピン留めの行と見分ける | —（Slack の黄色に当たるが、値は hibari の面に合わせた） |
 | `--color-danger` | `#b23a2e` | `#d9705f` | `text-danger` / `bg-danger` | 送信失敗、アップロード失敗、ログアウト・削除・キックなど破壊的な操作 | `--danger` |
 | `--color-danger-subtle` | `#f8e7e4` | `#33201d` | `bg-danger-subtle` | ログインエラー、失敗したファイルチップ、「取り消し済み」バッジ | `--danger-tint` |
 | `--color-online` | `#3e9c7e` | `#4fb08f` | `bg-online` | presence のオンラインのドット（オフラインはドットを出さない） | `--online` |

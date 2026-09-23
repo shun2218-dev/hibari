@@ -3,6 +3,7 @@ import { Fragment, type ReactNode } from "react";
 
 import { useOrigin } from "@/hooks/use-origin";
 import { type Block, type Inline, type ListBlock, parseBody } from "@/lib/chat/format/body-format";
+import { highlightParts } from "@/lib/chat/format/highlight";
 import { parsePermalink, permalinkPath } from "@/lib/chat/format/links";
 
 /**
@@ -24,6 +25,7 @@ export function MessageBody({
   onOpenProfile,
   trailing,
   interactive = true,
+  highlight,
   className,
 }: {
   body: string;
@@ -34,10 +36,12 @@ export function MessageBody({
   trailing?: ReactNode;
   /** リンクとチップを押せる要素で描くか。行全体がリンクの所では false にする。 */
   interactive?: boolean;
+  /** 検索で一致した部分をマーカーで塗る（ADR 0061 決定 7）。検索結果の 1 件だけで渡す。 */
+  highlight?: readonly string[];
   className?: string;
 }) {
   const origin = useOrigin();
-  const ctx: RenderContext = { names: mentionNames ?? {}, onOpenProfile, interactive, origin };
+  const ctx: RenderContext = { names: mentionNames ?? {}, onOpenProfile, interactive, origin, highlight };
   const blocks = parseBody(body);
   const last = blocks.at(-1);
   const trailingInside = trailing !== undefined && last?.type === "paragraph";
@@ -60,7 +64,25 @@ type RenderContext = {
   interactive: boolean;
   /** パーマリンクを見分けるためのオリジン。サーバーでの描画では undefined で、そのときは普通のリンクとして描く。 */
   origin: string | undefined;
+  /** 検索で一致した部分（ADR 0061 決定 7）。書式を解釈したあとの地の文にだけ重ねる。 */
+  highlight?: readonly string[];
 };
+
+/**
+ * 地の文のうち、検索で一致したところをマーカーで塗る。
+ * `<mark>` を使うのは、読み上げにも「強調された箇所」として伝わるため。色はブラウザの既定を打ち消してトークンで塗る。
+ */
+function HighlightedText({ text, terms }: { text: string; terms: readonly string[] }) {
+  return highlightParts(text, terms).map((part, i) =>
+    part.hit ? (
+      <mark key={i} className="bg-highlight text-text">
+        {part.text}
+      </mark>
+    ) : (
+      <Fragment key={i}>{part.text}</Fragment>
+    ),
+  );
+}
 
 /** 箇条書きの記号は段ごとに • → ◦ → ▪（Slack と同じ。docs/ui/tokens.md）。段は 3 つまで（ADR 0051 決定 2）。 */
 const BULLETS = ["list-disc", "list-circle", "list-square"] as const;
@@ -120,6 +142,9 @@ function Inlines({ nodes, ctx }: { nodes: Inline[]; ctx: RenderContext }) {
 function InlineView({ node, ctx }: { node: Inline; ctx: RenderContext }) {
   switch (node.type) {
     case "text":
+      if (ctx.highlight && ctx.highlight.length > 0) {
+        return <HighlightedText text={node.text} terms={ctx.highlight} />;
+      }
       return <Fragment>{node.text}</Fragment>;
     case "bold":
       return (

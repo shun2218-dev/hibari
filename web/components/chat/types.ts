@@ -208,6 +208,34 @@ export type SavedItemView =
       attachmentCount: number;
     };
 
+/**
+ * 検索の絞り込み（ADR 0061 決定 5）。入力欄の修飾子（`in:` `from:` `before:`）と
+ * フィルターのダイアログは、どちらもこの 1 つの値を編集する。
+ */
+export type SearchFilters = {
+  /** 送信者（`from:`）。表示名で見せ、API には ID で送る。 */
+  sender?: { id: string; name: string };
+  /** 場所（`in:`）。チャンネルか DM。 */
+  room?: { id: string; kind: RoomKind; name: string };
+  /** 日付（`before:` / `after:` / `on:` / `during:` をまとめた見せ方）。 */
+  date?: { label: string };
+};
+
+/** 検索結果の 1 件（ADR 0061 決定 7）。押すと 6.11 の仕組みでそのメッセージへ飛ぶ。 */
+export type SearchResultView = {
+  key: string;
+  /** 押したときの行き先（パーマリンク）。 */
+  href: string;
+  room: { kind: RoomKind; name: string };
+  sender: UserRef;
+  timeLabel: string;
+  body: string;
+  mentionNames?: Readonly<Record<string, string>>;
+  /** スレッドの返信なら、押したときにスレッドが開くことを添える。 */
+  inThread?: boolean;
+  attachmentCount: number;
+};
+
 /** アクティビティのタブ（ADR 0058 決定 3）。`all` 以外は 1 件の理由（`reasons`）で絞る。 */
 export type ActivityFilter = "all" | "dm" | "mention" | "thread" | "reaction";
 

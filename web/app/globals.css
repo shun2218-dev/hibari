@@ -41,6 +41,10 @@
   --color-pinned: #9a7b2f;
   --color-pinned-subtle: #f5f1e3;
 
+  /* ---- 色: 検索で一致した部分の地（ADR 0061）。マーカーで塗ったように見せる。
+         琥珀（いま起きていること）と黄土（ピン留め）より彩度を上げて、未読やピン留めの印と見分ける ---- */
+  --color-highlight: #f3e2a9;
+
   /* ---- 色: インラインコードの文字（ADR 0052。Slack と同じ橙の系統。押せるもの・いま起きていること・危険とは別の意味の色） ---- */
   --color-code-text: #a84e17;
 
@@ -216,6 +220,7 @@
   --color-on-attention: #101614;
   --color-pinned: #cbb06a;
   --color-pinned-subtle: #25241b;
+  --color-highlight: #4d431c;
 
   --color-code-text: #e8912d;
   --color-danger: #d9705f;
