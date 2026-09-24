@@ -147,11 +147,12 @@ email を検証するまで、chat の API と WebSocket は 403（`email-unveri
 | Go サーバー（API / WebSocket） | Fly app（`nrt`）/ `api.hibari-chat.com` | compose の `server`（Caddy の後ろ） |
 | Next.js | Fly app（`nrt`）/ `app.hibari-chat.com` | ホストで `make web` |
 | Storybook | Fly app（`nrt`、静的 + `auto_stop_machines`）/ `ui.hibari-chat.com` | ホスト |
+| ドキュメントサイト | Fly app（`nrt`、静的 + `auto_stop_machines`）/ `docs.hibari-chat.com`（ADR 0064） | ホストで `make site` |
 | Postgres | Fly app + ボリューム（自前） | compose の `postgres` |
 | Valkey | Fly app（自前・永続化なし） | compose の `redis` |
 | オブジェクトストレージ | Cloudflare R2 | compose の `minio` |
 
-3 つのサブドメインを同じ登録可能ドメインに置くのは、Refresh Token の Cookie（`SameSite=Strict`）を載せるため（上の `APP_BASE_URL`）。
+`app` / `api` / `ui` の 3 つのサブドメインを同じ登録可能ドメインに置くのは、Refresh Token の Cookie（`SameSite=Strict`）を載せるため（上の `APP_BASE_URL`）。
 
 ## ドメインと DNS（ADR 0046 の追記）
 
@@ -160,16 +161,25 @@ email を検証するまで、chat の API と WebSocket は 403（`email-unveri
 
 | 名前 | 種類 | 向け先 | 状態 |
 |---|---|---|---|
-| `app` / `api` / `ui` | A と AAAA（または `<アプリ名>.fly.dev` への CNAME） | それぞれの Fly app | Phase 7 のデプロイで足す |
+| `app` / `api` / `ui` / `docs` | A と AAAA（または `<アプリ名>.fly.dev` への CNAME） | それぞれの Fly app | Phase 7 のデプロイで足す |
 | `send.mail` / `rsend.mail` / `resend._domainkey.mail` | CNAME / CNAME / TXT | Resend | 足した（上の「Resend の準備」） |
 | `_dmarc` | TXT | — | 足した（`p=none`） |
 
-### Fly app に向ける手順（`app` / `api` / `ui`）
+### Fly app に向ける手順（`app` / `api` / `ui` / `docs`）
 
 1. `fly certs add api.hibari-chat.com -a <アプリ名>` で証明書を申し込み、出てきた値（A / AAAA か CNAME）を Cloudflare に足す。
 2. **Proxy status は DNS only（灰色の雲）にする。** Cloudflare のプロキシ（オレンジの雲）を通すと、Fly の証明書の自動発行とぶつかる。
    また、前段が Fly のプロキシである前提（`TRUSTED_PROXIES`。上の節と ADR 0017）が崩れ、クライアントの IP の取り方が変わる。
 3. `fly certs check api.hibari-chat.com -a <アプリ名>` で発行されたことを確かめる。
+
+## ドキュメントサイト（ADR 0064）
+
+`site/` を `npm run build` で静的に書き出し（`site/out/`）、Storybook と同じく静的なファイルを配る Fly app に載せる。
+
+- ビルドは `docs/` と `web/app/globals.css`（色のトークン）を読むので、リポジトリのルートで行う（`site/` だけを切り出してビルドしない）。
+- 環境変数は要らない。サーバーの処理はなく、検索の索引（`/api/search`）もビルドのときに作る。
+- **検索エンジンに載せない。** `robots.txt`（`Disallow: /`）と meta の noindex はビルドの出力に入っている。配る側で足すものはない。
+- `docs/` や OpenAPI（`docs/api/openapi.json`）を変えたら、サイトもビルドし直して出す。main へのリリースのたびに出し直す。
 
 ## ストレージ（ADR 0008 / 0046）
 
