@@ -11,8 +11,7 @@ import { parsePermalink, permalinkPath } from "@/lib/chat/format/links";
  * 本文の文字はすべて React のテキストとして出るので、`<script>` と書いても文字のまま見える（決定 3）。
  *
  * 色は `docs/ui/tokens.md` の決まりどおり。リンクと個人のチップは押せるものなので緑にする。
- * `@channel` / `@here` はルームの全員に飛ぶので、個人より目立たせる（ADR 0043。オーナーの判断、2026-09-19）。
- * 押せないので琥珀を当てられる。自分宛ての行の背景も琥珀なので、そこに埋もれないように地の琥珀で塗る。
+ * `@channel` / `@here` も個人と同じチップにする（ADR 0043 決定 3 の追記。オーナーの判断、2026-09-24）。押せないので、下線は出さない。
  *
  * 段落は改行をそのまま出す（`whitespace-pre-wrap`）。書式のない本文は段落 1 つになるので、いままでと同じ見た目になる。
  *
@@ -83,6 +82,9 @@ function HighlightedText({ text, terms }: { text: string; terms: readonly string
     ),
   );
 }
+
+/** メンションのチップ。個人も `@channel` / `@here` も同じ見た目にする（ADR 0043 決定 3 の追記）。入力欄の mention-node.ts と揃える。 */
+const MENTION_CHIP = "rounded-sm bg-primary-subtle px-1 font-semibold text-primary";
 
 /** 箇条書きの記号は段ごとに • → ◦ → ▪（Slack と同じ。docs/ui/tokens.md）。段は 3 つまで（ADR 0051 決定 2）。 */
 const BULLETS = ["list-disc", "list-circle", "list-square"] as const;
@@ -205,17 +207,13 @@ function InlineView({ node, ctx }: { node: Inline; ctx: RenderContext }) {
         const name = ctx.names[node.id];
         // 引けない ID はチップにしない。誰か分からないまま `@` を出すより、書かれたままの方が読める
         if (name === undefined) return <Fragment>{node.raw}</Fragment>;
-        if (!ctx.interactive) return <span className="rounded-sm bg-primary-subtle px-1 font-semibold text-primary">@{name}</span>;
+        if (!ctx.interactive) return <span className={MENTION_CHIP}>@{name}</span>;
         return (
-          <button
-            type="button"
-            onClick={() => ctx.onOpenProfile?.(node.id)}
-            className="rounded-sm bg-primary-subtle px-1 font-semibold text-primary hover:underline"
-          >
+          <button type="button" onClick={() => ctx.onOpenProfile?.(node.id)} className={`${MENTION_CHIP} hover:underline`}>
             @{name}
           </button>
         );
       }
-      return <span className="rounded-sm bg-attention px-1 font-semibold text-on-attention">@{node.kind}</span>;
+      return <span className={MENTION_CHIP}>@{node.kind}</span>;
   }
 }
