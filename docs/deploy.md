@@ -24,6 +24,7 @@
 ## APP_BASE_URL（ADR 0015 / 0021）
 
 Web クライアントの URL。メールのリンクの起点、WebSocket で許可する Origin、CORS で許可するオリジンに使う。
+Next.js も `og:image` などの絶対 URL の起点（`metadataBase`）に使う（ADR 0063 決定 7）。静的なページはビルドのときに決まるので、Next.js には**ビルドの環境**に置く。
 
 | 環境 | 値 |
 |---|---|

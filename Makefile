@@ -102,6 +102,12 @@ test: ## Go の全テストを -race 付きで実行する（テスト用 DB を
 lint: ## go vet と golangci-lint を実行する
 	$(RUN_GO) sh -c 'go vet ./... && $(GOTOOL) golangci-lint run ./...'
 
+# ---- ブランドの画像（ADR 0063） ----
+
+.PHONY: brand
+brand: ## docs/ui/brand/ のもとから、ファビコン・apple-icon・OGP 画像を web/ に書き出す（ホストの Chrome で撮る）
+	node tools/render-brand.mjs
+
 # ---- site（ドキュメントサイト。ホストで実行する。ADR 0064） ----
 
 .PHONY: site

@@ -2323,6 +2323,23 @@ describe("WorkspaceScreen", () => {
       await waitFor(() => expect(document.title).toBe(`${naoki.display_name} - hibari 開発 - hibari`));
     });
 
+    it("アクティビティがあるあいだ、ファビコンを琥珀の丸つきにする", async () => {
+      const icon = document.createElement("link");
+      icon.rel = "icon";
+      icon.type = "image/svg+xml";
+      icon.setAttribute("href", "/icon.svg");
+      document.head.append(icon);
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+      nav.pathname = "/w/ws-1/r/r-design";
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(design), "GET /api/v1/workspaces/ws-1/activity/unread_count": () => json(200, { count: 2 }) }),
+      );
+
+      await waitFor(() => expect(icon.getAttribute("href")).toBe("/icon-activity.svg"));
+      icon.remove();
+    });
+
     it("スレッドの一覧は「スレッド」", async () => {
       nav.pathname = "/w/ws-1/threads";
       renderWithChat(<WorkspaceScreen />, routes());

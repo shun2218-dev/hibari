@@ -15,6 +15,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { useSession, useSessionState } from "@/hooks/auth/use-session";
 import { useChatState, useChatStore, useRealtime } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
+import { useActivityFavicon } from "@/hooks/use-activity-favicon";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { channelTable } from "@/lib/chat/format/channel-links";
 import { withSide } from "@/lib/chat/format/links";
@@ -122,6 +123,8 @@ export function WorkspaceScreen() {
         })
       : undefined,
   );
+  // アクティビティがあるあいだ、ファビコンに琥珀の丸を付ける。数はタイトルと同じもの（ADR 0063 決定 3）
+  useActivityFavicon(unreadActivity > 0);
 
   useEffect(() => {
     store.loadWorkspaces();

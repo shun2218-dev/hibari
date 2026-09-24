@@ -66,6 +66,21 @@ Claude Design で作った画面を取り込んだもの。**Phase 6 で画面�
 - **書体の読み込み**: `next/font` で読み込む（`web/app/fonts.ts`、ADR 0018）。
 - **招待リンクの長さ**: コードは 22 文字（ADR 0011）。作成直後のダイアログでは折り返さずに横へスクロールさせる（`InviteCreatedDialog`）。
 
+## ブランド（ADR 0063）
+
+Claude Design のキャンバス「hibari ブランド（ロゴ・ファビコン・OGP・LP）」で作ったもの（2026-09-24 にオーナーが決定）。もとは `brand/` に置き、`make brand`（`tools/render-brand.mjs`）で `web/` に書き出す。書き出した画像は手で直さない。
+
+| もと | 何か | 書き出し先 |
+|---|---|---|
+| `brand/mark.svg` | マーク（ライト）。緑の角丸の四角に、さえずる雲雀の吹き出し | `web/app/icon.svg`（ファビコン）、`web/app/apple-icon.png`（180px）、`web/app/favicon.ico`（32px） |
+| `brand/mark-dark.svg` | マーク（ダーク）。ワードマークと並べてダークの画面に置くとき | — |
+| `brand/mark-activity.svg` | アクティビティがあるときのファビコン（右上に琥珀の丸） | `web/public/icon-activity.svg` |
+| `brand/ogp.html` | OGP 画像のもと（1200×630） | `web/app/opengraph-image.png` |
+
+- マークは、雲雀（ひばり）の冠羽と開いたくちばしを吹き出しの形に収めたもの。「さえずる」を「話す」に重ねている。尾が吹き出しの角、翼は切れ込み。
+- ファビコンと OGP 画像は画像なので CSS 変数を読めない。色は `globals.css` のライトの値をそのまま書いている（`tokens.md` の「色」の例外）。トークンの値を変えたら、もとを直して書き出し直す。
+- 文字の「hibari」をマークに置き換える画面（認証の画面、ワークスペースの切り替え）と LP は、まだ取り込んでいない。
+
 ## 画面の再現（Storybook。Phase 6.7.6 まで `/dev/preview`）
 
 `make web-ui` で Storybook（`http://localhost:6006`）を起動する。**story の id がそのままスクリーンショットのパス**で、
