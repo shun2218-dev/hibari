@@ -69,6 +69,7 @@
 | [0060](0060-web-directory-layout.md) | web/ のディレクトリ構成（hooks と Provider を lib から出し、lib は React に依存しないものだけにする） | 採用 |
 | [0061](0061-message-search.md) | メッセージの検索（Phase 6.16。pg_bigm の 2-gram 索引を「正規化した本文」に張り、authz は読めるルームの集合で絞る） | 採用 |
 | [0062](0062-channel-links.md) | 本文の `#チャンネル名` をチャンネルへのリンクにする（本文には `<#ULID>` で保存し、名前は読む側が引く） | 採用 |
+| [0063](0063-branding-and-page-metadata.md) | ブランドとページのメタデータ（タイトル・ファビコン・OGP・検索エンジン・LP。LP は apex に置き、`app.` は noindex） | 提案 |
 
 ## テンプレート
 
