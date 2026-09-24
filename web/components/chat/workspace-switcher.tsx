@@ -1,5 +1,6 @@
 import { Avatar } from "@/components/ui/avatar";
 import { PlusIcon } from "@/components/ui/icons";
+import { LogoMark } from "@/components/ui/logo";
 import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
 
@@ -30,7 +31,8 @@ export function WorkspaceSwitcher({
       className={placement === "rail" ? "top-0 left-full ml-8 w-60" : "top-14 left-3 w-60"}
       onDismiss={onDismiss}
     >
-      <p className="flex items-baseline gap-1.5 px-2.5 pt-1.5 pb-1">
+      <p className="flex items-center gap-1.5 px-2.5 pt-1.5 pb-1">
+        <LogoMark className="size-4" />
         <span className="text-sm font-bold text-text">hibari</span>
         <span className="font-mono text-2xs text-text-muted">workspaces</span>
       </p>

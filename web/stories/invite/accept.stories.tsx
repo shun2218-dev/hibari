@@ -30,7 +30,6 @@ type Story = StoryObj<typeof meta>;
 export const AcceptPreview: Story = {
   name: "招待: プレビュー",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () =>
     auth(<InviteAccept state={{ status: "valid", preview: invitePreview }} homeHref={noHref} />, inviteFooter),
 };
@@ -38,7 +37,6 @@ export const AcceptPreview: Story = {
 export const AcceptAlready: Story = {
   name: "招待: 参加済み",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () =>
     auth(<InviteAccept state={{ status: "already_member", preview: invitePreview }} homeHref={noHref} />, inviteFooter),
 };
@@ -46,20 +44,17 @@ export const AcceptAlready: Story = {
 export const AcceptInvalid: Story = {
   name: "招待: 無効",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<InviteAccept state={{ status: "invalid" }} homeHref={noHref} />, inviteFooter),
 };
 
 export const AcceptExpired: Story = {
   name: "招待: 期限切れ",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<InviteAccept state={{ status: "expired" }} homeHref={noHref} />, inviteFooter),
 };
 
 export const AcceptMaxed: Story = {
   name: "招待: 使用上限",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<InviteAccept state={{ status: "maxed" }} homeHref={noHref} />, inviteFooter),
 };

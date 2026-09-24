@@ -35,7 +35,6 @@ export const RemovedFromWorkspace: Story = {
 export const WorkspaceSwitcher: Story = {
   name: "ワークスペースの切り替え",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => chat({ switcher: true }),
 };
 
@@ -56,6 +55,6 @@ export const AccountMenu: Story = {
 export const EmptyWorkspaces: Story = {
   name: "ワークスペースが 0 件",
   tags: ["since:6-2"],
-  parameters: { screenshot: { source: "design", size: "480x600" } },
+  parameters: { screenshot: { size: "480x600" } },
   render: () => <NoWorkspaces />,
 };

@@ -34,7 +34,6 @@ type Story = StoryObj<typeof meta>;
 export const VerifyPending: Story = {
   name: "メール確認待ち",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<VerifyEmailPending email="naoki@example.com" onChangeEmail={noop} />),
 };
 
@@ -51,20 +50,18 @@ export const VerifyPendingBlocked: Story = {
 export const VerifyChecking: Story = {
   name: "メールを確認中",
   tags: ["since:1.5"],
-  parameters: { screenshot: { size: "480x360", source: "design" } },
+  parameters: { screenshot: { size: "480x360" } },
   render: () => auth(<VerifyEmailChecking />),
 };
 
 export const VerifyDone: Story = {
   name: "メール確認済み",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<VerifyEmailDone />),
 };
 
 export const VerifyInvalid: Story = {
   name: "確認リンクが無効",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<VerifyEmailInvalid />),
 };

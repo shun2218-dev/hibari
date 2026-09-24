@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 
+import { LogoMark } from "@/components/ui/logo";
 import { cx } from "@/lib/cx";
 
 /**
- * ログイン前の画面（認証・招待の受け入れ）の外枠。ロゴとカードを画面の中央に置く。
+ * ログイン前の画面（認証・招待の受け入れ）の外枠。ロゴ（マークと文字。ADR 0063）とカードを画面の中央に置く。
  * `footer` はカードの外の下に出す（「別のアカウントで開きますか？ ログアウト」）。
  */
 export function AuthShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
@@ -11,7 +12,10 @@ export function AuthShell({ children, footer }: { children: ReactNode; footer?: 
     <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-4 py-10">
       <div className="flex w-full max-w-100 flex-col items-center gap-5">
         <header className="flex flex-col items-center gap-1">
-          <p className="text-2xl font-bold tracking-tight text-text">hibari</p>
+          <p className="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-text">
+            <LogoMark className="size-10" />
+            hibari
+          </p>
           <p className="text-xs text-text-muted">小さな集まりのためのチャット</p>
         </header>
         <div className="w-full rounded-lg border border-border bg-surface p-6">{children}</div>
