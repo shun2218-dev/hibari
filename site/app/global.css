@@ -2,3 +2,38 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 @import "fumadocs-openapi/css/preset.css";
+/* hibari の色のトークン（web/app/globals.css から scripts/tokens.mjs が抜き出す。ADR 0064 決定 3） */
+@import "./tokens.gen.css";
+
+/*
+ * ダークは hibari と同じく `<html data-theme="dark">` で切り替え、OS の設定には追従しない（CLAUDE.md「デザイン」）。
+ * Tailwind の既定の dark: は OS の設定を見るので、属性を見るように変える（Fumadocs の部品も dark: を使っている）。
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Fumadocs の色を hibari の役割ベースのトークンに向ける。値は書かない（CLAUDE.md ルール 7）。
+ * Fumadocs はダークの値を .dark に置いているが、data-theme で切り替えるので .dark は付かない。
+ * トークンの側がダークで上書きされるので、ここは両方のテーマで同じ対応でよい。
+ * セレクタを `html` にするのは、`:root, [data-theme="dark"]` と書くと lightningcss がトークンの :root と 1 つにまとめ、
+ * ライトの値がダークの上書きより後ろに来てしまうため（ブラウザで確かめた）。
+ */
+html {
+  --color-fd-background: var(--color-background);
+  --color-fd-foreground: var(--color-text);
+  --color-fd-muted: var(--color-surface-muted);
+  --color-fd-muted-foreground: var(--color-text-muted);
+  --color-fd-popover: var(--color-surface);
+  --color-fd-popover-foreground: var(--color-text);
+  --color-fd-card: var(--color-surface);
+  --color-fd-card-foreground: var(--color-text);
+  --color-fd-border: var(--color-border);
+  --color-fd-primary: var(--color-primary);
+  --color-fd-primary-foreground: var(--color-on-primary);
+  --color-fd-secondary: var(--color-surface-muted);
+  --color-fd-secondary-foreground: var(--color-text);
+  --color-fd-accent: var(--color-primary-subtle);
+  --color-fd-accent-foreground: var(--color-text);
+  --color-fd-ring: var(--color-primary);
+  --color-fd-overlay: var(--color-overlay);
+}

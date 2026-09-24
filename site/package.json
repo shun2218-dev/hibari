@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/tokens.mjs",
     "dev": "next dev --port 3100",
+    "prebuild": "node scripts/tokens.mjs",
     "build": "next build",
     "start": "serve out",
     "typecheck": "next typegen && tsc --noEmit",
