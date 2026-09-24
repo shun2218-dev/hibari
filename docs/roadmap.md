@@ -784,7 +784,7 @@ DoD の 3 項目は表示だけで満たせる。
 **DoD**
 - [x] 各書式が表示され、既存のメッセージの表示が壊れない
       （記法は `body-format.test.ts`、描画は `message-body.test.tsx` の「MessageBody の書式」。書式のない本文が改行を保った段落 1 つになることも同じ節。アプリ由来のスクリーンショットを撮り直して既存の画面が変わらないことも確かめた）
-- [x] `<script>` などを書いても、HTML として解釈されない（`message-body.test.tsx` の「<script> や HTML を書いても…」。`design-rules.test.ts` が `components/chat` の `dangerouslySetInnerHTML` を禁じる）
+- [x] `<script>` などを書いても、HTML として解釈されない（`message-body.test.tsx` の「`<script>` や HTML を書いても…」。`design-rules.test.ts` が `components/chat` の `dangerouslySetInnerHTML` を禁じる）
 - [x] URL がリンクになり、別のタブで開く（`message-body.test.tsx` の「URL は別のタブで開くリンクにする」。パーマリンクだけは同じタブ）
 - [x] コードの中のメンションはチップにならず、件数にも数えられない
       （Web は `message-body.test.tsx`、API は `internal/chat/mention_test.go` の `TestMentionInCodeIsNotCounted`。コードの範囲は `testdata/format/mentions.json` を Go と TypeScript の両方が読む。入力欄の変換は `mentions.test.ts`）
