@@ -22,7 +22,7 @@ func RedisURL(t testing.TB) string {
 	return lookup(t, "TEST_REDIS_URL")
 }
 
-// S3Env は統合テスト用の S3 API（MinIO）の接続先。バケットは compose の minio-init（CI では workflow）が作る。
+// S3Env は統合テスト用の S3 API（RustFS）の接続先。バケットは compose の s3-init（CI では workflow）が作る。
 type S3Env struct {
 	Endpoint        string
 	Bucket          string

@@ -38,10 +38,10 @@ Go 製のリアルタイムチャットアプリ。Slack / Discord 型の「ワ�
 - ID: ULID（`oklog/ulid`）。DB には `uuid` 型で保存する
 - パスワードハッシュ: Argon2id（`golang.org/x/crypto/argon2`）
 - JWT: `github.com/lestrrat-go/jwx/v3`
-- オブジェクトストレージ: S3 API（`aws-sdk-go-v2`）。ローカルは MinIO、本番は R2（暫定）
+- オブジェクトストレージ: S3 API（`aws-sdk-go-v2`）。ローカルは RustFS（ADR 0008 の追記）、本番は R2
 - フロント: Next.js（App Router / TypeScript / Tailwind CSS）。実装は Phase 6 から
   - 入力欄のリッチテキスト: Lexical（ADR 0052）。版を固定し、import するのは `web/components/chat/editor/` だけ
-- ローカル環境: Docker Compose（Postgres / Redis / MinIO / Go アプリ）
+- ローカル環境: Docker Compose（Postgres / Redis / RustFS / Go アプリ）
   - Next.js だけはコンテナに入れず、ホストで起動する。macOS の bind mount は遅く、`node_modules` がそこに直撃するため
   - Go のモジュールキャッシュとビルドキャッシュは named volume に置く
   - goose / sqlc などのツールは go.mod の `tool` で固定し、ホストへのグローバルインストールに依存しない

@@ -64,10 +64,10 @@ describe("toMemberRowView", () => {
   });
 
   it("uses the signed url of the avatar when there is one", () => {
-    const urls = { [miyuki.id]: "https://minio.test/avatar.png", [naoki.id]: null };
+    const urls = { [miyuki.id]: "https://storage.test/avatar.png", [naoki.id]: null };
 
     expect(toMemberRowView(member(miyuki), { userId: naoki.id, myRole: "owner", avatarUrls: urls }).avatarUrl).toBe(
-      "https://minio.test/avatar.png",
+      "https://storage.test/avatar.png",
     );
     expect(toMemberRowView(member(naoki), { userId: miyuki.id, myRole: "owner", avatarUrls: urls }).avatarUrl).toBeUndefined();
   });

@@ -1,6 +1,6 @@
 // Package storage は S3 API のオブジェクトストレージへのアクセスを抽象化する（ADR 0008）。
 //
-// 使う操作は署名付き URL の発行（PUT / GET）、HEAD、DELETE だけに絞る。S3 互換のストレージ（MinIO、R2 など）は
+// 使う操作は署名付き URL の発行（PUT / GET）、HEAD、DELETE だけに絞る。S3 互換のストレージ（RustFS、R2 など）は
 // 互換性が完全ではないので、それ以外の機能（ACL、presigned POST、バケットの作成など）に依存しない。
 // ファイルの中身はサーバーを経由させない（CLAUDE.md ルール 10）ので、GET / PUT そのものは持たない。
 package storage
@@ -24,7 +24,7 @@ var ErrNotFound = errors.New("storage: object not found")
 
 // Config は S3 API の接続先。
 type Config struct {
-	// Endpoint はサーバーが HEAD / DELETE に使う URL（例: http://minio:9000）。
+	// Endpoint はサーバーが HEAD / DELETE に使う URL（例: http://s3:9000）。
 	Endpoint string
 	// PublicEndpoint は署名付き URL に使う URL（例: http://localhost:9000）。空なら Endpoint。
 	// 署名にはホスト名が含まれるので、クライアントから到達できるホスト名で署名しないと、URL が使えない（ADR 0013）。
@@ -33,7 +33,7 @@ type Config struct {
 	Bucket          string
 	AccessKeyID     string
 	SecretAccessKey string
-	// UsePathStyle は、バケット名をホスト名ではなくパスに入れるか。MinIO はホスト名のバケットを解決できないので true にする。
+	// UsePathStyle は、バケット名をホスト名ではなくパスに入れるか。ローカルの RustFS はホスト名のバケットを解決できないので true にする。
 	UsePathStyle bool
 }
 

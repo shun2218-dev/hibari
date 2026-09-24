@@ -161,7 +161,7 @@ func New(t testing.TB, opts ...Option) *Env {
 	}
 }
 
-// NewStorage はテスト用のバケット（MinIO）に接続した S3 を返す。
+// NewStorage はテスト用のバケット（RustFS）に接続した S3 を返す。
 // テストはコンテナの中から署名付き URL にも PUT するので、公開エンドポイントは分けない。
 func NewStorage(t testing.TB) *storage.S3 {
 	t.Helper()
