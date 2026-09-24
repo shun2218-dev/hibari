@@ -59,7 +59,8 @@ Go 製のリアルタイムチャットアプリ。Slack / Discord 型の「ワ�
 3. **メッセージの順序は `created_at` で決めない。**
    ルームごとに単調増加する `seq` を採番し、それを順序の唯一の根拠にする。
 4. **WebSocket だけでメッセージ配信を完結させない。**
-   クライアントは最後に受信した seq を保持し、再接続時に REST（`after_seq`）で差分を取得する。
+   クライアントはルームごとに最後に受信した `change_seq` を保持し、再接続時や番号の欠けを見つけたときに REST（`after_change_seq`）で差分を取得する。
+   `seq` は順序の根拠、`change_seq` は編集と削除も拾える同期のカーソル（ADR 0014）。`after_seq` は履歴を読むのに使う。
    Redis Pub/Sub は at-most-once なので、配信は落ちうる前提で設計する。
 5. **自動で変わる presence / typing は Postgres に書かない。** Redis に TTL 付きで置く。
    本人が選んだ設定（手動の離席、カスタムステータス）は残らなければ困るので Postgres に持つ。2 つを 1 つの状態に合わせるのは読む側（ADR 0049）。
@@ -178,7 +179,7 @@ hibari/
 - ユニット / コンポーネントテスト: Vitest + React Testing Library。
 - E2E: Playwright（Phase 6 で、ローカルの compose に対して実行する）。
 - presentational コンポーネントは、status ごとの表示（pending / sent / failed / deleted など）をテストする。
-- データ層（fetch ラッパーの単一フライトの refresh、WS の再接続と `after_seq` の同期、楽観的更新）はユニットテストを厚くする。
+- データ層（fetch ラッパーの単一フライトの refresh、WS の再接続と `after_change_seq` の同期、楽観的更新）はユニットテストを厚くする。
 
 ## Git 運用（Git Flow）
 
