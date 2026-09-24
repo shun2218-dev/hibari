@@ -140,6 +140,8 @@ Claude Design に頼むもの:
 - 文字の「hibari」をロゴに置き換える（`auth-shell.tsx`、`workspace-switcher.tsx`）のは、Claude Design 側の画面を直して、スクリーンショットを撮り直してから行う。
 - **LP はライトだけにする。** テーマの設定は `app.` の localStorage にあり（`lib/theme.ts`）、オリジンの違う apex からは読めない。
   LP のためだけにテーマの受け渡しを作るほどの価値はない。
+- **追記（2026-09-24、オーナーの確認）**: LP の最初の見出しに、文字サイズの段階の外のトークンを足した（`--text-display` 52px / `--text-display-sm` 32px）。
+  段階の最大（26px）では LP の見出しとして弱かったため。アプリの画面では使わない。OGP 画像の文字は画像の中なので、トークンにしない。
 
 ### 7. 絶対 URL の起点は環境変数
 
