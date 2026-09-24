@@ -6,6 +6,7 @@ import { type RefObject, useEffect, useEffectEvent } from "react";
 
 import { $exportBody } from "@/components/chat/editor/export";
 import { $importBody } from "@/components/chat/editor/import";
+import type { ChannelTable } from "@/lib/chat/format/channel-links";
 
 /** 読み込み直したときの更新に付ける印。書き出しの通知を出さない（呼ぶ側から来た値を返さない）ために使う。 */
 export const SYNC_TAG = "hibari-sync";
@@ -20,11 +21,14 @@ export const SYNC_TAG = "hibari-sync";
 export function SyncPlugin({
   value,
   names,
+  channels,
   lastValueRef,
   onChange,
 }: {
   value: string;
   names: Readonly<Record<string, string>>;
+  /** 本文の `<#ID>` の名前（ADR 0062）。 */
+  channels: ChannelTable;
   lastValueRef: RefObject<string>;
   onChange?: (value: string) => void;
 }) {
@@ -35,13 +39,13 @@ export function SyncPlugin({
     lastValueRef.current = value;
     editor.update(
       () => {
-        $importBody(value, names);
+        $importBody(value, names, channels);
         // 送信のあとの空は、続けて打てるようにキャレットを残す
         if (editor.getRootElement() === document.activeElement) $getRoot().selectEnd();
       },
       { tag: SYNC_TAG },
     );
-  }, [editor, value, names, lastValueRef]);
+  }, [editor, value, names, channels, lastValueRef]);
 
   // 呼ぶ側は onChange を毎回作り直すことが多い。そのたびに購読し直さないよう、最新の関数だけを覚えておく
   const notify = useEffectEvent((next: string) => onChange?.(next));

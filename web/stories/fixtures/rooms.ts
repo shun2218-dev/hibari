@@ -1,6 +1,7 @@
 import type { RoomMemberRowView } from "@/components/chat/dialogs/room-settings";
 import type { DmCandidateView } from "@/components/chat/dialogs/start-dm";
 import type { RoomMemberView, RoomSummaryView } from "@/components/chat/types";
+import type { ChannelTable } from "@/lib/chat/format/channel-links";
 
 import { activityItems } from "./activity";
 import { miyuki, myStatus, naoki, ryo, statuses, users, you } from "./users";
@@ -196,3 +197,21 @@ export const dmRooms: RoomSummaryView[] = [
     mentionCount: 0,
   },
 ];
+
+/**
+ * 本文の `<#ID>`（ADR 0062）の名前を引く表。本文のトークンは ULID の 26 文字でないと読まれないので、
+ * サイドバーの ID（`room-design` など）とは別に、同じ名前のチャンネルへ ULID を振る。
+ */
+export const channelIds = {
+  design: "01J8ZK3X5R8Q2W4E6T8Y0C0001",
+  chat: "01J8ZK3X5R8Q2W4E6T8Y0C0002",
+  release: "01J8ZK3X5R8Q2W4E6T8Y0C0003",
+  /** 表にない（参加していない private か、削除済み）。 */
+  hidden: "01J8ZK3X5R8Q2W4E6T8Y0C0009",
+} as const;
+
+export const channelLinkTable: ChannelTable = {
+  [channelIds.design]: { id: channelIds.design, name: "デザインレビュー", private: false, archived: false },
+  [channelIds.chat]: { id: channelIds.chat, name: "雑談", private: false, archived: false },
+  [channelIds.release]: { id: channelIds.release, name: "リリース準備", private: true, archived: false },
+};

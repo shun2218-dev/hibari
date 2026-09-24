@@ -2,6 +2,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { ChannelLinksProvider } from "@/providers/channel-links-provider";
+
 import { MessageBody } from "./message-body";
 
 const ALICE = "01J8ZZZZZZZZZZZZZZZZZZZZZA";
@@ -224,5 +226,65 @@ describe("MessageBody の書式（ADR 0051）", () => {
     // 地の文の 1 つだけが塗られる
     expect(marks()).toEqual(["面談"]);
     expect(screen.getByText("面談", { selector: "code" })).toBeInTheDocument();
+  });
+
+  describe("チャンネルへのリンク（ADR 0062 決定 3）", () => {
+    const PUBLIC = "01J8ZZZZZZZZZZZZZZZZZZZZZP";
+    const PRIVATE = "01J8ZZZZZZZZZZZZZZZZZZZZZQ";
+    const UNKNOWN = "01J8ZZZZZZZZZZZZZZZZZZZZZU";
+    const channels = {
+      [PUBLIC]: { id: PUBLIC, name: "雑談", private: false, archived: false },
+      [PRIVATE]: { id: PRIVATE, name: "リリース準備", private: true, archived: false },
+    };
+    const withChannels = (body: string, interactive = true) =>
+      render(
+        <ChannelLinksProvider value={{ channels, href: (id) => `/w/ws/r/${id}` }}>
+          <MessageBody body={body} interactive={interactive} />
+        </ChannelLinksProvider>,
+      );
+
+    it("public は #名前 のチップで、押すとそのチャンネルへ移る", () => {
+      withChannels(`<#${PUBLIC}> を見て`);
+
+      const link = screen.getByRole("link", { name: "#雑談" });
+      expect(link).toHaveAttribute("href", `/w/ws/r/${PUBLIC}`);
+      expect(link).toHaveClass("bg-primary-subtle", "text-primary");
+    });
+
+    it("private は # の代わりに鍵のアイコンを付ける", () => {
+      withChannels(`<#${PRIVATE}>`);
+
+      const link = screen.getByRole("link", { name: "非公開リリース準備" });
+      expect(link).toHaveAttribute("href", `/w/ws/r/${PRIVATE}`);
+      expect(link).not.toHaveTextContent("#");
+    });
+
+    it("引けないものは押せない「アクセスできないチャンネル」にし、ID を出さない", () => {
+      withChannels(`<#${UNKNOWN}>`);
+
+      expect(screen.queryByRole("link")).not.toBeInTheDocument();
+      expect(screen.getByText("#アクセスできないチャンネル")).toHaveClass("text-text-muted");
+      expect(document.body).not.toHaveTextContent(UNKNOWN);
+    });
+
+    it("Provider の外では引けないものとして描く", () => {
+      render(<MessageBody body={`<#${PUBLIC}>`} />);
+
+      expect(screen.getByText("#アクセスできないチャンネル")).toBeInTheDocument();
+    });
+
+    it("行全体がリンクの所では押せないチップにする", () => {
+      withChannels(`<#${PUBLIC}>`, false);
+
+      expect(screen.queryByRole("link")).not.toBeInTheDocument();
+      expect(screen.getByText("#雑談")).toHaveClass("bg-primary-subtle");
+    });
+
+    it("コードの中はリンクにしない", () => {
+      withChannels(`\`<#${PUBLIC}>\``);
+
+      expect(screen.queryByRole("link")).not.toBeInTheDocument();
+      expect(screen.getByText(`<#${PUBLIC}>`)).toBeInTheDocument();
+    });
   });
 });

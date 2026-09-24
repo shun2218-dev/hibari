@@ -4,16 +4,16 @@ import type { LexicalEditor } from "lexical";
 import { useLayoutEffect, useState } from "react";
 
 import { Avatar } from "@/components/ui/avatar";
-import { MegaphoneIcon } from "@/components/ui/icons";
+import { HashIcon, LockIcon, MegaphoneIcon } from "@/components/ui/icons";
 import { Portal } from "@/components/ui/portal";
 import { type PanelPlacement, placeAboveCaret } from "@/lib/anchored-position";
 import { cx } from "@/lib/cx";
 
-import { MentionOption } from "./mention";
+import { MentionOption, type Suggestion } from "./mention";
 
 /**
  * 補完の候補。キャレットの上に出す（下は入力欄の外で切れる）。位置は `placeAboveCaret` で決め、Portal で body の直下に置く。
- * 候補の見た目は textarea のときと同じ（ADR 0043）。
+ * 候補の見た目は textarea のときと同じ（ADR 0043）。`#` のときはチャンネルの候補を、サイドバーと同じ印（`#` / 鍵）で並べる（ADR 0062）。
  */
 export function MentionMenu({
   options,
@@ -60,9 +60,12 @@ export function MentionMenu({
         style={placement === null ? { top: 0, left: 0, opacity: 0 } : { top: placement.top, left: placement.left }}
         className="fixed z-50 w-80 overflow-hidden rounded-md border border-border bg-surface shadow-overlay"
       >
-        <ul aria-label="メンションの候補" role="listbox" className="max-h-64 overflow-y-auto py-1">
+        <ul
+          aria-label={options[0]?.suggestion.type === "channel" ? "チャンネルの候補" : "メンションの候補"}
+          role="listbox"
+          className="max-h-64 overflow-y-auto py-1"
+        >
           {options.map((option, i) => {
-            const candidate = option.candidate;
             return (
               <li key={option.key} role="option" aria-selected={i === active}>
                 <button
@@ -76,22 +79,7 @@ export function MentionMenu({
                   onMouseEnter={() => onHighlight(i)}
                   className={cx("flex w-full items-center gap-2 px-3 py-1.5 text-left", i === active && "bg-surface-muted")}
                 >
-                  {candidate.kind === "user" ? (
-                    <>
-                      <Avatar id={candidate.id} name={candidate.name} imageUrl={candidate.avatarUrl} size="sm" />
-                      <span className="truncate text-base font-semibold text-text">{candidate.name}</span>
-                      <span className="truncate text-xs text-text-muted">@{candidate.handle}</span>
-                    </>
-                  ) : (
-                    <>
-                      {/* 全員宛ては個人の写真の代わりにメガホン（Slack と同じ。オーナーの要望、2026-09-21） */}
-                      <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-text-secondary">
-                        <MegaphoneIcon className="size-4" />
-                      </span>
-                      <span className="text-base font-semibold text-text">@{candidate.kind}</span>
-                      <span className="truncate text-xs text-text-muted">{candidate.description}</span>
-                    </>
-                  )}
+                  <SuggestionRow suggestion={option.suggestion} />
                 </button>
               </li>
             );
@@ -105,5 +93,43 @@ export function MentionMenu({
         </p>
       </div>
     </Portal>
+  );
+}
+
+function SuggestionRow({ suggestion }: { suggestion: Suggestion }) {
+  if (suggestion.type === "channel") {
+    const { channel } = suggestion;
+    return (
+      <>
+        <span className="flex size-6 shrink-0 items-center justify-center text-text-secondary">
+          {channel.private ? (
+            <LockIcon aria-label="非公開" aria-hidden={false} role="img" className="size-3.5" />
+          ) : (
+            <HashIcon className="size-4" />
+          )}
+        </span>
+        <span className="truncate text-base font-semibold text-text">{channel.name}</span>
+      </>
+    );
+  }
+  const candidate = suggestion.candidate;
+  if (candidate.kind === "user") {
+    return (
+      <>
+        <Avatar id={candidate.id} name={candidate.name} imageUrl={candidate.avatarUrl} size="sm" />
+        <span className="truncate text-base font-semibold text-text">{candidate.name}</span>
+        <span className="truncate text-xs text-text-muted">@{candidate.handle}</span>
+      </>
+    );
+  }
+  return (
+    <>
+      {/* 全員宛ては個人の写真の代わりにメガホン（Slack と同じ。オーナーの要望、2026-09-21） */}
+      <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-text-secondary">
+        <MegaphoneIcon className="size-4" />
+      </span>
+      <span className="text-base font-semibold text-text">@{candidate.kind}</span>
+      <span className="truncate text-xs text-text-muted">{candidate.description}</span>
+    </>
   );
 }

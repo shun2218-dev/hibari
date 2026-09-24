@@ -5,6 +5,7 @@ import { $isLinkNode } from "@lexical/link";
 import { $getRoot, $getSelection, $isRangeSelection, $isTextNode, TextNode } from "lexical";
 
 import { $createMentionNode } from "@/components/chat/editor/mention-node";
+import { type ChannelTable, matchTypedChannel } from "@/lib/chat/format/channel-links";
 import type { MentionCandidate } from "@/lib/chat/format/mentions";
 
 /**
@@ -53,6 +54,42 @@ export function $convertTypedMentions(candidates: readonly MentionCandidate[], o
       if (caret !== null && caret >= end && $isTextNode(after)) after.select(caret - end, caret - end);
       // 残りのノードは、次の変換（ノードが変わると呼ばれる）か次の呼び出しで見る
       if (!only) $convertTypedMentions(candidates);
+      return;
+    }
+  }
+}
+
+// ---- 手で打った `#名前` をチャンネルへのリンクにする（ADR 0062 決定 4） ----
+
+/** 語の始まり（行の頭か空白の後ろ）の `#`。URL の `#` や `C#` では変えない。 */
+const TYPED_CHANNEL = /(^|\s)#/gu;
+
+/**
+ * 手で打った `#名前` を、チャンネルに一致すればリンクのノードにする。コードとリンクの中は変えない。
+ * 名前には空白を含められるので、後ろが区切りになるいちばん長い名前を選ぶ（matchTypedChannel）。
+ * 打っている途中と送信の Enter の扱いは $convertTypedMentions と同じ。
+ */
+export function $convertTypedChannels(channels: ChannelTable, only?: TextNode): void {
+  const nodes = only ? [only] : $getRoot().getAllTextNodes();
+  for (const node of nodes) {
+    if (!node.isAttached() || node.getMode() !== "normal" || node.hasFormat("code")) continue;
+    if ($isCodeNode(node.getTopLevelElement()) || $isLinkNode(node.getParent())) continue;
+    const text = node.getTextContent();
+    const selection = $getSelection();
+    const caret = $isRangeSelection(selection) && selection.anchor.key === node.getKey() ? selection.anchor.offset : null;
+    for (const m of text.matchAll(TYPED_CHANNEL)) {
+      const at = m.index + m[1].length;
+      const match = matchTypedChannel(channels, text.slice(at + 1));
+      if (!match) continue;
+      const end = at + 1 + match.length;
+      // 打っている途中は、文字の終わりの `#名前` を変えない（もっと長い名前を打っているかもしれない）
+      if (only && end === text.length) continue;
+      const link = $createMentionNode(`<#${match.channel.id}>`, `#${match.channel.name}`);
+      const parts = node.splitText(...[at, end].filter((o) => o > 0 && o < text.length));
+      parts[at > 0 ? 1 : 0].replace(link);
+      const after = link.getNextSibling();
+      if (caret !== null && caret >= end && $isTextNode(after)) after.select(caret - end, caret - end);
+      if (!only) $convertTypedChannels(channels);
       return;
     }
   }

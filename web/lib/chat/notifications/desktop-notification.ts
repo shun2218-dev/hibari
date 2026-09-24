@@ -1,6 +1,7 @@
 import type { ActivityReason, FollowedThread, Message, NotifyLevel, Room } from "@/lib/api/types.gen";
 
 import { type Block, type Inline, parseBody } from "@/lib/chat/format/body-format";
+import { type ChannelTable, channelLabel } from "@/lib/chat/format/channel-links";
 import { permalinkPath } from "@/lib/chat/format/links";
 import { isMuted } from "./mute";
 import { roomName } from "@/lib/chat/views/rooms";
@@ -90,13 +91,13 @@ const BODY_MAX = 100;
  * 通知の中身（ADR 0057 決定 3）。タイトルは「送信者（#チャンネル）」、DM は送信者だけ。本文は平文にして 100 文字まで。
  * url は押したときに開く先（ADR 0042 の `?m=`。スレッドの返信は `?t=` でパネルも開く）。
  */
-export function notificationContent(message: Message, room: Room): NotificationContent {
+export function notificationContent(message: Message, room: Room, channels: ChannelTable = {}): NotificationContent {
   // メンションの名前はメッセージの mentions に載っている（ADR 0041）。一覧を別に引かない
   const names: Record<string, string> = {};
   for (const m of message.mentions) if (m.user) names[m.user.id] = m.user.display_name;
   const sender = message.sender.display_name;
   const place = room.kind === "dm" ? "" : message.thread_root_id !== null ? `#${roomName(room)} のスレッド` : `#${roomName(room)}`;
-  const text = plainText(message.body, names);
+  const text = plainText(message.body, names, channels);
   const body = text === "" ? "ファイルを送信しました" : text.length > BODY_MAX ? `${text.slice(0, BODY_MAX)}…` : text;
   const url = permalinkPath({
     workspaceId: room.workspace_id,
@@ -107,27 +108,33 @@ export function notificationContent(message: Message, room: Room): NotificationC
   return { title: place === "" ? sender : `${sender}（${place}）`, body, tag: message.id, url };
 }
 
-/** 本文を平文にする。書式の記号を外し、メンションを `@名前`、リンクを文字（なければ URL）にする。 */
-export function plainText(body: string, names: Readonly<Record<string, string>>): string {
-  return parseBody(body).map((b) => blockText(b, names)).join(" ").replace(/\s+/gu, " ").trim();
+/**
+ * 本文を平文にする。書式の記号を外し、メンションを `@名前`、チャンネルへのリンクを `#名前`（ADR 0062 決定 5）、
+ * リンクを文字（なければ URL）にする。
+ */
+export function plainText(body: string, names: Readonly<Record<string, string>>, channels: ChannelTable = {}): string {
+  const ctx = { names, channels };
+  return parseBody(body).map((b) => blockText(b, ctx)).join(" ").replace(/\s+/gu, " ").trim();
 }
 
-function blockText(block: Block, names: Readonly<Record<string, string>>): string {
+type PlainContext = { names: Readonly<Record<string, string>>; channels: ChannelTable };
+
+function blockText(block: Block, ctx: PlainContext): string {
   switch (block.type) {
     case "paragraph":
-      return inlineText(block.children, names);
+      return inlineText(block.children, ctx);
     case "code":
       return block.text;
     case "quote":
-      return block.children.map((b) => blockText(b, names)).join(" ");
+      return block.children.map((b) => blockText(b, ctx)).join(" ");
     case "list":
       return block.items
-        .map((item) => [inlineText(item.children, names), ...item.sublists.map((l) => blockText(l, names))].join(" "))
+        .map((item) => [inlineText(item.children, ctx), ...item.sublists.map((l) => blockText(l, ctx))].join(" "))
         .join(" ");
   }
 }
 
-function inlineText(inlines: readonly Inline[], names: Readonly<Record<string, string>>): string {
+function inlineText(inlines: readonly Inline[], ctx: PlainContext): string {
   return inlines
     .map((i) => {
       switch (i.type) {
@@ -137,9 +144,11 @@ function inlineText(inlines: readonly Inline[], names: Readonly<Record<string, s
         case "link":
           return i.label ?? i.url;
         case "mention":
-          return i.kind === "user" ? `@${names[i.id] ?? "不明なユーザー"}` : `@${i.kind}`;
+          return i.kind === "user" ? `@${ctx.names[i.id] ?? "不明なユーザー"}` : `@${i.kind}`;
+        case "channel":
+          return channelLabel(ctx.channels, i.id);
         default:
-          return inlineText(i.children, names);
+          return inlineText(i.children, ctx);
       }
     })
     .join("");

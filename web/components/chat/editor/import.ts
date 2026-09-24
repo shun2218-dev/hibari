@@ -13,6 +13,7 @@ import {
 } from "lexical";
 
 import { type Block, type Inline, type ListBlock, parseBody } from "@/lib/chat/format/body-format";
+import type { ChannelTable } from "@/lib/chat/format/channel-links";
 
 import { $createMentionNode } from "./mention-node";
 
@@ -21,15 +22,20 @@ import { $createMentionNode } from "./mention-node";
  *
  * 解釈は表示と同じ `parseBody`（ADR 0051）。表示では太字なのに入力欄では記号が見える、というずれを作らないため。
  * names は ID から表示名を引く表。引けない ID はトークンのまま文字として入れる（表示と同じ扱い）。
+ * channels はチャンネルへのリンク（`<#ID>`。ADR 0062）の名前を引く表。引けないものは同じくトークンの文字のまま入れ、
+ * 保存すると元のトークンに戻る（決定 4）。
  */
-export function $importBody(body: string, names: Readonly<Record<string, string>> = {}): void {
+export function $importBody(body: string, names: Readonly<Record<string, string>> = {}, channels: ChannelTable = {}): void {
   const root = $getRoot();
   root.clear();
-  for (const block of parseBody(body)) root.append(...blockNodes(block, names));
+  const lookup: Lookup = { names, channels };
+  for (const block of parseBody(body)) root.append(...blockNodes(block, lookup));
   if (root.getChildrenSize() === 0) root.append($createParagraphNode());
 }
 
-function blockNodes(block: Block, names: Readonly<Record<string, string>>): ElementNode[] {
+type Lookup = { names: Readonly<Record<string, string>>; channels: ChannelTable };
+
+function blockNodes(block: Block, names: Lookup): ElementNode[] {
   switch (block.type) {
     case "paragraph":
       return [$createParagraphNode().append(...inlineNodes(block.children, [], names))];
@@ -44,7 +50,7 @@ function blockNodes(block: Block, names: Readonly<Record<string, string>>): Elem
   }
 }
 
-function quoteLines(blocks: Block[], names: Readonly<Record<string, string>>): LexicalNode[] {
+function quoteLines(blocks: Block[], names: Lookup): LexicalNode[] {
   const nodes: LexicalNode[] = [];
   const pushLine = (line: LexicalNode[]) => {
     if (nodes.length > 0) nodes.push($createLineBreakNode());
@@ -66,7 +72,7 @@ function quoteLines(blocks: Block[], names: Readonly<Record<string, string>>): L
   return nodes;
 }
 
-function listNode(list: ListBlock, names: Readonly<Record<string, string>>) {
+function listNode(list: ListBlock, names: Lookup) {
   const node = $createListNode(list.ordered ? "number" : "bullet", list.items[0]?.number ?? 1);
   for (const item of list.items) {
     node.append($createListItemNode().append(...inlineNodes(item.children, [], names)));
@@ -86,7 +92,7 @@ const FORMAT_OF: Readonly<Record<"bold" | "italic" | "underline" | "strike", Tex
   strike: "strikethrough",
 };
 
-function inlineNodes(nodes: Inline[], formats: TextFormatType[], names: Readonly<Record<string, string>>): LexicalNode[] {
+function inlineNodes(nodes: Inline[], formats: TextFormatType[], names: Lookup): LexicalNode[] {
   return nodes.flatMap((node): LexicalNode[] => {
     switch (node.type) {
       case "text":
@@ -102,8 +108,13 @@ function inlineNodes(nodes: Inline[], formats: TextFormatType[], names: Readonly
         return [$createLinkNode(node.url).append(formatted($createTextNode(node.label ?? node.url), formats))];
       case "mention": {
         if (node.kind !== "user") return [$createMentionNode(node.raw, `@${node.kind}`)];
-        const name = names[node.id];
+        const name = names.names[node.id];
         return [name === undefined ? formatted($createTextNode(node.raw), formats) : $createMentionNode(node.raw, `@${name}`)];
+      }
+      case "channel": {
+        // 入力欄のチップは文字だけで描くので、private も `#名前` にする（鍵のアイコンは本文の表示だけ）
+        const channel = names.channels[node.id];
+        return [channel === undefined ? formatted($createTextNode(node.raw), formats) : $createMentionNode(node.raw, `#${channel.name}`)];
       }
     }
   });

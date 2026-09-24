@@ -4,6 +4,7 @@ import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { MentionCandidate } from "@/lib/chat/format/mentions";
+import { ChannelLinksProvider } from "@/providers/channel-links-provider";
 
 import { AttachmentChip, Composer, TypingIndicator } from "./composer";
 import { pasteInEditor, typeInEditor, valueOf } from "./editor/test-utils";
@@ -240,6 +241,108 @@ describe("Composer の @ 補完（ADR 0043 / 0052 決定 4）", () => {
     await typeInEditor(screen.getByRole("textbox", { name: "メッセージ" }), "@ali");
 
     expect(queryCandidates()).not.toBeInTheDocument();
+  });
+});
+
+describe("Composer の # 補完（ADR 0062 決定 4）", () => {
+  const ZATSUDAN = "01J8ZZZZZZZZZZZZZZZZZZZZZ1";
+  const RELEASE = "01J8ZZZZZZZZZZZZZZZZZZZZZ2";
+  const REVIEW = "01J8ZZZZZZZZZZZZZZZZZZZZZ3";
+  const DESIGN = "01J8ZZZZZZZZZZZZZZZZZZZZZ4";
+  const OLD = "01J8ZZZZZZZZZZZZZZZZZZZZZ5";
+  const channels = {
+    [ZATSUDAN]: { id: ZATSUDAN, name: "雑談", private: false, archived: false },
+    [RELEASE]: { id: RELEASE, name: "リリース準備", private: true, archived: false },
+    [REVIEW]: { id: REVIEW, name: "デザインレビュー", private: false, archived: false },
+    [DESIGN]: { id: DESIGN, name: "デザイン", private: false, archived: false },
+    [OLD]: { id: OLD, name: "デザイン旧", private: false, archived: true },
+  };
+
+  function Harness({ onSend }: { onSend?: () => void } = {}) {
+    const [value, setValue] = useState("");
+    return (
+      <ChannelLinksProvider value={{ channels, href: (id) => `/r/${id}` }}>
+        <Composer value={value} onChange={setValue} canSend onSend={onSend} mentionCandidates={candidates} />
+      </ChannelLinksProvider>
+    );
+  }
+
+  const channelList = () => screen.getByRole("listbox", { name: "チャンネルの候補" });
+  const queryChannelList = () => screen.queryByRole("listbox", { name: "チャンネルの候補" });
+
+  it("# を打つとチャンネルの候補が出て、選ぶと #名前 のチップが入り、値は <#ID> になる", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await typeInEditor(input, "見て #雑");
+    await userEvent.click(within(channelList()).getByText("雑談"));
+
+    expect(within(input).getByText("#雑談")).toHaveClass("text-primary");
+    expect(valueOf(input)).toBe(`見て <#${ZATSUDAN}> `);
+    expect(queryChannelList()).not.toBeInTheDocument();
+  });
+
+  it("前方一致を先に並べ、アーカイブ済みは出さない。private には鍵の印を付ける", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await typeInEditor(input, "#デザ");
+    expect(within(channelList()).getAllByRole("option").map((o) => o.textContent)).toEqual(["デザイン", "デザインレビュー"]);
+
+    await userEvent.keyboard("{Escape}");
+    await typeInEditor(input, " #リリ");
+    expect(within(channelList()).getByRole("img", { name: "非公開" })).toBeInTheDocument();
+  });
+
+  it("Enter で確定する（送信しない）", async () => {
+    const onSend = vi.fn();
+    render(<Harness onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await typeInEditor(input, "#デザ");
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+
+    expect(valueOf(input)).toBe(`<#${REVIEW}> `);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("URL の # では開かない", async () => {
+    render(<Harness />);
+
+    await typeInEditor(screen.getByRole("textbox", { name: "メッセージ" }), "https://example.com/#雑");
+
+    expect(queryChannelList()).not.toBeInTheDocument();
+  });
+
+  it("手で打った #名前 も、後ろに空白を打つとチップになる（いちばん長い一致）", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await typeInEditor(input, "#デザインレビュー を見て");
+    await userEvent.keyboard("{Escape}");
+
+    expect(valueOf(input)).toBe(`<#${REVIEW}> を見て`);
+  });
+
+  it("送るときは、末尾に残った #名前 も変える", async () => {
+    const onSend = vi.fn();
+    render(<Harness onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await typeInEditor(input, "移動: #雑談");
+    await userEvent.keyboard("{Escape}{Enter}");
+
+    expect(onSend).toHaveBeenCalledOnce();
+    expect(valueOf(input)).toBe(`移動: <#${ZATSUDAN}>`);
+  });
+
+  it("一致しない #名前 は文字のまま", async () => {
+    render(<Harness />);
+    const input = screen.getByRole("textbox", { name: "メッセージ" });
+
+    await typeInEditor(input, "#1 と #TODO です");
+
+    expect(valueOf(input)).toBe("#1 と #TODO です");
   });
 });
 
