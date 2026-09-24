@@ -96,6 +96,10 @@ GitHub でもこの文字は消えて見えていたので、`docs/` の側を�
   - `globals.css` をそのまま import しない。hibari は Tailwind の既定のテーマを捨てているので（`--*: initial`）、Fumadocs の部品の `rounded-xl` や `shadow-lg` が黙って消え、文字の大きさも hibari の段階に変わって見出しが小さくなった（試作で確かめた）。
 - ダークは hibari と同じく `data-theme` で切り替え、OS の設定には追従しない（`RootProvider` の `attribute: 'data-theme'`、`enableSystem: false`）。
 - ロゴは ADR 0063 決定 6 で作るものを使う。
+- **追記（2026-09-24、実装）**:
+  - 色の変数は `site/scripts/tokens.mjs` が `web/app/globals.css` の `@theme static` と `[data-theme="dark"]` の直下から `--color-*` だけを抜き出し、`site/app/tokens.gen.css`（コミットしない）に書く。`npm run dev` / `npm run build` の前に動く。
+  - Fumadocs は `dark:` を定義しておらず、Tailwind の既定（OS の設定）のままなので、`@custom-variant dark` を `data-theme` に向ける。向けないと、OS がダークのときに一部の部品だけダークになる。
+  - Fumadocs の色の変数は `html` に対応させる。`:root, [data-theme="dark"]` と書くと、lightningcss がトークンの `:root` と 1 つのルールにまとめ、ライトの値がダークの上書きより後ろに来た（ブラウザで確かめた）。
 
 ### 4. サイトの構成
 
