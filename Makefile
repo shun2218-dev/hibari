@@ -102,6 +102,12 @@ test: ## Go の全テストを -race 付きで実行する（テスト用 DB を
 lint: ## go vet と golangci-lint を実行する
 	$(RUN_GO) sh -c 'go vet ./... && $(GOTOOL) golangci-lint run ./...'
 
+# ---- site（ドキュメントサイト。ホストで実行する。ADR 0064） ----
+
+.PHONY: site
+site: ## ホストでドキュメントサイトを起動する（http://localhost:3100。docs/ を編集するとそのまま反映される）
+	cd site && npm install && npm run dev
+
 # ---- web（ホストで実行する） ----
 
 .PHONY: web-ui

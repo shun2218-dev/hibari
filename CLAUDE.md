@@ -21,6 +21,8 @@ Go 製のリアルタイムチャットアプリ。Slack / Discord 型の「ワ�
 | `docs/adr/` | 設計判断の記録 |
 | `docs/events.md` | WebSocket イベントのスキーマ（Phase 4 で作成） |
 | `docs/ui/` | Claude Design から取り込んだ画面仕様（Phase 1.5 で作成） |
+| `docs/api/openapi.json` | REST の API リファレンス。`internal/httpx/openapi_test.go` が Go の型から生成する（`make openapi`）。手で編集しない |
+| `docs/guide/` | ドキュメントサイトの入口の説明（ADR 0064）。詳しいことは ADR へリンクし、写さない |
 
 これらと矛盾する実装をしない。設計を変えたくなったら、**実装する前に**指摘してオーナーの確認を取る。
 
@@ -117,6 +119,7 @@ hibari/
     adr/
     ui/            # Phase 1.5
   web/             # 骨組みは Phase 1、実装は Phase 6
+  site/            # ドキュメントサイト（Fumadocs。docs/ をそのまま読む。ADR 0064）
   tools/
   compose.yaml
 ```
