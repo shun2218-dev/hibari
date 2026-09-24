@@ -124,6 +124,10 @@ web-ui: ## ホストで Storybook を起動する（docs/ui の画面。撮影�
 web-shots: ## Storybook から docs/ui のスクリーンショットを撮り直す（名前を省くと app 由来を全部。要 make web-ui）
 	node tools/shoot-ui.mjs $(names)
 
+.PHONY: lp-image
+lp-image: ## Storybook から LP の画面写真（web/components/lp/channel.png）を撮り直す（要 make web-ui。ADR 0063）
+	node tools/shoot-ui.mjs --lp-image
+
 .PHONY: web
 web: ## ホストで Next.js の開発サーバーを起動する（API は compose の server）
 	@test -f web/.env.local || cp web/.env.example web/.env.local

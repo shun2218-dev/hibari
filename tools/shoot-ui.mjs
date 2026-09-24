@@ -4,6 +4,7 @@
 //   npm --prefix web run storybook          # 撮影のもとになる Storybook を起動する
 //   make web-shots                          # source: "app" の PNG を全部撮り直す
 //   make web-shots names="chat/room-header-settings chat/mobile-room"
+//   make lp-image                           # LP の画面写真（web/components/lp/channel.png）を撮り直す
 //
 // - 撮るのは `screenshot` の tag が付いた story だけ（部品の story は撮らない。ADR 0047 決定 12）。
 // - 名前は PNG のパスそのもの。story の id の `--` より前がディレクトリで、`-` で区切る
@@ -20,12 +21,23 @@ import { fileURLToPath } from "node:url";
 const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:6006";
 const PORT = Number(process.env.CDP_PORT ?? 9333);
-const OUT_DIR = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "docs/ui/screenshots");
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const OUT_DIR = path.join(ROOT, "docs/ui/screenshots");
 /** 画面の描画とフォントの読み込みを待つ時間。 */
 const SETTLE_MS = 2_000;
 /** 大きさを読むまでの待ち方（decorator が <html> に書くのを待つ）。 */
 const POLL_MS = 100;
 const POLL_MAX = 100;
+
+/**
+ * LP に載せる画面写真（ADR 0063 決定 6）。デザインのキャンバスでは docs/ui の PNG（Claude Design 由来）を貼っていたが、
+ * LP には実装の画面を載せたいので、同じ story を Storybook から撮る（Claude Design 由来の画像を実装から撮り直す方針。ADR 0063 決定 6 の追記）。
+ * docs/ui の PNG は source のとおり撮らずに残し、撮ったものは web/ にだけ書く。
+ */
+const LP_IMAGE = {
+  name: "chat/timeline/default",
+  file: path.join(ROOT, "web/components/lp/channel.png"),
+};
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -55,7 +67,8 @@ const stories = new Map(
     .map((entry) => [screenshotName(entry.id), entry.id]),
 );
 
-const asked = process.argv.slice(2);
+const lpImage = process.argv.includes("--lp-image");
+const asked = lpImage ? [LP_IMAGE.name] : process.argv.slice(2);
 for (const name of asked) {
   if (!stories.has(name)) {
     console.error(`story がない: ${name}（名前は docs/ui/screenshots/ のパスと同じ）`);
@@ -185,7 +198,7 @@ async function shoot({ send }, name) {
     const url = `${BASE_URL}/iframe.html?id=${stories.get(name)}&viewMode=story`;
     await send("Page.navigate", { url }, sessionId);
     const { size, source } = await readShotParams(send, sessionId);
-    if (source !== "app") {
+    if (source !== "app" && !lpImage) {
       console.log(`${name} -> 撮らない（source: ${source}。Claude Design から取り込んだ PNG）`);
       return;
     }
@@ -197,7 +210,7 @@ async function shoot({ send }, name) {
     await send("Page.navigate", { url }, sessionId);
     await settle(send, sessionId);
     const { data } = await send("Page.captureScreenshot", { format: "png" }, sessionId);
-    const file = path.join(OUT_DIR, `${name}.png`);
+    const file = lpImage ? LP_IMAGE.file : path.join(OUT_DIR, `${name}.png`);
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, Buffer.from(data, "base64"));
     console.log(`${name} -> ${path.relative(process.cwd(), file)} (${size})`);

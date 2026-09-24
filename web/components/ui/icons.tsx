@@ -51,6 +51,7 @@ import {
   Paperclip,
   Plus,
   Reply,
+  RefreshCw,
   RotateCw,
   Search,
   SendHorizontal,
@@ -131,6 +132,8 @@ export const CopyIcon = withDefaults(Copy);
 export const LogOutIcon = withDefaults(LogOut);
 export const PencilIcon = withDefaults(Pencil);
 export const RetryIcon = withDefaults(RotateCw);
+/** LP の「すぐ届いて、落とさない」。再送（RetryIcon）とは別で、行き来して同期することを表す（ADR 0063） */
+export const SyncIcon = withDefaults(RefreshCw);
 export const UserMinusIcon = withDefaults(UserMinus);
 
 // ---- ピン留めと「後で」（ADR 0054） ----

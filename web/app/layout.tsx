@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { APP_DESCRIPTION, APP_NAME, TITLE_TEMPLATE } from "@/lib/document-title";
 import { paneSizeBootScript } from "@/lib/pane-size";
+import { appBaseUrl } from "@/lib/site";
 import { themeBootScript } from "@/lib/theme";
 import { SessionProvider } from "@/providers/session-provider";
 
@@ -17,7 +18,7 @@ export const metadata: Metadata = {
   // 画像は app/opengraph-image.png（共通の 1 枚。ADR 0063 決定 4）。X も og:image を使う
   twitter: { card: "summary_large_image" },
   // og:image などの絶対 URL の起点（ADR 0063 決定 7）。静的なページはビルドのときに決まるので、ビルドの環境に置く
-  metadataBase: new URL(process.env.APP_BASE_URL ?? "http://localhost:3000"),
+  metadataBase: appBaseUrl(),
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

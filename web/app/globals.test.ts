@@ -39,6 +39,9 @@ describe("globals.css", () => {
       "text-text-muted",
       "text-lg",
       "text-display",
+      // LP だけに使うトークン（ADR 0063）
+      "leading-tight",
+      "shadow-showcase",
       "rounded-md",
       "p-2",
       "md:flex",
@@ -47,7 +50,7 @@ describe("globals.css", () => {
       "text-red-500",
       "bg-white",
       "rounded-xl",
-      "leading-tight",
+      "leading-snug",
       "shadow-lg",
       "sm:flex",
       // 中身に合わせて伸びる入力欄と、伸縮できるエリア（ADR 0048）
@@ -79,6 +82,8 @@ describe("globals.css", () => {
     [".text-text-muted", "var(--color-text-muted)"],
     [".text-lg", "var(--text-lg)"],
     [".text-display", "var(--text-display)"],
+    [".leading-tight", "var(--leading-tight)"],
+    [".shadow-showcase", "0 24px 48px -24px"],
     [".rounded-md", "var(--radius-md)"],
     [".p-2", "calc(var(--spacing) * 2)"],
   ])("maps %s to a token", (selector, value) => {
@@ -93,7 +98,7 @@ describe("globals.css", () => {
     expect(css).not.toContain("prefers-color-scheme");
   });
 
-  it.each([".text-red-500", ".bg-white", ".rounded-xl", ".leading-tight", ".shadow-lg", ".sm\\:flex"])(
+  it.each([".text-red-500", ".bg-white", ".rounded-xl", ".leading-snug", ".shadow-lg", ".sm\\:flex"])(
     "does not generate %s from the Tailwind default theme",
     (selector) => {
       expect(css).not.toContain(`${selector} {`);

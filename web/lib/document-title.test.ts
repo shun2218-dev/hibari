@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { activityPart, chatTitle, documentTitle, TITLE_TEMPLATE, titleParts } from "./document-title";
+import { activityPart, chatTitle, documentTitle, LP_TITLE, TITLE_TEMPLATE, titleParts } from "./document-title";
 
 describe("documentTitle", () => {
   it("部分を ` - ` で並べ、最後にアプリ名を付ける", () => {
@@ -71,5 +71,11 @@ describe("chatTitle", () => {
     },
   ])("$name", ({ input, want }) => {
     expect(chatTitle(input)).toBe(want);
+  });
+});
+
+describe("LP_TITLE", () => {
+  it("アプリ名のあとに説明を続け、句点は付けない（ADR 0063 決定 1）", () => {
+    expect(LP_TITLE).toBe("hibari - ワークスペースとチャンネルで話す、リアルタイムチャット");
   });
 });

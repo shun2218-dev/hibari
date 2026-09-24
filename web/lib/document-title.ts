@@ -14,6 +14,9 @@ export const APP_DESCRIPTION = "ワークスペースとチャンネルで話す
 
 export const TITLE_SEPARATOR = " - ";
 
+/** LP のタイトル（ADR 0063 決定 1）。LP だけは開いているものがないので、アプリ名を先に置き、説明を続ける（句点は付けない）。 */
+export const LP_TITLE = `${APP_NAME}${TITLE_SEPARATOR}${APP_DESCRIPTION.replace(/。$/, "")}`;
+
 /** root の `metadata.title.template`。固定のタイトルとブラウザで組み立てるタイトルの形をそろえるため、ここに置く。 */
 export const TITLE_TEMPLATE = `%s${TITLE_SEPARATOR}${APP_NAME}`;
 
