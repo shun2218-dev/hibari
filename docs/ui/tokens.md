@@ -98,9 +98,10 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 | `--font-weight-semibold` | 600 | `font-semibold` | ボタン、ヘッダー、バッジ、自分の名前 |
 | `--font-weight-bold` | 700 | `font-bold` | 見出し、ロゴ |
 | `--leading-none` | 1 | `leading-none` | アイコンと並べる 1 行の要素 |
+| `--leading-tight` | 1.35 | `leading-tight` | LP の最初の見出し（`text-display`）だけ。アプリの画面では使わない（ADR 0063） |
 | `--leading-normal` | 1.6 | `leading-normal` | エラーメッセージ、送信失敗の表示など短い補足 |
 | `--leading-relaxed` | 1.75 | `leading-relaxed` | メッセージ本文、説明文。デザインで「半日開いたままでも疲れない」として確定した値 |
-| `--tracking-tight` | -0.015em | `tracking-tight` | ロゴ |
+| `--tracking-tight` | -0.015em | `tracking-tight` | ロゴ、LP の最初の見出し |
 
 デザインには行送り 1.7 と 1.8 も少数あったが、1.75 と見分けがつかないので `--leading-relaxed` に寄せた。
 
@@ -179,6 +180,7 @@ Tailwind の列は、そのトークンから生成される代表的なユー�
 | トークン | 値 | Tailwind | 用途 |
 |---|---|---|---|
 | `--shadow-overlay` | `0 8px 24px var(--color-overlay)` | `shadow-overlay` | ダイアログ、ポップオーバー（ロールの選択、管理できない理由） |
+| `--shadow-showcase` | `0 24px 48px -24px rgb(22 32 29 / 0.25)` | `shadow-showcase` | LP の画面写真だけ。LP はライトだけなので、ダークの値はない（ADR 0063） |
 | `--ease-slide` | `cubic-bezier(0.32, 0.72, 0, 1)` | `ease-slide` | モバイルで一覧 ↔ 詳細をスライドするとき（`duration-280` と組み合わせる） |
 | `--animate-spin` | 900ms で 1 回転 | `animate-spin` | 再接続中バナーのスピナー |
 | `--animate-typing-dot` | 1.2s で点滅 | `animate-typing-dot` | 入力中インジケータの「・・・」。3 つの点を 0.2s ずつずらす |

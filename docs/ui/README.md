@@ -81,7 +81,11 @@ Claude Design のキャンバス「hibari ブランド（ロゴ・ファビコ�
 - ファビコンと OGP 画像は画像なので CSS 変数を読めない。色は `globals.css` のライトの値をそのまま書いている（`tokens.md` の「色」の例外）。トークンの値を変えたら、もとを直して書き出し直す。
 - 画面の中のマークは `web/components/ui/logo.tsx`（`LogoMark`）。色はトークンで塗るので、ダークではダークのマークになる。
 - 文字の「hibari」をマークに置き換えた画面（認証の画面・招待の受け入れ・ワークスペースがない画面・ワークスペースの切り替え）は、Storybook から撮り直し、出どころを `design` から `app` に変えた（26 枚。オーナーの判断: 2026-09-25）。
-- LP は、まだ取り込んでいない。
+- **LP**（`hibari-chat.com`。ADR 0063 決定 5 / 6）: キャンバスの案（デスクトップ 1280 幅・モバイル 390 幅）を `web/components/lp/landing-page.tsx` に実装し、
+  Storybook から撮った（`screenshots/lp/desktop.png`、`screenshots/lp/mobile.png`。ページの全体を 1 枚に撮る）。ライトだけ。
+  - 画面写真は、キャンバスでは docs/ui の PNG（Claude Design 由来）を貼っていたが、実装の画面を Storybook から撮って載せる（`make lp-image` → `web/components/lp/channel.png`。上の 26 枚と同じ方針）。
+  - 案の値のうちトークンになかった 2 つは、オーナーの確認を取ってトークンを足した（`--leading-tight`、`--shadow-showcase`。2026-09-25）。
+    段落の行送り 1.8 は `--leading-relaxed`（1.75）に、字間の -0.01em / -0.02em は `--tracking-tight`（-0.015em）に寄せた。
 
 ## 画面の再現（Storybook。Phase 6.7.6 まで `/dev/preview`）
 

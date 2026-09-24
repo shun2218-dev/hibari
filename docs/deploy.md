@@ -34,6 +34,20 @@ Next.js も `og:image` などの絶対 URL の起点（`metadataBase`）に使�
 - **Web と API は同じサイト（登録可能なドメインが同じ）に置く**（`app.hibari-chat.com` と `api.hibari-chat.com`）。Refresh Token の Cookie は `SameSite=Strict` なので、サイトが違うと refresh に載らない。
 - `*.vercel.app` や `*.fly.dev` はそれぞれがサイトの単位（Public Suffix List に載っている）なので、別のアプリどうしは同じサイトにならない。独自ドメインを使う。
 
+## SITE_BASE_URL（ADR 0063）
+
+LP（紹介のページ）の URL。LP は Next.js のアプリ（`app.` と同じもの）で描き、`web/proxy.ts` がリクエストの Host をこの値のホストと比べて LP に振り分ける。
+LP の `metadataBase`（canonical）、`robots.txt` の `Sitemap:`、`sitemap.xml` の URL にも使う。`APP_BASE_URL` と同じく、Next.js の**ビルドの環境**と実行の環境の両方に置く（proxy.ts は実行のときに読む）。
+
+| 環境 | 値 |
+|---|---|
+| ローカル | `http://lp.localhost:3000`（既定の値。`make web` のあとに開く。`*.localhost` はループバックに解決される） |
+| 本番 | `https://hibari-chat.com`（apex。`www` は作らない） |
+
+- apex で返すのは LP（`/`）と `robots.txt`・`sitemap.xml`・ファビコンと OGP 画像だけ。それ以外の URL は 404 にする（apex でアプリの画面を開かせない）。
+- `app.` からは LP の中身（`/lp`）を開けない（404）。同じページが 2 つの URL で読めないようにするため。
+- 検索エンジンに載せるのは apex だけ。`app.` には proxy.ts が `X-Robots-Tag: noindex, nofollow` を付ける（ADR 0063 決定 5）。
+
 ## メール（ADR 0053）
 
 確認メールとパスワードの再設定のメールを送る。業者の SDK は使わず SMTP で送るので、業者を替えるときは下の値だけを変える。
@@ -146,7 +160,7 @@ email を検証するまで、chat の API と WebSocket は 403（`email-unveri
 | 役割 | 本番 | ローカル |
 |---|---|---|
 | Go サーバー（API / WebSocket） | Fly app（`nrt`）/ `api.hibari-chat.com` | compose の `server`（Caddy の後ろ） |
-| Next.js | Fly app（`nrt`）/ `app.hibari-chat.com` | ホストで `make web` |
+| Next.js | Fly app（`nrt`）/ `app.hibari-chat.com` と `hibari-chat.com`（LP。上の `SITE_BASE_URL`） | ホストで `make web`（LP は `lp.localhost:3000`） |
 | Storybook | Fly app（`nrt`、静的 + `auto_stop_machines`）/ `ui.hibari-chat.com` | ホスト |
 | ドキュメントサイト | Fly app（`nrt`、静的 + `auto_stop_machines`）/ `docs.hibari-chat.com`（ADR 0064） | ホストで `make site` |
 | Postgres | Fly app + ボリューム（自前） | compose の `postgres` |
@@ -163,12 +177,14 @@ email を検証するまで、chat の API と WebSocket は 403（`email-unveri
 | 名前 | 種類 | 向け先 | 状態 |
 |---|---|---|---|
 | `app` / `api` / `ui` / `docs` | A と AAAA（または `<アプリ名>.fly.dev` への CNAME） | それぞれの Fly app | Phase 7 のデプロイで足す |
+| `@`（apex。LP） | A と AAAA | Next.js の Fly app（`app` と同じ） | Phase 7 のデプロイで足す |
 | `send.mail` / `rsend.mail` / `resend._domainkey.mail` | CNAME / CNAME / TXT | Resend | 足した（上の「Resend の準備」） |
 | `_dmarc` | TXT | — | 足した（`p=none`） |
 
-### Fly app に向ける手順（`app` / `api` / `ui` / `docs`）
+### Fly app に向ける手順（`app` / `api` / `ui` / `docs` / apex）
 
 1. `fly certs add api.hibari-chat.com -a <アプリ名>` で証明書を申し込み、出てきた値（A / AAAA か CNAME）を Cloudflare に足す。
+   apex（`hibari-chat.com`）は Next.js のアプリに `fly certs add hibari-chat.com` で足し、Name を `@` にして A と AAAA を入れる（apex には CNAME を置かない）。
 2. **Proxy status は DNS only（灰色の雲）にする。** Cloudflare のプロキシ（オレンジの雲）を通すと、Fly の証明書の自動発行とぶつかる。
    また、前段が Fly のプロキシである前提（`TRUSTED_PROXIES`。上の節と ADR 0017）が崩れ、クライアントの IP の取り方が変わる。
 3. `fly certs check api.hibari-chat.com -a <アプリ名>` で発行されたことを確かめる。
