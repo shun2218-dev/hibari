@@ -93,7 +93,9 @@ describe("Sidebar", () => {
     expect(screen.getByLabelText("未読 1 件")).toBeInTheDocument();
     expect(screen.getByText("リリース準備")).toHaveClass("font-bold");
     expect(screen.queryByLabelText("未読 3 件")).not.toBeInTheDocument();
-    expect(screen.getByText("デザインレビュー")).not.toHaveClass("font-bold");
+    // 読み終えたルームは普通の太さにする。semibold（600）では bold（700）と見分けがつかない
+    expect(screen.getByText("デザインレビュー")).toHaveClass("font-normal");
+    expect(screen.getByText("デザインレビュー")).not.toHaveClass("font-semibold");
   });
 
   it("数字のバッジは知らせが要るものだけに出す（ADR 0043）", () => {
@@ -119,7 +121,7 @@ describe("Sidebar", () => {
     expect(screen.getByLabelText("未読 2 件")).toHaveTextContent("2");
 
     // 何もなければ太字にもバッジにもしない
-    expect(screen.getByText("雑談")).not.toHaveClass("font-bold");
+    expect(screen.getByText("雑談")).toHaveClass("font-normal");
   });
 
   it("ミュートしたルームは薄くし、未読を強調しないが、メンションの数は出す（ADR 0055 決定 6）", () => {
@@ -134,7 +136,7 @@ describe("Sidebar", () => {
     // 未読があっても太字にしない。色で薄くし、読み上げには言葉で添える
     const design = screen.getByRole("link", { name: /デザインレビュー/ });
     expect(design).toHaveAccessibleName(expect.stringContaining("（ミュート中）"));
-    expect(within(design).getByText("デザインレビュー", { exact: false })).not.toHaveClass("font-bold");
+    expect(within(design).getByText("デザインレビュー", { exact: false })).toHaveClass("font-normal");
     expect(within(design).getByText("デザインレビュー", { exact: false })).toHaveClass("text-text-muted");
 
     // 自分宛てのメンションはミュートしていても分かるようにする
@@ -255,6 +257,7 @@ describe("Sidebar empty states", () => {
     const link = screen.getByRole("link", { name: /スレッド/ });
     expect(link).toHaveAttribute("href", "/threads");
     expect(within(link).getByLabelText("未読 2 件")).toBeInTheDocument();
+    expect(within(link).getByText("スレッド")).toHaveClass("font-bold");
     expect(link).not.toHaveAttribute("aria-current");
   });
 
@@ -264,6 +267,7 @@ describe("Sidebar empty states", () => {
     const link = screen.getByRole("link", { name: /スレッド/ });
     expect(link).toHaveAttribute("aria-current", "page");
     expect(within(link).queryByLabelText(/未読/)).not.toBeInTheDocument();
+    expect(within(link).getByText("スレッド")).toHaveClass("font-normal");
   });
 
   it("hides the threads entry while searching channels", () => {
