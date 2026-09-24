@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { APP_DESCRIPTION, APP_NAME, TITLE_TEMPLATE } from "@/lib/document-title";
 import { paneSizeBootScript } from "@/lib/pane-size";
 import { themeBootScript } from "@/lib/theme";
 import { SessionProvider } from "@/providers/session-provider";
@@ -7,8 +8,12 @@ import { SessionProvider } from "@/providers/session-provider";
 import { instrumentSans, jetBrainsMono, zenKakuGothicNew } from "./fonts";
 import "./globals.css";
 
+// タイトルの形と説明（ADR 0063 決定 1 / 2）。各ページは「ログイン」のように開いているものだけを書き、template がアプリ名を付ける
 export const metadata: Metadata = {
-  title: "hibari",
+  title: { template: TITLE_TEMPLATE, default: APP_NAME },
+  description: APP_DESCRIPTION,
+  applicationName: APP_NAME,
+  openGraph: { siteName: APP_NAME, locale: "ja_JP", type: "website" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

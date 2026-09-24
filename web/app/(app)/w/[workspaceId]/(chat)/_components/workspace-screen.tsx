@@ -15,6 +15,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { useSession, useSessionState } from "@/hooks/auth/use-session";
 import { useChatState, useChatStore, useRealtime } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import { channelTable } from "@/lib/chat/format/channel-links";
 import { withSide } from "@/lib/chat/format/links";
 import { type ChannelLinks, ChannelLinksProvider } from "@/providers/channel-links-provider";
@@ -23,7 +24,8 @@ import { formatTime } from "@/lib/chat/format/time";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
 import { countUnreadThreads } from "@/lib/chat/rules/threads";
 import { memberSettings, statusView } from "@/lib/chat/views/members";
-import { toRoomSummaryView } from "@/lib/chat/views/rooms";
+import { roomName, toRoomSummaryView } from "@/lib/chat/views/rooms";
+import { chatTitle } from "@/lib/document-title";
 
 import { MyStatusDialog } from "./my-status";
 
@@ -108,6 +110,18 @@ export function WorkspaceScreen() {
   const removedFromWorkspace = removal?.reason === "removed";
   const workspace =
     workspaces.list.find((w) => w.id === workspaceId) ?? (removedFromWorkspace ? removal.workspace : undefined);
+
+  // タブのタイトル（ADR 0063 決定 2）。メインの領域に出ているもの。外されたルームは名前を見せない（ADR 0035）
+  const openRoom = roomId && !roomRemoved ? rooms[roomId] : undefined;
+  useDocumentTitle(
+    workspace
+      ? chatTitle({
+          main: threadsView ? "スレッド" : openRoom ? roomName(openRoom) : undefined,
+          workspaceName: workspace.name,
+          activity: unreadActivity,
+        })
+      : undefined,
+  );
 
   useEffect(() => {
     store.loadWorkspaces();

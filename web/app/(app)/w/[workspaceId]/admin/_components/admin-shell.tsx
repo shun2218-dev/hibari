@@ -3,10 +3,12 @@
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo } from "react";
 
-import { type AdminSection, WorkspaceAdminLayout } from "@/components/workspace/admin-layout";
+import { type AdminSection, adminTitles, WorkspaceAdminLayout } from "@/components/workspace/admin-layout";
 import { useSessionState } from "@/hooks/auth/use-session";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
+import { useDocumentTitle } from "@/hooks/use-document-title";
+import { documentTitle } from "@/lib/document-title";
 
 /**
  * ワークスペースの管理画面の枠（設定・メンバー・招待リンク）。
@@ -46,9 +48,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const me = sessionState.status === "signed_in" ? sessionState.user : undefined;
   const avatarUrls = useAvatarUrls(useMemo(() => (me ? [me.id] : []), [me]));
 
+  const section = (["members", "invites"] as const).find((name) => pathname.endsWith(`/${name}`)) ?? "settings";
+  // タブのタイトルは画面の見出しと同じ語にする（ADR 0063 決定 2）
+  useDocumentTitle(workspace ? documentTitle(adminTitles[section], workspace.name) : undefined);
+
   if (!workspace || !me) return null;
 
-  const section = (["members", "invites"] as const).find((name) => pathname.endsWith(`/${name}`)) ?? "settings";
   const hrefs: Record<AdminSection, string> = {
     settings: `/w/${workspaceId}/admin/settings`,
     members: `/w/${workspaceId}/admin/members`,

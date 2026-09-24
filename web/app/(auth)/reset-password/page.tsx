@@ -1,7 +1,7 @@
 import { ResetPasswordPage } from "@/app/(auth)/reset-password/_components/reset-password-page";
 
 export const metadata = {
-  title: "新しいパスワードを設定 | hibari",
+  title: "新しいパスワードを設定",
   // URL に再設定のトークンが載っている。ページから出ていくリクエストに Referer で付けない。
   referrer: "no-referrer",
 } as const;
