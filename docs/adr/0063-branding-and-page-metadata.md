@@ -45,7 +45,7 @@
 | `og:site_name` | `hibari` |
 | `og:locale` | `ja_JP` |
 
-ディスクリプションは LP にもアプリにも同じものを使う。ページごとに書き分けない（アプリのページは検索エンジンに載せないので、書き分ける意味がない。決定 5。ドキュメントサイトの説明は ADR 0064 で別に持つ）。
+ディスクリプションは LP にもアプリにも同じものを使う。ページごとに書き分けない（LP のほかは検索エンジンに載せないので、書き分ける意味がない。決定 5）。
 
 ### 2. タブのタイトルは ` - ` で区切り、最後にアプリ名
 
@@ -100,7 +100,7 @@
 - 招待リンク（`/j/<code>`）を Slack などに貼ったときも、この共通の画像とディスクリプションが出る。ワークスペースの名前や人数は出さない（決定 2 と同じ理由）。
 - `og:image` などに要る絶対 URL の起点（`metadataBase`）は環境変数から取る（決定 7）。
 
-### 5. 検索エンジンに載せるのは LP とドキュメントサイトだけ。LP は `hibari-chat.com`（apex）に置く
+### 5. 検索エンジンに載せるのは LP だけ。LP は `hibari-chat.com`（apex）に置く
 
 LP は `app.` とは別のホスト、登録可能なドメインそのもの（`hibari-chat.com`）に置く。Slack の `slack.com`（LP）と `app.slack.com`（アプリ）の分け方と同じ。
 同じ Next.js のアプリで描き、`web/proxy.ts` がホスト名を見て LP のルートに振り分ける。
@@ -110,13 +110,13 @@ LP は `app.` とは別のホスト、登録可能なドメインそのもの（
 | `hibari-chat.com` | 載せる | すべて Allow。`Sitemap:` を書く | LP だけ。sitemap も `/` の 1 件だけ |
 | `app.hibari-chat.com` | 載せない | Allow（下の理由） | すべてに `X-Robots-Tag: noindex, nofollow` |
 | `ui.hibari-chat.com`（Storybook） | 載せない | `Disallow: /` | — |
-| `docs.hibari-chat.com`（ドキュメントサイト） | 載せる | すべて Allow | ADR 0064 決定 5 |
+| `docs.hibari-chat.com`（ドキュメントサイト） | 載せない | `Disallow: /` | ADR 0064 決定 5 |
 
 - **`app.` を robots.txt で Disallow にしない。** Disallow は「読みに来るな」であって「載せるな」ではない。
   Disallow にすると、よそに貼られた URL だけが中身なしで検索結果に出うる。そうなると、招待リンク（`/j/<code>`）の秘密のコードが検索結果に並ぶ。
   読ませたうえで noindex を返せば、検索エンジンは URL ごと落とす。
   noindex は `proxy.ts` がホストで判断して、レスポンスヘッダで付ける。ページごとの `metadata` に書き忘れても漏れないようにするため。
-- Storybook はモックのデータだけで秘密がないので、読ませないだけでよい。`robots.txt` を `web/.storybook/static` などに置いて、Storybook のビルドに含める。
+- Storybook とドキュメントサイトは秘密を含まないので、読ませないだけでよい。`robots.txt` を `web/.storybook/static` などに置いて、Storybook のビルドに含める。
 - `/login` や `/signup` も載せない。LP から入れるので、別に載せる理由がない。
 - `www.hibari-chat.com` は作らない。
 

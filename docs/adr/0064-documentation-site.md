@@ -41,7 +41,7 @@ LP とは別に、フロントエンドとバックエンドの両方を説明�
 
 - `site/` に Starlight のプロジェクトを置き、`docs/` を content collection の glob で読む。
 - Node で動かし、`web/` と同じくホストで起動する（コンテナに入れない。CLAUDE.md「ローカル環境」）。`make site` で起動する。
-- mermaid の図は、`tools/render-diagrams.sh` が生成した `docs/*.svg` をそのまま貼る。ADR の中の mermaid のコードブロックは、ブラウザで描く。
+- mermaid の図は、`tools/render-diagrams.sh` が生成した `docs/*.svg` をそのまま貼る（ADR の中に mermaid のコードブロックはないので、サイトで mermaid を描く仕組みは要らない）。
 - 検索は Starlight に組み込みの Pagefind（静的な索引。サーバーは要らない）。
 - 見た目: Starlight の既定の見た目に、ロゴ（ADR 0063 決定 6）と primary の色だけ当てる。
   色は `web/app/globals.css` の変数を読み込み、Starlight の変数（`--sl-color-accent` など）に割り当てる。値を書き写さない（CLAUDE.md ルール 7）。
@@ -82,8 +82,9 @@ LP とは別に、フロントエンドとバックエンドの両方を説明�
 ### 5. 配り方と検索エンジン
 
 - `astro build` の静的な出力を、Storybook と同じく Fly のアプリ（`nrt`、静的、`auto_stop_machines`）で配る（ADR 0046 決定 4 と同じ形）。
-- **検索エンジンに載せる。** 設計を読みに来る人が検索で見つけられるようにするため。ADR 0063 決定 5 の表に、`docs.hibari-chat.com` を「載せる」として加える。
-  sitemap は Starlight が生成する。
+- **検索エンジンに載せない**（オーナーの判断: 2026-09-24）。Storybook と同じく、`robots.txt` を `Disallow: /` にする。
+  秘密を含まない静的なサイトなので、`app.` のような noindex のヘッダは要らない（ADR 0063 決定 5 の Storybook と同じ理由）。sitemap は作らない。
+  ADR 0063 決定 5 の表に、`docs.hibari-chat.com` を「載せない」として加える。
 - LP のフッターと、アプリの設定の画面などからは、今回はリンクしない（LP のデザインに入れるかは Claude Design で決める）。
 
 ## 理由
@@ -117,8 +118,7 @@ LP とは別に、フロントエンドとバックエンドの両方を説明�
 1. 生成器を Starlight にする（決定 2）。
 2. サイトの見た目は Starlight の既定に、ロゴと primary の色だけ当てる。Claude Design では作らない（決定 2）。
 3. OpenAPI を Go の型から生成し、パスの表の漏れはソースとの照合で検査する（決定 4）。
-4. ドキュメントサイトは検索エンジンに載せる（決定 5）。
-5. 新しく書く 4 ページ（はじめに・バックエンド・データモデル・フロントエンド）を `docs/guide/` に置く（決定 3）。
+4. 新しく書く 4 ページ（はじめに・バックエンド・データモデル・フロントエンド）を `docs/guide/` に置く（決定 3）。
 
 ## 実装の順序
 
