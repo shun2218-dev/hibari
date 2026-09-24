@@ -1,6 +1,7 @@
 import type { MessageView, TimelineItem, UserRef } from "@/components/chat/types";
 import type { MentionCandidate } from "@/lib/chat/format/mentions";
 
+import { channelIds } from "./rooms";
 import { miyuki, mockAvatars, naoki, profileKeys, ryo, statuses, users, you } from "./users";
 
 /**
@@ -132,6 +133,16 @@ export const timelineWithMentions: TimelineItem[] = [
     mentionsMe: true,
   }),
   message("m-m05", naoki, "10:27", "確認だけお願いします。", { grouped: true }),
+];
+
+/**
+ * チャンネルへのリンクのあるタイムライン（ADR 0062）。public は `#名前`、private は鍵、引けないものは「アクセスできないチャンネル」。
+ */
+export const timelineWithChannelLinks: TimelineItem[] = [
+  { type: "date", key: "d-0913c", label: "9月13日" },
+  message("m-c01", miyuki, "10:02", `配色の話は <#${channelIds.design}> に移しましょう。雑談は <#${channelIds.chat}> で。`),
+  message("m-c02", naoki, "10:14", `リリースの手順は <#${channelIds.release}> にまとめました。`),
+  message("m-c03", ryo, "10:20", `前に <#${channelIds.hidden}> で話した件、どうなりました？`),
 ];
 
 /**

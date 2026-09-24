@@ -62,3 +62,22 @@ export const MobileJumpHighlight: Story = {
   globals: { viewport: { value: "mobile" } },
   render: () => chat({ jump: "highlight" }),
 };
+
+export const ChannelLinks: Story = {
+  name: "チャンネルへのリンク（#名前）",
+  tags: ["since:6.16"],
+  render: () => chat({ channelLinks: true }),
+};
+
+export const ChannelLinksDark: Story = {
+  name: "チャンネルへのリンク（ダーク）",
+  tags: ["since:6.16"],
+  parameters: { theme: "dark" },
+  render: () => chat({ channelLinks: true }),
+};
+
+export const ChannelCompletion: Story = {
+  name: "チャンネルへのリンク: # の補完",
+  tags: ["since:6.16"],
+  render: () => chat({ channelLinks: true, mentionQuery: "#" }),
+};

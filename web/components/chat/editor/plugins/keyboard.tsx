@@ -18,9 +18,10 @@ import { type RefObject, useEffect, useEffectEvent } from "react";
 
 import { $exportBody } from "@/components/chat/editor/export";
 import { applyFormat } from "@/components/chat/editor/toolbar";
+import type { ChannelTable } from "@/lib/chat/format/channel-links";
 import type { MentionCandidate } from "@/lib/chat/format/mentions";
 
-import { $convertTypedMentions } from "./typed-mentions";
+import { $convertTypedChannels, $convertTypedMentions } from "./typed-mentions";
 
 /** Shift 付きのショートカット（Slack の公式の一覧。ADR 0052 の追記の表）。キーの位置（code）で見る。Shift + 9 は "(" になるため。 */
 function shortcutAction(event: KeyboardEvent) {
@@ -56,10 +57,13 @@ export function KeyboardPlugin({
   menuOpenRef,
   onOpenLink,
   mentionCandidates,
+  channels,
 }: {
   /** 送る本文（送る形のテキスト）を渡す。親の値はまだ届いていないことがある（送信の直前にメンションを変えるため）。 */
   onSubmit?: (value: string) => void;
   mentionCandidates?: readonly MentionCandidate[];
+  /** 末尾に残った `#名前` をリンクにするためのチャンネルの表（ADR 0062）。 */
+  channels?: ChannelTable;
   onEscape?: () => void;
   menuOpenRef: RefObject<boolean>;
   onOpenLink: () => void;
@@ -67,9 +71,11 @@ export function KeyboardPlugin({
   const [editor] = useLexicalComposerContext();
   // 呼ぶ側の関数は毎回作り直されるので、購読はそのままに最新の関数を呼ぶ
   const submit = useEffectEvent(() => {
-    // 末尾に残った `@ハンドル` もメンションにしてから送る（ADR 0043）
+    // 末尾に残った `@ハンドル` と `#名前` もチップにしてから送る（ADR 0043、0062）
     const candidates = mentionCandidates;
     if (candidates) editor.update(() => $convertTypedMentions(candidates), { discrete: true });
+    const table = channels;
+    if (table) editor.update(() => $convertTypedChannels(table), { discrete: true });
     onSubmit?.(editor.getEditorState().read(() => $exportBody()));
   });
   const escape = useEffectEvent(() => onEscape?.());

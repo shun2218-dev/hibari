@@ -47,6 +47,7 @@ import {
   dmRoom,
   roomMembers,
   roomMembersWithPresence,
+  channelLinkTable,
   rooms,
   roomsSearchedWithArchived,
   roomsWithMentions,
@@ -55,6 +56,7 @@ import {
   selectedRoom,
   typingNames,
 } from "@/stories/fixtures/rooms";
+import { ChannelLinksProvider } from "@/providers/channel-links-provider";
 import { saveCandidateKey, savedArchived, savedCompleted, savedInProgress } from "@/stories/fixtures/saved";
 import {
   searchFilters,
@@ -89,6 +91,7 @@ import {
   timelineWithFormatting,
   timelineWithFormerMember,
   timelineWithMentions,
+  timelineWithChannelLinks,
   timelineWithStatus,
   timelineWithSystemMessages,
 } from "@/stories/fixtures/timeline";
@@ -144,8 +147,10 @@ export type ChatOptions = {
   threadNotify?: "menu" | "menu-follow";
   /** メンションのあるタイムラインとサイドバーにする（ADR 0043）。 */
   mentions?: boolean;
-  /** 入力欄の `@` の補完を開いた状態で出す（`@` の後ろに打った文字。ADR 0043）。 */
+  /** 入力欄の `@` の補完を開いた状態で出す（`@` の後ろに打った文字。ADR 0043）。`#` で始めるとチャンネルの補完（ADR 0062）。 */
   mentionQuery?: string;
+  /** チャンネルへのリンクのあるタイムラインにする（ADR 0062）。 */
+  channelLinks?: boolean;
   /**
    * 指定したメッセージへ飛ぶ仕組みの画面（ADR 0042）。
    * - unread-bar: 未読が読み込んだページより古いときの「未読 N 件 / 最初の未読へ」
@@ -292,6 +297,8 @@ function threadTimeline(thread: NonNullable<ChatOptions["thread"]>) {
 /** 書式とメンションを入れた下書き（ADR 0052）。入力欄の値は送る形のテキスト。 */
 const composerDraft = `金曜のリリースは *17 時* からです。__遅れる人は__事前に連絡してください。\n- 手順は<https://example.com/runbook|手順書>に\n- 確認は <@${users.miyuki.id}> さん、\`make migrate\` まで`;
 
+const storyChannelLinks = { channels: channelLinkTable, href: (id: string) => `/w/ws/r/${id}` };
+
 export function chat({
   avatars,
   systemMessages,
@@ -317,6 +324,7 @@ export function chat({
   threadNotify,
   mentions,
   mentionQuery,
+  channelLinks,
   jump,
   linkCards,
   composer,
@@ -456,7 +464,8 @@ export function chat({
           />
   );
   return (
-    <>
+    // 本文の `<#ID>` の名前はワークスペースの画面の根が配る（ADR 0062）。ここでも同じ形で配る
+    <ChannelLinksProvider value={storyChannelLinks}>
       <ChatLayout
         topBar={topBar}
         mobileView={mobileView}
@@ -559,6 +568,8 @@ export function chat({
                 ? timelineJumped
                 : thread || threadNotify
                 ? threadTimeline(thread ?? "replies")
+                : channelLinks
+                ? timelineWithChannelLinks
                 : mentions
                   ? timelineWithMentions
                   : broadcastInChannel
@@ -681,6 +692,6 @@ export function chat({
         />
       )}
       <CreateWorkspaceDialog open={Boolean(createWorkspace)} />
-    </>
+    </ChannelLinksProvider>
   );
 }

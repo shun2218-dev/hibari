@@ -95,4 +95,11 @@ describe("plainText", () => {
     expect(plainText("_斜体_ と `code` と <https://example.com|手順書>\n- 1 つ目\n- 2 つ目", {})).toBe("斜体 と code と 手順書 1 つ目 2 つ目");
     expect(plainText("<!channel> 集合", {})).toBe("@channel 集合");
   });
+
+  it("チャンネルへのリンクは #名前、引けなければ「アクセスできないチャンネル」（ADR 0062 決定 5）", () => {
+    const id = "01J8ZZZZZZZZZZZZZZZZZZZZZA";
+    const other = "01J8ZZZZZZZZZZZZZZZZZZZZZB";
+    const channels = { [id]: { id, name: "雑談", private: false, archived: false } };
+    expect(plainText(`<#${id}> と <#${other}>`, {}, channels)).toBe("#雑談 と #アクセスできないチャンネル");
+  });
 });

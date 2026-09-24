@@ -96,6 +96,23 @@ describe("読み込み", () => {
     ]);
   });
 
+  it("チャンネルへのリンクは #名前 のノードになる。引けなければトークンの文字のまま（ADR 0062 決定 4）", () => {
+    const room = "01J8ZZZZZZZZZZZZZZZZZZZZZR";
+    const unknown = "01J8ZZZZZZZZZZZZZZZZZZZZZU";
+    const channels = { [room]: { id: room, name: "雑談", private: false, archived: false } };
+    const e = editor();
+    e.update(() => $importBody(`<#${room}> と <#${unknown}>`, names, channels), { discrete: true });
+    const read = () =>
+      e.getEditorState().read(() => ({
+        chips: $getRoot()
+          .getAllTextNodes()
+          .filter($isMentionNode)
+          .map((n) => [n.getTextContent(), n.getMode()]),
+        body: $exportBody(),
+      }));
+    expect(read()).toEqual({ chips: [["#雑談", "token"]], body: `<#${room}> と <#${unknown}>` });
+  });
+
   it("空の本文は空の段落 1 つ", () => {
     const e = editor();
     e.update(() => $importBody(""), { discrete: true });

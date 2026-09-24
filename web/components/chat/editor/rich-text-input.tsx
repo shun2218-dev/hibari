@@ -15,6 +15,7 @@ import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { $createTextNode, $getSelection, $isRangeSelection, $setSelection, type BaseSelection } from "lexical";
 import { type ReactNode, useCallback, useRef, useState } from "react";
 
+import { useChannelLinks } from "@/hooks/chat/use-channel-links";
 import type { MentionCandidate } from "@/lib/chat/format/mentions";
 
 import { $importBody } from "./import";
@@ -87,6 +88,8 @@ const BLOCK_SHORTCUTS = [QUOTE, UNORDERED_LIST, ORDERED_LIST, CODE];
 
 export function RichTextInput(props: RichTextInputProps) {
   const { value, mentionNames } = props;
+  // `<#ID>` の名前は画面の根が配る表から引く（ADR 0062）。props では運ばない
+  const { channels } = useChannelLinks();
   // 最初の中身は、初めて描くときの値で作る（あとから変わった値は SyncPlugin が読み込む）
   const [initialConfig] = useState<InitialConfigType>(() => ({
     namespace: "hibari-composer",
@@ -95,7 +98,7 @@ export function RichTextInput(props: RichTextInputProps) {
     onError: (error: Error) => {
       throw error;
     },
-    editorState: () => $importBody(value, mentionNames ?? {}),
+    editorState: () => $importBody(value, mentionNames ?? {}, channels),
   }));
   return (
     <LexicalComposer initialConfig={initialConfig}>
@@ -105,6 +108,7 @@ export function RichTextInput(props: RichTextInputProps) {
 }
 
 const noNames: Readonly<Record<string, string>> = {};
+const noCandidates: readonly MentionCandidate[] = [];
 
 function Editor({
   value,
@@ -122,6 +126,7 @@ function Editor({
   forceLinkDialog,
 }: RichTextInputProps) {
   const [editor] = useLexicalComposerContext();
+  const { channels } = useChannelLinks();
   const lastValueRef = useRef(value);
   const menuOpenRef = useRef(false);
   // リンクの画面。開くたびに作り直す（key）ので、中の入力は前の値を持ち越さない
@@ -184,15 +189,24 @@ function Editor({
       <MarkdownShortcutPlugin transformers={BLOCK_SHORTCUTS} />
       <InlineMarkdownPlugin />
       <SanitizePlugin />
-      <SyncPlugin value={value} names={mentionNames} lastValueRef={lastValueRef} onChange={onChange} />
+      <SyncPlugin value={value} names={mentionNames} channels={channels} lastValueRef={lastValueRef} onChange={onChange} />
       <KeyboardPlugin
         onSubmit={onSubmit}
         onEscape={onEscape}
         menuOpenRef={menuOpenRef}
         onOpenLink={openLink}
         mentionCandidates={mentionCandidates}
+        channels={channels}
       />
-      {mentionCandidates && <MentionPlugin candidates={mentionCandidates} menuOpenRef={menuOpenRef} forceQuery={forceMentionQuery} />}
+      {/* `@` はメンションの候補を渡したときだけ、`#` はチャンネルの表があれば補完する */}
+      {(mentionCandidates || Object.keys(channels).length > 0) && (
+        <MentionPlugin
+          candidates={mentionCandidates ?? noCandidates}
+          channels={channels}
+          menuOpenRef={menuOpenRef}
+          forceQuery={forceMentionQuery}
+        />
+      )}
       {autoFocus && <AutoFocusPlugin defaultSelection="rootEnd" />}
       {linkDialog && (
         <LinkDialog

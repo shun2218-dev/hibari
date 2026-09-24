@@ -15,7 +15,9 @@ import { Avatar } from "@/components/ui/avatar";
 import { useSession, useSessionState } from "@/hooks/auth/use-session";
 import { useChatState, useChatStore, useRealtime } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
+import { channelTable } from "@/lib/chat/format/channel-links";
 import { withSide } from "@/lib/chat/format/links";
+import { type ChannelLinks, ChannelLinksProvider } from "@/providers/channel-links-provider";
 import { formatSearchQuery, parseSearchQuery, type SearchQuery } from "@/lib/chat/search/search-query";
 import { formatTime } from "@/lib/chat/format/time";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
@@ -183,6 +185,16 @@ export function WorkspaceScreen() {
       })
       .filter((view) => query === "" || view.name.toLowerCase().includes(query));
   }, [roomList, rooms, search, avatarUrls, memberTable]);
+
+  // 本文の `<#ID>` の名前とリンク先（ADR 0062 決定 2）。ルーム一覧には参加していない public ルームも入っているので、
+  // 読めるチャンネルはすべて引ける。押したら、いま開いている左のメニューのまま移る
+  const channelLinks = useMemo<ChannelLinks>(
+    () => ({
+      channels: channelTable((roomList?.ids ?? []).flatMap((id) => rooms[id] ?? [])),
+      href: (id) => withSide(`/w/${workspaceId}/r/${id}`, side),
+    }),
+    [roomList, rooms, workspaceId, side],
+  );
 
   // 左のメニューの DM のバッジは、未読のある会話の数（Slack と同じ。ADR 0058 決定 1）
   const unreadDms = useMemo(
@@ -398,7 +410,7 @@ export function WorkspaceScreen() {
     );
 
   return (
-    <>
+    <ChannelLinksProvider value={channelLinks}>
       <ChatLayout
         topBar={
           <TopBar
@@ -555,6 +567,6 @@ export function WorkspaceScreen() {
       )}
       <CreateRoom workspaceId={workspaceId} open={creatingRoom} onClose={() => setCreatingRoom(false)} />
       <StartDm workspaceId={workspaceId} open={startingDm} onClose={() => setStartingDm(false)} />
-    </>
+    </ChannelLinksProvider>
   );
 }

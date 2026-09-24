@@ -49,6 +49,14 @@ describe("parseInline（ADR 0051 決定 2）", () => {
       { type: "mention", kind: "here", raw: "<!here>" },
     ]],
     ["太字の中のメンション", "*<!here>*", [bold({ type: "mention", kind: "here", raw: "<!here>" })]],
+    [
+      "チャンネルへのリンク（ADR 0062）",
+      `<#${ULID}> を見て`,
+      [{ type: "channel", id: ULID, raw: `<#${ULID}>` }, text(" を見て")],
+    ],
+    ["太字の中のチャンネル", `*<#${ULID}>*`, [bold({ type: "channel", id: ULID, raw: `<#${ULID}>` })]],
+    ["コードの中のチャンネルは解釈しない", `\`<#${ULID}>\``, [code(`<#${ULID}>`)]],
+    ["ID の長さが違う <#…> はただの文字", "<#general> <#01J8>", [text("<#general> <#01J8>")]],
     ["トークンに見えない文字列はそのまま", "@alice <@01J8> <!everyone>", [text("@alice <@01J8> <!everyone>")]],
     ["<script> はただの文字", "<script>alert(1)</script>", [text("<script>alert(1)</script>")]],
   ])("%s", (_name, input, want) => {

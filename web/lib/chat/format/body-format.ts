@@ -7,8 +7,8 @@
  * 記法（mrkdwn 寄り。ADR 0051 決定 2）
  *
  *   ブロック: ```コード```  / 行頭の `> ` 引用 / 行頭の `- ` `* ` `• ` 箇条書き / 行頭の `1. ` 番号付き
- *   インライン: `code` / *太字* / _斜体_ / __下線__ / ~取り消し~ / https://… / <https://…|文字> / <@ULID> <!channel> <!here>
- *   （下線と文字付きのリンクは ADR 0051 決定 4 の追記と、同じく下線の追記）
+ *   インライン: `code` / *太字* / _斜体_ / __下線__ / ~取り消し~ / https://… / <https://…|文字> / <@ULID> <!channel> <!here> / <#ULID>
+ *   （下線と文字付きのリンクは ADR 0051 決定 4 の追記と、同じく下線の追記。チャンネルへのリンク `<#ULID>` は ADR 0062）
  *
  * 規則の具体例は body-format.test.ts が正本。コードの範囲の規則はサーバー（internal/chat/mention）にも同じものがある（ADR 0051 決定 5）。
  */
@@ -20,7 +20,9 @@ export type Inline =
   /** label は文字付きのリンク（`<URL|文字>`）の文字。URL だけのリンクでは undefined。 */
   | { type: "link"; url: string; label?: string }
   | { type: "mention"; kind: "user"; id: string; raw: string }
-  | { type: "mention"; kind: "channel" | "here"; raw: string };
+  | { type: "mention"; kind: "channel" | "here"; raw: string }
+  /** チャンネルへのリンク（ADR 0062）。名前は本文に持たないので、描く側がルーム一覧から引く。 */
+  | { type: "channel"; id: string; raw: string };
 
 export type ListItem = {
   /** 番号付きリストで書かれた番号。箇条書きでは null。 */
@@ -58,6 +60,9 @@ const LABELED_LINK = /^<(https?:\/\/[^\s<>`|]+)\|([^<>`\n]+)>/u;
 
 /** メンションのトークン（ADR 0041）。ULID の厳密な検証は表示ではしない（mentions.ts と同じ理由）。 */
 const MENTION = /^(?:<@([0-9A-Za-z]{26})>|<!(channel|here)>)/u;
+
+/** チャンネルへのリンクのトークン（ADR 0062 決定 1）。サーバーは読まないので、ここと描く側だけが知っている。 */
+const CHANNEL = /^<#([0-9A-Za-z]{26})>/u;
 
 /** URL に含める文字。ASCII の空白・制御文字以外で、`<` `>` `` ` `` は含めない（トークンとコードの記号のため）。 */
 const URL_CHAR = /[!-~]/u;
@@ -203,6 +208,8 @@ function readAtom(text: string, i: number): { node: Inline; end: number } | null
   if (c === "<") {
     const labeled = LABELED_LINK.exec(text.slice(i));
     if (labeled) return { node: { type: "link", url: labeled[1], label: labeled[2] }, end: i + labeled[0].length };
+    const channel = CHANNEL.exec(text.slice(i));
+    if (channel) return { node: { type: "channel", id: channel[1], raw: channel[0] }, end: i + channel[0].length };
     const m = MENTION.exec(text.slice(i));
     if (!m) return null;
     const raw = m[0];

@@ -6,6 +6,7 @@ import { useSession } from "@/hooks/auth/use-session";
 import { getApiBaseUrl } from "@/lib/api/base-url";
 import type { ServerEvent } from "@/lib/api/types.gen";
 import { createChatApi } from "@/lib/chat/api/chat-api";
+import { channelTable } from "@/lib/chat/format/channel-links";
 import { createSearchStore, type SearchStore } from "@/lib/chat/search/search-store";
 import { type LinkCardStore, createLinkCardStore } from "@/lib/chat/format/link-cards";
 import { type MediaStore, createMediaStore } from "@/lib/chat/media/media-store";
@@ -157,5 +158,8 @@ function notifyOf(event: ServerEvent, store: ChatStore, userId: string, notifier
       ? undefined
       : state.threadLists[room.workspace_id]?.list.find((t) => t.root.id === message.thread_root_id);
   const input = { message, userId, room, level: state.notificationLevels[room.workspace_id], thread, now: Date.now() };
-  if (shouldNotify(input)) notifier.notify(notificationContent(message, room));
+  if (!shouldNotify(input)) return;
+  // 本文の `<#ID>` の名前は、そのワークスペースのルーム一覧から引く（ADR 0062 決定 5）
+  const rooms = (state.roomLists[room.workspace_id]?.ids ?? []).flatMap((id) => state.rooms[id] ?? []);
+  notifier.notify(notificationContent(message, room, channelTable(rooms)));
 }

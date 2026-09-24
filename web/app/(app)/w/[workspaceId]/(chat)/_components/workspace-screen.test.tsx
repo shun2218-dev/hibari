@@ -134,6 +134,21 @@ describe("WorkspaceScreen", () => {
       nav.params = { workspaceId: "ws-1", roomId: "r-design" };
     });
 
+    it("本文の <#ID> を、ルーム一覧から引いた名前のリンクにする（ADR 0062）", async () => {
+      const release = room("01J8ZZZZZZZZZZZZZZZZZZZZZR", "リリース準備", { kind: "private" });
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({
+          ...openRoom(design, [message(1, { body: `<#${release.id}> と <#01J8ZZZZZZZZZZZZZZZZZZZZZU> を見て` })]),
+          "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [design, chat, dm, release], unread_thread_count: 0 }),
+        }),
+      );
+
+      const link = await screen.findByRole("link", { name: "非公開リリース準備" });
+      expect(link).toHaveAttribute("href", `/w/ws-1/r/${release.id}`);
+      expect(screen.getByText("#アクセスできないチャンネル")).toBeInTheDocument();
+    });
+
     it("shows the rooms, the history with the unread divider, and marks it read", async () => {
       const { api } = renderWithChat(<WorkspaceScreen />, routes(openRoom(design)));
 

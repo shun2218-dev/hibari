@@ -1,8 +1,12 @@
 import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
 
+import { LockIcon } from "@/components/ui/icons";
+import { useChannelLinks } from "@/hooks/chat/use-channel-links";
 import { useOrigin } from "@/hooks/use-origin";
 import { type Block, type Inline, type ListBlock, parseBody } from "@/lib/chat/format/body-format";
+import { type ChannelLinks } from "@/providers/channel-links-provider";
+import { UNRESOLVED_CHANNEL_NAME } from "@/lib/chat/format/channel-links";
 import { highlightParts } from "@/lib/chat/format/highlight";
 import { parsePermalink, permalinkPath } from "@/lib/chat/format/links";
 
@@ -12,6 +16,7 @@ import { parsePermalink, permalinkPath } from "@/lib/chat/format/links";
  *
  * 色は `docs/ui/tokens.md` の決まりどおり。リンクと個人のチップは押せるものなので緑にする。
  * `@channel` / `@here` も個人と同じチップにする（ADR 0043 決定 3 の追記。オーナーの判断、2026-09-24）。押せないので、下線は出さない。
+ * チャンネルへのリンク `<#ID>` も同じチップで、押すとそのチャンネルへ移る（ADR 0062 決定 3）。名前は画面の根が配る表から引く。
  *
  * 段落は改行をそのまま出す（`whitespace-pre-wrap`）。書式のない本文は段落 1 つになるので、いままでと同じ見た目になる。
  *
@@ -40,7 +45,8 @@ export function MessageBody({
   className?: string;
 }) {
   const origin = useOrigin();
-  const ctx: RenderContext = { names: mentionNames ?? {}, onOpenProfile, interactive, origin, highlight };
+  const channelLinks = useChannelLinks();
+  const ctx: RenderContext = { names: mentionNames ?? {}, onOpenProfile, interactive, origin, highlight, channelLinks };
   const blocks = parseBody(body);
   const last = blocks.at(-1);
   const trailingInside = trailing !== undefined && last?.type === "paragraph";
@@ -65,6 +71,8 @@ type RenderContext = {
   origin: string | undefined;
   /** 検索で一致した部分（ADR 0061 決定 7）。書式を解釈したあとの地の文にだけ重ねる。 */
   highlight?: readonly string[];
+  /** 本文の `<#ID>` の名前とリンク先（ADR 0062）。 */
+  channelLinks: ChannelLinks;
 };
 
 /**
@@ -215,5 +223,30 @@ function InlineView({ node, ctx }: { node: Inline; ctx: RenderContext }) {
         );
       }
       return <span className={MENTION_CHIP}>@{node.kind}</span>;
+    case "channel":
+      return <ChannelChip id={node.id} ctx={ctx} />;
   }
+}
+
+/**
+ * チャンネルへのリンク（ADR 0062 決定 3）。public は `#名前`、private は `#` の代わりに鍵のアイコン（サイドバーと同じ）。
+ * 引けないもの（参加していない private、削除済み）は押せない文字にする。ID を出しても誰にも読めないため。
+ */
+function ChannelChip({ id, ctx }: { id: string; ctx: RenderContext }) {
+  const channel = ctx.channelLinks.channels[id];
+  if (!channel) return <span className="text-text-muted">#{UNRESOLVED_CHANNEL_NAME}</span>;
+  const label = channel.private ? (
+    <>
+      <LockIcon aria-label="非公開" aria-hidden={false} role="img" className="mr-0.5 inline size-3.5 align-middle" />
+      {channel.name}
+    </>
+  ) : (
+    `#${channel.name}`
+  );
+  if (!ctx.interactive) return <span className={MENTION_CHIP}>{label}</span>;
+  return (
+    <Link href={ctx.channelLinks.href(id)} className={`${MENTION_CHIP} hover:underline`}>
+      {label}
+    </Link>
+  );
 }
