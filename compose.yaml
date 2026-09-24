@@ -2,7 +2,7 @@
 #
 # - server には container_name も固定のホストポートへの依存も持たせない。`docker compose up --scale server=2` で増やせるようにする。
 #   ホストに公開するのは Caddy（ロードバランサ）だけで、server には Caddy を通って到達する（ロードマップ Phase 5、ADR 0016）。
-#   サービス同士はサービス名（postgres / redis / minio / server）で到達する。
+#   サービス同士はサービス名（postgres / redis / s3 / server）で到達する。
 # - postgres / redis はホストにポートを公開しない。psql は `make psql` でコンテナ内から使う。
 #   ホストに psql を要求しないことと、他プロジェクトの 5432 / 6379 と衝突しないことが理由。
 # - Next.js（web/）はここに入れず、ホストで起動する（CLAUDE.md「技術スタック」）。
@@ -43,38 +43,50 @@ services:
       timeout: 3s
       retries: 30
 
-  minio:
-    # MinIO はコミュニティ版のイメージ配布を 2025 年に終了したため、最後のリリースに固定する。
-    # 使うのは S3 API の PUT / GET / HEAD / DELETE と署名付き URL だけ（ADR 0008）。
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: server /data --console-address :9001
+  s3:
+    # S3 互換のストレージ。RustFS を使う（ADR 0008 の追記）。MinIO は公式のイメージの配布をやめた（2026-09）。
+    # 使うのは S3 API の PUT / GET / HEAD / DELETE と署名付き URL、バケットの CORS だけ（ADR 0008）。
+    # サービス名を製品名にしないのは、また替えるときに server の設定やテストの接続先を変えずに済むようにするため。
+    image: rustfs/rustfs:1.0.0
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-hibari}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-hibari-secret}
+      RUSTFS_ACCESS_KEY: ${LOCAL_S3_ACCESS_KEY:-hibari}
+      RUSTFS_SECRET_KEY: ${LOCAL_S3_SECRET_KEY:-hibari-secret}
+      # 管理画面（http://localhost:9001/rustfs/console/）。アップロードしたファイルを見るのに使う
+      RUSTFS_CONSOLE_ENABLE: "true"
     # ブラウザが署名付き URL で直接 PUT / GET するので、API はホストに公開する（ADR 0008）。
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${LOCAL_S3_PORT:-9000}:9000"
+      - "${LOCAL_S3_CONSOLE_PORT:-9001}:9001"
     volumes:
-      - miniodata:/data
+      - s3data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
       interval: 2s
       timeout: 3s
       retries: 30
 
   # バケットを作る使い捨てのコンテナ。アプリはバケットを作らない（本番のバケットはインフラの側で作る。ADR 0013）。
   # 開発用（hibari）とテスト用（hibari-test）を分けるのは、DB と同じく開発データとテストを混ぜないため。
-  minio-init:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+  # S3 の CLI を入れず、curl の SigV4 署名で S3 API を直接呼ぶ（ストレージの製品に依存しない）。
+  # 開発用のバケットには、本番の R2 と同じく CORS を設定する（許すのは Web の origin からの PUT / GET だけ）。
+  s3-init:
+    image: curlimages/curl:8.22.0
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-hibari}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-hibari-secret}
+      ACCESS_KEY: ${LOCAL_S3_ACCESS_KEY:-hibari}
+      SECRET_KEY: ${LOCAL_S3_SECRET_KEY:-hibari-secret}
+      WEB_ORIGIN: ${APP_BASE_URL:-http://localhost:3000}
     entrypoint: ["sh", "-c"]
     command:
-      - mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" && mc mb --ignore-existing local/hibari local/hibari-test
+      - |
+        set -e
+        s3() { curl -fsS --aws-sigv4 "aws:amz:us-east-1:s3" --user "$$ACCESS_KEY:$$SECRET_KEY" "$$@"; }
+        # RustFS は作成済みのバケットにも 200 を返すので、何度起動してもよい
+        s3 -X PUT http://s3:9000/hibari -o /dev/null
+        s3 -X PUT http://s3:9000/hibari-test -o /dev/null
+        cors="<CORSConfiguration><CORSRule><AllowedOrigin>$$WEB_ORIGIN</AllowedOrigin><AllowedMethod>PUT</AllowedMethod><AllowedMethod>GET</AllowedMethod><AllowedHeader>content-type</AllowedHeader><MaxAgeSeconds>600</MaxAgeSeconds></CORSRule></CORSConfiguration>"
+        s3 -X PUT "http://s3:9000/hibari?cors=" -H "Content-Type: application/xml" --data "$$cors" -o /dev/null
     depends_on:
-      minio:
+      s3:
         condition: service_healthy
 
   server:
@@ -99,19 +111,19 @@ services:
       AUTH_REQUIRE_VERIFIED_EMAIL: ${AUTH_REQUIRE_VERIFIED_EMAIL:-false}
       # X-Forwarded-For を信用するのは Caddy からの接続だけ（ADR 0017）。
       TRUSTED_PROXIES: ${CADDY_IP:-172.31.250.10}/32
-      # サーバーはサービス名で MinIO に到達し、署名付き URL はブラウザから到達できるホスト名で作る（ADR 0013）。
+      # サーバーはサービス名でストレージに到達し、署名付き URL はブラウザから到達できるホスト名で作る（ADR 0013）。
       # 開発ではルートの認証情報をそのまま使う。
-      S3_ENDPOINT: http://minio:9000
-      S3_PUBLIC_ENDPOINT: http://localhost:${MINIO_API_PORT:-9000}
+      S3_ENDPOINT: http://s3:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:${LOCAL_S3_PORT:-9000}
       S3_BUCKET: hibari
-      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-hibari}
-      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-hibari-secret}
+      S3_ACCESS_KEY_ID: ${LOCAL_S3_ACCESS_KEY:-hibari}
+      S3_SECRET_ACCESS_KEY: ${LOCAL_S3_SECRET_KEY:-hibari-secret}
       S3_USE_PATH_STYLE: "true"
       # テストはコンテナの中で署名付き URL にも PUT するので、公開エンドポイントを分けない。
-      TEST_S3_ENDPOINT: http://minio:9000
+      TEST_S3_ENDPOINT: http://s3:9000
       TEST_S3_BUCKET: hibari-test
-      TEST_S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-hibari}
-      TEST_S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-hibari-secret}
+      TEST_S3_ACCESS_KEY_ID: ${LOCAL_S3_ACCESS_KEY:-hibari}
+      TEST_S3_SECRET_ACCESS_KEY: ${LOCAL_S3_SECRET_KEY:-hibari-secret}
     # ホストには公開しない。Caddy が振り分ける。
     volumes:
       - .:/src
@@ -126,7 +138,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio-init:
+      s3-init:
         condition: service_completed_successfully
 
   # ロードバランサ（ADR 0016）。ホストに公開するのはこれだけで、web/ の API のベース URL（localhost:8080）はここに向く。
@@ -154,6 +166,6 @@ networks:
 
 volumes:
   pgdata:
-  miniodata:
+  s3data:
   gomod:
   gobuild:
