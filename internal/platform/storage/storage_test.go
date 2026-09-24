@@ -143,7 +143,7 @@ func TestPresignPut(t *testing.T) {
 
 func TestPresignUsesPublicEndpoint(t *testing.T) {
 	s, err := storage.New(storage.Config{
-		Endpoint:        "http://minio:9000",
+		Endpoint:        "http://s3:9000",
 		PublicEndpoint:  "https://files.example.com",
 		Region:          "auto",
 		Bucket:          "b",
@@ -164,7 +164,7 @@ func TestPresignUsesPublicEndpoint(t *testing.T) {
 }
 
 func TestNewRejectsInvalidConfig(t *testing.T) {
-	valid := storage.Config{Endpoint: "http://minio:9000", Region: "us-east-1", Bucket: "b", AccessKeyID: "id", SecretAccessKey: "secret"}
+	valid := storage.Config{Endpoint: "http://s3:9000", Region: "us-east-1", Bucket: "b", AccessKeyID: "id", SecretAccessKey: "secret"}
 	for _, tt := range []struct {
 		name   string
 		modify func(*storage.Config)
@@ -174,7 +174,7 @@ func TestNewRejectsInvalidConfig(t *testing.T) {
 		{"missing region", func(c *storage.Config) { c.Region = "" }},
 		{"missing access key", func(c *storage.Config) { c.AccessKeyID = "" }},
 		{"missing secret", func(c *storage.Config) { c.SecretAccessKey = "" }},
-		{"relative endpoint", func(c *storage.Config) { c.Endpoint = "minio:9000" }},
+		{"relative endpoint", func(c *storage.Config) { c.Endpoint = "s3:9000" }},
 		{"invalid public endpoint", func(c *storage.Config) { c.PublicEndpoint = "ftp://files" }},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

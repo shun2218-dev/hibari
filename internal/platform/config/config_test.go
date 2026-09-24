@@ -32,7 +32,7 @@ func TestLoad(t *testing.T) {
 
 		"MAIL_TRANSPORT": "log",
 
-		"S3_ENDPOINT":          "http://minio:9000",
+		"S3_ENDPOINT":          "http://s3:9000",
 		"S3_BUCKET":            "hibari",
 		"S3_ACCESS_KEY_ID":     "id",
 		"S3_SECRET_ACCESS_KEY": "secret",
@@ -74,7 +74,7 @@ func TestLoad(t *testing.T) {
 				// 既定は検証を求める（ADR 0053 決定 4）。
 				RequireVerifiedEmail: true,
 
-				Storage:                storage.Config{Endpoint: "http://minio:9000", Region: "us-east-1", Bucket: "hibari", AccessKeyID: "id", SecretAccessKey: "secret"},
+				Storage:                storage.Config{Endpoint: "http://s3:9000", Region: "us-east-1", Bucket: "hibari", AccessKeyID: "id", SecretAccessKey: "secret"},
 				AttachmentMaxBytes:     25 << 20,
 				AttachmentAllowedTypes: config.DefaultAttachmentAllowedTypes,
 				AvatarMaxBytes:         2 << 20,
@@ -110,7 +110,7 @@ func TestLoad(t *testing.T) {
 				RequireVerifiedEmail: false,
 
 				Storage: storage.Config{
-					Endpoint: "http://minio:9000", PublicEndpoint: "http://localhost:9000", Region: "auto", Bucket: "hibari",
+					Endpoint: "http://s3:9000", PublicEndpoint: "http://localhost:9000", Region: "auto", Bucket: "hibari",
 					AccessKeyID: "id", SecretAccessKey: "secret", UsePathStyle: true,
 				},
 				AttachmentMaxBytes:     1 << 20,
@@ -263,7 +263,7 @@ func TestLoadSMTP(t *testing.T) {
 			got, err := config.Load(env(map[string]string{
 				"DATABASE_URL": "postgres://localhost/hibari", "REDIS_URL": "redis://localhost:6379/0",
 				"JWT_PRIVATE_KEY_FILE": "/keys/jwt.pem",
-				"S3_ENDPOINT":          "http://minio:9000", "S3_BUCKET": "hibari", "S3_ACCESS_KEY_ID": "id", "S3_SECRET_ACCESS_KEY": "secret",
+				"S3_ENDPOINT":          "http://s3:9000", "S3_BUCKET": "hibari", "S3_ACCESS_KEY_ID": "id", "S3_SECRET_ACCESS_KEY": "secret",
 
 				"MAIL_TRANSPORT": "smtp", "SMTP_HOST": "smtp.resend.com", "SMTP_PORT": tt.port, "SMTP_USERNAME": "resend",
 				"SMTP_PASSWORD_FILE": "/run/secrets/smtp_password", "MAIL_FROM": "hibari <noreply@mail.example.com>",

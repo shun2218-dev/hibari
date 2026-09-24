@@ -81,4 +81,4 @@ REST のリクエストは、次の順に層を通る。
 
 - **ファイルの中身は Go のサーバーを通さない。** クライアントは署名付き URL でストレージに直接 PUT / GET する。
 - サーバーが行うのは、authz、URL の発行、アップロード後の HEAD による検証だけ。サイズと Content-Type は署名に含めるので、申告と違う PUT はストレージが拒む（[ADR 0013](../adr/0013-attachment-api.md)）。
-- ストレージへのアクセスは `internal/platform/storage` の S3 API の抽象を通す。ローカルは MinIO、本番は Cloudflare R2 で、特定のベンダーの SDK に依存しない（[ADR 0008](../adr/0008-object-storage-s3-api.md)）。
+- ストレージへのアクセスは `internal/platform/storage` の S3 API の抽象を通す。ローカルは RustFS、本番は Cloudflare R2 で、特定のベンダーの SDK に依存しない（[ADR 0008](../adr/0008-object-storage-s3-api.md)）。

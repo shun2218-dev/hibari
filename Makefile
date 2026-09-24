@@ -2,7 +2,7 @@
 # Next.js（web/）だけはホストで動かす（CLAUDE.md「技術スタック」）。
 
 COMPOSE ?= docker compose
-# server イメージを使った使い捨てのコンテナ。依存（postgres / redis / minio）は必要なら自動で起動する。
+# server イメージを使った使い捨てのコンテナ。依存（postgres / redis / s3）は必要なら自動で起動する。
 # ポートは公開しないので、`make up` で動いている server と衝突しない。
 RUN_GO  := $(COMPOSE) run --rm --no-TTY server
 GOTOOL  := go tool -modfile=tools/go.mod

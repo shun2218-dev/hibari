@@ -151,7 +151,7 @@ email を検証するまで、chat の API と WebSocket は 403（`email-unveri
 | ドキュメントサイト | Fly app（`nrt`、静的 + `auto_stop_machines`）/ `docs.hibari-chat.com`（ADR 0064） | ホストで `make site` |
 | Postgres | Fly app + ボリューム（自前） | compose の `postgres` |
 | Valkey | Fly app（自前・永続化なし） | compose の `redis` |
-| オブジェクトストレージ | Cloudflare R2 | compose の `minio` |
+| オブジェクトストレージ | Cloudflare R2 | compose の `s3`（RustFS） |
 
 `app` / `api` / `ui` の 3 つのサブドメインを同じ登録可能ドメインに置くのは、Refresh Token の Cookie（`SameSite=Strict`）を載せるため（上の `APP_BASE_URL`）。
 
@@ -186,7 +186,7 @@ email を検証するまで、chat の API と WebSocket は 403（`email-unveri
 
 | 環境 | Endpoint | Region | UsePathStyle |
 |---|---|---|---|
-| ローカル（compose） | `http://minio:9000`（署名用は `http://localhost:9000`） | `us-east-1` | `true` |
+| ローカル（compose） | `http://s3:9000`（署名用は `http://localhost:9000`） | `us-east-1` | `true` |
 | 本番（R2） | `https://<アカウントID>.r2.cloudflarestorage.com` | `auto` | `false` |
 
 - バケットは 2 つ: **添付ファイル用**と **DB のバックアップ用**。

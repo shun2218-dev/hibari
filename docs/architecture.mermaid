@@ -45,7 +45,7 @@ flowchart TB
     direction LR
     PG[("PostgreSQL<br/>唯一の真実<br/>users / workspaces / rooms / messages")]
     RD[("Redis 7.4+<br/>Pub/Sub・presence（インスタンス別 TTL）・typing<br/>失効通知・ws-ticket・レート制限")]
-    S3[("S3 互換ストレージ<br/>ローカル: MinIO / 本番: R2（暫定）<br/>private バケット")]
+    S3[("S3 互換ストレージ<br/>ローカル: RustFS / 本番: R2<br/>private バケット")]
   end
 
   WEB -->|"REST: Bearer JWT<br/>WSS: 短命 ws-ticket"| LB
