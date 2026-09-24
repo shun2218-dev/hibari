@@ -91,8 +91,12 @@ function HighlightedText({ text, terms }: { text: string; terms: readonly string
   );
 }
 
-/** メンションのチップ。個人も `@channel` / `@here` も同じ見た目にする（ADR 0043 決定 3 の追記）。入力欄の mention-node.ts と揃える。 */
-const MENTION_CHIP = "rounded-sm bg-primary-subtle px-1 font-semibold text-primary";
+/**
+ * メンションのチップ。個人も `@channel` / `@here` も同じ見た目にする（ADR 0043 決定 3 の追記）。入力欄の mention-node.ts と揃える。
+ * 押せる個人のチップは button で、ブラウザは button を inline にできない（inline-block として扱う）。
+ * span のままのチップと塗る高さがずれるので、全部を inline-block にし、高さは文字に沿わせる（行送り 1 + 上下 2px。オーナーの指摘、2026-09-24）。
+ */
+const MENTION_CHIP = "inline-block rounded-sm bg-primary-subtle px-1 py-0.5 leading-none font-semibold text-primary";
 
 /** 箇条書きの記号は段ごとに • → ◦ → ▪（Slack と同じ。docs/ui/tokens.md）。段は 3 つまで（ADR 0051 決定 2）。 */
 const BULLETS = ["list-disc", "list-circle", "list-square"] as const;
@@ -236,8 +240,9 @@ function ChannelChip({ id, ctx }: { id: string; ctx: RenderContext }) {
   const channel = ctx.channelLinks.channels[id];
   if (!channel) return <span className="text-text-muted">#{UNRESOLVED_CHANNEL_NAME}</span>;
   const label = channel.private ? (
+    // 下にそろえる。中央（align-middle）だと、行送り 1 のチップの中でアイコンが上下にはみ出し、ほかのチップより高くなる
     <>
-      <LockIcon aria-label="非公開" aria-hidden={false} role="img" className="mr-0.5 inline size-3.5 align-middle" />
+      <LockIcon aria-label="非公開" aria-hidden={false} role="img" className="mr-0.5 inline size-3.5 align-bottom" />
       {channel.name}
     </>
   ) : (

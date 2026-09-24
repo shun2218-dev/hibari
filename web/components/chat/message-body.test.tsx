@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -34,6 +34,16 @@ describe("MessageBody", () => {
     for (const text of ["@channel", "@here"]) {
       expect(screen.getByText(text)).toHaveClass("bg-primary-subtle", "text-primary");
       expect(screen.getByText(text)).not.toHaveClass("bg-attention");
+    }
+  });
+
+  it("押せる個人のチップ（button）と @channel / @here（span）を同じ高さにする", () => {
+    // button は inline にできない（ブラウザが inline-block として扱う）ので、全部のチップを inline-block にし、
+    // 行送りはチップの側で決める。span だけ inline のままだと、塗る範囲が文字の高さになり、個人のチップより低くなる
+    render(<MessageBody body={`<@${ALICE}> <!here> <!channel>`} mentionNames={names} onOpenProfile={vi.fn()} />);
+
+    for (const chip of [screen.getByRole("button", { name: "@田中 あおい" }), screen.getByText("@here"), screen.getByText("@channel")]) {
+      expect(chip).toHaveClass("inline-block", "leading-none", "py-0.5");
     }
   });
 
@@ -257,6 +267,8 @@ describe("MessageBody の書式（ADR 0051）", () => {
       const link = screen.getByRole("link", { name: "非公開リリース準備" });
       expect(link).toHaveAttribute("href", `/w/ws/r/${PRIVATE}`);
       expect(link).not.toHaveTextContent("#");
+      // 鍵のアイコンでチップが高くならないよう、下にそろえる（チップの高さをそろえる。オーナーの指摘、2026-09-24）
+      expect(within(link).getByRole("img", { name: "非公開" })).toHaveClass("align-bottom");
     });
 
     it("引けないものは押せない「アクセスできないチャンネル」にし、ID を出さない", () => {
