@@ -37,7 +37,7 @@ import (
 //   - スライスと map は `T[]` / `Record<string, T>`。encoding/json/v2 は nil を null にしない（TestTypeScriptResponsesHaveNoUnexpectedNull）。
 //   - time.Time は RFC 3339 の文字列。数値は number（seq は 2^53 を超えない）。
 //   - 名前付きの string 型は、登録した値の union にする。値の漏れは Go のソースの const と照らして検査する。
-var updateTS = flag.Bool("update", false, "web/lib/api/types.gen.ts を書き直す")
+var updateTS = flag.Bool("update", false, "生成したファイル（web/lib/api/types.gen.ts、docs/api/openapi.json）を書き直す")
 
 const (
 	tsOutPath  = "../../web/lib/api/types.gen.ts"
