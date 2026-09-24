@@ -88,6 +88,10 @@ sqlc: ## db/queries から Go のコードを生成する（sqlc.yaml）
 ts-types: ## Go の JSON の型から web/lib/api/types.gen.ts を生成する（internal/httpx/tsgen_test.go）
 	$(RUN_GO) go test ./internal/httpx -run '^TestTypeScriptTypes$$' -count=1 -update
 
+.PHONY: openapi
+openapi: ## Go の型とエンドポイントの表から docs/api/openapi.json を生成する（internal/httpx/openapi_test.go。ADR 0064）
+	$(RUN_GO) go test ./internal/httpx -run '^TestOpenAPI$$' -count=1 -update
+
 # ---- 品質 ----
 
 .PHONY: test

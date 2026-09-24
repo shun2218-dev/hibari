@@ -123,6 +123,14 @@ GitHub でもこの文字は消えて見えていたので、`docs/` の側を�
 - **描画**: `fumadocs-openapi` の `staticSource` で、操作ごとのページを仮想的に作る（MDX のファイルを生成してコミットしない）。サイドバーと検索に入る。
   「試しに送る」（playground）は出さない。サイトから本番の API を叩かせる理由がない。
 - WebSocket のイベントは OpenAPI にも AsyncAPI にもしない。`docs/events.md` をそのまま載せる。
+- **追記（2026-09-24、実装）**:
+  - 表は `internal/httpx/openapi_routes_test.go` の `apiRoutes`、生成は `openapi_test.go`、`make openapi` で書き直す。
+  - 照合は `mux.Handle` / `mux.HandleFunc` だけでなく、第 1 引数が `GET /…` などのパターンの文字列である呼び出しをすべて拾う（chat.go の `handle(...)` も同じ形で登録しているため）。
+  - `operationId` は表に書かず、登録しているハンドラの名前（`h.createWorkspace` → `createWorkspace`）をソースから取る。表とハンドラで名前がずれない。
+  - 本文を読むエンドポイントには、`decodeJSON` が返す 415（Content-Type）と 413（大きさ）を表に書かずに足す。認証の 401 と、email を検証していない 403 と同じ扱い。
+  - 表に足した項目: 本文を省略できる（refresh と logout は Web クライアントが本文を送らず Cookie を使う）、Go の型を通さない本文（JWKS）、同じ名前で何度も渡せるクエリ（検索の `room_id` など）。
+  - components には、パスから参照した型だけを出す（WebSocket だけの型は出さない）。生成した文書は `@readme/openapi-parser` の検証に通ることを確かめた。
+  - エラーのステータスは、ハンドラとドメインのエラーの対応（problem.go）から表に書いた。レスポンスの型と同じく、合っているかはレビューで見る。
 
 ### 6. 配り方と検索エンジン
 
