@@ -35,7 +35,7 @@ import { StatusDialog } from "@/components/chat/status-dialog/status-dialog";
 import { ThreadList } from "@/components/chat/thread-list";
 import { ThreadPanel } from "@/components/chat/thread-panel";
 import { Timeline } from "@/components/chat/timeline";
-import type { ActivityFilter, AttachmentDraftView, ConnectionBannerStatus } from "@/components/chat/types";
+import type { ActivityFilter, AttachmentDraftView, ConnectionBannerStatus, RoomKind, TimelineItem } from "@/components/chat/types";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog";
 import { notifyLevelLabels } from "@/lib/chat/notifications/mute";
@@ -83,10 +83,11 @@ import {
   jumpTargetKey,
   lastMessageKey,
   mentionCandidates,
-  pendingMessageKey,
+  myMessageKey,
   timeline,
   timelineArchived,
   timelineJumped,
+  timelineMySent,
   timelineWithAvatars,
   timelineWithFormatting,
   timelineWithFormerMember,
@@ -299,6 +300,53 @@ const composerDraft = `金曜のリリースは *17 時* からです。__遅れ
 
 const storyChannelLinks = { channels: channelLinkTable, href: (id: string) => `/w/ws/r/${id}` };
 
+/**
+ * 送信済みで削除されていない人の発言に出す「リンクをコピー」「ピン留め」「後で」と、自分の発言の編集・削除。
+ * 実画面（hooks/chat/use-message-actions.tsx）と同じ条件にしておく。story ごとに渡すかどうかを決めていると、
+ * 機能を足したときにホバーの帯と「…」のメニューが古い見た目のまま残る（送信中のメッセージにはまだ ID がないので出さない）。
+ */
+function messageActions(
+  items: TimelineItem[],
+  roomKind: RoomKind,
+  { canPin = true, saved = false }: { canPin?: boolean; saved?: boolean } = {},
+) {
+  const sent = (key: string) => {
+    const item = items.find((i) => i.type === "message" && i.message.key === key);
+    return item?.type === "message" && item.message.status === "sent" && !item.message.deleted ? item.message : undefined;
+  };
+  const dm = roomKind === "dm";
+  return {
+    copyLinkFor: (key: string) => (sent(key) ? { label: "リンクをコピー", onClick: noop } : undefined),
+    pinFor: (key: string) => {
+      const message = canPin ? sent(key) : undefined;
+      if (!message) return undefined;
+      const label = message.pinnedBy
+        ? dm ? "この会話からピンを外す" : "チャンネルからピンを外す"
+        : dm ? "この会話にピン留めする" : "チャンネルへピン留めする";
+      return { label, onClick: noop };
+    },
+    saveFor: (key: string) => (sent(key) ? { saved, onClick: noop } : undefined),
+    mine: (key: string) => sent(key)?.sender.id === users.you.id,
+  };
+}
+
+/** スレッドのパネルのタイムライン。実画面（room-thread.tsx）と同じく、ルームと同じ操作を出す。 */
+function ThreadTimeline({ items, roomKind }: { items: TimelineItem[]; roomKind: RoomKind }) {
+  const actions = messageActions(items, roomKind);
+  return (
+    <Timeline
+      items={items}
+      copyLinkFor={actions.copyLinkFor}
+      pinFor={actions.pinFor}
+      saveFor={actions.saveFor}
+      actionsFor={(key) => ({ canEdit: actions.mine(key), canDelete: actions.mine(key) })}
+      onToggleReaction={noop}
+      onTogglePicker={noop}
+      onOpenProfile={noop}
+    />
+  );
+}
+
 export function chat({
   avatars,
   systemMessages,
@@ -356,6 +404,48 @@ export function chat({
   const profilePanel = profile?.startsWith("panel-") ? profilePanelContent(profile) : undefined;
   // ステータスの出ている画面の上に出す（名前の横の絵文字とカードの中身をそろえて見せる）
   const withStatus = presence || profile !== undefined;
+  const timelineItems =
+    archivedRoom
+      ? timelineArchived
+      : notifications === "menu-dm"
+      ? dmTimeline
+      : profile === "hover-former" || profile === "panel-former"
+      ? timelineWithFormerMember
+      : withStatus
+      ? timelineWithStatus
+      : pins
+      ? timelineWithPins
+      : messageAttachments
+      ? timelineWithImages
+      : reactions
+      ? timelineWithReactions
+      : linkCards
+      ? timelineWithLinkCards
+      : formatting
+      ? timelineWithFormatting
+      : jump
+      ? timelineJumped
+      : thread || threadNotify
+      ? threadTimeline(thread ?? "replies")
+      : channelLinks
+      ? timelineWithChannelLinks
+      : mentions
+        ? timelineWithMentions
+        : broadcastInChannel
+        ? timelineWithBroadcast
+        : systemMessages
+        ? timelineWithSystemMessages
+        : avatars
+          ? timelineWithAvatars
+          : [menuKey, editingKey, hoveredKey].includes(myMessageKey)
+            ? timelineMySent
+            : timeline;
+  // アーカイブしたルームではピン留めを変えられない（ADR 0059）
+  const actions = messageActions(timelineItems, notifications === "menu-dm" ? "dm" : selectedRoom.kind, {
+    canPin: !archivedRoom,
+    saved: saved === "hover-saved",
+  });
+  const editingMessage = timelineItems.find((i) => i.type === "message" && i.message.key === editingKey);
   // 「後で」の一覧はスレッドの一覧と同じく、ルームの代わりにメインの領域に出す
   const savedTab = saved === "archived" || saved === "archived-menu" ? "archived" : saved === "completed" ? "completed" : "in_progress";
   const savedItems =
@@ -396,6 +486,7 @@ export function chat({
       workspaceName={workspaces.dev.name}
       query={searchResultsView ? searchQuery : undefined}
       canGoBack
+      canGoForward
       panel={
         messageSearch === "panel" || messageSearch === "panel-typed" ? (
           <SearchPanel
@@ -478,7 +569,7 @@ export function chat({
           members ? (
             <MembersPanel
               members={withStatus ? roomMembersWithPresence : roomMembers}
-              onOpenProfile={profile ? noop : undefined}
+              onOpenProfile={noop}
             />
           ) : profilePanel ? (
             profilePanel
@@ -495,7 +586,7 @@ export function chat({
                 />
               }
             >
-              <Timeline items={threadItems(threadContent.root, threadContent.replies)} />
+              <ThreadTimeline items={threadItems(threadContent.root, threadContent.replies)} roomKind={selectedRoom.kind} />
             </ThreadPanel>
           ) : undefined
         }
@@ -545,41 +636,7 @@ export function chat({
         {jump === "not-found" && <MessageNotFoundNotice onClose={noop} />}
         {body === "timeline" && !searchResultsView && !threads && !pinsTab && (
           <Timeline
-            items={
-              archivedRoom
-                ? timelineArchived
-                : notifications === "menu-dm"
-                ? dmTimeline
-                : profile === "hover-former" || profile === "panel-former"
-                ? timelineWithFormerMember
-                : withStatus
-                ? timelineWithStatus
-                : pins
-                ? timelineWithPins
-                : messageAttachments
-                ? timelineWithImages
-                : reactions
-                ? timelineWithReactions
-                : linkCards
-                ? timelineWithLinkCards
-                : formatting
-                ? timelineWithFormatting
-                : jump
-                ? timelineJumped
-                : thread || threadNotify
-                ? threadTimeline(thread ?? "replies")
-                : channelLinks
-                ? timelineWithChannelLinks
-                : mentions
-                  ? timelineWithMentions
-                  : broadcastInChannel
-                  ? timelineWithBroadcast
-                  : systemMessages
-                  ? timelineWithSystemMessages
-                  : avatars
-                    ? timelineWithAvatars
-                    : timeline
-            }
+            items={timelineItems}
             openThreadKey={thread === "root-deleted" ? deletedThreadRoot.key : thread ? threadContent?.root.key : undefined}
             highlightedKey={jump === "highlight" ? jumpTargetKey : undefined}
             hoveredKey={
@@ -587,15 +644,9 @@ export function chat({
                 ? threadRootKey
                 : pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : saved === "hover" || saved === "hover-saved" ? saveCandidateKey : hoveredKey
             }
-            pinFor={
-              pins
-                ? (key) => ({
-                    label: key === pinnedMessageKey || key === "m-1012" ? "チャンネルからピンを外す" : "チャンネルへピン留めする",
-                    onClick: noop,
-                  })
-                : undefined
-            }
-            saveFor={saved === "hover" || saved === "hover-saved" ? () => ({ saved: saved === "hover-saved", onClick: noop }) : undefined}
+            copyLinkFor={actions.copyLinkFor}
+            pinFor={actions.pinFor}
+            saveFor={actions.saveFor}
             onToggleReaction={noop}
             onTogglePicker={noop}
             openPickerKey={
@@ -609,7 +660,7 @@ export function chat({
             }
             openPickerFrom={reactions === "picker-from-reactions" ? "reactions" : undefined}
             reactionPicker={<EmojiPicker onPick={noop} theme={dark ? "dark" : "light"} />}
-            onOpenProfile={profile ? noop : undefined}
+            onOpenProfile={noop}
             profileHoverCardFor={hover ? () => <ProfileHoverCard profile={hover.profile} /> : undefined}
             hoveredProfileKey={hover?.key}
             hoveredReaction={reactions === "names" ? hoveredReaction : undefined}
@@ -622,9 +673,9 @@ export function chat({
             }
             onToggleAttachmentMenu={noop}
             actionsFor={(key) => ({
-              canEdit: key === pendingMessageKey,
+              canEdit: actions.mine(key),
               // 添付だけを削除できるのは、メッセージを削除できる人と同じ（ADR 0045 決定 5）
-              canDelete: key === pendingMessageKey || (messageAttachments !== undefined && key === attachmentMessageKey),
+              canDelete: actions.mine(key) || (messageAttachments !== undefined && key === attachmentMessageKey),
             })}
             openMenuKey={
               threadNotify ? threadRootKey : pins === "menu" ? pinCandidateKey : pins === "menu-pinned" ? pinnedMessageKey : menuKey
@@ -635,7 +686,7 @@ export function chat({
                 : undefined
             }
             editingKey={editingKey}
-            editing={{ value: "了解です。今日の夕方までに一覧を更新して、また共有します。" }}
+            editing={{ value: editingMessage?.type === "message" ? editingMessage.message.body : "" }}
           />
         )}
         {body === "empty" && <EmptyMessages kind={selectedRoom.kind} name={selectedRoom.name} />}
