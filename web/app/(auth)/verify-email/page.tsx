@@ -3,7 +3,7 @@ import { safeNextPath } from "@/lib/auth/next-path";
 import { VerifyEmailPage } from "@/app/(auth)/verify-email/_components/verify-email-page";
 
 export const metadata = {
-  title: "メールアドレスの確認 | hibari",
+  title: "メールアドレスの確認",
   // URL に確認のトークンが載っている。ページから出ていくリクエストに Referer で付けない。
   referrer: "no-referrer",
 } as const;

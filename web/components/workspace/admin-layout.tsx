@@ -22,7 +22,7 @@ type WorkspaceAdminLayoutProps = {
   children: ReactNode;
 };
 
-const titles: Record<AdminSection, string> = {
+export const adminTitles: Record<AdminSection, string> = {
   settings: "ワークスペース設定",
   members: "メンバー",
   invites: "招待リンク",
@@ -79,7 +79,7 @@ export function WorkspaceAdminLayout({
                       current ? "bg-primary-subtle text-primary" : "text-text hover:bg-surface-muted",
                     )}
                   >
-                    {titles[item.key]}
+                    {adminTitles[item.key]}
                     {item.count !== undefined && (
                       <span className="font-mono text-2xs text-text-secondary">{item.count}</span>
                     )}
@@ -105,7 +105,7 @@ export function WorkspaceAdminLayout({
           >
             <ChevronLeftIcon className="size-5" />
           </Link>
-          <h1 className="pl-1 text-base font-bold text-text md:pl-0">{titles[section]}</h1>
+          <h1 className="pl-1 text-base font-bold text-text md:pl-0">{adminTitles[section]}</h1>
         </header>
         <main className="min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-10">
           <div className="mx-auto w-full max-w-160">{children}</div>

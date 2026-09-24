@@ -2299,6 +2299,38 @@ describe("WorkspaceScreen", () => {
     });
   });
 
+  describe("タブのタイトル（ADR 0063）", () => {
+    afterEach(() => {
+      document.title = "";
+    });
+
+    it("開いているルーム・ワークスペース名・アクティビティの数を並べる（# は付けない）", async () => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+      nav.pathname = "/w/ws-1/r/r-design";
+      renderWithChat(
+        <WorkspaceScreen />,
+        routes({ ...openRoom(design), "GET /api/v1/workspaces/ws-1/activity/unread_count": () => json(200, { count: 3 }) }),
+      );
+
+      await waitFor(() => expect(document.title).toBe("デザインレビュー - hibari 開発 - 3 個の新しいアイテム - hibari"));
+    });
+
+    it("DM は相手の表示名。アクティビティが 0 なら数を出さない", async () => {
+      nav.params = { workspaceId: "ws-1", roomId: "r-dm" };
+      nav.pathname = "/w/ws-1/r/r-dm";
+      renderWithChat(<WorkspaceScreen />, routes(openRoom(dm)));
+
+      await waitFor(() => expect(document.title).toBe(`${naoki.display_name} - hibari 開発 - hibari`));
+    });
+
+    it("スレッドの一覧は「スレッド」", async () => {
+      nav.pathname = "/w/ws-1/threads";
+      renderWithChat(<WorkspaceScreen />, routes());
+
+      await waitFor(() => expect(document.title).toBe("スレッド - hibari 開発 - hibari"));
+    });
+  });
+
   describe("アーカイブと削除（ADR 0059）", () => {
     const archivedAt = "2026-09-23T01:00:00Z";
     const archivedDesign = { ...design, archived_at: archivedAt };
