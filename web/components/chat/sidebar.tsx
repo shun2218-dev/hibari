@@ -188,7 +188,8 @@ function NavRow({
     >
       {selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-primary" />}
       <Icon className="size-4 shrink-0 text-text-secondary" />
-      <span className={cx("flex-1 text-base text-text", unreadCount > 0 ? "font-bold" : "font-semibold")}>{children}</span>
+      {/* ルームの行と同じく、未読があるときだけ太字にする */}
+      <span className={cx("flex-1 text-base text-text", unreadCount > 0 ? "font-bold" : "font-normal")}>{children}</span>
       <UnreadBadge count={unreadCount} />
     </Link>
   );
@@ -243,13 +244,14 @@ export function RoomRow({
   const line = layout === "line";
   const name = (
     // 知らせの要らない未読は、バッジではなく名前の太字で示す（ADR 0043）
+    // 読み終えたルームは普通の太さにする。semibold（600）にすると bold（700）と見分けがつかず、全部が未読に見えていた
     // ステータスの絵文字は名前のすぐ横に置く。時刻と同じ並びに入れると、名前から離れて右端に寄ってしまう
     <span className="flex min-w-0 items-baseline gap-1">
       <span
         className={cx(
           "truncate text-base",
           muted ? "text-text-muted" : "text-text",
-          room.unreadCount > 0 && !muted ? "font-bold" : "font-semibold",
+          room.unreadCount > 0 && !muted ? "font-bold" : "font-normal",
         )}
       >
         {room.name}
