@@ -20,8 +20,11 @@ export function message(
   };
 }
 
-/** 送信中のメッセージの key。ホバーの再現に使う。 */
-export const pendingMessageKey = "m-1052";
+/**
+ * いちばん下の自分のメッセージの key。いつものタイムラインでは送信中（まだ ID がないので、返信のほかの操作は出ない）。
+ * ホバーの帯・「…」のメニュー・編集中を見せるときは、送信を終えた `timelineMySent` を使う。
+ */
+export const myMessageKey = "m-1052";
 
 export const timeline: TimelineItem[] = [
   { type: "date", key: "d-0912", label: "9月12日" },
@@ -43,10 +46,15 @@ export const timeline: TimelineItem[] = [
   message("m-1041", miyuki, "10:41", "行送りは 1.75 で確定にしましょう。半日開きっぱなしでも目が疲れませんでした。", {
     attachments: [{ kind: "file", id: "a-2", fileName: "hibari-type-scale.pdf", sizeLabel: "248 KB" }],
   }),
-  message(pendingMessageKey, you, "10:52", "了解です。今日の夕方までに一覧を更新して、また共有します。", { status: "pending" }),
+  message(myMessageKey, you, "10:52", "了解です。今日の夕方までに一覧を更新して、また共有します。", { status: "pending" }),
   { type: "unread", key: "unread" },
   message("m-1105", ryo, "11:05", "ありがとうございます。こちらはメンバー一覧の presence 表示を確認しておきます。"),
 ];
+
+/** いちばん下の自分のメッセージの送信が終わったタイムライン。自分の発言なので「…」に編集と削除も出る。 */
+export const timelineMySent: TimelineItem[] = timeline.map((item) =>
+  item.type === "message" && item.message.key === myMessageKey ? { ...item, message: { ...item.message, status: "sent" } } : item,
+);
 
 /**
  * いちばん下のメッセージの key（chat/reaction/reaction-picker-above.png）。

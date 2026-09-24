@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { pendingMessageKey } from "@/stories/fixtures/timeline";
+import { myMessageKey } from "@/stories/fixtures/timeline";
 import { chat } from "@/stories/screens/chat";
 
 /**
@@ -56,7 +56,7 @@ export const MessageHoverActions: Story = {
   name: "メッセージのホバー操作",
   tags: ["since:1.5"],
   parameters: { screenshot: { source: "design" } },
-  render: () => chat({ hoveredKey: pendingMessageKey }),
+  render: () => chat({ hoveredKey: myMessageKey }),
 };
 
 export const EmptyMessages: Story = {

@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
 import { DeleteMessageDialog } from "@/components/chat/dialogs/delete-message";
 
-import { hoverTooltipKey, pendingMessageKey } from "@/stories/fixtures/timeline";
+import { hoverTooltipKey, myMessageKey } from "@/stories/fixtures/timeline";
 import { chat } from "@/stories/screens/chat";
 
 /**
@@ -30,7 +30,7 @@ export const MessageMenu: Story = {
   name: "メッセージの操作メニュー",
   tags: ["since:6-1"],
   parameters: { screenshot: { source: "design", size: "640x380" } },
-  render: () => chat({ menuKey: pendingMessageKey, hoveredKey: pendingMessageKey }),
+  render: () => chat({ menuKey: myMessageKey, hoveredKey: myMessageKey }),
 };
 
 export const HoverTooltip: Story = {
@@ -43,7 +43,7 @@ export const MessageEditing: Story = {
   name: "メッセージの編集中",
   tags: ["since:6-1"],
   parameters: { screenshot: { source: "design", size: "640x360" } },
-  render: () => chat({ editingKey: pendingMessageKey }),
+  render: () => chat({ editingKey: myMessageKey }),
 };
 
 export const MessageDeleteDialog: Story = {
