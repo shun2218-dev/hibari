@@ -25,12 +25,14 @@ describe("MessageBody", () => {
     expect(onOpenProfile).toHaveBeenCalledWith(ALICE);
   });
 
-  it("@channel と @here は琥珀で目立たせる（押せない）", () => {
+  it("@channel と @here は個人と同じチップで描く（押せない）", () => {
     render(<MessageBody body="<!channel> と <!here>" />);
 
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(screen.getByText("@channel")).toHaveClass("bg-attention");
-    expect(screen.getByText("@here")).toHaveClass("bg-attention");
+    for (const text of ["@channel", "@here"]) {
+      expect(screen.getByText(text)).toHaveClass("bg-primary-subtle", "text-primary");
+      expect(screen.getByText(text)).not.toHaveClass("bg-attention");
+    }
   });
 
   it("名前を引けない ID は書かれたままの文字列で出す", () => {

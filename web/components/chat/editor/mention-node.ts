@@ -17,9 +17,8 @@ import {
  */
 const tokenState = createState("token", { parse: (v) => (typeof v === "string" ? v : "") });
 
-/** チップの見た目は本文と同じ（message-body.tsx）。個人は押せるものの緑、全員宛ては琥珀。 */
-const USER_CHIP = "rounded-sm bg-primary-subtle px-1 font-semibold text-primary";
-const ALL_CHIP = "rounded-sm bg-attention px-1 font-semibold text-on-attention";
+/** チップの見た目は本文と同じ（message-body.tsx）。個人も `@channel` / `@here` も同じ（ADR 0043 決定 3 の追記）。 */
+const CHIP = "rounded-sm bg-primary-subtle px-1 font-semibold text-primary";
 
 export class MentionNode extends TextNode {
   $config() {
@@ -28,7 +27,7 @@ export class MentionNode extends TextNode {
 
   createDOM(config: EditorConfig): HTMLElement {
     const element = super.createDOM(config);
-    element.className = $mentionToken(this).startsWith("<@") ? USER_CHIP : ALL_CHIP;
+    element.className = CHIP;
     element.spellcheck = false;
     return element;
   }
