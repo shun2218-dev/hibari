@@ -71,6 +71,7 @@
 | [0062](0062-channel-links.md) | 本文の `#チャンネル名` をチャンネルへのリンクにする（本文には `<#ULID>` で保存し、名前は読む側が引く） | 採用 |
 | [0063](0063-branding-and-page-metadata.md) | ブランドとページのメタデータ（タイトル・ファビコン・OGP・検索エンジン・LP。LP は apex に置き、`app.` は noindex） | 採用 |
 | [0064](0064-documentation-site.md) | ドキュメントサイト（`docs.hibari-chat.com`。`docs/` を正本のまま Fumadocs で配り、REST の API リファレンスは Go の型から OpenAPI を生成する） | 採用 |
+| [0065](0065-link-previews.md) | 外部のリンクのプレビュー（Phase 6.17。投稿の後にサーバーが取得してメッセージに固定し、画像は自前のストレージに写す） | 提案 |
 
 ## テンプレート
 
