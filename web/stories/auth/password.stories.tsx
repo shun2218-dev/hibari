@@ -35,14 +35,13 @@ type Story = StoryObj<typeof meta>;
 export const Forgot: Story = {
   name: "パスワードの再設定を依頼",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<ForgotPasswordForm loginHref={noHref} />),
 };
 
 export const ForgotErrorRateLimit: Story = {
   name: "再設定メールの依頼: 回数制限",
   tags: ["since:6-2"],
-  parameters: { screenshot: { source: "design", size: "480x540" } },
+  parameters: { screenshot: { size: "480x540" } },
   render: () =>
     auth(
       <ForgotPasswordForm
@@ -55,21 +54,19 @@ export const ForgotErrorRateLimit: Story = {
 export const ForgotSent: Story = {
   name: "再設定メールを送信済み",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<ForgotPasswordSent loginHref={noHref} />),
 };
 
 export const Reset: Story = {
   name: "新しいパスワードを設定",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<ResetPasswordForm passwordStrength={goodStrength} passwordDefaultValue="correct-horse" />),
 };
 
 export const ResetErrorInvalidInput: Story = {
   name: "新しいパスワード: 入力エラー",
   tags: ["since:6-2"],
-  parameters: { screenshot: { source: "design", size: "480x520" } },
+  parameters: { screenshot: { size: "480x520" } },
   render: () =>
     auth(
       <ResetPasswordForm
@@ -83,13 +80,11 @@ export const ResetErrorInvalidInput: Story = {
 export const ResetDone: Story = {
   name: "パスワードを変更済み",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<ResetPasswordDone />),
 };
 
 export const ResetInvalid: Story = {
   name: "再設定リンクが無効",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<ResetPasswordInvalid loginHref={noHref} />),
 };

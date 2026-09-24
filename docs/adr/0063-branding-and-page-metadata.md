@@ -143,6 +143,8 @@ Claude Design に頼むもの:
 - 取り込んだら、画面仕様と同じく `docs/ui/` にスクリーンショットを置き、`docs/ui/README.md` に節を足す。
   書き出したファイルは `docs/ui/brand/` に元の SVG を残し、`web/` にコピーする。
 - 文字の「hibari」をロゴに置き換える（`auth-shell.tsx`、`workspace-switcher.tsx`）のは、Claude Design 側の画面を直して、スクリーンショットを撮り直してから行う。
+- **追記（2026-09-25、オーナーの判断）**: Claude Design 側の画面は直さず、実装を置き換えてから Storybook で撮り直し、該当する 26 枚の出どころを `design` から `app` に変えた。
+  マークは `web/components/ui/logo.tsx`（`LogoMark`）で、色はトークン（`fill-primary` / `fill-on-primary`）なので、ダークではダークのマークになる。
 - **LP はライトだけにする。** テーマの設定は `app.` の localStorage にあり（`lib/theme.ts`）、オリジンの違う apex からは読めない。
   LP のためだけにテーマの受け渡しを作るほどの価値はない。
 - **追記（2026-09-24、オーナーの確認）**: LP の最初の見出しに、文字サイズの段階の外のトークンを足した（`--text-display` 52px / `--text-display-sm` 32px）。

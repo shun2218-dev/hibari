@@ -29,35 +29,32 @@ type Story = StoryObj<typeof meta>;
 export const Login: Story = {
   name: "ログイン",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => login(),
 };
 
 export const LoginErrorCredentials: Story = {
   name: "ログイン: 認証情報の誤り",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => login("credentials"),
 };
 
 export const LoginErrorRateLimit: Story = {
   name: "ログイン: 試行回数の上限",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => login("rate_limited"),
 };
 
 export const LoginDark: Story = {
   name: "ログイン（ダーク）",
   tags: ["since:1.5"],
-  parameters: { theme: "dark", screenshot: { source: "design" } },
+  parameters: { theme: "dark" },
   render: () => login("credentials"),
 };
 
 export const MobileLogin: Story = {
   name: "ログイン（モバイル）",
   tags: ["since:1.5"],
-  parameters: { screenshot: { size: "390x844", source: "design" } },
+  parameters: { screenshot: { size: "390x844" } },
   globals: { viewport: { value: "mobile" } },
   render: () => login("credentials"),
 };
@@ -65,6 +62,5 @@ export const MobileLogin: Story = {
 export const Signup: Story = {
   name: "アカウントを作成",
   tags: ["since:1.5"],
-  parameters: { screenshot: { source: "design" } },
   render: () => auth(<SignupForm loginHref={noHref} passwordStrength={goodStrength} passwordDefaultValue="correct-horse" />),
 };
