@@ -11,7 +11,16 @@ const currentUser = { id: "u1", name: "あなた" };
 const rooms: RoomSummaryView[] = [
   { id: "r1", kind: "public", name: "デザインレビュー", lastMessage: "中村 涼: 確認します", timeLabel: "11:05", unreadCount: 0, mentionCount: 0 },
   { id: "r2", kind: "private", name: "リリース準備", timeLabel: "昨日", unreadCount: 3, mentionCount: 0 },
-  { id: "d1", kind: "dm", name: "佐藤 直樹", peer: { id: "u2", presence: "online" }, unreadCount: 0, mentionCount: 0 },
+  {
+    id: "d1",
+    kind: "dm",
+    name: "佐藤 直樹",
+    peer: { id: "u2", presence: "online" },
+    lastMessage: "あとで見ます",
+    timeLabel: "10:14",
+    unreadCount: 0,
+    mentionCount: 0,
+  },
   { id: "d2", kind: "dm", name: "中村 涼", peer: { id: "u3", presence: "offline" }, unreadCount: 1, mentionCount: 0 },
 ];
 
@@ -39,6 +48,14 @@ describe("Sidebar", () => {
       expect.stringContaining("リリース準備"),
     ]);
     expect(within(dms).getAllByRole("link")).toHaveLength(2);
+  });
+
+  it("ホームのサイドバーは名前だけの 1 行にし、最新のメッセージと時刻を出さない", () => {
+    renderSidebar();
+
+    expect(screen.queryByText("中村 涼: 確認します")).not.toBeInTheDocument();
+    expect(screen.queryByText("あとで見ます")).not.toBeInTheDocument();
+    for (const time of ["11:05", "昨日", "10:14"]) expect(screen.queryByText(time)).not.toBeInTheDocument();
   });
 
   it("offers a way to add to each section (チャンネルを作成 / DM を開く)", async () => {

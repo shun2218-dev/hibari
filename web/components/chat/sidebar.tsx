@@ -144,7 +144,7 @@ export function Sidebar({
           {/* 片方が 0 件でも見出しは出す。「+」がそのまま作成・DM の入口になっている */}
           <RoomSection title="チャンネル" first action={{ label: "チャンネルを作成", onClick: onCreateRoom }}>
             {channels.map((room) => (
-              <RoomRow key={room.id} room={room} href={roomHref(room.id)} selected={room.id === selectedRoomId} />
+              <RoomRow key={room.id} room={room} href={roomHref(room.id)} selected={room.id === selectedRoomId} layout="line" />
             ))}
           </RoomSection>
           <RoomSection
@@ -153,7 +153,7 @@ export function Sidebar({
             action={{ label: "ダイレクトメッセージを開く", onClick: onStartDm }}
           >
             {dms.map((room) => (
-              <RoomRow key={room.id} room={room} href={roomHref(room.id)} selected={room.id === selectedRoomId} />
+              <RoomRow key={room.id} room={room} href={roomHref(room.id)} selected={room.id === selectedRoomId} layout="line" />
             ))}
           </RoomSection>
         </div>
@@ -222,16 +222,59 @@ function RoomSection({
   );
 }
 
-export function RoomRow({ room, href, selected }: { room: RoomSummaryView; href: string; selected: boolean }) {
+/**
+ * ルームの行。ホームのサイドバーは名前だけの 1 行（`line`）、DM の一覧は最新のメッセージと時刻を添えた 2 行（`preview`）にする。
+ * サイドバーは「どこへ行くか」を選ぶ所なので、Slack と同じく名前とバッジだけにして、一度に見える数を増やす（オーナーの判断、2026-09-24）。
+ * 中身を読みたい一覧（DM のメニュー）では、今までどおり最新のメッセージを出す。
+ */
+export function RoomRow({
+  room,
+  href,
+  selected,
+  layout = "preview",
+}: {
+  room: RoomSummaryView;
+  href: string;
+  selected: boolean;
+  layout?: "line" | "preview";
+}) {
   // ミュートしたルームは隠さずに薄くする（ADR 0055 決定 6）。未読は太字にせず、メンションの @N だけを残す
   const muted = room.muted ?? false;
+  const line = layout === "line";
+  const name = (
+    // 知らせの要らない未読は、バッジではなく名前の太字で示す（ADR 0043）
+    // ステータスの絵文字は名前のすぐ横に置く。時刻と同じ並びに入れると、名前から離れて右端に寄ってしまう
+    <span className="flex min-w-0 items-baseline gap-1">
+      <span
+        className={cx(
+          "truncate text-base",
+          muted ? "text-text-muted" : "text-text",
+          room.unreadCount > 0 && !muted ? "font-bold" : "font-semibold",
+        )}
+      >
+        {room.name}
+        {/* 薄い色だけでは読み上げで分からないので、言葉でも添える */}
+        {muted && <span className="sr-only">（ミュート中）</span>}
+      </span>
+      {room.peer?.status && <StatusEmoji status={room.peer.status} className="text-xs" />}
+      {room.archived && <Badge className="self-center">アーカイブ済み</Badge>}
+    </span>
+  );
+  /*
+    数字のバッジは知らせが要るものだけ（ADR 0043）。チャンネルは自分宛てのメンションの数、
+    DM は 1 通が知らせなので未読の数をそのまま出す。ただの未読のチャンネルには出さない。
+    ミュートした DM は、チャンネルと同じくメンションの数だけにする（ADR 0055 決定 6）。
+  */
+  const badge =
+    room.kind === "dm" && !muted ? <UnreadBadge count={room.unreadCount} /> : <UnreadBadge count={room.mentionCount} mention />;
   return (
     <li>
       <Link
         href={href}
         aria-current={selected ? "page" : undefined}
         className={cx(
-          "relative flex items-center gap-3 px-4 py-2",
+          "relative flex items-center px-4",
+          line ? "h-9 gap-3" : "gap-3 py-2",
           selected ? "bg-primary-subtle" : "hover:bg-surface-muted",
           room.kind === "dm" && "gap-2.5",
         )}
@@ -242,11 +285,17 @@ export function RoomRow({ room, href, selected }: { room: RoomSummaryView; href:
             id={room.peer?.id ?? room.id}
             name={room.name}
             imageUrl={room.peer?.avatarUrl}
-            size="md"
+            size={line ? "xs" : "md"}
             presence={room.peer?.presence}
           />
         ) : (
-          <span className={cx("flex w-4 shrink-0 justify-center self-start pt-1", muted ? "text-text-muted" : "text-text-secondary")}>
+          <span
+            className={cx(
+              "flex w-4 shrink-0 justify-center",
+              !line && "self-start pt-1",
+              muted ? "text-text-muted" : "text-text-secondary",
+            )}
+          >
             {room.kind === "public" ? (
               <HashIcon aria-label="公開" aria-hidden={false} role="img" className="size-4" />
             ) : (
@@ -254,41 +303,23 @@ export function RoomRow({ room, href, selected }: { room: RoomSummaryView; href:
             )}
           </span>
         )}
-        <span className="min-w-0 flex-1">
-          <span className="flex items-baseline justify-between gap-2">
-            {/* 知らせの要らない未読は、バッジではなく名前の太字で示す（ADR 0043） */}
-            {/* ステータスの絵文字は名前のすぐ横に置く。時刻と同じ並びに入れると、名前から離れて右端に寄ってしまう */}
-            <span className="flex min-w-0 items-baseline gap-1">
-              <span
-                className={cx(
-                  "truncate text-base",
-                  muted ? "text-text-muted" : "text-text",
-                  room.unreadCount > 0 && !muted ? "font-bold" : "font-semibold",
-                )}
-              >
-                {room.name}
-                {/* 薄い色だけでは読み上げで分からないので、言葉でも添える */}
-                {muted && <span className="sr-only">（ミュート中）</span>}
-              </span>
-              {room.peer?.status && <StatusEmoji status={room.peer.status} className="text-xs" />}
-              {room.archived && <Badge className="self-center">アーカイブ済み</Badge>}
+        {line ? (
+          <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+            {name}
+            {badge}
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1">
+            <span className="flex items-baseline justify-between gap-2">
+              {name}
+              {room.timeLabel && <span className="shrink-0 font-mono text-2xs text-text-muted">{room.timeLabel}</span>}
             </span>
-            {room.timeLabel && <span className="shrink-0 font-mono text-2xs text-text-muted">{room.timeLabel}</span>}
+            <span className="flex items-center justify-between gap-2">
+              <span className="truncate text-xs text-text-muted">{room.lastMessage}</span>
+              {badge}
+            </span>
           </span>
-          <span className="flex items-center justify-between gap-2">
-            <span className="truncate text-xs text-text-muted">{room.lastMessage}</span>
-            {/*
-              数字のバッジは知らせが要るものだけ（ADR 0043）。チャンネルは自分宛てのメンションの数、
-              DM は 1 通が知らせなので未読の数をそのまま出す。ただの未読のチャンネルには出さない。
-              ミュートした DM は、チャンネルと同じくメンションの数だけにする（ADR 0055 決定 6）。
-            */}
-            {room.kind === "dm" && !muted ? (
-              <UnreadBadge count={room.unreadCount} />
-            ) : (
-              <UnreadBadge count={room.mentionCount} mention />
-            )}
-          </span>
-        </span>
+        )}
       </Link>
     </li>
   );
