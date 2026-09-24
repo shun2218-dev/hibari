@@ -14,6 +14,10 @@ export const metadata: Metadata = {
   description: APP_DESCRIPTION,
   applicationName: APP_NAME,
   openGraph: { siteName: APP_NAME, locale: "ja_JP", type: "website" },
+  // 画像は app/opengraph-image.png（共通の 1 枚。ADR 0063 決定 4）。X も og:image を使う
+  twitter: { card: "summary_large_image" },
+  // og:image などの絶対 URL の起点（ADR 0063 決定 7）。静的なページはビルドのときに決まるので、ビルドの環境に置く
+  metadataBase: new URL(process.env.APP_BASE_URL ?? "http://localhost:3000"),
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
