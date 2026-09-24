@@ -38,6 +38,7 @@ describe("globals.css", () => {
       "bg-surface",
       "text-text-muted",
       "text-lg",
+      "text-display",
       "rounded-md",
       "p-2",
       "md:flex",
@@ -77,6 +78,7 @@ describe("globals.css", () => {
     [".bg-surface", "var(--color-surface)"],
     [".text-text-muted", "var(--color-text-muted)"],
     [".text-lg", "var(--text-lg)"],
+    [".text-display", "var(--text-display)"],
     [".rounded-md", "var(--radius-md)"],
     [".p-2", "calc(var(--spacing) * 2)"],
   ])("maps %s to a token", (selector, value) => {
