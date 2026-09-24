@@ -44,6 +44,18 @@
       ],
       "port": 6006,
       "autoPort": false
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "site",
+        "run",
+        "dev"
+      ],
+      "port": 3100,
+      "autoPort": false
     }
   ]
 }

@@ -1,0 +1,42 @@
+{
+  "name": "hibari-site",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3100",
+    "build": "next build",
+    "start": "serve out",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "fumadocs-core": "16.15.14",
+    "fumadocs-mdx": "15.4.4",
+    "fumadocs-openapi": "12.0.2",
+    "fumadocs-ui": "16.15.14",
+    "lucide-react": "1.48.0",
+    "next": "16.3.5",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zbsearch": "4.0.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/mdast": "4.0.4",
+    "@types/mdx": "2.0.14",
+    "@types/node": "24.13.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "postcss": "8.5.28",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "serve": "14.2.6",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "unified": "11.0.5",
+    "unist-util-visit": "5.1.0",
+    "vitest": "5.0.0"
+  }
+}

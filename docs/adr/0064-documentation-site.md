@@ -81,6 +81,13 @@ GitHub でもこの文字は消えて見えていたので、`docs/` の側を�
 - **`docs/` に生の HTML を書いたら落とす。** Fumadocs は `.md` の生の HTML を黙って捨てる（`roadmap.md` の `<script>` がそうだった）。
   消えたことに気づけないので、`docs/` を Markdown として解析し、コードの外に HTML があれば落ちるテストを `site/` に置き、CI で動かす。
 - `next dev` がプロジェクトに `AGENTS.md` / `CLAUDE.md` を生成するので、止める（`agentRules: false`）。
+- **追記（2026-09-24、実装）**:
+  - サイトの URL は `/docs` の下ではなくルートに置く（`docs.hibari-chat.com/adr/0011-…`）。トップ（`/`）は `docs/guide/index.md`。
+  - REST API のページは `/rest-api/<タグ>/<operationId>`（`staticSource` の `groupBy: 'tag'`）。`/api/` は検索の索引（`/api/search`）と重なるので使わない。
+  - UI は `fumadocs-ui` を使う。試作の雛形は `@fumadocs/base-ui` を `fumadocs-ui` の名前で入れていたが、`fumadocs-openapi` が本物の `fumadocs-ui` を peer に取るので、2 つ入って部品が二重になる。
+  - `README.md` は Fumadocs ではフォルダの index にならず、フォルダと同じ URL の 1 ページになる。サイドバーを並べ直すとき（`lib/page-tree.ts`）に index に移す。中に Markdown のないディレクトリ（`docs/api/`）は出さない。
+  - `next dev` は `site/` に `AGENTS.md` / `CLAUDE.md` を生成しなかったので、`agentRules` は設定していない。
+  - 見た目（色とロゴ）は実装の順序 5 で行う。この時点では Fumadocs の既定の見た目。
 
 ### 3. 見た目は Fumadocs の既定に、ロゴと色だけ当てる
 
