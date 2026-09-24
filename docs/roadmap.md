@@ -1224,6 +1224,7 @@ Push 通知（APNs / FCM）は Phase 7 以降のまま。ここで作るのは�
 - 退会（email / handle の匿名化、全 family の失効、owner の場合は先に譲渡を必須にする）
 - 本番のデプロイ（置き場所は ADR 0046 で決めた: Fly.io の 1 リージョンに Go / Next / Storybook / Postgres / Valkey、ストレージは R2。手順とドメインの取得はこのフェーズで）
 - ブランドとページのメタデータ（タイトル・ファビコン・OGP・robots / sitemap・LP。ADR 0063）。デプロイの前に行う
+- ドキュメントサイト（`docs.hibari-chat.com`。設計の読み物と、Go の型から生成する REST の API リファレンス。ADR 0064）
 - Tauri でのデスクトップ化
 - APNs / FCM による Push 通知（`Delivery` の実装を 1 つ追加する）
 - OpenTelemetry によるトレース
