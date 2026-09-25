@@ -47,3 +47,25 @@ describe("RoomHeader のアーカイブ（ADR 0059）", () => {
     expect(screen.getByRole("heading")).toHaveTextContent("雑談アーカイブ済み");
   });
 });
+
+describe("RoomHeader のハドル（ADR 0066 決定 17）", () => {
+  const naoki = { id: "u2", name: "佐藤 直樹" };
+
+  it.each([
+    [{ state: "idle" } as const, "ハドルミーティングを開始する"],
+    [{ state: "active", participants: [naoki] } as const, "ハドルミーティングに参加する"],
+    [{ state: "joined", participants: [naoki] } as const, "ハドルミーティングから退出する"],
+  ])("%o のボタンは「%s」", async (state, label) => {
+    const onClick = vi.fn();
+    render(<RoomHeader kind="public" name="雑談" memberCount={3} huddle={{ ...state, onClick }} />);
+
+    await userEvent.click(screen.getByRole("button", { name: label }));
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("入れない人（渡さないとき）には出さない", () => {
+    render(<RoomHeader kind="public" name="雑談" memberCount={3} />);
+
+    expect(screen.queryByRole("button", { name: /ハドル/ })).not.toBeInTheDocument();
+  });
+});

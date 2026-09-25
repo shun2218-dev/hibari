@@ -4,7 +4,7 @@ import type { ComponentType, ReactNode } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, UnreadBadge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
-import { ChevronDownIcon, HashIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, HashIcon, HeadphonesIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
 
 import type { RoomSummaryView, UserRef, WorkspaceRef } from "./types";
@@ -260,6 +260,10 @@ export function RoomRow({
       </span>
       {room.peer?.status && <StatusEmoji status={room.peer.status} className="text-xs" />}
       {room.archived && <Badge className="self-center">アーカイブ済み</Badge>}
+      {/* ハドルが進行中（ADR 0066 決定 13）。いま起きていることなので琥珀。押して入るのはヘッダーか会話のメッセージから */}
+      {room.huddleActive && (
+        <HeadphonesIcon aria-label="ハドルミーティング中" aria-hidden={false} role="img" className="size-3.5 shrink-0 self-center text-attention" />
+      )}
     </span>
   );
   /*

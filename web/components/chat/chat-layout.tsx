@@ -25,14 +25,20 @@ type ChatLayoutProps = {
    * inert を使わないのは、属性ではブレークポイントごとに切り替えられず、md 以上で一覧まで無効になるため。
    */
   mobileView: "list" | "room";
+  /**
+   * 入っているハドルの窓（ADR 0066 決定 17）。md 以上はサイドバーの下（Slack の「サイドバーのハドルウィンドウ」）、
+   * モバイルは一覧とルームのどちらを見ていても見えるよう、上の帯の下に全幅で出す。
+   */
+  huddle?: { window: ReactNode; mobileBar: ReactNode };
 };
 
-export function ChatLayout({ topBar, sidebar, rail, tabBar, children, panel, mobileView }: ChatLayoutProps) {
+export function ChatLayout({ topBar, sidebar, rail, tabBar, children, panel, mobileView, huddle }: ChatLayoutProps) {
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-surface">
       {topBar}
+      {huddle && <div className="md:hidden">{huddle.mobileBar}</div>}
       <div className="relative flex min-h-0 flex-1">
         {rail && <div className="hidden md:flex">{rail}</div>}
         {sidebar !== undefined && (
@@ -42,13 +48,14 @@ export function ChatLayout({ topBar, sidebar, rail, tabBar, children, panel, mob
           // 幅は md 以上でだけユーザーが変えられる（ADR 0048）。モバイルは全画面のまま
           "absolute inset-0 transition duration-280 ease-slide md:relative md:visible md:pane-sidebar md:shrink-0 md:border-r md:border-border",
           mobileView === "room" && "invisible",
-          tabBar !== undefined && "flex flex-col",
+          (tabBar !== undefined || huddle !== undefined) && "flex flex-col",
         )}
       >
-        {tabBar !== undefined ? (
+        {tabBar !== undefined || huddle !== undefined ? (
           <>
             <div className="min-h-0 flex-1">{sidebar}</div>
-            <div className="md:hidden">{tabBar}</div>
+            {huddle && <div className="hidden md:block">{huddle.window}</div>}
+            {tabBar !== undefined && <div className="md:hidden">{tabBar}</div>}
           </>
         ) : (
           sidebar

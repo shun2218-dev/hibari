@@ -73,6 +73,31 @@ describe("Timeline", () => {
     expect(screen.getByText("10:05")).toBeInTheDocument();
   });
 
+  it("ハドルのメッセージを並べ、「参加」でそのメッセージの key を渡す（ADR 0066 決定 12）", async () => {
+    const onJoinHuddle = vi.fn();
+    render(
+      <Timeline
+        items={[
+          msg("a", "おはよう"),
+          {
+            type: "huddle",
+            huddle: {
+              key: "h1",
+              starter: { id: "u2", name: "佐藤 直樹" },
+              timeLabel: "11:20",
+              state: "active",
+              participants: [{ id: "u2", name: "佐藤 直樹" }],
+            },
+          },
+        ]}
+        onJoinHuddle={onJoinHuddle}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "参加" }));
+    expect(onJoinHuddle).toHaveBeenCalledWith("h1");
+  });
+
   describe("scrolling", () => {
     const ROW = 100;
     const VIEWPORT = 250;

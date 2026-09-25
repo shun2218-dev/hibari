@@ -29,6 +29,7 @@ import {
   Ellipsis,
   File,
   Hash,
+  Headphones,
   House,
   Italic,
   Link,
@@ -44,7 +45,10 @@ import {
   MessageCircleMore,
   Megaphone,
   MessagesSquare,
+  Mic,
+  MicOff,
   Pencil,
+  PhoneMissed,
   Pin,
   PinOff,
   Monitor,
@@ -160,3 +164,12 @@ export const DmIcon = withDefaults(MessageCircleMore);
 export const AtSignIcon = withDefaults(AtSign);
 /** アクティビティの「リアクション」。 */
 export const SmileIcon = withDefaults(Smile);
+
+// ---- ハドル（ADR 0066） ----
+/** ハドルミーティング（Slack と同じヘッドフォン）。ヘッダーのボタン・サイドバーの進行中の印・会話のメッセージ。 */
+export const HeadphonesIcon = withDefaults(Headphones);
+export const MicIcon = withDefaults(Mic);
+/** ミュートしている（自分のボタンと、ほかの参加者のアバターの印）。 */
+export const MicOffIcon = withDefaults(MicOff);
+/** DM の不在着信と応答なし（ADR 0066 決定 12）。 */
+export const PhoneMissedIcon = withDefaults(PhoneMissed);
