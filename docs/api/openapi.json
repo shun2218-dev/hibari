@@ -84,6 +84,10 @@
       "description": "添付ファイル（ADR 0013）"
     },
     {
+      "name": "link-previews",
+      "description": "外部のリンクのプレビュー（ADR 0065）"
+    },
+    {
       "name": "websocket",
       "description": "WebSocket の接続（docs/events.md）"
     },
@@ -6634,6 +6638,319 @@
         ]
       }
     },
+    "/api/v1/rooms/{roomID}/link-previews": {
+      "post": {
+        "operationId": "previewLink",
+        "tags": [
+          "link-previews"
+        ],
+        "summary": "入力欄のリンクのプレビューを取る",
+        "description": "送る前に、入力欄の URL のカードを取る（その場で取りに行くので最大 10 秒ほど待つ）。カードにならなければ preview が null で、理由は区別しない。投稿できるルームだけ。1 人あたり 1 分に 30 回まで。",
+        "parameters": [
+          {
+            "name": "roomID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewLinkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "リクエストが不正（本文やパラメータの形・値の検証に失敗した）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "見つからない（存在しないことと、読めないことを区別しない）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "いまの状態と競合する",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "本文が大きすぎる",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type が application/json ではない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "値が不正（errors に項目ごとの理由が入る）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "回数の制限を超えた",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/rooms/{roomID}/messages/{messageID}/link-previews/{previewID}/urls": {
+      "get": {
+        "operationId": "getLinkPreviewURLs",
+        "tags": [
+          "link-previews"
+        ],
+        "summary": "リンクのプレビューの画像とアイコンの URL を取る",
+        "description": "自前のストレージに写した画像とアイコンの、署名付き GET URL（5 分）。ないものは null。",
+        "parameters": [
+          {
+            "name": "roomID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkPreviewURLs"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "見つからない（存在しないことと、読めないことを区別しない）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/rooms/{roomID}/messages/{messageID}/link-previews/{previewID}": {
+      "delete": {
+        "operationId": "removeLinkPreview",
+        "tags": [
+          "link-previews"
+        ],
+        "summary": "リンクのプレビューを消す",
+        "description": "投稿した本人だけ。確認はせず、消してあっても 204（冪等）。編集しても戻らない。ほかの人には message.updated で届く。",
+        "parameters": [
+          {
+            "name": "roomID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "previewID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "成功（本文なし）"
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "見つからない（存在しないことと、読めないことを区別しない）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "いまの状態と競合する",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/attachments/{attachmentID}/complete": {
       "post": {
         "operationId": "completeAttachment",
@@ -7229,6 +7546,75 @@
           "content_type"
         ]
       },
+      "ComposerLinkPreview": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "site_name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComposerLinkPreviewImage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignedURL"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "url",
+          "site_name",
+          "title",
+          "description",
+          "image",
+          "icon"
+        ]
+      },
+      "ComposerLinkPreviewImage": {
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "width",
+          "height",
+          "url",
+          "expires_at"
+        ]
+      },
       "CreateAttachmentRequest": {
         "type": "object",
         "properties": {
@@ -7659,6 +8045,94 @@
           "deleted"
         ]
       },
+      "LinkPreview": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "description": "url は本文に書かれた URL。タイトルのリンク先（リダイレクトの後の URL ではない）。"
+          },
+          "site_name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinkPreviewImage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "image は画像の寸法。読み込む前に枠を確保するのに使う。画像がなければ null。"
+          },
+          "has_icon": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "site_name",
+          "title",
+          "description",
+          "image",
+          "has_icon"
+        ]
+      },
+      "LinkPreviewImage": {
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "width",
+          "height"
+        ]
+      },
+      "LinkPreviewURLs": {
+        "type": "object",
+        "properties": {
+          "image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignedURL"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignedURL"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "image",
+          "icon"
+        ]
+      },
       "LinkedMessage": {
         "type": "object",
         "properties": {
@@ -8064,6 +8538,13 @@
             },
             "description": "reactions は付いた絵文字のリアクション（ADR 0044）。最初に付いた順で、削除済みのメッセージでは空配列。"
           },
+          "link_previews": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LinkPreview"
+            },
+            "description": "link_previews は外部のリンクのプレビュー（ADR 0065）。取れていて本人が消していないものだけ、本文に出てきた順。 投稿の後に取れたら message.updated で届く。削除済みのメッセージでは空配列。"
+          },
           "pinned": {
             "anyOf": [
               {
@@ -8123,6 +8604,7 @@
           "attachments",
           "mentions",
           "reactions",
+          "link_previews",
           "pinned",
           "created_at",
           "edited_at",
@@ -8480,6 +8962,36 @@
           "active",
           "idle",
           "offline"
+        ]
+      },
+      "PreviewLinkRequest": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "PreviewLinkResponse": {
+        "type": "object",
+        "properties": {
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComposerLinkPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "preview はカードにならなければ null。理由（内部のアドレス・タイムアウト・OGP がない）は区別しない（決定 13）。"
+          }
+        },
+        "required": [
+          "preview"
         ]
       },
       "Problem": {
@@ -9110,6 +9622,13 @@
             "items": {
               "type": "string"
             }
+          },
+          "suppressed_link_preview_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "suppressed_link_preview_urls は入力欄でプレビューを消した URL（ADR 0065 決定 13）。最初から消した状態で付く。5 件まで。"
           }
         },
         "required": [

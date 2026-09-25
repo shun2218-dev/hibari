@@ -411,6 +411,8 @@ export interface SendMessageRequest {
   /** also_in_channel は返信をチャンネルにも出す（ADR 0039）。thread_root_id がないときに true なら 422。 */
   also_in_channel?: boolean;
   attachment_ids?: string[];
+  /** suppressed_link_preview_urls は入力欄でプレビューを消した URL（ADR 0065 決定 13）。最初から消した状態で付く。5 件まで。 */
+  suppressed_link_preview_urls?: string[];
 }
 
 export interface EditMessageRequest {
@@ -447,6 +449,8 @@ export interface Message {
   mentions: Mention[];
   /** reactions は付いた絵文字のリアクション（ADR 0044）。最初に付いた順で、削除済みのメッセージでは空配列。 */
   reactions: MessageReaction[];
+  /** link_previews は外部のリンクのプレビュー（ADR 0065）。取れていて本人が消していないものだけ、本文に出てきた順。 投稿の後に取れたら message.updated で届く。削除済みのメッセージでは空配列。 */
+  link_previews: LinkPreview[];
   /** pinned はピン留めされているときだけ入る。されていなければ null（ADR 0054 決定 2）。 見る人によらない値なので、WebSocket の配信でもそのまま載せる。 */
   pinned: MessagePin | null;
   /** saved は閲覧者が「後で」に保存しているか（ADR 0054 決定 10）。**REST のレスポンスにだけ入る。** リアクションの me と同じく受け取る人ごとの値なので、WebSocket の配信では落とす。 クライアントは saved の無い更新では手元の値を保ち、saved.updated と保存の差分で直す。 */
@@ -734,6 +738,53 @@ export interface MessageLink {
 
 export interface MessageLinks {
   links: MessageLink[];
+}
+
+export interface LinkPreview {
+  id: string;
+  /** url は本文に書かれた URL。タイトルのリンク先（リダイレクトの後の URL ではない）。 */
+  url: string;
+  site_name: string;
+  title: string;
+  description: string;
+  /** image は画像の寸法。読み込む前に枠を確保するのに使う。画像がなければ null。 */
+  image: LinkPreviewImage | null;
+  has_icon: boolean;
+}
+
+export interface LinkPreviewImage {
+  width: number;
+  height: number;
+}
+
+export interface PreviewLinkRequest {
+  url: string;
+}
+
+export interface PreviewLinkResponse {
+  /** preview はカードにならなければ null。理由（内部のアドレス・タイムアウト・OGP がない）は区別しない（決定 13）。 */
+  preview: ComposerLinkPreview | null;
+}
+
+export interface ComposerLinkPreview {
+  url: string;
+  site_name: string;
+  title: string;
+  description: string;
+  image: ComposerLinkPreviewImage | null;
+  icon: SignedURL | null;
+}
+
+export interface ComposerLinkPreviewImage {
+  width: number;
+  height: number;
+  url: string;
+  expires_at: string;
+}
+
+export interface LinkPreviewURLs {
+  image: SignedURL | null;
+  icon: SignedURL | null;
 }
 
 export interface CreateAttachmentRequest {

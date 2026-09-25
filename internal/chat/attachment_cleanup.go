@@ -115,6 +115,11 @@ func (s *Service) RunAttachmentCleanup(ctx context.Context, interval time.Durati
 			return
 		case <-ticker.C:
 		}
+		// 使われなくなったリンクのプレビューの画像とアイコンを、先に storage_deletions に積む（ADR 0065 決定 10）。
+		// 続く CleanupAttachments が、猶予を過ぎたものを同じ回で消す。
+		if n, err := s.CleanupLinkPreviews(ctx); err != nil && ctx.Err() == nil {
+			s.logger.ErrorContext(ctx, "link preview cleanup failed", slog.Int("deleted", n), slog.Any("error", err))
+		}
 		n, err := s.CleanupAttachments(ctx)
 		switch {
 		case err != nil && ctx.Err() == nil:

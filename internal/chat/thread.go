@@ -78,6 +78,9 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 	if err := createMessageMentions(ctx, q, now, roomID, id, in.Body, all); err != nil {
 		return Message{}, nil, err
 	}
+	if err := s.createMessageLinkPreviews(ctx, q, roomID, id, in.Body, in.SuppressedLinkPreviewURLs); err != nil {
+		return Message{}, nil, err
+	}
 
 	// チャンネルにも出した返信は、チャンネルの送信と同じく送信者のチャンネルの既読位置も進める（自分の発言で自分に未読を作らない）。
 	// スレッドだけの返信では動かさない（チャンネルに出ていない）。
@@ -329,6 +332,9 @@ func (s *Service) finishThreadPage(
 		return ThreadPage{}, err
 	}
 	if err := loadMessageReactions(ctx, q, roomID, actor, page.Replies); err != nil {
+		return ThreadPage{}, err
+	}
+	if err := loadMessageLinkPreviews(ctx, q, roomID, page.Replies); err != nil {
 		return ThreadPage{}, err
 	}
 	if err := loadMessageSaved(ctx, q, actor, page.Replies); err != nil {

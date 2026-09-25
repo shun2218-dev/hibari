@@ -33,6 +33,8 @@ type Storage interface {
 	PresignGet(ctx context.Context, key string, ttl time.Duration, opts storage.GetOptions) (string, error)
 	Head(ctx context.Context, key string) (storage.ObjectInfo, error)
 	Delete(ctx context.Context, key string) error
+	// Put はサーバーが取ってきたリンクのプレビューの画像とアイコンを置く（ADR 0065 決定 7）。利用者のファイルには使わない。
+	Put(ctx context.Context, key, contentType string, body []byte) error
 }
 
 // AttachmentLimits は添付ファイルの設定値（ロードマップ Phase 3c「MIME の許可リストとサイズの上限は設定値にする」）。

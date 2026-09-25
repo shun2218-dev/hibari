@@ -23,6 +23,7 @@ import (
 	"github.com/shun2218-dev/hibari/internal/platform/config"
 	"github.com/shun2218-dev/hibari/internal/platform/db"
 	"github.com/shun2218-dev/hibari/internal/platform/id"
+	"github.com/shun2218-dev/hibari/internal/platform/ratelimit"
 	"github.com/shun2218-dev/hibari/internal/platform/redis"
 	"github.com/shun2218-dev/hibari/internal/platform/storage"
 	"github.com/shun2218-dev/hibari/internal/platform/testenv"
@@ -43,7 +44,9 @@ type Env struct {
 	Presence *presence.Store
 	// Deliveries は Service が配信したイベントを記録する。
 	Deliveries *Recorder
-	Service    *chat.Service
+	// Fetcher はリンクのプレビューを URL から決めて返す（ネットワークに出ない。ADR 0065）。
+	Fetcher *Fetcher
+	Service *chat.Service
 }
 
 // Recorder は配信されたイベントを記録する chat.Delivery。
@@ -136,6 +139,12 @@ func New(t testing.TB, opts ...Option) *Env {
 	st := NewStorage(t)
 	pr := NewPresence(t)
 	rec := &Recorder{}
+	fetcher := &Fetcher{}
+	rdb, err := redis.Open(t.Context(), testenv.RedisURL(t))
+	if err != nil {
+		t.Fatalf("open redis: %v", err)
+	}
+	t.Cleanup(func() { _ = rdb.Close() })
 	var svcPresence chat.PresenceReader = realtime.PresenceStates{Store: pr}
 	if o.presence != nil {
 		svcPresence = o.presence
@@ -147,6 +156,7 @@ func New(t testing.TB, opts ...Option) *Env {
 		Storage:    st,
 		Presence:   pr,
 		Deliveries: rec,
+		Fetcher:    fetcher,
 		Service: chat.NewService(chat.Deps{
 			DB:               pool,
 			Clock:            clk,
@@ -157,6 +167,7 @@ func New(t testing.TB, opts ...Option) *Env {
 			AttachmentLimits: AttachmentLimits,
 			Delivery:         rec,
 			Presence:         svcPresence,
+			LinkPreviews:     chat.LinkPreviewDeps{Fetcher: fetcher, AppBaseURL: AppBaseURL, Limiter: ratelimit.New(rdb, clk)},
 		}),
 	}
 }

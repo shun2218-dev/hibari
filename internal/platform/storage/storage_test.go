@@ -186,3 +186,35 @@ func TestNewRejectsInvalidConfig(t *testing.T) {
 		})
 	}
 }
+
+// サーバーが取ってきたリンクのプレビューの画像を置き、署名付き GET URL で読める（ADR 0065 決定 7）。
+func TestPut(t *testing.T) {
+	s := newStorage(t)
+	key := uniqueKey(t)
+	body := []byte("\x89PNG fake image")
+	if err := s.Put(t.Context(), key, "image/png", body); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Delete(t.Context(), key) })
+
+	info, err := s.Head(t.Context(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size != int64(len(body)) || info.ContentType != "image/png" {
+		t.Errorf("head = %+v", info)
+	}
+	u, err := s.PresignGet(t.Context(), key, time.Minute, storage.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(u) //nolint:noctx // テストの中だけ
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	got, _ := io.ReadAll(resp.Body)
+	if !bytes.Equal(got, body) {
+		t.Errorf("body = %q", got)
+	}
+}

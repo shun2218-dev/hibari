@@ -53,6 +53,9 @@ type messageResponse struct {
 	Mentions []mentionResponse `json:"mentions"`
 	// Reactions は付いた絵文字のリアクション（ADR 0044）。最初に付いた順で、削除済みのメッセージでは空配列。
 	Reactions []messageReactionResponse `json:"reactions"`
+	// LinkPreviews は外部のリンクのプレビュー（ADR 0065）。取れていて本人が消していないものだけ、本文に出てきた順。
+	// 投稿の後に取れたら message.updated で届く。削除済みのメッセージでは空配列。
+	LinkPreviews []linkPreviewResponse `json:"link_previews"`
 	// Pinned はピン留めされているときだけ入る。されていなければ null（ADR 0054 決定 2）。
 	// 見る人によらない値なので、WebSocket の配信でもそのまま載せる。
 	Pinned *messagePinResponse `json:"pinned"`
@@ -116,22 +119,23 @@ func newSystemEventResponse(e *chat.SystemEvent) *systemEventResponse {
 
 func newMessageResponse(m chat.Message) messageResponse {
 	resp := messageResponse{
-		ID:          m.ID.String(),
-		RoomID:      m.RoomID.String(),
-		Seq:         m.Seq,
-		ChangeSeq:   m.ChangeSeq,
-		UserSeq:     m.UserSeq,
-		Sender:      newUserProfileResponse(m.Sender),
-		ClientMsgID: m.ClientMsgID.String(),
-		Kind:        m.Kind,
-		System:      newSystemEventResponse(m.System),
-		Body:        m.Body,
-		Attachments: newMessageAttachmentsResponse(m.Attachments),
-		Mentions:    newMentionsResponse(m.Mentions),
-		Reactions:   newReactionsResponse(m.Reactions),
-		CreatedAt:   m.CreatedAt,
-		EditedAt:    m.EditedAt,
-		DeletedAt:   m.DeletedAt,
+		ID:           m.ID.String(),
+		RoomID:       m.RoomID.String(),
+		Seq:          m.Seq,
+		ChangeSeq:    m.ChangeSeq,
+		UserSeq:      m.UserSeq,
+		Sender:       newUserProfileResponse(m.Sender),
+		ClientMsgID:  m.ClientMsgID.String(),
+		Kind:         m.Kind,
+		System:       newSystemEventResponse(m.System),
+		Body:         m.Body,
+		Attachments:  newMessageAttachmentsResponse(m.Attachments),
+		Mentions:     newMentionsResponse(m.Mentions),
+		Reactions:    newReactionsResponse(m.Reactions),
+		LinkPreviews: newLinkPreviewsResponse(m.LinkPreviews),
+		CreatedAt:    m.CreatedAt,
+		EditedAt:     m.EditedAt,
+		DeletedAt:    m.DeletedAt,
 	}
 	if m.ThreadRootID != nil {
 		id := m.ThreadRootID.String()
@@ -182,6 +186,8 @@ type sendMessageRequest struct {
 	// AlsoInChannel は返信をチャンネルにも出す（ADR 0039）。thread_root_id がないときに true なら 422。
 	AlsoInChannel bool     `json:"also_in_channel,omitzero"`
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
+	// SuppressedLinkPreviewURLs は入力欄でプレビューを消した URL（ADR 0065 決定 13）。最初から消した状態で付く。5 件まで。
+	SuppressedLinkPreviewURLs []string `json:"suppressed_link_preview_urls,omitempty"`
 }
 
 // sendMessage は新しく作ったら 201、同じ client_msg_id の再送なら既存のメッセージを 200 で返す（ADR 0004）。
@@ -196,7 +202,7 @@ func (h *chatHandlers) sendMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	in := chat.SendMessageInput{Body: req.Body, AlsoInChannel: req.AlsoInChannel}
+	in := chat.SendMessageInput{Body: req.Body, AlsoInChannel: req.AlsoInChannel, SuppressedLinkPreviewURLs: req.SuppressedLinkPreviewURLs}
 	// client_msg_id が空なら、ゼロ値のまま渡して chat の検証（required）に任せる。
 	if in.ClientMsgID, _, err = bodyID("client_msg_id", req.ClientMsgID); err != nil {
 		writeError(h.logger, w, r, err)

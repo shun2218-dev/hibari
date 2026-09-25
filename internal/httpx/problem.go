@@ -97,6 +97,7 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		cverr *chat.ValidationError
 		berr  *errBadRequest
 		lerr  *auth.RateLimitedError
+		clerr *chat.RateLimitedError
 	)
 	switch {
 	case errors.As(err, &berr):
@@ -145,6 +146,9 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 	case errors.As(err, &lerr):
 		// Retry-After は秒の整数（RFC 9110 §10.2.3）。0 秒にならないよう切り上げる。
 		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(lerr.RetryAfter.Seconds())))))
+		writeProblem(w, r, problem{Type: problemRateLimited, Title: "Too many requests", Status: http.StatusTooManyRequests})
+	case errors.As(err, &clerr):
+		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(clerr.RetryAfter.Seconds())))))
 		writeProblem(w, r, problem{Type: problemRateLimited, Title: "Too many requests", Status: http.StatusTooManyRequests})
 	case errors.Is(err, auth.ErrInvalidOneTimeToken):
 		writeProblem(w, r, problem{Type: problemInvalidOneTimeToken, Title: "The link is invalid or has expired", Status: http.StatusBadRequest})

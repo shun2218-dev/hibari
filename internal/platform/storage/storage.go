@@ -1,11 +1,13 @@
 // Package storage は S3 API のオブジェクトストレージへのアクセスを抽象化する（ADR 0008）。
 //
-// 使う操作は署名付き URL の発行（PUT / GET）、HEAD、DELETE だけに絞る。S3 互換のストレージ（RustFS、R2 など）は
+// 使う操作は署名付き URL の発行（PUT / GET）、PUT、HEAD、DELETE だけに絞る。S3 互換のストレージ（RustFS、R2 など）は
 // 互換性が完全ではないので、それ以外の機能（ACL、presigned POST、バケットの作成など）に依存しない。
-// ファイルの中身はサーバーを経由させない（CLAUDE.md ルール 10）ので、GET / PUT そのものは持たない。
+// 利用者のファイルの中身はサーバーを経由させない（CLAUDE.md ルール 10）ので、GET は持たない。
+// PUT はサーバーが自分で取ってきた小さなファイル（リンクのプレビューの画像とアイコン。ADR 0065 決定 7）だけに使う。
 package storage
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -134,6 +136,22 @@ func (s *S3) PresignGet(ctx context.Context, key string, ttl time.Duration, opts
 		return "", fmt.Errorf("storage: presign get: %w", err)
 	}
 	return req.URL, nil
+}
+
+// Put は body を key に置く。サーバーが取ってきたリンクのプレビューの画像とアイコン（ADR 0065 決定 7）だけに使い、
+// 利用者のファイルには使わない（利用者は署名付き URL で直接 PUT する。ルール 10）。
+func (s *S3) Put(ctx context.Context, key, contentType string, body []byte) error {
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(key),
+		ContentType:   aws.String(contentType),
+		ContentLength: aws.Int64(int64(len(body))),
+		Body:          bytes.NewReader(body),
+	})
+	if err != nil {
+		return fmt.Errorf("storage: put: %w", err)
+	}
+	return nil
 }
 
 // ObjectInfo は HEAD で得たオブジェクトの情報。
