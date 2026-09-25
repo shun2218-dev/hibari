@@ -263,6 +263,33 @@ describe("Timeline の添付ファイル（ADR 0045）", () => {
   });
 });
 
+describe("Timeline の外部のリンクのプレビュー（ADR 0065）", () => {
+  const preview = { id: "p1", url: "https://example.com/1", siteName: "Example", title: "記事", hasIcon: false };
+
+  it("消せるのは編集できる（本人の）メッセージだけで、どのメッセージのどのカードかを渡して呼ぶ", async () => {
+    const onRemoveLinkPreview = vi.fn();
+    render(
+      <Timeline
+        items={[msg("a", "ほかの人", { linkPreviews: [preview] }), msg("b", "自分", { linkPreviews: [{ ...preview, id: "p2" }] })]}
+        actionsFor={(key) => ({ canEdit: key === "b", canDelete: key === "b" })}
+        onRemoveLinkPreview={onRemoveLinkPreview}
+      />,
+    );
+
+    const buttons = screen.getAllByRole("button", { name: "プレビューを削除" });
+    expect(buttons).toHaveLength(1);
+    await userEvent.click(buttons[0]);
+
+    expect(onRemoveLinkPreview).toHaveBeenCalledWith("b", "p2");
+  });
+
+  it("削除したメッセージにはカードを出さない", () => {
+    render(<Timeline items={[msg("a", "", { deleted: true, linkPreviews: [preview] })]} />);
+
+    expect(screen.queryByRole("article", { name: "記事 のプレビュー" })).not.toBeInTheDocument();
+  });
+});
+
 describe("Timeline のピン留めと「後で」（ADR 0054）", () => {
   it("key ごとにピン留めと「後で」の操作を渡す", async () => {
     const pin = vi.fn();

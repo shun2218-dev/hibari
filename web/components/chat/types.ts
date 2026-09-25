@@ -82,6 +82,8 @@ export type MessageView = {
   attachments: MessageAttachmentView[];
   /** 本文に貼られたパーマリンクのカード（ADR 0040）。最大 3 件。 */
   linkCards?: MessageLinkCardView[];
+  /** 本文に貼られた外部のリンクのプレビュー（ADR 0065）。取れたものだけ。本人が消したものは含まない。 */
+  linkPreviews?: LinkPreviewView[];
   /** 付いた絵文字のリアクション（ADR 0044）。1 件も無ければ持たない（行そのものを出さない）。 */
   reactions?: MessageReactionView[];
   /** 直前のメッセージと同じ送信者なので、アバターと名前を省いて続けて表示する。 */
@@ -146,6 +148,35 @@ export type MessageLinkCardView =
       /** スレッドの返信を指している。 */
       inThread: boolean;
     };
+
+/**
+ * 外部のリンクのプレビュー（ADR 0065）。
+ *
+ * 中身は投稿した時点でサーバーが取ったもの。画像とサイトのアイコンは自前のストレージに写してあり、
+ * URL は表示するときに署名付きの GET URL を取る（ADR 0065 決定 7）。取れるまで `imageUrl` / `iconUrl` は空で、
+ * 画像は寸法から枠だけを先に確保する。
+ */
+export type LinkPreviewView = {
+  id: string;
+  /** 本文に書かれた URL。タイトルのリンク先（リダイレクトの後の URL ではない）。 */
+  url: string;
+  siteName: string;
+  title?: string;
+  description?: string;
+  /** 画像がなければ持たない。 */
+  image?: { width: number; height: number; url?: string };
+  /** サイトのアイコンがあるか。`iconUrl` が取れるまでは枠だけ出す。 */
+  hasIcon: boolean;
+  iconUrl?: string;
+};
+
+/**
+ * 入力欄のリンクのプレビュー（ADR 0065 決定 13）。送る前に出し、「x」で消すと付かずに送られる。
+ * 取れなかった URL（`preview: null`）はデータ層が落とすので、ここには来ない。
+ */
+export type ComposerLinkPreviewView =
+  | { url: string; state: "loading" }
+  | { url: string; state: "ok"; siteName: string; title?: string; iconUrl?: string };
 
 /** 親のメッセージの下に出す「N 件の返信」。件数は削除された返信を除いた数、時刻は整形済み。 */
 export type ThreadSummaryLabel = { replyCount: number; lastReplyLabel: string };

@@ -81,3 +81,58 @@ export const ChannelCompletion: Story = {
   tags: ["since:6.16"],
   render: () => chat({ channelLinks: true, mentionQuery: "#" }),
 };
+
+// ---- 外部のリンクのプレビュー（ADR 0065）----
+
+export const LinkPreview: Story = {
+  name: "外部のリンクのプレビュー",
+  tags: ["since:6.17"],
+  render: () => chat({ linkPreviews: "timeline" }),
+};
+
+export const LinkPreviewDark: Story = {
+  name: "外部のリンクのプレビュー（ダーク）",
+  tags: ["since:6.17"],
+  parameters: { theme: "dark" },
+  render: () => chat({ linkPreviews: "timeline" }),
+};
+
+export const LinkPreviewRemove: Story = {
+  name: "外部のリンクのプレビュー: 本人の「x」",
+  tags: ["since:6.17"],
+  render: () => chat({ linkPreviews: "remove" }),
+};
+
+export const LinkPreviewThread: Story = {
+  name: "外部のリンクのプレビュー: スレッドのパネル",
+  tags: ["since:6.17"],
+  render: () => chat({ thread: "link-preview" }),
+};
+
+export const MobileLinkPreview: Story = {
+  name: "外部のリンクのプレビュー（モバイル）",
+  tags: ["since:6.17"],
+  parameters: { screenshot: { size: "390x844" } },
+  globals: { viewport: { value: "mobile" } },
+  render: () => chat({ linkPreviews: "timeline" }),
+};
+
+export const ComposerLinkPreview: Story = {
+  name: "入力欄のリンクのプレビュー",
+  tags: ["since:6.17"],
+  render: () => chat({ composer: "link-preview" }),
+};
+
+export const ComposerLinkPreviewLoading: Story = {
+  name: "入力欄のリンクのプレビュー: 取得中",
+  tags: ["since:6.17"],
+  render: () => chat({ composer: "link-preview-loading" }),
+};
+
+export const MobileComposerLinkPreview: Story = {
+  name: "入力欄のリンクのプレビュー（モバイル）",
+  tags: ["since:6.17"],
+  parameters: { screenshot: { size: "390x844" } },
+  globals: { viewport: { value: "mobile" } },
+  render: () => chat({ composer: "link-preview" }),
+};
