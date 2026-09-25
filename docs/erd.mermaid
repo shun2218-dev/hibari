@@ -254,7 +254,7 @@ erDiagram
 
   message_link_previews {
     uuid id PK
-    uuid room_id FK "INDEX(room_id, url, created_at)。1 時間以内の同じ URL の判定"
+    uuid room_id FK
     uuid message_id FK "(room_id, これ) → messages の複合 FK。CASCADE。メッセージの削除で消す"
     text url "本文に書かれた URL。UNIQUE(message_id, これ)"
     int position "本文に出てきた順"
