@@ -1416,6 +1416,130 @@ describe("WorkspaceScreen", () => {
       expect(nav.router.replace).toHaveBeenCalledWith("/");
       expect(lastWorkspaceId()).toBeUndefined();
     });
+
+    describe("外部のリンクのプレビュー（ADR 0065）", () => {
+      const history = () => within(screen.getByRole("list", { name: "メッセージ" }));
+      const composer = () => screen.getByRole("textbox", { name: "メッセージ" });
+      const article = "https://example.com/post";
+      const preview = {
+        id: "lp-1",
+        url: article,
+        site_name: "Example",
+        title: "記事のタイトル",
+        description: "記事の説明",
+        image: { width: 1200, height: 630 },
+        has_icon: true,
+      };
+      const signed = (url: string) => ({ url, expires_at: "2026-09-13T03:00:00Z" });
+      /** 自分（佐藤 直樹）のメッセージ（m-2）にカードが付いたタイムライン。 */
+      const withPreview = [message(1), message(2, { sender: naoki, body: `読んで ${article}`, link_previews: [preview] }), message(3)];
+      const urlsRoute = {
+        "GET /api/v1/rooms/r-design/messages/m-2/link-previews/lp-1/urls": () =>
+          json(200, { image: signed("https://storage.test/lp-1/image"), icon: signed("https://storage.test/lp-1/icon") }),
+      };
+
+      it("カードを出し、画像とアイコンは自前のストレージの署名付き URL で読む", async () => {
+        await connected({
+          ...urlsRoute,
+          "GET /api/v1/rooms/r-design/messages?limit=50": () =>
+            json(200, { messages: withPreview.map((m) => ({ ...m, room_id: "r-design" })), has_more: false, last_change_seq: 3 }),
+        });
+
+        const card = await history().findByRole("article", { name: "記事のタイトル のプレビュー" });
+        expect(within(card).getByRole("link", { name: "記事のタイトル" })).toHaveAttribute("href", article);
+        await waitFor(() =>
+          expect(Array.from(card.querySelectorAll("img")).map((img) => img.getAttribute("src"))).toEqual([
+            "https://storage.test/lp-1/icon",
+            "https://storage.test/lp-1/image",
+          ]),
+        );
+      });
+
+      it("自分のカードは「x」ですぐ消え、DELETE が飛ぶ（確認しない）", async () => {
+        const { api } = await connected({
+          ...urlsRoute,
+          "GET /api/v1/rooms/r-design/messages?limit=50": () =>
+            json(200, { messages: withPreview.map((m) => ({ ...m, room_id: "r-design" })), has_more: false, last_change_seq: 3 }),
+          "DELETE /api/v1/rooms/r-design/messages/m-2/link-previews/lp-1": () => new Response(null, { status: 204 }),
+        });
+        await history().findByRole("article", { name: "記事のタイトル のプレビュー" });
+
+        await userEvent.click(history().getByRole("button", { name: "プレビューを削除" }));
+
+        expect(history().queryByRole("article", { name: "記事のタイトル のプレビュー" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        await waitFor(() => expect(api.paths()).toContain("DELETE /api/v1/rooms/r-design/messages/m-2/link-previews/lp-1"));
+      });
+
+      it("ほかの人のカードには「x」を出さない", async () => {
+        const others = [message(1), message(2, { sender: miyuki, body: article, link_previews: [preview] }), message(3)];
+        await connected({
+          ...urlsRoute,
+          "GET /api/v1/rooms/r-design/messages?limit=50": () =>
+            json(200, { messages: others.map((m) => ({ ...m, room_id: "r-design" })), has_more: false, last_change_seq: 3 }),
+        });
+        await history().findByRole("article", { name: "記事のタイトル のプレビュー" });
+
+        expect(history().queryByRole("button", { name: "プレビューを削除" })).not.toBeInTheDocument();
+      });
+
+      it("投稿の後に取れたカードは message.updated で現れる", async () => {
+        const { sockets } = await connected(urlsRoute);
+
+        sockets.last().receive({
+          type: "message.updated",
+          data: message(2, { room_id: "r-design", change_seq: 4, body: `読んで ${article}`, link_previews: [preview] }),
+        });
+
+        expect(await history().findByRole("article", { name: "記事のタイトル のプレビュー" })).toBeInTheDocument();
+      });
+
+      it("入力欄に URL を書き終えるとカードが出て、「x」で消した URL を送信に付ける", async () => {
+        const sent: unknown[] = [];
+        const { api } = await connected({
+          "POST /api/v1/rooms/r-design/link-previews": () =>
+            json(200, {
+              preview: { url: article, site_name: "Example", title: "記事のタイトル", description: "", image: null, icon: signed("https://storage.test/icon") },
+            }),
+          "POST /api/v1/rooms/r-design/messages": (_url, init) => {
+            const req = JSON.parse(init.body as string);
+            sent.push(req);
+            return json(201, message(4, { room_id: "r-design", change_seq: 4, sender: naoki, client_msg_id: req.client_msg_id, body: req.body }));
+          },
+        });
+
+        await typeInEditor(composer(), `読んで ${article} `);
+
+        const previews = await screen.findByRole("list", { name: "リンクのプレビュー" });
+        expect(await within(previews).findByText("Example")).toBeInTheDocument();
+        expect(within(previews).getByRole("link", { name: "記事のタイトル" })).toHaveAttribute("href", article);
+        expect(api.calls.filter((c) => c.path === "/api/v1/rooms/r-design/link-previews").map((c) => JSON.parse(c.init.body as string))).toEqual([
+          { url: article },
+        ]);
+
+        await userEvent.click(within(previews).getByRole("button", { name: "プレビューを削除" }));
+        expect(screen.queryByRole("list", { name: "リンクのプレビュー" })).not.toBeInTheDocument();
+
+        // 「x」を押したのでフォーカスは入力欄にない。送信のボタンで送る
+        await userEvent.click(screen.getByRole("button", { name: "送信" }));
+        await waitFor(() => expect(sent).toHaveLength(1));
+        expect(sent[0]).toMatchObject({ body: `読んで ${article} `, suppressed_link_preview_urls: [article] });
+      });
+
+      it("本文の最後の URL は、打つのが止まってから取りに行く", async () => {
+        const { api } = await connected({
+          "POST /api/v1/rooms/r-design/link-previews": () => json(200, { preview: null }),
+        });
+        const previewCalls = () => api.calls.filter((c) => c.path === "/api/v1/rooms/r-design/link-previews");
+
+        await typeInEditor(composer(), article);
+        // 打ち終えた直後はまだ取りに行かない（1 文字ごとに取りに行かない）
+        expect(previewCalls()).toHaveLength(0);
+        await waitFor(() => expect(previewCalls()).toHaveLength(1), { timeout: 3000 });
+        // カードにならなければ何も出さない
+        expect(screen.queryByRole("list", { name: "リンクのプレビュー" })).not.toBeInTheDocument();
+      });
+    });
   });
 
   describe("attachments and avatars", () => {

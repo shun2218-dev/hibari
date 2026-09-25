@@ -1,10 +1,12 @@
 import type {
   AttachmentDraftView,
+  LinkPreviewView,
   MessageAttachmentView,
   MessageLinkCardView,
   MessageReactionView,
 } from "@/components/chat/types";
 import type {
+  LinkPreview,
   Mention,
   Message,
   MessageAttachment,
@@ -14,6 +16,7 @@ import type {
 } from "@/lib/api/types.gen";
 import { clampCardBody, findPermalinks, linkKey, type Permalink, permalinkPath } from "@/lib/chat/format/links";
 import { formatBytes, formatTime } from "@/lib/chat/format/time";
+import type { LinkPreviewRef, MediaState } from "@/lib/chat/media/media-store";
 import type { AttachmentDraft } from "@/lib/chat/media/uploads";
 
 /**
@@ -84,6 +87,43 @@ export function previewImageIds(messages: readonly Message[]): string[] {
   return messages.flatMap((m) =>
     m.deleted_at === null ? m.attachments.filter(isPreviewImage).map((a) => a.id) : [],
   );
+}
+
+/**
+ * 画面に出している（削除されていない）メッセージの、画像かアイコンのあるリンクのプレビュー（ADR 0065）。
+ * 署名付き URL を取る対象（media-store.ts）。どちらもないプレビューは取りに行かない。
+ */
+export function linkPreviewRefs(messages: readonly Message[]): LinkPreviewRef[] {
+  return messages.flatMap((m) =>
+    m.deleted_at === null
+      ? m.link_previews
+          .filter((p) => p.image !== null || p.has_icon)
+          .map((p) => ({ roomId: m.room_id, messageId: m.id, previewId: p.id }))
+      : [],
+  );
+}
+
+/**
+ * リンクのプレビューを、カードの表示用の型に変える（ADR 0065）。
+ * 画像とアイコンの URL が取れるまでは、寸法から枠だけを出す（URL を空にする）。
+ */
+export function toLinkPreviewViews(
+  previews: readonly LinkPreview[],
+  urls: MediaState["linkPreviews"],
+): LinkPreviewView[] {
+  return previews.map((p) => {
+    const signed = urls[p.id];
+    return {
+      id: p.id,
+      url: p.url,
+      siteName: p.site_name,
+      ...(p.title === "" ? {} : { title: p.title }),
+      ...(p.description === "" ? {} : { description: p.description }),
+      ...(p.image === null ? {} : { image: { width: p.image.width, height: p.image.height, url: signed?.image ?? undefined } }),
+      hasIcon: p.has_icon,
+      ...(signed?.icon ? { iconUrl: signed.icon } : {}),
+    };
+  });
 }
 
 /**

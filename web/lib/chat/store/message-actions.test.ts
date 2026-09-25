@@ -184,4 +184,43 @@ describe("メッセージへの操作", () => {
       expect(messageOf(store)?.attachments).toHaveLength(2);
     });
   });
+
+  describe("removeLinkPreview（ADR 0065 決定 5）", () => {
+    const preview = { id: "lp-1", url: "https://a.example/", site_name: "A", title: "T", description: "", image: null, has_icon: false };
+    const withPreview = message(1, { room_id: "r1", sender: naoki, link_previews: [preview] });
+
+    function previewSetup(routes: Record<string, Handler>) {
+      return setup({
+        "GET /api/v1/rooms/r1": () => json(200, room("r1", "雑談", { last_message_seq: 1, last_read_seq: 1, last_user_seq: 1, last_read_user_seq: 1 })),
+        "GET /api/v1/rooms/r1/messages?limit=50": () => json(200, { messages: [withPreview], has_more: false, last_change_seq: 1 }),
+        "POST /api/v1/rooms/r1/read": () => json(200, { last_read_seq: 1, last_read_user_seq: 1, unread_count: 0 }),
+        ...routes,
+      });
+    }
+    const previewsOf = (store: ReturnType<typeof setup>["store"]) => store.getSnapshot().timelines.r1?.messages[0]?.link_previews;
+
+    it("応答を待たずに消して DELETE を送る", async () => {
+      const { store, requests } = previewSetup({
+        "DELETE /api/v1/rooms/r1/messages/m-1/link-previews/lp-1": () => new Response(null, { status: 204 }),
+      });
+      await store.openRoom("r1");
+
+      const done = store.removeLinkPreview("r1", "m-1", "lp-1");
+      expect(previewsOf(store)).toEqual([]);
+      await done;
+
+      expect(requests()).toContain("DELETE /api/v1/rooms/r1/messages/m-1/link-previews/lp-1");
+      expect(previewsOf(store)).toEqual([]);
+    });
+
+    it("失敗したら元に戻して投げる", async () => {
+      const { store } = previewSetup({
+        "DELETE /api/v1/rooms/r1/messages/m-1/link-previews/lp-1": () => problem(403, "forbidden"),
+      });
+      await store.openRoom("r1");
+
+      await expect(store.removeLinkPreview("r1", "m-1", "lp-1")).rejects.toThrow();
+      expect(previewsOf(store)).toEqual([preview]);
+    });
+  });
 });

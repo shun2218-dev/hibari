@@ -78,6 +78,7 @@ export function useMessageActions({
     onDeleteAttachment: (key: string, attachmentId: string) => void;
     openAttachmentMenu: { key: string; attachmentId: string } | undefined;
     onToggleAttachmentMenu: (key: string, attachmentId: string) => void;
+    onRemoveLinkPreview: (key: string, previewId: string) => void;
   };
   /** タイムラインの上に重ねるもの（削除の確認と、画像の拡大表示）。呼ぶ側はそのまま置く。 */
   overlays: ReactNode;
@@ -299,6 +300,12 @@ export function useMessageActions({
       onDeleteAttachment: attachments.onDeleteAttachment,
       openAttachmentMenu: attachments.openAttachmentMenu,
       onToggleAttachmentMenu: attachments.onToggleAttachmentMenu,
+      // リンクのプレビューを消す（ADR 0065 決定 5）。確認しない。「x」を出すのは編集できる（本人の）メッセージだけ（Timeline が actionsFor で絞る）。
+      // 楽観的更新と戻すのはデータ層の仕事。失敗の表示はデザインにないので、戻った結果をそのまま見せる
+      onRemoveLinkPreview: (key, previewId) =>
+        void store.removeLinkPreview(roomId, key, previewId).catch((err: unknown) => {
+          console.error("failed to remove a link preview", err);
+        }),
       onToggleReaction: canReact ? toggleReaction : undefined,
       onTogglePicker: canReact
         ? (key) => {

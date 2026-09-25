@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 
+import type { Message } from "@/lib/api/types.gen";
 import type { MediaState, MediaStore } from "@/lib/chat/media/media-store";
+import { linkPreviewRefs } from "@/lib/chat/views/message";
 
 import { useChatContext } from "./use-chat-context";
 
@@ -28,4 +30,17 @@ export function useAvatarUrls(userIds: readonly string[]): MediaState["avatars"]
     if (key !== "") media.requestAvatars(key.split(" "));
   }, [media, key]);
   return useMediaState((s) => s.avatars);
+}
+
+/**
+ * 画面に出すメッセージのリンクのプレビュー（ADR 0065）の、画像とアイコンの URL を頼み、preview_id → URL の表を返す。
+ * 同じプレビューは 1 回しか取りにいかない（media-store）。
+ */
+export function useLinkPreviewUrls(messages: readonly Message[] | undefined): MediaState["linkPreviews"] {
+  const media = useMedia();
+  const refs = useMemo(() => linkPreviewRefs(messages ?? []), [messages]);
+  useEffect(() => {
+    if (refs.length > 0) media.requestLinkPreviewUrls(refs);
+  }, [media, refs]);
+  return useMediaState((s) => s.linkPreviews);
 }

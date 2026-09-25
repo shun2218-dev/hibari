@@ -161,3 +161,29 @@ describe("attachment images", () => {
     expect(await media.attachmentDownloadUrl("a2")).toBe("https://storage.test/a2?v=2");
   });
 });
+
+describe("link preview urls（ADR 0065 決定 7）", () => {
+  const ref = { roomId: "r1", messageId: "m1", previewId: "lp-1" };
+  const path = "GET /api/v1/rooms/r1/messages/m1/link-previews/lp-1/urls";
+
+  it("fetches each preview once and keeps missing images as null", async () => {
+    const { media, requests } = setup({
+      [path]: () => json(200, { image: signed("https://storage.test/image", T0 + 5 * 60 * 1000), icon: null }),
+    });
+
+    media.requestLinkPreviewUrls([ref]);
+    media.requestLinkPreviewUrls([ref]);
+
+    await vi.waitFor(() => expect(media.getSnapshot().linkPreviews["lp-1"]).toEqual({ image: "https://storage.test/image", icon: null }));
+    media.requestLinkPreviewUrls([ref]);
+    expect(requests()).toHaveLength(1);
+  });
+
+  it("gives up on a preview that is gone (404)", async () => {
+    const { media } = setup({ [path]: () => problem(404, "not-found") });
+
+    media.requestLinkPreviewUrls([ref]);
+
+    await vi.waitFor(() => expect(media.getSnapshot().linkPreviews["lp-1"]).toBeNull());
+  });
+});

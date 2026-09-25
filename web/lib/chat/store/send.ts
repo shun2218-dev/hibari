@@ -62,6 +62,7 @@ export function createSend(
       body: item.body,
       ...(item.threadRootId === null ? {} : { thread_root_id: item.threadRootId, also_in_channel: item.alsoInChannel }),
       ...(item.attachments.length === 0 ? {} : { attachment_ids: item.attachments.map((a) => a.id) }),
+      ...(item.suppressedLinkPreviewUrls?.length ? { suppressed_link_preview_urls: item.suppressedLinkPreviewUrls } : {}),
     });
     // 待ちきれずに失敗にした後で応答が届いても、確定として扱う（同じ client_msg_id の再送は同じメッセージを返す）
     sending.then((message) => receiveMessage(message, true)).catch(() => {});
@@ -117,6 +118,8 @@ export function createSend(
           threadRootId?: string | null;
           /** 返信をチャンネルにも出す（ADR 0039）。返信でないときに渡しても無視する（サーバーは 422 を返すため）。 */
           alsoInChannel?: boolean;
+          /** 入力欄でプレビューを消した URL（ADR 0065 決定 13）。カードなしで送られ、編集しても戻らない。 */
+          suppressedLinkPreviewUrls?: string[];
         },
       ) {
         const threadRootId = input.threadRootId ?? null;
@@ -126,6 +129,7 @@ export function createSend(
           threadRootId,
           alsoInChannel: threadRootId !== null && (input.alsoInChannel ?? false),
           attachments: input.attachments ?? [],
+          ...(input.suppressedLinkPreviewUrls?.length ? { suppressedLinkPreviewUrls: input.suppressedLinkPreviewUrls } : {}),
           status: "pending",
           createdAt: new Date(now()).toISOString(),
         };

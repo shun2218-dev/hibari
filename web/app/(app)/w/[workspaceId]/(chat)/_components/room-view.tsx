@@ -30,6 +30,7 @@ import {
 } from "@/hooks/chat/use-attachment-uploader";
 import {
   useAvatarUrls,
+  useLinkPreviewUrls,
   useMedia,
   useMediaState,
 } from "@/hooks/chat/use-media";
@@ -45,6 +46,7 @@ import { forgetLocation } from "@/lib/chat/last-location";
 import { draftsReady } from "@/lib/chat/media/uploads";
 import { mentionAll } from "@/lib/chat/format/mentions";
 import { useComposerToolbar } from "@/hooks/use-composer-toolbar";
+import { useComposerLinkPreviews } from "@/hooks/chat/use-composer-link-previews";
 import { useOrigin } from "@/hooks/use-origin";
 import { memberSettings, mentionAllRecipients, toMemberNames, toMentionCandidates } from "@/lib/chat/views/members";
 import { permalinksIn, previewImageIds, toAttachmentDraftView } from "@/lib/chat/views/message";
@@ -122,6 +124,8 @@ export function RoomView({
   // 書式のツールバーを出すか。見る人ごとの好みとしてブラウザに覚える（ADR 0052 の追記）
   const [toolbarVisible, setToolbarVisible] = useComposerToolbar();
   const { uploader, drafts } = useAttachmentUploader(roomId);
+  // 送る前のリンクのプレビュー（ADR 0065 決定 13）
+  const composerLinks = useComposerLinkPreviews(roomId, draft);
   const [sentCount, setSentCount] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // 送る前に確認している `@channel` / `@here`（ADR 0043）。null なら確認していない
@@ -218,6 +222,8 @@ export function RoomView({
   useEffect(() => {
     if (imageIds !== "") media.requestAttachmentUrls(imageIds.split(" "));
   }, [media, imageIds]);
+  // リンクのプレビューの画像とアイコンも、自前のストレージの署名付き URL を引く（ADR 0065 決定 7）
+  const linkPreviewUrls = useLinkPreviewUrls(messages);
 
   // 本文に貼られたパーマリンクのカード（ADR 0040）。中身は本文に入っていないので、見る人の権限で取り直す
   const origin = useOrigin();
@@ -261,6 +267,7 @@ export function RoomView({
         me,
         avatarUrls,
         attachmentUrls,
+        linkPreviewUrls,
         linkCards,
         origin,
         currentWorkspaceId: workspaceId,
@@ -275,6 +282,7 @@ export function RoomView({
       me,
       avatarUrls,
       attachmentUrls,
+      linkPreviewUrls,
       linkCards,
       origin,
       workspaceId,
@@ -335,7 +343,8 @@ export function RoomView({
   }
 
   function sendNow(body: string = draft) {
-    store.sendMessage(roomId, { body, attachments: uploader.take() });
+    store.sendMessage(roomId, { body, attachments: uploader.take(), suppressedLinkPreviewUrls: composerLinks.suppressedUrls() });
+    composerLinks.reset();
     setDraft("");
     setConfirmAll(null);
     setSentCount((n) => n + 1);
@@ -468,6 +477,8 @@ export function RoomView({
             onRemoveAttachment={(key) => uploader.remove(key)}
             typingNames={typingNames}
             mentionCandidates={mentionCandidates}
+            linkPreviews={composerLinks.previews}
+            onRemoveLinkPreview={composerLinks.remove}
             toolbarVisible={toolbarVisible}
             onToggleToolbar={setToolbarVisible}
           />

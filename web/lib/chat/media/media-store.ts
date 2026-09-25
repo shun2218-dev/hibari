@@ -16,7 +16,18 @@ import { AVATAR_BATCH_SIZE } from "@/lib/chat/api/media";
 export type MediaState = {
   avatars: Record<string, string | null | undefined>;
   attachments: Record<string, string | null | undefined>;
+  /**
+   * リンクのプレビュー（ADR 0065）の画像とアイコン。preview_id → URL。ないものは null。
+   * プレビューごと取れなければ（消された、読めなくなった）null。
+   */
+  linkPreviews: Record<string, LinkPreviewUrls | null | undefined>;
 };
+
+/** リンクのプレビューの画像とアイコンの URL。どちらもなければ null。 */
+export type LinkPreviewUrls = { image: string | null; icon: string | null };
+
+/** URL を取るプレビューの場所。API のパスにルームとメッセージが要る。 */
+export type LinkPreviewRef = { roomId: string; messageId: string; previewId: string };
 
 export type MediaStoreOptions = { now?: () => number };
 
@@ -41,7 +52,7 @@ const ATTACHMENT_RETRY_AFTER_MS = 60 * 1000;
  * - 添付: まだないときだけ取り、読み込みに失敗したら取り直す。最大 25 MiB あり、表示できている画像の URL を替えて読み込み直させない
  */
 export function createMediaStore(api: ChatApi, { now = Date.now }: MediaStoreOptions = {}) {
-  let state: MediaState = { avatars: {}, attachments: {} };
+  let state: MediaState = { avatars: {}, attachments: {}, linkPreviews: {} };
   const listeners = new Set<() => void>();
 
   // アバター: 取り直す時刻（手元の時計）と、次のまとめた取得を待っている ID・取得中の ID
@@ -53,6 +64,9 @@ export function createMediaStore(api: ChatApi, { now = Date.now }: MediaStoreOpt
   // 添付: URL を取った時刻（手元の時計）と、取得中の ID
   const attachmentFetchedAt = new Map<string, number>();
   const attachmentInflight = new Set<string>();
+
+  // リンクのプレビュー: 取得中の preview_id
+  const linkPreviewInflight = new Set<string>();
 
   function update(recipe: (s: MediaState) => MediaState) {
     const next = recipe(state);
@@ -116,6 +130,28 @@ export function createMediaStore(api: ChatApi, { now = Date.now }: MediaStoreOpt
     }
   }
 
+  // ---- リンクのプレビュー ----
+
+  async function fetchLinkPreviewUrls({ roomId, messageId, previewId }: LinkPreviewRef) {
+    linkPreviewInflight.add(previewId);
+    try {
+      const { image, icon } = await api.linkPreviewUrls(roomId, messageId, previewId);
+      update((s) => ({
+        ...s,
+        linkPreviews: { ...s.linkPreviews, [previewId]: { image: image?.url ?? null, icon: icon?.url ?? null } },
+      }));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        // 消された・読めなくなった。カードも message.updated で消えるので、画像を出さない
+        update((s) => ({ ...s, linkPreviews: { ...s.linkPreviews, [previewId]: null } }));
+      } else {
+        console.error("failed to load link preview urls", err);
+      }
+    } finally {
+      linkPreviewInflight.delete(previewId);
+    }
+  }
+
   return {
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
@@ -163,6 +199,25 @@ export function createMediaStore(api: ChatApi, { now = Date.now }: MediaStoreOpt
       } else {
         update((s) => ({ ...s, attachments: { ...s.attachments, [attachmentId]: null } }));
       }
+    },
+
+    /**
+     * リンクのプレビューの画像とアイコンの URL を頼む（ADR 0065 決定 7）。まだ取っていないものだけを取る。
+     * 添付の画像と同じく、取った URL は替えない（表示できている画像を読み込み直させない）。
+     */
+    requestLinkPreviewUrls(refs: readonly LinkPreviewRef[]) {
+      for (const ref of refs) {
+        if (state.linkPreviews[ref.previewId] !== undefined || linkPreviewInflight.has(ref.previewId)) continue;
+        void fetchLinkPreviewUrls(ref);
+      }
+    },
+
+    /**
+     * 入力欄のプレビューを取る（ADR 0065 決定 13）。画像とアイコンの署名付き URL も一緒に返る。
+     * カードにならなければ null。失敗したら ApiError を投げる。
+     */
+    async previewLink(roomId: string, url: string) {
+      return (await api.previewLink(roomId, url)).preview;
     },
 
     /**

@@ -78,6 +78,29 @@ export function createMessageActions(
       },
 
       /**
+       * 本人がリンクのプレビューを消す（ADR 0065 決定 5）。確認はしない。
+       *
+       * 手元で先に消してから送る。応答に本文はない（204）ので、確定はほかの人と同じ message.updated で届く。
+       * 失敗したら、その間に何も届いていなければ元に戻す。
+       */
+      async removeLinkPreview(roomId: string, messageId: string, previewId: string): Promise<void> {
+        const before = findMessage(roomId, messageId);
+        if (!before) return;
+        patchMessageEverywhere(roomId, messageId, (m) => ({
+          ...m,
+          link_previews: m.link_previews.filter((p) => p.id !== previewId),
+        }));
+        try {
+          await api.removeLinkPreview(roomId, messageId, previewId);
+        } catch (error) {
+          patchMessageEverywhere(roomId, messageId, (m) =>
+            m.change_seq === before.change_seq ? { ...m, link_previews: before.link_previews } : m,
+          );
+          throw error;
+        }
+      },
+
+      /**
        * メッセージを削除する。応答にメッセージがないので、差分を取って反映する（WebSocket のイベントが先に届いていれば何も起きない）。
        * 失敗したら ApiError を投げる。
        */
