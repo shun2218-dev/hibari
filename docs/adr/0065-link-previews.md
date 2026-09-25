@@ -168,6 +168,22 @@ HTTP クライアントは `internal/platform/safehttp` に置き、チャット
   実装のときに主なサイト（YouTube、X、GitHub、Qiita、Zenn、ニュースサイト）を実物で取って結果をこの ADR に追記し、足りなければその時点で oEmbed を足すかをオーナーと決める
   （Phase 6.10b・6.16 と同じく、実物で確かめる前に妥協を決めない）。
 
+**追記（2026-09-25、構築順 3 の実物での確認）**: `linkpreview.Fetcher`（`platform/safehttp` を通す、本番と同じ検査と User-Agent）で、主なサイトを実際に取った。
+
+| サイト | 結果 |
+|---|---|
+| YouTube（`/watch` と `youtu.be`） | タイトル・サムネイル（1280×720 の JPEG）・アイコン |
+| X（プロフィールとポスト。`x.com` と `twitter.com`） | 取れる。タイトルは「X ユーザーの〜さん」、画像は WebP |
+| GitHub・Qiita・Zenn・note・日本経済新聞・朝日新聞・go.dev・Speaker Deck | タイトル・説明・画像・アイコン |
+| Wikipedia・Instagram | 取れる。`og:site_name` がないのでサイト名はホスト名（決定 9 のとおり） |
+| Figma | 取れる。`og:image` がないので画像なし |
+| Amazon | ボット判定のページ（タイトルが「Amazon」だけ）か 503 |
+| NHK ニュース | 応答のヘッダーまで 9〜10 秒かかり（curl でも同じ）、ヘッダー待ちの 5 秒で切れる |
+
+- **X も OGP だけで取れたので、oEmbed は足さない。** 取れなかった 2 つは、oEmbed を足しても変わらない（ボット判定と応答の遅さ）。
+- 決定 8 の IPv4 を埋め込んだ IPv6 のうち、**6to4（`2002::/16`）と Teredo（`2001::/32`）は、埋め込まれた IPv4 を取り出さずにまとめて拒否する**ことにした。
+  取り出し方が複雑（Teredo はビットを反転してある）で間違えやすく、この範囲にある正当なサイトはまずないため。IPv4-mapped と NAT64（`64:ff9b::/96`）は取り出して判定する。
+
 ### 10. 取得のジョブ
 
 - `pending` の行を `FOR UPDATE SKIP LOCKED` で 1 件ずつ取り、`claimed_until`（1 分後）を立てて commit してから取りに行く。

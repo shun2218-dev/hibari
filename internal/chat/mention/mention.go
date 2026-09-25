@@ -54,7 +54,7 @@ func Parse(body string) []Mention {
 	if matches == nil {
 		return nil
 	}
-	code := codeRanges(body)
+	code := CodeRanges(body)
 	var (
 		out      []Mention
 		seenUser = make(map[ulid.ULID]bool, len(matches))
@@ -62,7 +62,7 @@ func Parse(body string) []Mention {
 	)
 	for _, m := range matches {
 		// トークンはバッククォートを含まないので、コードの範囲にまたがることはない。始まりだけを見ればよい
-		if inRanges(code, m[0]) {
+		if InRanges(code, m[0]) {
 			continue
 		}
 		switch {
@@ -109,13 +109,13 @@ func Has(ms []Mention, kind Kind) bool {
 // fence はコードブロックの記号。
 const fence = "```"
 
-// codeRanges は、本文の中のコードの範囲（記号を含む、バイトの [始まり, 終わり)）を前から順に返す（ADR 0051 決定 2）。
+// CodeRanges は、本文の中のコードの範囲（記号を含む、バイトの [始まり, 終わり)）を前から順に返す（ADR 0051 決定 2）。
 //
 //   - コードブロック: ``` を前から順に対にする。行の途中でもよい。閉じていない ``` はコードではない
 //   - インラインコード: コードブロックの外で、` から同じ行の次の ` まで。中身が空のもの（バッククォートが 2 つ続くだけ）はコードではない
 //
 // Web の解釈（body-format.ts の splitFences と readAtom）と同じ結果になるように書く。
-func codeRanges(body string) [][2]int {
+func CodeRanges(body string) [][2]int {
 	var ranges [][2]int
 	pos := 0
 	for {
@@ -156,7 +156,8 @@ func appendInlineCode(ranges [][2]int, body string, from, to int) [][2]int {
 	return ranges
 }
 
-func inRanges(ranges [][2]int, pos int) bool {
+// InRanges は pos がコードの範囲（CodeRanges の結果）の中にあるか。
+func InRanges(ranges [][2]int, pos int) bool {
 	for _, r := range ranges {
 		if r[0] <= pos && pos < r[1] {
 			return true

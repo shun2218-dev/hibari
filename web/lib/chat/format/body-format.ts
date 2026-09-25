@@ -307,7 +307,11 @@ export function inCode(ranges: readonly [number, number][], pos: number): boolea
   return ranges.some(([start, end]) => start <= pos && pos < end);
 }
 
-/** 本文の中の URL を、出てきた順に返す（コードの中は含めない）。パーマリンクのカードを探すのに使う（ADR 0051 決定 4）。 */
+/**
+ * 本文の中の URL を、出てきた順に返す（コードの中は含めない）。パーマリンクのカードを探すのに使う（ADR 0051 決定 4）。
+ * サーバーもリンクのプレビューのために同じ規則で URL を取り出す（internal/chat/linkpreview の ExtractURLs。ADR 0065）。
+ * ずれは testdata/format/urls.json を両方のテストで読んで防ぐ。
+ */
 export function findUrls(body: string): string[] {
   const urls: string[] = [];
   const inline = (nodes: Inline[]) => {
