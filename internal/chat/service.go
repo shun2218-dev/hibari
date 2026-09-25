@@ -29,6 +29,8 @@ type Deps struct {
 	Delivery Delivery
 	// Presence は自動で決まる presence を読む。REST で初期値を返すのに使う（ADR 0015 / 0049）。
 	Presence PresenceReader
+	// LinkPreviews は外部のリンクのプレビュー（ADR 0065）。
+	LinkPreviews LinkPreviewDeps
 }
 
 // PresenceReader は自動で決まる presence（Redis に TTL 付きで置く。CLAUDE.md ルール 5）を読む。
@@ -51,6 +53,7 @@ type Service struct {
 	attachmentLimits AttachmentLimits
 	delivery         Delivery
 	presence         PresenceReader
+	previews         linkPreviews
 }
 
 // NewService は Service を返す。
@@ -66,6 +69,7 @@ func NewService(d Deps) *Service {
 		attachmentLimits: d.AttachmentLimits,
 		delivery:         d.Delivery,
 		presence:         d.Presence,
+		previews:         newLinkPreviews(d.LinkPreviews),
 	}
 }
 

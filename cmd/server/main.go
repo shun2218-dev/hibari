@@ -19,6 +19,7 @@ import (
 
 	"github.com/shun2218-dev/hibari/internal/auth"
 	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/linkpreview"
 	"github.com/shun2218-dev/hibari/internal/chat/presence"
 	"github.com/shun2218-dev/hibari/internal/chat/realtime"
 	"github.com/shun2218-dev/hibari/internal/httpx"
@@ -31,6 +32,7 @@ import (
 	"github.com/shun2218-dev/hibari/internal/platform/mail"
 	"github.com/shun2218-dev/hibari/internal/platform/ratelimit"
 	"github.com/shun2218-dev/hibari/internal/platform/redis"
+	"github.com/shun2218-dev/hibari/internal/platform/safehttp"
 	"github.com/shun2218-dev/hibari/internal/platform/storage"
 )
 
@@ -183,6 +185,12 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		AttachmentLimits: chat.AttachmentLimits{MaxBytes: cfg.AttachmentMaxBytes, AllowedTypes: cfg.AttachmentAllowedTypes},
 		Delivery:         delivery,
 		Presence:         realtime.PresenceStates{Store: presenceStore},
+		// 外部のリンクのプレビュー（ADR 0065）。取りに行くのは safehttp を通したクライアントだけ（SSRF の対策。決定 8）
+		LinkPreviews: chat.LinkPreviewDeps{
+			Fetcher:    linkpreview.NewFetcher(safehttp.New(safehttp.Options{UserAgent: linkpreview.UserAgent})),
+			AppBaseURL: cfg.AppBaseURL,
+			Limiter:    ratelimit.New(rdb, clk),
+		},
 	})
 
 	// 添付の掃除ジョブ（ADR 0013）。DB のプールを閉じる前に止めて、終わるのを待つ。
@@ -191,6 +199,7 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	jobCtx, stopJobs := context.WithCancel(ctx)
 	var jobs sync.WaitGroup
 	jobs.Go(func() { chatService.RunAttachmentCleanup(jobCtx, chat.AttachmentCleanupInterval) })
+	jobs.Go(func() { chatService.RunLinkPreviews(jobCtx, chat.LinkPreviewInterval) })
 	jobs.Go(func() { hub.Run(jobCtx, presence.RefreshInterval, realtime.RevalidateInterval) })
 	jobs.Go(func() {
 		if err := revocations.Run(jobCtx, hub.CloseSessions); err != nil {

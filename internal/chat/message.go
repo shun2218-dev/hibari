@@ -75,6 +75,8 @@ type Message struct {
 	Mentions []Mention
 	// Reactions は付いた絵文字のリアクション（ADR 0044）。最初に付いた順。削除済みのメッセージでは空。
 	Reactions []MessageReaction
+	// LinkPreviews は外部のリンクのプレビュー（ADR 0065）。見せるもの（取れていて、本人が消していない）だけ。削除済みでは空。
+	LinkPreviews []MessageLinkPreview
 	// Pinned はピン留めされているときだけ入る（ADR 0054）。削除するとピンも外れるので、削除済みでは常に nil。
 	Pinned *MessagePin
 	// Saved は閲覧者が「後で」に保存しているか（ADR 0054 決定 10）。**受け取る人ごとの値**なので REST でしか意味を持たない。
@@ -163,6 +165,8 @@ type SendMessageInput struct {
 	AlsoInChannel bool
 	// AttachmentIDs は、送信者が同じルームにアップロードして complete 済みの添付（ADR 0013）。
 	AttachmentIDs []ulid.ULID
+	// SuppressedLinkPreviewURLs は入力欄でプレビューを消した URL（ADR 0065 決定 13）。最初から消した状態で付く。
+	SuppressedLinkPreviewURLs []string
 }
 
 // SendMessage はメッセージを送信する。同じ送信者が同じ client_msg_id で送信済みなら、created を false にして既存のメッセージを返す。
@@ -184,6 +188,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 	}
 	validateBody(&fields, in.Body, len(in.AttachmentIDs) > 0)
 	validateAttachmentIDs(&fields, in.AttachmentIDs)
+	validateSuppressedLinkPreviewURLs(&fields, in.SuppressedLinkPreviewURLs)
 	if in.AlsoInChannel && in.ThreadRootID == nil {
 		// チャンネルの投稿はもともとチャンネルに出る。黙って受け付けると、クライアントの取り違え（返信先の付け忘れ）に気づけない。
 		fields.add("also_in_channel", ReasonInvalidValue)
@@ -246,6 +251,9 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 		if err := createMessageMentions(ctx, q, now, roomID, id, in.Body, all); err != nil {
 			return err
 		}
+		if err := s.createMessageLinkPreviews(ctx, q, roomID, id, in.Body, in.SuppressedLinkPreviewURLs); err != nil {
+			return err
+		}
 		if _, err := q.AdvanceLastReadSeq(ctx, store.AdvanceLastReadSeqParams{RoomID: roomID, UserID: actor, Seq: seq}); err != nil {
 			return fmt.Errorf("advance sender's last_read_seq: %w", err)
 		}
@@ -260,6 +268,7 @@ func (s *Service) SendMessage(ctx context.Context, actor, roomID ulid.ULID, in S
 	if created {
 		// 返信（change_seq が 1 つ目）を先に、親の更新（2 つ目）を後に届ける。クライアントは change_seq の順に反映できる。
 		s.deliver(ctx, append([]Event{messageEvent(EventMessageCreated, msg)}, threadEvents...)...)
+		s.wakeLinkPreviews(in.Body)
 	}
 	return msg, created, nil
 }
@@ -278,6 +287,9 @@ func getMessage(ctx context.Context, q *store.Queries, roomID, viewer, id ulid.U
 		return Message{}, err
 	}
 	if err := loadMessageReactions(ctx, q, roomID, viewer, msgs); err != nil {
+		return Message{}, err
+	}
+	if err := loadMessageLinkPreviews(ctx, q, roomID, msgs); err != nil {
 		return Message{}, err
 	}
 	if err := loadMessageSaved(ctx, q, viewer, msgs); err != nil {
@@ -348,6 +360,10 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 		if err := createMessageMentions(ctx, q, now, roomID, messageID, body, all); err != nil {
 			return err
 		}
+		// 増えた URL は取りに行き、無くなった URL のカードは消す。本人が消したカードは戻さない（ADR 0065 決定 4）
+		if err := s.syncMessageLinkPreviews(ctx, q, roomID, messageID, body); err != nil {
+			return err
+		}
 		changed = true
 		msg, err = getMessage(ctx, q, roomID, actor, messageID)
 		return err
@@ -357,6 +373,7 @@ func (s *Service) EditMessage(ctx context.Context, actor, roomID, messageID ulid
 	}
 	if changed {
 		s.deliver(ctx, messageEvent(EventMessageUpdated, msg))
+		s.wakeLinkPreviews(body)
 	}
 	return msg, nil
 }
@@ -399,6 +416,10 @@ func (s *Service) DeleteMessage(ctx context.Context, actor, roomID, messageID ul
 		// 添付は掃除ジョブに消させる。ストレージの呼び出しをこのトランザクションに入れない（ADR 0013）。
 		if err := q.MarkMessageAttachmentsDeleted(ctx, store.MarkMessageAttachmentsDeletedParams{RoomID: roomID, MessageID: &messageID}); err != nil {
 			return fmt.Errorf("mark attachments deleted: %w", err)
+		}
+		// tombstone にカードは要らない。指していた取得の結果は、参照がなくなったので掃除のジョブが消す（ADR 0065 決定 10）
+		if err := q.DeleteMessageLinkPreviews(ctx, messageID); err != nil {
+			return fmt.Errorf("delete message link previews: %w", err)
 		}
 		// tombstone（本文と添付が空）を配信する。
 		tombstone, err := getMessage(ctx, q, roomID, actor, messageID)

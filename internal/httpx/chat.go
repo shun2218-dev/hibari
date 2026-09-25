@@ -75,6 +75,9 @@ type ChatService interface {
 	CompleteAttachment(ctx context.Context, actor, attachmentID ulid.ULID) (chat.Attachment, error)
 	GetAttachmentURL(ctx context.Context, actor, attachmentID ulid.ULID) (chat.DownloadURL, error)
 	DeleteMessageAttachment(ctx context.Context, actor, roomID, messageID, attachmentID ulid.ULID) (chat.Message, error)
+	PreviewLink(ctx context.Context, actor, roomID ulid.ULID, rawURL string) (*chat.ComposerLinkPreview, error)
+	LinkPreviewURLs(ctx context.Context, actor, roomID, messageID, previewID ulid.ULID) (image, icon *chat.SignedURL, err error)
+	RemoveLinkPreview(ctx context.Context, actor, roomID, messageID, previewID ulid.ULID) error
 }
 
 type chatHandlers struct {
@@ -164,6 +167,10 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("POST /api/v1/rooms/{roomID}/attachments", h.createAttachment)
 	// 添付ファイルだけの削除（ADR 0045）。メッセージのパスの下に置き、応答は更新後のメッセージにする。
 	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}/attachments/{attachmentID}", h.deleteMessageAttachment)
+	// 外部のリンクのプレビュー（ADR 0065）
+	handle("POST /api/v1/rooms/{roomID}/link-previews", h.previewLink)
+	handle("GET /api/v1/rooms/{roomID}/messages/{messageID}/link-previews/{previewID}/urls", h.getLinkPreviewURLs)
+	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}/link-previews/{previewID}", h.removeLinkPreview)
 	handle("POST /api/v1/attachments/{attachmentID}/complete", h.completeAttachment)
 	handle("GET /api/v1/attachments/{attachmentID}/url", h.getAttachmentURL)
 }

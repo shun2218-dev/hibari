@@ -34,6 +34,9 @@ const (
 	iconMaxBytes  = 100 << 10
 )
 
+// UserAgent は取りに行くときに名乗る名前。ほかのクローラーの名前を騙らない（ADR 0065 決定 8）。
+const UserAgent = "Mozilla/5.0 (compatible; hibari-bot/1.0; +https://hibari-chat.com)"
+
 // imageTypes はカードの画像として受け付ける形式（ADR 0013 の inline 表示と同じ）。
 var imageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
 

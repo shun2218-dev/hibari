@@ -85,12 +85,17 @@ func Candidates(body string, app *url.URL) []string {
 		if err != nil || u.Host == "" {
 			continue
 		}
-		if app != nil && strings.EqualFold(u.Scheme, app.Scheme) && strings.EqualFold(u.Host, app.Host) {
+		if IsAppURL(u, app) {
 			continue
 		}
 		out = append(out, raw)
 	}
 	return out
+}
+
+// IsAppURL は、u が自分のアプリ（app）と同じオリジンか。app が nil なら false。
+func IsAppURL(u, app *url.URL) bool {
+	return app != nil && strings.EqualFold(u.Scheme, app.Scheme) && strings.EqualFold(u.Host, app.Host)
 }
 
 func isWordChar(c byte) bool {

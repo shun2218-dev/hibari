@@ -112,6 +112,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
   "thread_root_id": null, "thread_seq": null, "also_in_channel": false, "thread": null, "attachments": [],
   "mentions": [{ "kind": "user", "user": { "id": "01J8...", "handle": "kohaku", "display_name": "kohaku" } }],
   "reactions": [{ "emoji": "👍", "count": 3, "users": ["01J8...", "01J8...", "01J8..."] }],
+  "link_previews": [],
   "pinned": null,
   "created_at": "2026-09-14T12:00:00Z", "edited_at": null, "deleted_at": null
 }
@@ -139,6 +140,28 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 
 **`me`（自分が付けたか）はイベントに載らない。** `mentions` の「自分宛てか」と同じ理由で、受け取る人ごとの値を入れられない。
 REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）にだけ `me` が入る。
+
+#### 外部のリンクのプレビュー（`link_previews`。ADR 0065）
+
+本文に貼った URL のカード（OGP のタイトル・説明・画像・サイトのアイコン）。**専用のイベントを作らない。**
+
+- 送信の時点では、たいてい空配列で届く（`message.created`）。サーバーが投稿の後に取りに行き、取れたらそのメッセージの
+  `change_seq` が 1 つ進んで `message.updated` として届く（再接続の差分（`after_change_seq`）にもそのまま乗る）。
+  入力欄でカードを取ってから送った URL（決定 13）と、30 分以内に誰かが取った URL は、`message.created` の時点で付いている。
+- 投稿した本人がカードを消したときも、`change_seq` が 1 つ進んで、そのカードが消えた `message.updated` が届く。
+- 取れなかったカード・取得待ちのカード・消したカードは載らない。どれも誰にも見えていないので、`message.updated` も届かない。
+- `seq` / `user_seq` / `edited_at` は動かない（未読にも「（編集済み）」にもならない）。
+- 見る人によらない値なので、REST と同じ形でそのまま載る。
+
+```json
+"link_previews": [
+  { "id": "01J8...", "url": "https://example.com/post/1", "site_name": "Example", "title": "記事のタイトル", "description": "記事の説明",
+    "image": { "width": 1200, "height": 630 }, "has_icon": true }
+]
+```
+
+画像とアイコンの URL は載らない。表示するときに `GET /api/v1/rooms/{roomID}/messages/{messageID}/link-previews/{id}/urls` で
+署名付き URL（5 分）を取る（添付と同じ。ADR 0013）。`image` は画像がなければ `null`。
 
 #### ピン留め（`pinned`。ADR 0054）
 

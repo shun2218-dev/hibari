@@ -79,6 +79,7 @@ var apiTags = []struct{ name, description string }{
 	{"search", "メッセージの検索（ADR 0061）"},
 	{"activity", "アクティビティ（ADR 0058）"},
 	{"attachments", "添付ファイル（ADR 0013）"},
+	{"link-previews", "外部のリンクのプレビュー（ADR 0065）"},
 	{"websocket", "WebSocket の接続（docs/events.md）"},
 	{"system", "ヘルスチェックと公開鍵"},
 }
@@ -829,6 +830,35 @@ var apiRoutes = []apiRoute{
 		auth:        authChatUser,
 		status:      http.StatusOK, response: body[messageResponse](),
 		errors: []int{http.StatusForbidden, http.StatusNotFound, http.StatusConflict},
+	},
+	// link-previews
+	{
+		pattern:     "POST /api/v1/rooms/{roomID}/link-previews",
+		tag:         "link-previews",
+		summary:     "入力欄のリンクのプレビューを取る",
+		description: "送る前に、入力欄の URL のカードを取る（その場で取りに行くので最大 10 秒ほど待つ）。カードにならなければ preview が null で、理由は区別しない。投稿できるルームだけ。1 人あたり 1 分に 30 回まで。",
+		auth:        authChatUser,
+		request:     body[previewLinkRequest](),
+		status:      http.StatusOK, response: body[previewLinkResponse](),
+		errors: []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusTooManyRequests},
+	},
+	{
+		pattern:     "GET /api/v1/rooms/{roomID}/messages/{messageID}/link-previews/{previewID}/urls",
+		tag:         "link-previews",
+		summary:     "リンクのプレビューの画像とアイコンの URL を取る",
+		description: "自前のストレージに写した画像とアイコンの、署名付き GET URL（5 分）。ないものは null。",
+		auth:        authChatUser,
+		status:      http.StatusOK, response: body[linkPreviewURLsResponse](),
+		errors: []int{http.StatusNotFound},
+	},
+	{
+		pattern:     "DELETE /api/v1/rooms/{roomID}/messages/{messageID}/link-previews/{previewID}",
+		tag:         "link-previews",
+		summary:     "リンクのプレビューを消す",
+		description: "投稿した本人だけ。確認はせず、消してあっても 204（冪等）。編集しても戻らない。ほかの人には message.updated で届く。",
+		auth:        authChatUser,
+		status:      http.StatusNoContent,
+		errors:      []int{http.StatusForbidden, http.StatusNotFound, http.StatusConflict},
 	},
 	{
 		pattern:     "POST /api/v1/attachments/{attachmentID}/complete",

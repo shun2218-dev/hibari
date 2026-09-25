@@ -169,6 +169,9 @@ func (s *Service) finishMessagePage(ctx context.Context, q *store.Queries, roomI
 	if err := loadMessageReactions(ctx, q, roomID, viewer, page.Messages); err != nil {
 		return MessagePage{}, err
 	}
+	if err := loadMessageLinkPreviews(ctx, q, roomID, page.Messages); err != nil {
+		return MessagePage{}, err
+	}
 	if err := loadMessageSaved(ctx, q, viewer, page.Messages); err != nil {
 		return MessagePage{}, err
 	}

@@ -25,6 +25,22 @@ type Attachment struct {
 	FileName   string
 }
 
+type LinkPreview struct {
+	ID               ulid.ULID
+	Url              string
+	Status           string
+	Title            string
+	Description      string
+	SiteName         string
+	ImageObjectKey   *string
+	ImageContentType *string
+	ImageWidth       *int32
+	ImageHeight      *int32
+	IconObjectKey    *string
+	IconContentType  *string
+	FetchedAt        time.Time
+}
+
 type Message struct {
 	ID                ulid.ULID
 	RoomID            ulid.ULID
@@ -48,6 +64,20 @@ type Message struct {
 	InChannel         bool
 	PinnedAt          *time.Time
 	PinnedBy          *ulid.ULID
+}
+
+type MessageLinkPreview struct {
+	ID            ulid.ULID
+	RoomID        ulid.ULID
+	MessageID     ulid.ULID
+	Url           string
+	Position      int32
+	Status        string
+	LinkPreviewID *ulid.ULID
+	Attempts      int32
+	ClaimedUntil  *time.Time
+	RemovedAt     *time.Time
+	CreatedAt     time.Time
 }
 
 type Room struct {

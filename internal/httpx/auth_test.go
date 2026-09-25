@@ -41,6 +41,10 @@ type apiClient struct {
 	redis    *goredis.Client
 	// instanceID はこのサーバー（インスタンス）の ID。presence のフィールドの名前になる。
 	instanceID ulid.ULID
+	// chat はこのインスタンスの chat.Service。リンクのプレビューの取得待ちを処理するのに使う（ADR 0065）。
+	chat *chat.Service
+	// fetcher はリンクのプレビューを URL から決めて返す（ネットワークに出ない）。
+	fetcher *chattest.Fetcher
 }
 
 // testWSConfig は WebSocket の設定。ping を待つテスト以外で ping が割り込まないよう、間隔は既定のまま長くする。
@@ -138,6 +142,13 @@ func startInstance(t *testing.T, env *authtest.Env, o apiOptions) *apiClient {
 		broker.Run(brokerCtx, hub)
 	}()
 
+	fetcher := &chattest.Fetcher{}
+	chatService := chat.NewService(chat.Deps{
+		DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Random: rand.Reader, Logger: logger,
+		Storage: chattest.NewStorage(t), AttachmentLimits: chattest.AttachmentLimits,
+		Delivery: delivery, Presence: realtime.PresenceStates{Store: presenceStore},
+		LinkPreviews: chat.LinkPreviewDeps{Fetcher: fetcher, AppBaseURL: chattest.AppBaseURL, Limiter: ratelimit.New(rdb, env.Clock)},
+	})
 	h := httpx.NewRouter(httpx.Deps{
 		Logger:         logger,
 		Clock:          env.Clock,
@@ -151,11 +162,7 @@ func startInstance(t *testing.T, env *authtest.Env, o apiOptions) *apiClient {
 		JWKS:                 jwks,
 		RefreshCookieSecure:  true,
 		// auth と同じ DB・時計で組み立てる。chat の統合テストは、auth で登録したユーザーを使う。
-		Chat: chat.NewService(chat.Deps{
-			DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Random: rand.Reader, Logger: logger,
-			Storage: chattest.NewStorage(t), AttachmentLimits: chattest.AttachmentLimits,
-			Delivery: delivery, Presence: realtime.PresenceStates{Store: presenceStore},
-		}),
+		Chat:      chatService,
 		Realtime:  hub,
 		WSTickets: authn.NewWSTickets(rdb, rand.Reader),
 		Sessions:  env.Service,
@@ -173,7 +180,7 @@ func startInstance(t *testing.T, env *authtest.Env, o apiOptions) *apiClient {
 		stopBroker()
 		<-brokerDone
 	})
-	return &apiClient{t: t, env: env, srv: srv, hub: hub, broker: broker, presence: presenceStore, redis: rdb, instanceID: instanceID}
+	return &apiClient{t: t, env: env, srv: srv, hub: hub, broker: broker, presence: presenceStore, redis: rdb, instanceID: instanceID, chat: chatService, fetcher: fetcher}
 }
 
 type request struct {
