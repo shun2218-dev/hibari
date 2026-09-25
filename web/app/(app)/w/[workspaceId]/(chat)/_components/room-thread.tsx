@@ -21,11 +21,13 @@ import {
 } from "@/hooks/chat/use-link-cards";
 import {
   useAvatarUrls,
+  useLinkPreviewUrls,
   useMedia,
   useMediaState,
 } from "@/hooks/chat/use-media";
 import { useComposerToolbar } from "@/hooks/use-composer-toolbar";
 import { useDocumentVisible } from "@/hooks/use-document-visible";
+import { useComposerLinkPreviews } from "@/hooks/chat/use-composer-link-previews";
 import { useOrigin } from "@/hooks/use-origin";
 import { mentionAll } from "@/lib/chat/format/mentions";
 import { draftsReady } from "@/lib/chat/media/uploads";
@@ -96,6 +98,8 @@ export function RoomThread({
   // リンクで飛んできた返信（ADR 0042）。数秒だけ強調する
   const [highlightedKey, setHighlightedKey] = useState<string>();
   const { uploader, drafts } = useAttachmentUploader(roomId);
+  // 送る前のリンクのプレビュー（ADR 0065 決定 13）。スレッドの入力欄も同じ
+  const composerLinks = useComposerLinkPreviews(roomId, draft);
 
   // `@` の補完にはルームのメンバーが要る（ADR 0043）。スレッドだけを開いた URL でも引いておく
   const membersLoaded = members !== undefined;
@@ -158,6 +162,8 @@ export function RoomThread({
   useEffect(() => {
     if (imageIds !== "") media.requestAttachmentUrls(imageIds.split(" "));
   }, [media, imageIds]);
+  // リンクのプレビューの画像とアイコン（ADR 0065 決定 7）。チャンネルと同じストアなので、両方に出ていても 1 回しか取らない
+  const linkPreviewUrls = useLinkPreviewUrls(messages);
 
   // 本文に貼られたパーマリンクのカード（ADR 0040）。チャンネルと同じストアなので、両方に出ていても 1 回しか取らない
   const origin = useOrigin();
@@ -181,6 +187,7 @@ export function RoomThread({
           me,
           avatarUrls,
           attachmentUrls,
+          linkPreviewUrls,
           broadcastDoneLabel,
           linkCards,
           origin,
@@ -196,6 +203,7 @@ export function RoomThread({
       me,
       avatarUrls,
       attachmentUrls,
+      linkPreviewUrls,
       broadcastDoneLabel,
       linkCards,
       origin,
@@ -242,7 +250,14 @@ export function RoomThread({
   }
 
   function sendNow(body: string = draft) {
-    store.sendMessage(roomId, { body, attachments: uploader.take(), threadRootId: rootId, alsoInChannel });
+    store.sendMessage(roomId, {
+      body,
+      attachments: uploader.take(),
+      threadRootId: rootId,
+      alsoInChannel,
+      suppressedLinkPreviewUrls: composerLinks.suppressedUrls(),
+    });
+    composerLinks.reset();
     setDraft("");
     setAlsoInChannel(false);
     setConfirmAll(null);
@@ -288,6 +303,8 @@ export function RoomThread({
               onRemoveAttachment={(key) => uploader.remove(key)}
               typingNames={typingNames}
               mentionCandidates={mentionCandidates}
+              linkPreviews={composerLinks.previews}
+              onRemoveLinkPreview={composerLinks.remove}
             toolbarVisible={toolbarVisible}
             onToggleToolbar={setToolbarVisible}
               alsoInChannel={{

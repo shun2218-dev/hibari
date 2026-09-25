@@ -83,6 +83,32 @@ describe("送信", () => {
       expect(route.sent).toEqual([expect.objectContaining({ body: "", attachment_ids: ["a1"] })]);
     });
 
+    it("入力欄でプレビューを消した URL を送信に付け、再送でも保つ（ADR 0065 決定 13）", async () => {
+      const route = sendRoute();
+      let fail = true;
+      const { store } = await opened({
+        "POST /api/v1/rooms/r1/messages": (url, init) => (fail ? problem(503, "internal") : route.handler(url, init)),
+      });
+
+      store.sendMessage("r1", { body: "https://a.example/ https://b.example/", suppressedLinkPreviewUrls: ["https://b.example/"] });
+      await vi.waitFor(() => expect(outgoing(store)).toMatchObject([{ status: "failed" }]));
+      fail = false;
+      store.retryMessage("r1", outgoing(store)[0]!.clientMsgId);
+      await vi.waitFor(() => expect(outgoing(store)).toEqual([]));
+
+      // 失敗した 1 回目は route に届いていない。再送にも同じ値が付く
+      expect(route.sent).toEqual([expect.objectContaining({ suppressed_link_preview_urls: ["https://b.example/"] })]);
+    });
+
+    it("消した URL がなければ suppressed_link_preview_urls を付けない", async () => {
+      const route = sendRoute();
+      const { store } = await opened({ "POST /api/v1/rooms/r1/messages": route.handler });
+
+      store.sendMessage("r1", { body: "https://a.example/", suppressedLinkPreviewUrls: [] });
+      await vi.waitFor(() => expect(route.sent).toHaveLength(1));
+      expect(route.sent[0]).not.toHaveProperty("suppressed_link_preview_urls");
+    });
+
     it("sends one message at a time, in the order they were written", async () => {
       const route = sendRoute();
       const responses = [deferred(), deferred()];

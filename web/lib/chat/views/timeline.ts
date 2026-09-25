@@ -1,5 +1,6 @@
 import type { MessageView, TimelineItem, UserStatusView } from "@/components/chat/types";
 import type {
+  LinkPreview,
   Mention,
   Message,
   MessageAttachment,
@@ -8,6 +9,7 @@ import type {
   UserProfile,
 } from "@/lib/api/types.gen";
 import { dayKey, formatDate, formatListTime, formatTime } from "@/lib/chat/format/time";
+import type { MediaState } from "@/lib/chat/media/media-store";
 import { inChannel } from "@/lib/chat/rules/messages";
 import type { OutgoingMessage } from "@/lib/chat/store/state";
 
@@ -16,6 +18,7 @@ import {
   systemMessageText,
   toAttachmentView,
   toLinkCardViews,
+  toLinkPreviewViews,
   toReactionViews,
   type UrlTable,
 } from "./message";
@@ -45,6 +48,8 @@ export type TimelineOptions = {
   statuses?: Readonly<Record<string, UserStatusView | undefined>>;
   /** attachment_id → 画像の URL。 */
   attachmentUrls?: UrlTable;
+  /** preview_id → リンクのプレビューの画像とアイコンの URL（ADR 0065）。 */
+  linkPreviewUrls?: MediaState["linkPreviews"];
   /** 本文に貼られたパーマリンクのカードの中身（ADR 0040）。linkKey → 取得結果。 */
   linkCards?: Record<string, MessageLink | undefined>;
   /** パーマリンクを見分けるためのこの画面のオリジン。省くとカードを出さない（サーバー側の描画では window がない）。 */
@@ -99,6 +104,8 @@ type Entry = {
   mentions: readonly Mention[];
   /** 付いた絵文字のリアクション（ADR 0044）。送信中のメッセージには付けられないので空。 */
   reactions: readonly MessageReaction[];
+  /** 外部のリンクのプレビュー（ADR 0065）。送信中のメッセージはまだ付いていないので空（サーバーの応答で付く）。 */
+  linkPreviews: readonly LinkPreview[];
 };
 
 /**
@@ -148,6 +155,7 @@ export function fromMessage(message: Message, broadcast: MessageView["broadcast"
     attachments: message.attachments,
     mentions: message.mentions,
     reactions: message.reactions,
+    linkPreviews: message.link_previews,
   };
 }
 
@@ -169,6 +177,7 @@ function fromOutgoing(message: OutgoingMessage, me: UserProfile, broadcast: Mess
     mentions: [],
     // まだ ID がないのでリアクションは付けられない（ADR 0044）
     reactions: [],
+    linkPreviews: [],
   };
 }
 
@@ -184,6 +193,7 @@ export function toTimelineItems(
     me,
     avatarUrls = {},
     attachmentUrls = {},
+    linkPreviewUrls = {},
     linkCards = {},
     origin,
     currentWorkspaceId,
@@ -287,6 +297,8 @@ export function toTimelineItems(
         mentionsMe: me !== undefined && entry.sender.id !== me.id && mentionsUser(entry.mentions, me.id),
         attachments: entry.attachments.map((a) => toAttachmentView(a, attachmentUrls)),
         reactions: toReactionViews(entry.reactions, memberNames, me),
+        linkPreviews:
+          entry.deleted || entry.linkPreviews.length === 0 ? undefined : toLinkPreviewViews(entry.linkPreviews, linkPreviewUrls),
         linkCards: origin === undefined ? undefined : toLinkCardViews(entry.body, { origin, linkCards, currentWorkspaceId, avatarUrls, timeZone, mentionNames: workspaceMemberNames }),
         grouped,
       },

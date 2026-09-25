@@ -69,6 +69,8 @@ export type OutgoingMessage = {
   alsoInChannel: boolean;
   /** アップロードを終えた（uploaded の）添付。送信で attachment_ids として付ける（ADR 0013）。 */
   attachments: MessageAttachment[];
+  /** 入力欄でプレビューを消した URL（ADR 0065 決定 13）。送信で suppressed_link_preview_urls として付ける。なければ省略。 */
+  suppressedLinkPreviewUrls?: string[];
   status: "pending" | "failed";
   /** 手元の時刻（ISO 8601）。表示の時刻と日付の区切りにだけ使い、並びには使わない。 */
   createdAt: string;

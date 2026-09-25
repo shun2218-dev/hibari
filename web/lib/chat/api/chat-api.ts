@@ -10,6 +10,7 @@ import { createSavedApi } from "./saved";
 import { createActivityApi } from "./activity";
 import { createSearchApi } from "./search";
 import { createMediaApi } from "./media";
+import { createLinkPreviewApi } from "./link-previews";
 import { createRealtimeApi } from "./realtime";
 
 /**
@@ -30,6 +31,7 @@ export function createChatApi(request: Session["request"]) {
     ...createActivityApi(request),
     ...createSearchApi(request),
     ...createMediaApi(request),
+    ...createLinkPreviewApi(request),
     ...createRealtimeApi(request),
   };
 }
