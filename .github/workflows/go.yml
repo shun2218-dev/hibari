@@ -88,12 +88,14 @@ jobs:
           docker run -d --name s3 -p 9000:9000 \
             -e RUSTFS_ACCESS_KEY="$TEST_S3_ACCESS_KEY_ID" -e RUSTFS_SECRET_KEY="$TEST_S3_SECRET_ACCESS_KEY" \
             rustfs/rustfs:1.0.0
-          for _ in $(seq 30); do
-            curl -fsS http://localhost:9000/health && break
+          # /health が ok を返した直後でも、S3 の API はまだ 503 を返すことがある（2026-09-25 の #188 の CI で起きた）。
+          # なのでバケットの作成が通るまで待つ。RustFS は作成済みのバケットにも 200 を返すので、繰り返してよい。
+          for i in $(seq 30); do
+            curl -fsS --aws-sigv4 "aws:amz:us-east-1:s3" --user "$TEST_S3_ACCESS_KEY_ID:$TEST_S3_SECRET_ACCESS_KEY" \
+              -X PUT http://localhost:9000/hibari-test -o /dev/null && break
+            [ "$i" = 30 ] && exit 1
             sleep 2
           done
-          curl -fsS --aws-sigv4 "aws:amz:us-east-1:s3" --user "$TEST_S3_ACCESS_KEY_ID:$TEST_S3_SECRET_ACCESS_KEY" \
-            -X PUT http://localhost:9000/hibari-test -o /dev/null
       - name: マイグレーション（up → reset → up）
         # Down も壊れていないことを確かめるため、一度すべて戻してから適用し直す。
         run: |
