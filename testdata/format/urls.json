@@ -1,0 +1,21 @@
+{
+  "description": "本文のどの部分が URL（リンク）になるか（ADR 0051 決定 4）。リンクのプレビュー（ADR 0065）はサーバーが本文から URL を取り出して取りに行くので、Go（internal/chat/linkpreview の ExtractURLs）と TypeScript（web/lib/chat/format/body-format.ts の findUrls）の 2 か所に同じ規則がある。両方のテストがこのファイルを読んでずれを防ぐ。urls は出現順で、重複もそのまま（まとめるのは呼ぶ側）。",
+  "cases": [
+    {"name": "文の後ろの URL", "body": "見てください https://example.com/a", "urls": ["https://example.com/a"]},
+    {"name": "http も URL", "body": "http://example.com", "urls": ["http://example.com"]},
+    {"name": "末尾の句読点は含めない", "body": "これです https://example.com/a.", "urls": ["https://example.com/a"]},
+    {"name": "括弧で囲んだ URL", "body": "（参考: https://example.com/a）と (https://example.com/b)", "urls": ["https://example.com/a", "https://example.com/b"]},
+    {"name": "日本語の文字で終わる", "body": "https://example.com/aです", "urls": ["https://example.com/a"]},
+    {"name": "クエリとフラグメント", "body": "https://example.com/p?a=1&b=2#x", "urls": ["https://example.com/p?a=1&b=2#x"]},
+    {"name": "英数字の直後は URL にしない", "body": "xhttps://example.com", "urls": []},
+    {"name": "スキームだけは URL にしない", "body": "https:// と書いただけ", "urls": []},
+    {"name": "大文字のスキームは URL にしない", "body": "HTTPS://example.com", "urls": []},
+    {"name": "インラインコードの中は含めない", "body": "`https://example.com/code` と https://example.com/out", "urls": ["https://example.com/out"]},
+    {"name": "コードブロックの中は含めない", "body": "例:\n```\ncurl https://example.com/api\n```\nhttps://example.com/docs", "urls": ["https://example.com/docs"]},
+    {"name": "文字付きのリンクは URL を取る", "body": "<https://example.com/docs|手順書> を見て", "urls": ["https://example.com/docs"]},
+    {"name": "書式の記号で囲んだ URL", "body": "*https://example.com/b* と _https://example.com/i_", "urls": ["https://example.com/b", "https://example.com/i"]},
+    {"name": "引用とリストの中の URL", "body": "> https://q.example/\n- https://l.example/", "urls": ["https://q.example/", "https://l.example/"]},
+    {"name": "メンションの直後の URL", "body": "<@01J8ZZZZZZZZZZZZZZZZZZZZZA>https://example.com", "urls": ["https://example.com"]},
+    {"name": "同じ URL が 2 回あればそのまま 2 回", "body": "https://a.example/ と https://b.example/ と https://a.example/", "urls": ["https://a.example/", "https://b.example/", "https://a.example/"]}
+  ]
+}

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import mentionCases from "@testdata/format/mentions.json";
+import urlCases from "@testdata/format/urls.json";
 
-import { type Block, type Inline, parseBody, parseInline } from "./body-format";
+import { type Block, findUrls, type Inline, parseBody, parseInline } from "./body-format";
 
 const ULID = "01J8ZZZZZZZZZZZZZZZZZZZZZA";
 
@@ -256,5 +257,19 @@ describe("サーバーと共通のメンションの例（ADR 0051 決定 5）",
 
   it.each(file.cases.map((c) => [c.name, c] as const))("%s", (_name, c) => {
     expect(mentionTokens(parseBody(c.body))).toEqual(c.mentions);
+  });
+});
+
+describe("サーバーと共通の URL の例（ADR 0065 決定 3）", () => {
+  // サーバー（internal/chat/linkpreview の ExtractURLs）のテストも同じファイルを読む。
+  // サーバーは本文から URL を取り出してリンクのプレビューを取りに行くので、表示と違う URL を取ると、リンクにならない所のカードが出る
+  const file: { cases: { name: string; body: string; urls: string[] }[] } = urlCases;
+
+  it("例がある", () => {
+    expect(file.cases.length).toBeGreaterThan(0);
+  });
+
+  it.each(file.cases.map((c) => [c.name, c] as const))("%s", (_name, c) => {
+    expect(findUrls(c.body)).toEqual(c.urls);
   });
 });
