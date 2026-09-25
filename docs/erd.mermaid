@@ -35,6 +35,8 @@ erDiagram
   rooms ||--o{ attachments : "保存先"
   users ||--o{ attachments : "アップロード"
   messages |o--o{ attachments : "添付"
+  messages ||--o{ message_link_previews : "リンクのプレビュー"
+  link_previews |o--o{ message_link_previews : "取得の結果"
 
   users {
     uuid id PK "ULID を uuid 型で保存"
@@ -234,6 +236,36 @@ erDiagram
     bigint size_bytes "署名に含めるので PUT はこのサイズに限られる"
     int width "画像のみ。クライアントの申告値"
     int height "画像のみ。クライアントの申告値"
+    timestamptz created_at
+  }
+
+  link_previews {
+    uuid id PK "URL ごとの取得の結果。30 分以内の同じ URL はこれを使い回す（ADR 0065）"
+    text url "取得した URL（本文に書かれたもの）。INDEX(url, fetched_at DESC)"
+    text status "ok / failed。失敗も 30 分使い回す"
+    text title "og:title → twitter:title → title"
+    text description
+    text site_name "og:site_name。なければホスト名"
+    text image_object_key UK "og:image を写したオブジェクト。画像がなければ null。掃除で storage_deletions へ移す"
+    text image_content_type "image/png / jpeg / gif / webp"
+    int image_width "サーバーが画像のヘッダーから読む"
+    int image_height
+    text icon_object_key UK "サイトのアイコンを写したオブジェクト。なければ null"
+    text icon_content_type "image/png / jpeg / gif / webp / x-icon"
+    timestamptz fetched_at
+  }
+
+  message_link_previews {
+    uuid id PK
+    uuid room_id FK
+    uuid message_id FK "(room_id, これ) → messages の複合 FK。CASCADE。メッセージの削除で消す"
+    text url "本文に書かれた URL。UNIQUE(message_id, これ)"
+    int position "本文に出てきた順"
+    text status "pending / ok / failed。入力欄で消した URL は最初から removed_at を立てる"
+    uuid link_preview_id FK "ok のときだけ。link_previews への FK（RESTRICT）"
+    int attempts
+    timestamptz claimed_until "取得のジョブが取っている間。過ぎたら拾い直す"
+    timestamptz removed_at "本人が消した。編集しても戻さない"
     timestamptz created_at
   }
 
