@@ -8,7 +8,8 @@ import type { MentionCandidate } from "@/lib/chat/format/mentions";
 import { cx } from "@/lib/cx";
 
 import { RichTextInput } from "./editor/rich-text-input";
-import type { AttachmentDraftView } from "./types";
+import { ComposerLinkPreview } from "./link-preview-card";
+import type { AttachmentDraftView, ComposerLinkPreviewView } from "./types";
 
 type ComposerProps = {
   /** 送る形の本文（ADR 0051 の記法。メンションはトークン。ADR 0052 決定 3）。 */
@@ -46,6 +47,12 @@ type ComposerProps = {
    */
   toolbarVisible?: boolean;
   onToggleToolbar?: (visible: boolean) => void;
+  /**
+   * 入力欄のリンクのプレビュー（ADR 0065 決定 13）。本文の下に並べ、「x」で消すと付かずに送られる。
+   * 編集の入力欄には出さない（Slack と同じ）ので、渡すのはルームとスレッドの入力欄だけ。
+   */
+  linkPreviews?: ComposerLinkPreviewView[];
+  onRemoveLinkPreview?: (url: string) => void;
   /** 補完を開いた状態で出す（story で状態を再現するため）。 */
   forceMentionQuery?: string;
   /** リンクの画面を開いた状態で出す（story で状態を再現するため）。 */
@@ -65,6 +72,8 @@ export function Composer({
   target = "room",
   alsoInChannel,
   mentionCandidates,
+  linkPreviews = [],
+  onRemoveLinkPreview,
   toolbarVisible = true,
   onToggleToolbar,
   forceMentionQuery,
@@ -111,6 +120,17 @@ export function Composer({
           forceMentionQuery={forceMentionQuery}
           forceLinkDialog={forceLinkDialog}
           footer={
+            <>
+            {linkPreviews.length > 0 && (
+              // Slack と同じく、入力欄の枠の中で本文の下に出す
+              <ul aria-label="リンクのプレビュー" className="flex flex-wrap gap-2 pt-1 pb-1">
+                {linkPreviews.map((preview) => (
+                  <li key={preview.url}>
+                    <ComposerLinkPreview preview={preview} onRemove={onRemoveLinkPreview} />
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="flex items-center gap-1 pt-1">
               <IconButton label="ファイルを添付" onClick={() => fileInput.current?.click()}>
                 <PaperclipIcon className="size-4" />
@@ -149,6 +169,7 @@ export function Composer({
                 <SendIcon className="size-4" />
               </button>
             </div>
+            </>
           }
         />
       </div>

@@ -40,6 +40,14 @@ import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog";
 import { notifyLevelLabels } from "@/lib/chat/notifications/mute";
 import { attachmentMessageKey, timelineWithImages } from "@/stories/fixtures/attachments";
+import {
+  composerLinkDraft,
+  composerLinkPreviews,
+  composerLinkPreviewsLoading,
+  myLinkPreviewKey,
+  timelineWithLinkPreviews,
+  timelineWithMyLinkPreview,
+} from "@/stories/fixtures/link-previews";
 import { timelineWithLinkCards } from "@/stories/fixtures/links";
 import { pinCandidateKey, pinnedMessageKey, pinnedMessages, timelineWithPins } from "@/stories/fixtures/pins";
 import { hoveredReaction, reactedMessageKey, reactionPickerKey, timelineWithReactions } from "@/stories/fixtures/reactions";
@@ -132,7 +140,7 @@ export type ChatOptions = {
   createWorkspace?: boolean;
   mobileView?: "list" | "room";
   /** スレッドのパネルを開く（ADR 0036）。 */
-  thread?: "replies" | "empty" | "root-deleted" | "broadcast";
+  thread?: "replies" | "empty" | "root-deleted" | "broadcast" | "link-preview";
   /** スレッドを開かずに、チャンネルに流した返信のあるタイムラインを出す（ADR 0039。モバイルではパネルが全画面になるため）。 */
   broadcastInChannel?: boolean;
   /**
@@ -162,12 +170,19 @@ export type ChatOptions = {
   /** 本文に貼られたパーマリンクのカードのあるタイムライン（ADR 0040）。 */
   linkCards?: boolean;
   /**
+   * 外部のリンクのプレビューのあるタイムライン（ADR 0065）。
+   * - timeline: 画像つき・画像なし・いちばん小さいカード
+   * - remove: 本人のカードにポインタを乗せて「x」が出たところ
+   */
+  linkPreviews?: "timeline" | "remove";
+  /**
    * リッチテキストの入力欄（ADR 0052）。
    * - formatted: 書式とメンションのチップを入れた下書き
    * - toolbar-hidden: 書式のツールバーを隠したところ
    * - link-dialog: リンクを入れる画面を開いたところ
+   * - link-preview / link-preview-loading: URL を貼って、本文の下にリンクのプレビューが出たところ / 取得中（ADR 0065 決定 13）
    */
-  composer?: "formatted" | "toolbar-hidden" | "link-dialog";
+  composer?: "formatted" | "toolbar-hidden" | "link-dialog" | "link-preview" | "link-preview-loading";
   /** 書式（太字・コード・引用・リスト・リンク）のあるタイムライン（ADR 0051）。 */
   formatting?: boolean;
   /**
@@ -375,6 +390,7 @@ export function chat({
   channelLinks,
   jump,
   linkCards,
+  linkPreviews,
   composer,
   formatting,
   reactions,
@@ -399,6 +415,7 @@ export function chat({
   const roomRemoved = body === "removed-room";
   // アーカイブしたルーム（ADR 0059）。archived-readonly は復元できない人（参加していない member）が見たところ
   const archivedRoom = footer === "archived" || footer === "archived-readonly";
+  const composerLinkPreview = composer === "link-preview" || composer === "link-preview-loading";
   const threadContent = thread ? threadPanelContent(thread) : undefined;
   const hover = profile?.startsWith("hover-") ? profileHover(profile) : undefined;
   const profilePanel = profile?.startsWith("panel-") ? profilePanelContent(profile) : undefined;
@@ -421,6 +438,8 @@ export function chat({
       ? timelineWithReactions
       : linkCards
       ? timelineWithLinkCards
+      : linkPreviews
+      ? linkPreviews === "remove" ? timelineWithMyLinkPreview : timelineWithLinkPreviews
       : formatting
       ? timelineWithFormatting
       : jump
@@ -672,6 +691,8 @@ export function chat({
               messageAttachments === "menu" ? { key: attachmentMessageKey, attachmentId: "a-2" } : undefined
             }
             onToggleAttachmentMenu={noop}
+            onRemoveLinkPreview={noop}
+            hoveredLinkPreviewKey={linkPreviews === "remove" ? myLinkPreviewKey : undefined}
             actionsFor={(key) => ({
               canEdit: actions.mine(key),
               // 添付だけを削除できるのは、メッセージを削除できる人と同じ（ADR 0045 決定 5）
@@ -694,8 +715,20 @@ export function chat({
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
         {footer === "composer" && !searchResultsView && !threads && !pinsTab && (
           <Composer
-            value={composer === "formatted" || composer === "link-dialog" ? composerDraft : mentionQuery === undefined ? "" : "金曜の件、"}
-            canSend={mentionQuery !== undefined || composer === "formatted" || composer === "link-dialog"}
+            value={
+              composer === "formatted" || composer === "link-dialog"
+                ? composerDraft
+                : composerLinkPreview
+                  ? composerLinkDraft
+                  : mentionQuery === undefined
+                    ? ""
+                    : "金曜の件、"
+            }
+            canSend={mentionQuery !== undefined || composer === "formatted" || composer === "link-dialog" || composerLinkPreview}
+            linkPreviews={
+              composer === "link-preview" ? composerLinkPreviews : composer === "link-preview-loading" ? composerLinkPreviewsLoading : undefined
+            }
+            onRemoveLinkPreview={noop}
             typingNames={mentions || composer ? [] : typingNames}
             attachments={attachments}
             mentionCandidates={mentionCandidates}

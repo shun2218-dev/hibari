@@ -42,6 +42,13 @@ type TimelineProps = {
   /** 添付の「…」を開いているメッセージと添付（1 度に 1 件）。 */
   openAttachmentMenu?: { key: string; attachmentId: string };
   onToggleAttachmentMenu?: (key: string, attachmentId: string) => void;
+  /**
+   * 外部のリンクのプレビューを消す（ADR 0065 決定 5）。出すのは `actionsFor` の `canEdit` が true のメッセージだけ
+   * （消せるのは本人だけで、判定は編集と同じ `authz.CanEditMessage`）。
+   */
+  onRemoveLinkPreview?: (key: string, previewId: string) => void;
+  /** プレビューの「x」を固定で出すメッセージ（story 用）。 */
+  hoveredLinkPreviewKey?: string;
   onMarkAllRead?: () => void;
   /** key ごとの操作の可否。渡さなければ「…」を出さない。 */
   actionsFor?: (key: string) => MessageActions;
@@ -153,6 +160,8 @@ export function Timeline({
   onImageError,
   onOpenImage,
   onDeleteAttachment,
+  onRemoveLinkPreview,
+  hoveredLinkPreviewKey,
   openAttachmentMenu,
   onToggleAttachmentMenu,
   onMarkAllRead,
@@ -330,6 +339,12 @@ export function Timeline({
                         ? undefined
                         : (attachmentId) => onToggleAttachmentMenu(key, attachmentId)
                     }
+                    onRemoveLinkPreview={
+                      onRemoveLinkPreview === undefined || !actions?.canEdit
+                        ? undefined
+                        : (previewId) => onRemoveLinkPreview(key, previewId)
+                    }
+                    forceLinkPreviewRemove={hoveredLinkPreviewKey === key}
                     canEdit={actions?.canEdit}
                     canDelete={actions?.canDelete}
                     copyLink={copyLinkFor?.(key)}

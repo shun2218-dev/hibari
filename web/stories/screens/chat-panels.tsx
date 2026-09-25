@@ -5,6 +5,7 @@ import type { ComponentProps } from "react";
 import { RoomSettingsDialog } from "@/components/chat/dialogs/room-settings";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import { ProfilePanel } from "@/components/chat/profile-panel";
+import { threadRepliesWithLinkPreview, threadRootWithLinkPreview } from "@/stories/fixtures/link-previews";
 import { roomSettingsMembers } from "@/stories/fixtures/rooms";
 import {
   deletedThreadReplies,
@@ -69,6 +70,8 @@ export function threadPanelContent(thread: NonNullable<ChatOptions["thread"]>) {
       return { root: deletedThreadRoot, replies: deletedThreadReplies, typing: [] };
     case "broadcast":
       return { root: threadRoot, replies: threadRepliesWithBroadcast, typing: [] };
+    case "link-preview":
+      return { root: threadRootWithLinkPreview, replies: threadRepliesWithLinkPreview, typing: [] };
   }
 }
 

@@ -3,6 +3,7 @@
 import { type ReactNode, useRef, useState } from "react";
 
 import { MessageBody } from "@/components/chat/message-body";
+import { LinkPreviewCard } from "@/components/chat/link-preview-card";
 import { MessageLinkCard } from "@/components/chat/message-link-card";
 import { MessageReactions } from "@/components/chat/message-reactions";
 import { ProfileHoverPopup } from "@/components/chat/profile-card";
@@ -71,6 +72,13 @@ type MessageItemProps = {
   /** 「…」を開いている添付（1 度に 1 件）。 */
   openAttachmentMenuId?: string;
   onToggleAttachmentMenu?: (attachmentId: string) => void;
+  /**
+   * 外部のリンクのプレビューを消す（ADR 0065 決定 5）。消せるのは投稿した本人だけなので、本人のメッセージのときだけ渡す。
+   * 確認のダイアログは出さない。
+   */
+  onRemoveLinkPreview?: (previewId: string) => void;
+  /** プレビューの「x」を出した状態で描く（story で状態を再現するため）。 */
+  forceLinkPreviewRemove?: boolean;
   /** 「…」で出せる操作。どれも無ければ「…」自体を出さない。 */
   canEdit?: boolean;
   canDelete?: boolean;
@@ -155,6 +163,8 @@ export function MessageItem({
   onDeleteAttachment,
   openAttachmentMenuId,
   onToggleAttachmentMenu,
+  onRemoveLinkPreview,
+  forceLinkPreviewRemove = false,
   canEdit = false,
   canDelete = false,
   copyLink,
@@ -367,6 +377,17 @@ export function MessageItem({
             {message.linkCards.map((card) => (
               <li key={card.key}>
                 <MessageLinkCard card={card} />
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* 外部のリンクのプレビュー（ADR 0065）。パーマリンクのカードと同じく本文と添付の下に並べる */}
+        {!deleted && !editing && message.linkPreviews && message.linkPreviews.length > 0 && (
+          <ul className="mt-2 flex flex-col gap-2">
+            {message.linkPreviews.map((preview) => (
+              <li key={preview.id}>
+                <LinkPreviewCard preview={preview} onRemove={onRemoveLinkPreview} forceRemoveVisible={forceLinkPreviewRemove} />
               </li>
             ))}
           </ul>
