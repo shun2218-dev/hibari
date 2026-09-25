@@ -72,7 +72,7 @@
 | [0063](0063-branding-and-page-metadata.md) | ブランドとページのメタデータ（タイトル・ファビコン・OGP・検索エンジン・LP。LP は apex に置き、`app.` は noindex） | 採用 |
 | [0064](0064-documentation-site.md) | ドキュメントサイト（`docs.hibari-chat.com`。`docs/` を正本のまま Fumadocs で配り、REST の API リファレンスは Go の型から OpenAPI を生成する） | 採用 |
 | [0065](0065-link-previews.md) | 外部のリンクのプレビュー（Phase 6.17。サーバーが取得してメッセージに固定し、画像とアイコンは自前のストレージに写す。入力欄でも出して消せる） | 採用 |
-| [0066](0066-huddles.md) | 音声のハドル（Phase 6.18a。音声は DM も含めて必ず Cloudflare Realtime の SFU を通し、合図と参加の状態は Go が持つ。いま入っている人は Redis と心拍） | 提案 |
+| [0066](0066-huddles.md) | 音声のハドル（Phase 6.18a。音声は DM も含めて必ず Cloudflare Realtime の SFU を通し、合図と参加の状態は Go が持つ。いま入っている人は Redis と心拍） | 採用 |
 
 ## テンプレート
 
