@@ -31,6 +31,7 @@ flowchart TB
       C5["presence / typing"]
       C7["添付（署名付き URL 発行）"]
       C9["リンクのプレビュー<br/>入力欄と投稿の後に取得してメッセージに固定（ADR 0065）"]
+      C10["ハドル<br/>SDP の中継・参加の状態（Redis と心拍）・掃除（ADR 0066）"]
     end
 
     subgraph PLAT["internal/platform"]
@@ -40,6 +41,7 @@ flowchart TB
       P4["ULID / Clock"]
       P5["storage: S3 API クライアント"]
       P6["safehttp: 外への HTTP<br/>接続する IP を検査（SSRF 対策）"]
+      P7["sfu / turn: Cloudflare Realtime の API<br/>アプリの秘密はここだけ"]
     end
   end
 
@@ -49,6 +51,7 @@ flowchart TB
     RD[("Redis 7.4+<br/>Pub/Sub・presence（インスタンス別 TTL）・typing<br/>失効通知・ws-ticket・レート制限")]
     EXT["外部のサイト<br/>OGP と画像"]
     S3[("S3 互換ストレージ<br/>ローカル: RustFS / 本番: R2<br/>private バケット")]
+    CF["Cloudflare Realtime<br/>SFU・TURN"]
   end
 
   WEB -->|"REST: Bearer JWT<br/>WSS: 短命 ws-ticket"| LB
@@ -68,6 +71,9 @@ flowchart TB
   P5 --> S3
   C9 --> P6
   P6 -->|"GET のみ・80 / 443・内部の IP は拒否"| EXT
+  C10 --> P7
+  P7 -->|"HTTPS: セッション・トラック・ICE サーバー"| CF
+  WEB -.->|"WebRTC の音声（Go を通らない）"| CF
 
   N1["<b>境界の約束</b><br/>chat は auth を import しない。<br/>接点は「authn が渡す検証済み userID / sid」と<br/>Redis の失効イベントのみ。<br/>これを守れば別プロセスへの切り出しは<br/>ルーティング変更で済む。"]
   N2["<b>2 台目以降</b><br/>同じバイナリを横に並べるだけ（ADR 0016）。<br/>配信は Redis Pub/Sub 経由（at-most-once）。<br/>取りこぼしは after_change_seq の差分取得で補い、<br/>Pub/Sub の再接続を検知したら WS を 1012 で切って同期させる。<br/>JWT 検証はローカル完結。失効は WS には即時、<br/>REST には最大 15 分遅れて効く。"]

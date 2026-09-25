@@ -37,6 +37,11 @@ erDiagram
   messages |o--o{ attachments : "添付"
   messages ||--o{ message_link_previews : "リンクのプレビュー"
   link_previews |o--o{ message_link_previews : "取得の結果"
+  rooms ||--o{ huddles : "ハドル"
+  users ||--o{ huddles : "始めた"
+  messages ||--o| huddles : "会話に残すメッセージ"
+  huddles ||--o{ huddle_participants : "入った人"
+  users ||--o{ huddle_participants : "入った"
 
   users {
     uuid id PK "ULID を uuid 型で保存"
@@ -171,7 +176,7 @@ erDiagram
     uuid client_msg_id "UNIQUE(room_id, sender_id, これ)。冪等性"
     bigint user_seq "その行までのチャンネルの人の発言の数（ADR 0033）"
     text kind "user / system（ADR 0033）"
-    text system_type "system のときだけ。room_created / room_archived など（message_pinned は改める前の行だけ。ADR 0054 / 0059）"
+    text system_type "system のときだけ。room_created / room_archived / huddle など（message_pinned は改める前の行だけ。ADR 0054 / 0059）"
     jsonb system_data "system のときだけ。room_renamed の old_name / new_name"
     text body "削除時は空にする"
     uuid thread_root_id FK "スレッドの親。(room_id, thread_root_id) の複合 FK。チャンネルの投稿なら null（ADR 0036）"
@@ -267,6 +272,21 @@ erDiagram
     timestamptz claimed_until "取得のジョブが取っている間。過ぎたら拾い直す"
     timestamptz removed_at "本人が消した。編集しても戻さない"
     timestamptz created_at
+  }
+
+  huddles {
+    uuid id PK "ハドル（ADR 0066）。いま入っている人は Redis に置く（ルール 5）"
+    uuid room_id FK "CASCADE。進行中は 1 ルームに 1 つ: UNIQUE(room_id) WHERE ended_at IS NULL"
+    uuid started_by FK "始めた人"
+    uuid message_id FK "会話に残すシステムメッセージ（system_type = huddle）。(room_id, これ) → messages の複合 FK"
+    timestamptz started_at
+    timestamptz ended_at "null なら進行中。最後の人が抜けた・アーカイブ・削除で終わる"
+  }
+
+  huddle_participants {
+    uuid huddle_id PK, FK "複合主キー。CASCADE"
+    uuid user_id PK, FK "複合主キー。一度でも入った人。人ごとに 1 回だけ書く"
+    timestamptz joined_at "最初に入った時刻"
   }
 
   storage_deletions {
