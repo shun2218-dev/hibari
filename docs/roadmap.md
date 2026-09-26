@@ -1284,12 +1284,12 @@ Push 通知（APNs / FCM）は Phase 7 以降のまま。ここで作るのは�
 3. サーバー: `platform/sfu`・`platform/turn`、設定、マイグレーション、authz、入る・受ける・抜ける・ミュートの API、掃除のジョブ、ルール 8 の外し方、ルームの応答のハドル ← 完了（#195 SFU と TURN と設定、#196 DB・状態・サービス・掃除・ルール 8・イベント、HTTP の API）
 4. WebSocket と `docs/events.md`（`huddle.updated` / `huddle.ringing` / `huddle.left`、心拍） ← 完了（イベントは #196、心拍の `huddle_heartbeat` は HTTP の API と同じ PR）
 5. Web: 接続の状態の管理、受けるトラックの出し入れ、話している人の判定、ハドルの窓、呼び出し、ショートカット ← 完了（#198 状態の受け取り・サイドバーの印・会話のメッセージ、#199 通話・別のタブ・ハドルの帯・呼び出し・ショートカット・`GET /api/v1/features`）
-6. 実物の確認（開発用の Cloudflare のアプリで） ← 同じ Mac の 2 つのブラウザで完了（オーナー、2026-09-26）。TURN を通る経路は未確認。見つかった Safari の IME の不具合は #200 で直した
+6. 実物の確認（開発用の Cloudflare のアプリで） ← 完了。同じ Mac の 2 つのブラウザ（オーナー、2026-09-26）と、relay だけの TURN の経路（#204、2026-09-27）。見つかった Safari の IME の不具合は #200 で直した
 
 **DoD**
-- [ ] DM とチャンネルでハドルを始めて入ると、互いの声が聞こえる（実物。2 つのブラウザと、TURN を通る違うネットワークで）
-  - 2 つのブラウザ（同じ Mac）ではオーナーが確認した（2026-09-26）。**TURN を通る経路（違うネットワーク・relay だけ）はまだ**
-  - relay だけでつながせる開発用の切り替え（`HUDDLE_ICE_TRANSPORT_POLICY=relay`）を足した。確かめ方は `docs/deploy.md` の「TURN を通る経路を確かめる」
+- [x] DM とチャンネルでハドルを始めて入ると、互いの声が聞こえる（実物。2 つのブラウザと、TURN を通る違うネットワークで）
+  - 2 つのブラウザ（同じ Mac）ではオーナーが確認した（2026-09-26）
+  - TURN を通る経路は、relay だけでつながせる開発用の切り替え（`HUDDLE_ICE_TRANSPORT_POLICY=relay`。確かめ方は `docs/deploy.md` の「TURN を通る経路を確かめる」）で、オーナーが声が届くことを確認した（2026-09-27）。違うネットワークは用意していない
 - [x] 2 人が同時に始めても、ルームのハドルは 1 つになる（並行テスト）（`TestConcurrentHuddleStart`）
 - [x] 最後の人が抜けるとハドルが終わり、会話のメッセージが「終了」になる。再接続の同期（`after_change_seq` とルームの取得）でもそろう（`TestLeaveHuddle`）
 - [x] タブを閉じる・心拍が途絶えると、ほかの人の画面から消える（`Clock` を固定したテスト）。掃除のジョブの goroutine が残らない（`TestSweepHuddles`・`TestRunHuddleSweeperStops`。タブを閉じるのは実物）
