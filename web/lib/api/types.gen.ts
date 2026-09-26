@@ -521,6 +521,11 @@ export interface HuddleICEServers {
   expires_at: string;
 }
 
+export interface Features {
+  /** huddles は音声のハドル。Cloudflare の設定がなければ false。 */
+  huddles: boolean;
+}
+
 export interface JoinHuddleRequest {
   offer: SessionDescription;
   /** mid は offer の中の、マイクの音声の transceiver の mid。 */

@@ -6955,6 +6955,53 @@
         ]
       }
     },
+    "/api/v1/features": {
+      "get": {
+        "operationId": "getFeatures",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "サーバーの設定で使えるかが変わる機能",
+        "description": "huddles は音声のハドル（Cloudflare の設定がなければ false）。Web は起動したときに読み、使えない機能のボタンを出さない。",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Features"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/rooms/{roomID}/huddle/ice-servers": {
       "post": {
         "operationId": "getHuddleICEServers",
@@ -8627,6 +8674,18 @@
             "description": "next は検証したあとに進む先。登録と同じく確認メールのリンクに載る（ADR 0053 決定 3）。"
           }
         }
+      },
+      "Features": {
+        "type": "object",
+        "properties": {
+          "huddles": {
+            "type": "boolean",
+            "description": "huddles は音声のハドル。Cloudflare の設定がなければ false。"
+          }
+        },
+        "required": [
+          "huddles"
+        ]
       },
       "FollowedThread": {
         "type": "object",

@@ -80,6 +80,7 @@ type ChatService interface {
 	RemoveLinkPreview(ctx context.Context, actor, roomID, messageID, previewID ulid.ULID) error
 
 	// 音声のハドル（ADR 0066）
+	HuddlesEnabled() bool
 	HuddleICEServers(ctx context.Context, actor, roomID ulid.ULID) (chat.ICECredentials, error)
 	JoinHuddle(ctx context.Context, actor, authSessionID, roomID ulid.ULID, in chat.JoinHuddleInput) (chat.JoinedHuddle, error)
 	SubscribeHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, userIDs []ulid.ULID) (chat.SubscribedHuddle, error)
@@ -182,6 +183,7 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("POST /api/v1/rooms/{roomID}/link-previews", h.previewLink)
 	handle("GET /api/v1/rooms/{roomID}/messages/{messageID}/link-previews/{previewID}/urls", h.getLinkPreviewURLs)
 	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}/link-previews/{previewID}", h.removeLinkPreview)
+	handle("GET /api/v1/features", h.getFeatures)
 	// 音声のハドル（ADR 0066 決定 4）。入った後の操作は参加 ID（この端末のこの参加）のパスの下に置く
 	handle("POST /api/v1/rooms/{roomID}/huddle/ice-servers", h.getHuddleICEServers)
 	handle("POST /api/v1/rooms/{roomID}/huddle/participants", h.joinHuddle)

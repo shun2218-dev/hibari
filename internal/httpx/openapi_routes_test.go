@@ -863,6 +863,14 @@ var apiRoutes = []apiRoute{
 	},
 	// huddles
 	{
+		pattern:     "GET /api/v1/features",
+		tag:         "huddles",
+		summary:     "サーバーの設定で使えるかが変わる機能",
+		description: "huddles は音声のハドル（Cloudflare の設定がなければ false）。Web は起動したときに読み、使えない機能のボタンを出さない。",
+		auth:        authChatUser,
+		status:      http.StatusOK, response: body[featuresResponse](),
+	},
+	{
 		pattern:     "POST /api/v1/rooms/{roomID}/huddle/ice-servers",
 		tag:         "huddles",
 		summary:     "ハドルに入るための ICE サーバーを取る",

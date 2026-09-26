@@ -180,6 +180,7 @@ var tsDecls = []tsDecl{
 	response[sessionDescriptionBody]("SessionDescription"),
 	response[iceServerResponse]("ICEServer"),
 	response[huddleICEServersResponse]("HuddleICEServers"),
+	response[featuresResponse]("Features"),
 	request[joinHuddleRequest]("JoinHuddleRequest"),
 	response[joinHuddleResponse]("JoinedHuddle"),
 	request[subscribeHuddleRequest]("SubscribeHuddleRequest"),

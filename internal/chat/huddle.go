@@ -115,6 +115,10 @@ const (
 	HuddleExpired HuddleLeftReason = "expired"
 )
 
+// HuddlesEnabled は、ハドルが使えるか（Cloudflare の設定があるか。決定 15）を返す。
+// Web はこれを見て、ハドルのボタンを出すかを決める。
+func (s *Service) HuddlesEnabled() bool { return s.huddles.enabled() }
+
 // ---- ICE サーバー（決定 4・14）----
 
 // HuddleICEServers は、ルームのハドルに入るための ICE サーバー（STUN と TURN）を発行する。
