@@ -40,9 +40,9 @@ export type ActivityItemType = "message" | "reaction";
 
 export type ActivityReason = "dm" | "mention" | "thread" | "channel" | "reaction";
 
-export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "room-archived" | "room-not-archived" | "room-protected" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified";
+export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "room-archived" | "room-not-archived" | "room-protected" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified" | "huddles-unavailable" | "huddle-full" | "huddle-participant-gone" | "huddle-negotiation-conflict";
 
-export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "activity" | "ping";
+export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "activity" | "ping" | "huddle_heartbeat";
 
 export type AckError = "invalid_message" | "not_found" | "not_subscribed" | "forbidden" | "too_many_subscriptions" | "internal";
 
@@ -504,6 +504,65 @@ export interface HuddleParticipant {
   muted: boolean;
 }
 
+export interface SessionDescription {
+  type: string;
+  sdp: string;
+}
+
+export interface ICEServer {
+  urls: string[];
+  username?: string;
+  credential?: string;
+}
+
+export interface HuddleICEServers {
+  ice_servers: ICEServer[];
+  /** expires_at は TURN の認証情報の期限。長いハドルでは、切れる前に取り直して setConfiguration で差し替える（決定 14）。 */
+  expires_at: string;
+}
+
+export interface JoinHuddleRequest {
+  offer: SessionDescription;
+  /** mid は offer の中の、マイクの音声の transceiver の mid。 */
+  mid: string;
+}
+
+export interface JoinedHuddle {
+  huddle: RoomHuddle;
+  /** participant_id は「この端末のこの参加」（決定 4）。入った後の操作と心拍に使う。 */
+  participant_id: string;
+  answer: SessionDescription;
+}
+
+export interface SubscribeHuddleRequest {
+  /** user_ids は音声を受けたい相手（同じハドルにいる人）。いない人と自分は黙って飛ばす。 */
+  user_ids: string[];
+}
+
+export interface HuddleSubscription {
+  user_id: string;
+  mid: string;
+}
+
+export interface SubscribedHuddle {
+  /** offer は Cloudflare の offer。ブラウザの answer を renegotiate で返す。受けるものがなければ null。 */
+  offer: SessionDescription | null;
+  tracks: HuddleSubscription[];
+}
+
+export interface RenegotiateHuddleRequest {
+  answer: SessionDescription;
+}
+
+export interface UnsubscribeHuddleRequest {
+  /** mids は閉じる受けるトラックの mid（抜けた人の分）。 */
+  mids: string[];
+}
+
+export interface UpdateHuddleParticipantRequest {
+  muted: boolean;
+}
+
 export interface ThreadSummary {
   /** reply_count は削除されていない返信の数（表示用）。 */
   reply_count: number;
@@ -862,6 +921,9 @@ export interface ClientMessage {
   thread_root_id?: string;
   /** active は activity でだけ使う。この接続が画面を見ているか（ADR 0049 決定 3）。 */
   active?: boolean;
+  /** huddle_id と ParticipantID は huddle_heartbeat でだけ使う（ADR 0066 決定 5）。 */
+  huddle_id?: string;
+  participant_id?: string;
 }
 
 export interface Ack {

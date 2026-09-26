@@ -88,6 +88,10 @@
       "description": "外部のリンクのプレビュー（ADR 0065）"
     },
     {
+      "name": "huddles",
+      "description": "音声のハドル（ADR 0066）"
+    },
+    {
       "name": "websocket",
       "description": "WebSocket の接続（docs/events.md）"
     },
@@ -6951,6 +6955,858 @@
         ]
       }
     },
+    "/api/v1/rooms/{roomID}/huddle/ice-servers": {
+      "post": {
+        "operationId": "getHuddleICEServers",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "ハドルに入るための ICE サーバーを取る",
+        "description": "STUN と TURN（Cloudflare）の一覧。RTCPeerConnection を作る前に取る。TURN の認証情報は 12 時間で切れるので、長いハドルでは取り直す。そのルームに投稿できる人だけ。1 人あたり 1 分に 30 回まで。Cloudflare の設定がなければ 503。",
+        "parameters": [
+          {
+            "name": "roomID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HuddleICEServers"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "見つからない（存在しないことと、読めないことを区別しない）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "いまの状態と競合する",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "回数の制限を超えた",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依存するサービスに接続できない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/rooms/{roomID}/huddle/participants": {
+      "post": {
+        "operationId": "joinHuddle",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "ハドルに入る",
+        "description": "ブラウザの offer でマイクの音声を送り始め、answer を返す。進行中のハドルがなければ始め、会話にハドルのメッセージを残す（DM では相手を呼び出す）。同じ人の前の参加（別の端末・別のハドル）は外れる。20 人まで。",
+        "parameters": [
+          {
+            "name": "roomID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JoinHuddleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JoinedHuddle"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "見つからない（存在しないことと、読めないことを区別しない）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "いまの状態と競合する",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "本文が大きすぎる",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type が application/json ではない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "値が不正（errors に項目ごとの理由が入る）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依存するサービスに接続できない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions": {
+      "post": {
+        "operationId": "subscribeHuddle",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "ほかの参加者の音声を受ける",
+        "description": "同じハドルにいる人の音声を受ける。自分といない人は黙って飛ばす。offer が返ったら、ブラウザの answer を renegotiate で返す。参加がもうなければ 409 huddle-participant-gone。",
+        "parameters": [
+          {
+            "name": "huddleID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "participantID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeHuddleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribedHuddle"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "いまの状態と競合する",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "本文が大きすぎる",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type が application/json ではない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "値が不正（errors に項目ごとの理由が入る）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依存するサービスに接続できない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions/close": {
+      "post": {
+        "operationId": "unsubscribeHuddle",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "受けている音声を閉じる",
+        "description": "抜けた人の分の受けるトラックを閉じる。",
+        "parameters": [
+          {
+            "name": "huddleID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "participantID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribeHuddleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "成功（本文なし）"
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "いまの状態と競合する",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "本文が大きすぎる",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type が application/json ではない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "値が不正（errors に項目ごとの理由が入る）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依存するサービスに接続できない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/huddles/{huddleID}/participants/{participantID}/renegotiate": {
+      "put": {
+        "operationId": "renegotiateHuddle",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "受ける音声の offer に答える",
+        "description": "subscriptions の offer に対するブラウザの answer を渡す。同じ端末の SDP のやり取りは 1 本の列に並べる（重なると 409 huddle-negotiation-conflict）。",
+        "parameters": [
+          {
+            "name": "huddleID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "participantID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenegotiateHuddleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "成功（本文なし）"
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "いまの状態と競合する",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "本文が大きすぎる",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type が application/json ではない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "値が不正（errors に項目ごとの理由が入る）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依存するサービスに接続できない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/huddles/{huddleID}/participants/{participantID}": {
+      "patch": {
+        "operationId": "updateHuddleParticipant",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "ミュートの印を変える",
+        "description": "ほかの人の画面にミュートの印を出すため。音を止めるのはブラウザで、サーバーは強制しない。",
+        "parameters": [
+          {
+            "name": "huddleID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "participantID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHuddleParticipantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "成功（本文なし）"
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "いまの状態と競合する",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "本文が大きすぎる",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type が application/json ではない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依存するサービスに接続できない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "leaveHuddle",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "ハドルから抜ける",
+        "description": "もう外れていても 204。最後の人が抜けるとハドルが終わる。",
+        "parameters": [
+          {
+            "name": "huddleID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "participantID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "成功（本文なし）"
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依存するサービスに接続できない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/huddles/{huddleID}/joining-soon": {
+      "post": {
+        "operationId": "huddleJoiningSoon",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "「もうすぐ参加する」を知らせる",
+        "description": "DM の呼び出しの「もうすぐ参加する」。ハドルにいる人の画面に 5 分出る（huddle.updated の joining_soon）。",
+        "parameters": [
+          {
+            "name": "huddleID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "成功（本文なし）"
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "見つからない（存在しないことと、読めないことを区別しない）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "いまの状態と競合する",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依存するサービスに接続できない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/attachments/{attachmentID}/complete": {
       "post": {
         "operationId": "completeAttachment",
@@ -7842,6 +8698,26 @@
           "checks"
         ]
       },
+      "HuddleICEServers": {
+        "type": "object",
+        "properties": {
+          "ice_servers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ICEServer"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "expires_at は TURN の認証情報の期限。長いハドルでは、切れる前に取り直して setConfiguration で差し替える（決定 14）。"
+          }
+        },
+        "required": [
+          "ice_servers",
+          "expires_at"
+        ]
+      },
       "HuddleParticipant": {
         "type": "object",
         "properties": {
@@ -7855,6 +8731,41 @@
         "required": [
           "user_id",
           "muted"
+        ]
+      },
+      "HuddleSubscription": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "mid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "mid"
+        ]
+      },
+      "ICEServer": {
+        "type": "object",
+        "properties": {
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "username": {
+            "type": "string"
+          },
+          "credential": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "urls"
         ]
       },
       "Invite": {
@@ -8022,6 +8933,42 @@
           "exhausted",
           "expired",
           "revoked"
+        ]
+      },
+      "JoinHuddleRequest": {
+        "type": "object",
+        "properties": {
+          "offer": {
+            "$ref": "#/components/schemas/SessionDescription"
+          },
+          "mid": {
+            "type": "string",
+            "description": "mid は offer の中の、マイクの音声の transceiver の mid。"
+          }
+        },
+        "required": [
+          "offer",
+          "mid"
+        ]
+      },
+      "JoinedHuddle": {
+        "type": "object",
+        "properties": {
+          "huddle": {
+            "$ref": "#/components/schemas/RoomHuddle"
+          },
+          "participant_id": {
+            "type": "string",
+            "description": "participant_id は「この端末のこの参加」（決定 4）。入った後の操作と心拍に使う。"
+          },
+          "answer": {
+            "$ref": "#/components/schemas/SessionDescription"
+          }
+        },
+        "required": [
+          "huddle",
+          "participant_id",
+          "answer"
         ]
       },
       "LastMessage": {
@@ -9161,6 +10108,17 @@
           "password"
         ]
       },
+      "RenegotiateHuddleRequest": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/SessionDescription"
+          }
+        },
+        "required": [
+          "answer"
+        ]
+      },
       "RevokeSessionsResponse": {
         "type": "object",
         "properties": {
@@ -9778,6 +10736,21 @@
           "last_used_at"
         ]
       },
+      "SessionDescription": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "sdp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "sdp"
+        ]
+      },
       "SessionList": {
         "type": "object",
         "properties": {
@@ -9832,6 +10805,47 @@
         "required": [
           "url",
           "expires_at"
+        ]
+      },
+      "SubscribeHuddleRequest": {
+        "type": "object",
+        "properties": {
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "user_ids は音声を受けたい相手（同じハドルにいる人）。いない人と自分は黙って飛ばす。"
+          }
+        },
+        "required": [
+          "user_ids"
+        ]
+      },
+      "SubscribedHuddle": {
+        "type": "object",
+        "properties": {
+          "offer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionDescription"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "offer は Cloudflare の offer。ブラウザの answer を renegotiate で返す。受けるものがなければ null。"
+          },
+          "tracks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HuddleSubscription"
+            }
+          }
+        },
+        "required": [
+          "offer",
+          "tracks"
         ]
       },
       "SystemEvent": {
@@ -10116,6 +11130,32 @@
         },
         "required": [
           "user_id"
+        ]
+      },
+      "UnsubscribeHuddleRequest": {
+        "type": "object",
+        "properties": {
+          "mids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "mids は閉じる受けるトラックの mid（抜けた人の分）。"
+          }
+        },
+        "required": [
+          "mids"
+        ]
+      },
+      "UpdateHuddleParticipantRequest": {
+        "type": "object",
+        "properties": {
+          "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "muted"
         ]
       },
       "UpdateProfileRequest": {
