@@ -56,6 +56,34 @@ describe("Composer", () => {
     fireEvent.keyDown(screen.getByRole("textbox", { name: "メッセージ" }), { key: "Enter", isComposing: true });
 
     expect(onSend).not.toHaveBeenCalled();
+    expect(valueOf(screen.getByRole("textbox", { name: "メッセージ" }))).toBe("こんにちは");
+  });
+
+  // Safari は変換の終わり（compositionend）を先に知らせてから、確定の Enter の keydown を送る。
+  // そのため isComposing は false で、IME が処理したことは keyCode 229 でしか分からない
+  it("does not send the Enter that confirms IME composition in Safari (isComposing is false, keyCode is 229)", () => {
+    const onSend = vi.fn();
+    render(<Composer value="こんにちは" canSend onSend={onSend} />);
+
+    const box = screen.getByRole("textbox", { name: "メッセージ" });
+    fireEvent.compositionStart(box);
+    fireEvent.compositionEnd(box, { data: "こんにちは" });
+    fireEvent.keyDown(box, { key: "Enter", keyCode: 229, isComposing: false });
+
+    expect(onSend).not.toHaveBeenCalled();
+    // 改行も入れない
+    expect(valueOf(box)).toBe("こんにちは");
+  });
+
+  it("sends on the next Enter after the composition is confirmed", () => {
+    const onSend = vi.fn();
+    render(<Composer value="こんにちは" canSend onSend={onSend} />);
+
+    const box = screen.getByRole("textbox", { name: "メッセージ" });
+    fireEvent.keyDown(box, { key: "Enter", keyCode: 229 });
+    fireEvent.keyDown(box, { key: "Enter", keyCode: 13 });
+
+    expect(onSend).toHaveBeenCalledOnce();
   });
 
   it("reports the files chosen from the attach button", async () => {
