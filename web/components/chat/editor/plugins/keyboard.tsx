@@ -87,8 +87,12 @@ export function KeyboardPlugin({
         editor.registerCommand(
           KEY_ENTER_COMMAND,
           (event) => {
-            // IME の変換を確定する Enter と、補完を確定する Enter は拾わない
-            if (menuOpenRef.current || event?.isComposing || editor.isComposing()) return false;
+            // 補完を確定する Enter は、補完のプラグインに任せる
+            if (menuOpenRef.current) return false;
+            // IME の変換を確定する Enter は、送信も改行もしない（既定の動作は止めず、IME に任せる）。
+            // Safari は変換の終わり（compositionend）を先に知らせてから確定の Enter の keydown を送るので、isComposing は
+            // false になる。IME が処理したキーであることは keyCode 229 でしか分からないので、それも見る
+            if (event?.isComposing || event?.keyCode === 229 || editor.isComposing()) return true;
             event?.preventDefault();
             if (event?.shiftKey) {
               const inCode = editor.getEditorState().read(() => {
