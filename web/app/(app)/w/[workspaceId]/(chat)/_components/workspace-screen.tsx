@@ -183,11 +183,17 @@ export function WorkspaceScreen() {
   const me = sessionState.status === "signed_in" ? sessionState.user : undefined;
   const sidebarUserIds = useMemo(() => {
     const ids = (roomList?.ids ?? []).flatMap((id) => (rooms[id]?.dm_peer ? [rooms[id].dm_peer.id] : []));
-    return me ? [me.id, ...ids] : ids;
+    // 進行中のハドルに入っている人の顔も、サイドバーの行に出す（ADR 0066 追記 C）
+    const inHuddles = (roomList?.ids ?? []).flatMap((id) => rooms[id]?.huddle?.participants.map((p) => p.user_id) ?? []);
+    return [...new Set([...(me ? [me.id] : []), ...ids, ...inHuddles])];
   }, [roomList, rooms, me]);
   const avatarUrls = useAvatarUrls(sidebarUserIds);
 
   const memberTable = useMemo(() => memberSettings(members?.list), [members]);
+  const memberDisplayNames = useMemo(
+    () => Object.fromEntries((members?.list ?? []).map((m) => [m.user.id, m.user.display_name])),
+    [members],
+  );
   const myMember = useMemo(() => members?.list.find((m) => m.user.id === me?.id), [members, me]);
   const myStatus = useMemo(() => statusView(myMember?.status), [myMember]);
 
@@ -198,10 +204,10 @@ export function WorkspaceScreen() {
     return roomList.ids
       .flatMap((id) => {
         const room = rooms[id];
-        return room ? [toRoomSummaryView(room, now, { avatarUrls, members: memberTable })] : [];
+        return room ? [toRoomSummaryView(room, now, { avatarUrls, members: memberTable, names: memberDisplayNames })] : [];
       })
       .filter((view) => query === "" || view.name.toLowerCase().includes(query));
-  }, [roomList, rooms, search, avatarUrls, memberTable]);
+  }, [roomList, rooms, search, avatarUrls, memberTable, memberDisplayNames]);
 
   // 本文の `<#ID>` の名前とリンク先（ADR 0062 決定 2）。ルーム一覧には参加していない public ルームも入っているので、
   // 読めるチャンネルはすべて引ける。押したら、いま開いている左のメニューのまま移る

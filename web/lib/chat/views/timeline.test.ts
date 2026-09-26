@@ -298,6 +298,37 @@ describe("システムメッセージ（ADR 0033）", () => {
   });
 });
 
+describe("ハドルのメッセージ（ADR 0066 決定 12）", () => {
+  const huddleMessage = (ended_at: string | null) =>
+    systemMessage(2, { type: "huddle", huddle_id: "h-1" }, {
+      sender: miyuki,
+      huddle: { id: "h-1", started_at: "2026-09-13T01:00:00Z", ended_at, participant_ids: [miyuki.id, naoki.id] },
+      thread: { reply_count: 2, last_thread_seq: 4, last_reply_at: "2026-09-13T01:05:00Z" },
+    });
+
+  it("ログの 1 行ではなくハドルの行にし、スレッドの返信の数を載せる", () => {
+    const items = toTimelineItems([message(1, { sender: miyuki }), huddleMessage(null), message(3, { sender: miyuki })], {
+      unreadAfterSeq: null,
+      timeZone: tz,
+      me: naoki,
+      memberNames: { [miyuki.id]: miyuki.display_name },
+    });
+
+    const huddle = items.find((i) => i.type === "huddle");
+    expect(huddle).toMatchObject({
+      type: "huddle",
+      huddle: { key: "m-2", state: "active", joined: true, thread: { replyCount: 2 } },
+    });
+    // ハドルの行を挟んだら、前後の同じ人の発言を続けて表示にしない
+    expect(outline(items)).toEqual(["[9月13日]", "本文 1", "[huddle: active]", "本文 3"]);
+  });
+
+  it("DM で終わったら、入った人には「終了」になる", () => {
+    const items = toTimelineItems([huddleMessage("2026-09-13T01:12:00Z")], { unreadAfterSeq: null, timeZone: tz, me: naoki, roomKind: "dm" });
+    expect(items.find((i) => i.type === "huddle")).toMatchObject({ huddle: { state: "ended", durationLabel: "12 分" } });
+  });
+});
+
 describe("toTimelineItems のリンクのカード", () => {
   it("カードの本文のメンションには、ワークスペースのメンバーの名前を渡す（ADR 0051）", () => {
     const names = { [naoki.id]: "佐藤 直樹" };

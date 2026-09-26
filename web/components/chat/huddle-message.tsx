@@ -73,7 +73,8 @@ export function HuddleMessage({
             )}
             <span className="min-w-0">{detail(huddle)}</span>
           </p>
-          {live && !huddle.joined && (
+          {/* 入る操作が渡されていなければ（入れない人・ハドルが無効）、ボタンを出さない */}
+          {live && !huddle.joined && onJoin && (
             <Button size="sm" onClick={onJoin} className="shrink-0">
               <HeadphonesIcon className="size-4" />
               参加

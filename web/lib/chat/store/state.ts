@@ -176,6 +176,11 @@ export type ChatState = {
    */
   activity: Record<string, { lists: Record<string, ActivityListState | undefined>; unreadCount: number | null } | undefined>;
   connection: ConnectionView;
+  /**
+   * DM のハドルの呼び出し（ADR 0066 決定 11）。受けている間だけ値がある。
+   * 60 秒・参加・「もうすぐ参加する」・ハドルの終了・自分が入った（別の端末を含む）で消える。
+   */
+  huddleRing: { roomId: string; huddleId: string; callerId: string } | null;
 };
 
 /** 未読のアクティビティの件数の上限（API と同じ。バッジは「99+」）。 */
@@ -195,6 +200,9 @@ export type ChatStoreOptions = {
 export function statusOf(err: unknown): LoadStatus {
   return err instanceof ApiError && err.status === 404 ? "not_found" : "error";
 }
+
+/** DM のハドルの呼び出しを止めるまでの時間（ADR 0066 決定 11。オーナーの判断）。 */
+export const HUDDLE_RING_MS = 60_000;
 
 /** 入力中の表示を、最後に受け取ってから消すまでの時間（docs/events.md）。 */
 export const TYPING_TTL_MS = 6_000;

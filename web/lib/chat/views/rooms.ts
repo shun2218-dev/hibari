@@ -4,6 +4,7 @@ import { formatListTime } from "@/lib/chat/format/time";
 import { isMuted } from "@/lib/chat/notifications/mute";
 import type { PresenceView } from "@/lib/chat/presence";
 
+import { roomHuddleBadge } from "./huddles";
 import { memberPresence } from "./members";
 import { ATTACHMENT_ONLY_TEXT, DELETED_MESSAGE_TEXT, systemMessageText, type UrlTable } from "./message";
 
@@ -22,9 +23,12 @@ export function toRoomSummaryView(
     timeZone,
     avatarUrls = {},
     members = {},
+    names = {},
   }: {
     timeZone?: string;
     avatarUrls?: UrlTable;
+    /** user_id → 表示名（ワークスペースのメンバー一覧から作る）。ハドルに入っている人の顔に使う（ADR 0066）。 */
+    names?: Readonly<Record<string, string | undefined>>;
     /** user_id → その人の presence とステータス（ワークスペースのメンバー一覧から作る。ADR 0049）。 */
     members?: Readonly<Record<string, { presence: PresenceView; status?: UserStatusView } | undefined>>;
   } = {},
@@ -56,6 +60,7 @@ export function toRoomSummaryView(
       : undefined,
     lastMessage,
     timeLabel: room.last_message_at ? formatListTime(new Date(room.last_message_at), now, timeZone) : undefined,
+    huddle: roomHuddleBadge(room, names, avatarUrls),
     unreadCount: room.unread_count,
     mentionCount: room.mention_count,
     // 期限の来たミュートは、ストアがタイマーで戻す前でも、ここで「していない」とみなす（ADR 0055）
