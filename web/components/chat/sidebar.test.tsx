@@ -147,11 +147,12 @@ describe("Sidebar", () => {
   });
 
   it("ハドルが進行中のルームに印を出す。押せる要素にはしない（ADR 0066 決定 13）", () => {
-    renderSidebar({ rooms: rooms.map((r) => (r.id === "r2" ? { ...r, huddleActive: true } : r)) });
+    const huddle = { participants: [{ id: "u2", name: "佐藤 直樹" }, { id: "u3", name: "中村 涼" }] };
+    renderSidebar({ rooms: rooms.map((r) => (r.id === "r2" ? { ...r, huddle } : r)) });
 
     const row = screen.getByRole("link", { name: /リリース準備/ });
-    expect(within(row).getByRole("img", { name: "ハドルミーティング中" })).toBeInTheDocument();
-    expect(screen.getAllByRole("img", { name: "ハドルミーティング中" })).toHaveLength(1);
+    expect(within(row).getByRole("img", { name: "ハドルミーティング中（2 人）" })).toBeInTheDocument();
+    expect(screen.getAllByRole("img", { name: /ハドルミーティング中/ })).toHaveLength(1);
   });
 
   it("検索の下に帯を置ける（デスクトップ通知。ADR 0057）", () => {

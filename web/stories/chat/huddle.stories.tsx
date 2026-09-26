@@ -56,8 +56,22 @@ export const Active: Story = {
 };
 
 export const Joined: Story = {
-  name: "入っている（チャットのタブ）",
+  name: "入っている（ハドルのタブを閉じて、下の帯）",
   tags: ["since:6.18"],
+  render: () => chat({ huddle: "joined" }),
+};
+
+export const JoinedDark: Story = {
+  name: "入っている（ダーク）",
+  tags: ["since:6.18"],
+  parameters: { theme: "dark" },
+  render: () => chat({ huddle: "joined" }),
+};
+
+export const MobileJoined: Story = {
+  name: "入っている（モバイル）",
+  tags: ["since:6.18"],
+  ...mobile,
   render: () => chat({ huddle: "joined" }),
 };
 

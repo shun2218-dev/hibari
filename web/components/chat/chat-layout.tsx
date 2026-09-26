@@ -25,9 +25,14 @@ type ChatLayoutProps = {
    * inert を使わないのは、属性ではブレークポイントごとに切り替えられず、md 以上で一覧まで無効になるため。
    */
   mobileView: "list" | "room";
+  /**
+   * ハドルの帯（ADR 0066 追記 C）。ハドルのタブを開いていない間、画面の下の端に全幅で出す（Slack と同じ置き場所）。
+   * サイドバーとルームの両方の下に置くので、モバイルで一覧とルームのどちらを見ていても見える。
+   */
+  huddleBar?: ReactNode;
 };
 
-export function ChatLayout({ topBar, sidebar, rail, tabBar, children, panel, mobileView }: ChatLayoutProps) {
+export function ChatLayout({ topBar, sidebar, rail, tabBar, children, panel, mobileView, huddleBar }: ChatLayoutProps) {
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   return (
@@ -67,6 +72,7 @@ export function ChatLayout({ topBar, sidebar, rail, tabBar, children, panel, mob
         </main>
         {panel}
       </div>
+      {huddleBar}
     </div>
   );
 }

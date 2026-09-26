@@ -73,6 +73,7 @@ import {
   Volume2,
   X,
   Eye,
+  ExternalLink,
   EyeOff,
 } from "lucide-react";
 
@@ -174,5 +175,7 @@ export const MicIcon = withDefaults(Mic);
 export const MicOffIcon = withDefaults(MicOff);
 /** DM の不在着信と応答なし（ADR 0066 決定 12）。 */
 export const PhoneMissedIcon = withDefaults(PhoneMissed);
+/** ハドルの帯の「新しいウィンドウで開く」（ハドルのタブを開き直す。ADR 0066 追記 C）。 */
+export const PopOutIcon = withDefaults(ExternalLink);
 /** スピーカーの選択（参加前のプレビューと、ハドルの画面の機器の選択）。 */
 export const SpeakerIcon = withDefaults(Volume2);

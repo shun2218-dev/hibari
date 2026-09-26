@@ -11,6 +11,7 @@ import {
   LockIcon,
   MicIcon,
   MicOffIcon,
+  PopOutIcon,
   ThreadIcon,
 } from "@/components/ui/icons";
 import { Spinner } from "@/components/ui/spinner";
@@ -74,46 +75,16 @@ export function HuddleScreen({
             </ul>
           )}
 
-          <div role="toolbar" aria-label="ハドルミーティングの操作" className="flex h-16 shrink-0 items-center gap-2 border-t border-border bg-surface px-3 md:px-4">
-            <div className="flex flex-1 justify-center gap-2">
-              <div className="relative flex">
-                <button
-                  type="button"
-                  onClick={onToggleMute}
-                  aria-pressed={huddle.muted}
-                  aria-label={huddle.muted ? "ミュートを解除" : "ミュート"}
-                  title={`${huddle.muted ? "ミュートを解除" : "ミュート"}（⌘⇧Space）`}
-                  className={cx(
-                    "flex h-10 w-11 items-center justify-center rounded-l-md border",
-                    huddle.muted ? "border-primary bg-primary-subtle text-primary" : "border-border bg-surface text-text hover:bg-surface-muted",
-                  )}
-                >
-                  {huddle.muted ? <MicOffIcon className="size-5" /> : <MicIcon className="size-5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={onToggleDeviceMenu}
-                  aria-label="マイクとスピーカーを選ぶ"
-                  aria-expanded={deviceMenu !== undefined}
-                  aria-haspopup="menu"
-                  className="flex h-10 w-7 items-center justify-center rounded-r-md border border-l-0 border-border bg-surface text-text-secondary hover:bg-surface-muted"
-                >
-                  <ChevronDownIcon className="size-4" />
-                </button>
-                {deviceMenu}
-              </div>
-              <button
-                type="button"
-                onClick={onToggleChat}
-                aria-pressed={chatOpen}
-                aria-label="ハドルのチャット"
-                className={cx(
-                  "flex size-10 items-center justify-center rounded-md border",
-                  chatOpen ? "border-primary bg-primary-subtle text-primary" : "border-border bg-surface text-text hover:bg-surface-muted",
-                )}
-              >
-                <ThreadIcon className="size-5" />
-              </button>
+          <div className="flex h-16 shrink-0 items-center gap-2 border-t border-border bg-surface px-3 md:px-4">
+            <div className="flex flex-1 justify-center">
+              <HuddleControls
+                muted={huddle.muted}
+                chatOpen={chatOpen}
+                deviceMenu={deviceMenu}
+                onToggleMute={onToggleMute}
+                onToggleDeviceMenu={onToggleDeviceMenu}
+                onToggleChat={onToggleChat}
+              />
             </div>
             <Button variant="danger" onClick={onLeave} className="shrink-0">
               退出する
@@ -122,6 +93,144 @@ export function HuddleScreen({
         </main>
         {chatOpen && chat}
       </div>
+    </div>
+  );
+}
+
+/**
+ * ハドルの帯（ADR 0066 追記 C）。ハドルのタブを開いていない間、チャットのタブの下の端に全幅で出す（Slack と同じ）。
+ * ハドルの画面と同じ操作の列に、「新しいウィンドウで開く」（タブを開き直す）と「退出する」を添える。
+ * モバイルは幅が足りないので、ルーム名と操作だけを 2 段に並べる。
+ */
+export function HuddleBar({
+  huddle,
+  chatOpen = false,
+  deviceMenu,
+  onToggleMute,
+  onToggleDeviceMenu,
+  onToggleChat,
+  onPopOut,
+  onLeave,
+}: {
+  huddle: HuddleScreenView;
+  /** チャットのタブの右のパネルで、ハドルのチャット（スレッド）を開いている。 */
+  chatOpen?: boolean;
+  deviceMenu?: ReactNode;
+  onToggleMute?: () => void;
+  onToggleDeviceMenu?: () => void;
+  onToggleChat?: () => void;
+  onPopOut?: () => void;
+  onLeave?: () => void;
+}) {
+  const others = huddle.participants.slice(1);
+  return (
+    <section
+      aria-label="ハドルミーティング"
+      className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-border bg-surface px-3 py-2.5 md:flex-nowrap md:px-4"
+    >
+      {/* モバイルは 1 段目を全幅にして、操作を 2 段目に回す */}
+      <div className="flex w-full min-w-0 items-center gap-2.5 md:w-auto md:flex-1 md:basis-0">
+        <span aria-hidden className="flex shrink-0 -space-x-2">
+          {(others.length > 0 ? others : huddle.participants).slice(0, 3).map((p) => (
+            <Avatar key={p.id} id={p.id} name={p.name} imageUrl={p.avatarUrl} size="sm" className="rounded-full ring-2 ring-surface" />
+          ))}
+        </span>
+        <div className="min-w-0">
+          <p className="flex min-w-0 items-center gap-1 text-sm text-text">
+            <RoomName room={huddle.room} />
+            <span className="shrink-0 text-text-secondary">でのハドルミーティング</span>
+          </p>
+          <p className="truncate text-xs text-text-muted">
+            {huddle.connection === "connected" ? (
+              others.length === 0 ? "ほかの参加者はいません" : `${huddle.participants.length} 人が参加中`
+            ) : (
+              <ConnectionLabel huddle={huddle} />
+            )}
+          </p>
+        </div>
+      </div>
+      <HuddleControls
+        muted={huddle.muted}
+        chatOpen={chatOpen}
+        deviceMenu={deviceMenu}
+        onToggleMute={onToggleMute}
+        onToggleDeviceMenu={onToggleDeviceMenu}
+        onToggleChat={onToggleChat}
+      />
+      <div className="ml-auto flex items-center justify-end gap-2 md:ml-0 md:flex-1 md:basis-0">
+        <button
+          type="button"
+          onClick={onPopOut}
+          aria-label="ハドルミーティングを新しいウィンドウで開く"
+          title="ハドルミーティングを新しいウィンドウで開く"
+          className="flex size-10 items-center justify-center rounded-md border border-border bg-surface text-text hover:bg-surface-muted"
+        >
+          <PopOutIcon className="size-5" />
+        </button>
+        <Button variant="danger" onClick={onLeave}>
+          退出する
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+/** ハドルの画面と帯で共有する操作の列（マイクと機器の選択・ハドルのチャット）。 */
+function HuddleControls({
+  muted,
+  chatOpen,
+  deviceMenu,
+  onToggleMute,
+  onToggleDeviceMenu,
+  onToggleChat,
+}: {
+  muted: boolean;
+  chatOpen: boolean;
+  deviceMenu?: ReactNode;
+  onToggleMute?: () => void;
+  onToggleDeviceMenu?: () => void;
+  onToggleChat?: () => void;
+}) {
+  return (
+    <div role="toolbar" aria-label="ハドルミーティングの操作" className="flex gap-2">
+      <div className="relative flex">
+        <button
+          type="button"
+          onClick={onToggleMute}
+          aria-pressed={muted}
+          aria-label={muted ? "ミュートを解除" : "ミュート"}
+          title={`${muted ? "ミュートを解除" : "ミュート"}（⌘⇧Space）`}
+          className={cx(
+            "flex h-10 w-11 items-center justify-center rounded-l-md border",
+            muted ? "border-primary bg-primary-subtle text-primary" : "border-border bg-surface text-text hover:bg-surface-muted",
+          )}
+        >
+          {muted ? <MicOffIcon className="size-5" /> : <MicIcon className="size-5" />}
+        </button>
+        <button
+          type="button"
+          onClick={onToggleDeviceMenu}
+          aria-label="マイクとスピーカーを選ぶ"
+          aria-expanded={deviceMenu !== undefined}
+          aria-haspopup="menu"
+          className="flex h-10 w-7 items-center justify-center rounded-r-md border border-l-0 border-border bg-surface text-text-secondary hover:bg-surface-muted"
+        >
+          <ChevronDownIcon className="size-4" />
+        </button>
+        {deviceMenu}
+      </div>
+      <button
+        type="button"
+        onClick={onToggleChat}
+        aria-pressed={chatOpen}
+        aria-label="ハドルのチャット"
+        className={cx(
+          "flex size-10 items-center justify-center rounded-md border",
+          chatOpen ? "border-primary bg-primary-subtle text-primary" : "border-border bg-surface text-text hover:bg-surface-muted",
+        )}
+      >
+        <ThreadIcon className="size-5" />
+      </button>
     </div>
   );
 }
@@ -197,15 +306,21 @@ function ScreenHeader({ room, children }: { room: { kind: RoomKind; name: string
     <header className="flex h-12 shrink-0 items-center justify-center gap-2 border-b border-border bg-surface px-4 text-sm">
       <HeadphonesIcon className="size-4 shrink-0 text-text-secondary" />
       <h1 className="flex min-w-0 items-center gap-1 text-text">
-        <span className="flex min-w-0 items-center gap-0.5 font-semibold">
-          {room.kind === "public" && <HashIcon aria-label="公開チャンネル" aria-hidden={false} role="img" className="size-3.5 shrink-0" />}
-          {room.kind === "private" && <LockIcon aria-label="非公開チャンネル" aria-hidden={false} role="img" className="size-3.5 shrink-0" />}
-          <span className="truncate">{room.name}</span>
-        </span>
+        <RoomName room={room} />
         <span className="shrink-0 text-text-secondary">でハドルミーティングを行う</span>
       </h1>
       {children}
     </header>
+  );
+}
+
+function RoomName({ room }: { room: { kind: RoomKind; name: string } }) {
+  return (
+    <span className="flex min-w-0 items-center gap-0.5 font-semibold">
+      {room.kind === "public" && <HashIcon aria-label="公開チャンネル" aria-hidden={false} role="img" className="size-3.5 shrink-0" />}
+      {room.kind === "private" && <LockIcon aria-label="非公開チャンネル" aria-hidden={false} role="img" className="size-3.5 shrink-0" />}
+      <span className="truncate">{room.name}</span>
+    </span>
   );
 }
 

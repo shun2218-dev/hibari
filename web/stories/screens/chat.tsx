@@ -19,6 +19,7 @@ import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { RemoveSavedItemDialog } from "@/components/chat/dialogs/remove-saved-item";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { HuddleRing } from "@/components/chat/huddle-ring";
+import { HuddleBar } from "@/components/chat/huddle-screen";
 import { MembersPanel } from "@/components/chat/members-panel";
 import { NotificationMenu } from "@/components/chat/notification-menu";
 import { NotificationPermissionBanner } from "@/components/chat/notification-permission-banner";
@@ -55,6 +56,7 @@ import {
   huddleChatItems,
   huddleMessageKey,
   huddleOthers,
+  huddleScreen,
   timelineWithHuddle,
   timelineWithHuddleEnded,
   timelineWithHuddleJoined,
@@ -323,7 +325,8 @@ export type ChatOptions = {
    * ハドル（ADR 0066）のチャットのタブの見え方。指定しなければ、ヘッダーに「開始」のアイコンだけを出す（入れる人の画面）。
    * ハドルの画面そのもの（プレビュー・別のタブ）は chat() ではなく stories/chat/huddle.stories.tsx が直接描く。
    * - active: チャンネルで進行中（自分は入っていない）。ヘッダーの「参加」・サイドバーの印・会話のメッセージ
-   * - joined: 自分が入っている（ヘッダーは緑のヘッドフォン）。joined-chat はハドルのチャットをスレッドのパネルで開いたところ
+   * - joined: 自分が入っていて、ハドルのタブを閉じている（ヘッダーは緑のヘッドフォン、下にハドルの帯）。
+   *   joined-chat はハドルのチャットをスレッドのパネルで開いたところ
    * - ended: 終わったハドルのメッセージ
    * - dm-missed: DM の不在着信と応答なし
    * - dm-ring: DM の呼び出しを受けているところ
@@ -540,6 +543,7 @@ export function chat({
   const room = notifications === "menu-dm" || dmHuddle ? dmRoom : selectedRoom;
   // ハドルが進行中のルーム（ADR 0066）。サイドバーの印と、ヘッダーのボタンの状態に使う
   const huddleRoomActive = huddle === "active" || huddle === "dm-ring" || inHuddle;
+  const huddleSidebarParticipants = huddle === "dm-ring" ? [huddleCaller] : inHuddle ? huddleScreen.participants : huddleOthers;
   // 入れない人（参加していない public ルーム・アーカイブ済み）にはヘッダーのボタンを出さない（決定 7）
   const huddleHeader: HuddleHeaderState | undefined =
     footer !== "composer"
@@ -614,7 +618,7 @@ export function chat({
                     : presence
                       ? roomsWithStatus
                       : huddleRoomActive
-                        ? rooms.map((r) => (r.id === room.id ? { ...r, huddleActive: true } : r))
+                        ? rooms.map((r) => (r.id === room.id ? { ...r, huddle: { participants: huddleSidebarParticipants } } : r))
                         : rooms
             }
             selectedRoomId={roomRemoved || threads ? undefined : room.id}
@@ -653,6 +657,12 @@ export function chat({
       <ChatLayout
         topBar={topBar}
         mobileView={mobileView}
+        huddleBar={
+          // ハドルのタブを閉じている間の帯（ADR 0066 追記 C）
+          inHuddle ? (
+            <HuddleBar huddle={huddleScreen} chatOpen={huddle === "joined-chat"} onToggleMute={noop} onPopOut={noop} onLeave={noop} />
+          ) : undefined
+        }
         sidebar={
           searchResultsView ? undefined : sidePane(side, home, { activity, dmsEmpty, dmsUnread, saved, savedTab, savedItems })
         }

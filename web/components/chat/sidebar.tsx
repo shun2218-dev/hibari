@@ -260,10 +260,6 @@ export function RoomRow({
       </span>
       {room.peer?.status && <StatusEmoji status={room.peer.status} className="text-xs" />}
       {room.archived && <Badge className="self-center">アーカイブ済み</Badge>}
-      {/* ハドルが進行中（ADR 0066 決定 13）。いま起きていることなので琥珀。押して入るのはヘッダーか会話のメッセージから */}
-      {room.huddleActive && (
-        <HeadphonesIcon aria-label="ハドルミーティング中" aria-hidden={false} role="img" className="size-3.5 shrink-0 self-center text-attention" />
-      )}
     </span>
   );
   /*
@@ -271,8 +267,18 @@ export function RoomRow({
     DM は 1 通が知らせなので未読の数をそのまま出す。ただの未読のチャンネルには出さない。
     ミュートした DM は、チャンネルと同じくメンションの数だけにする（ADR 0055 決定 6）。
   */
-  const badge =
+  const count =
     room.kind === "dm" && !muted ? <UnreadBadge count={room.unreadCount} /> : <UnreadBadge count={room.mentionCount} mention />;
+  // ハドルが進行中（ADR 0066 決定 13・追記 C）。Slack と同じく行の右端、未読のバッジの前に置く
+  const badge =
+    room.huddle && room.huddle.participants.length > 0 ? (
+      <span className="flex shrink-0 items-center gap-2">
+        <HuddleBadge participants={room.huddle.participants} />
+        {count}
+      </span>
+    ) : (
+      count
+    );
   return (
     <li>
       <Link
@@ -328,5 +334,26 @@ export function RoomRow({
         )}
       </Link>
     </li>
+  );
+}
+
+/** 進行中のハドルの印（Slack と同じく、入っている人の顔・ヘッドフォン・人数）。顔は 2 人まで。 */
+function HuddleBadge({ participants }: { participants: UserRef[] }) {
+  return (
+    <span
+      role="img"
+      aria-label={`ハドルミーティング中（${participants.length} 人）`}
+      className="flex shrink-0 items-center gap-1"
+    >
+      <span aria-hidden className="flex -space-x-1">
+        {participants.slice(0, 2).map((p) => (
+          <Avatar key={p.id} id={p.id} name={p.name} imageUrl={p.avatarUrl} size="xs" className="rounded-full ring-2 ring-surface" />
+        ))}
+      </span>
+      <span aria-hidden className="flex items-center gap-0.5 text-2xs font-semibold text-attention-text">
+        <HeadphonesIcon className="size-3.5 text-attention" />
+        {participants.length}
+      </span>
+    </span>
   );
 }

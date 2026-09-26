@@ -49,10 +49,10 @@ export type RoomSummaryView = {
    */
   archived?: boolean;
   /**
-   * ハドルが進行中（ADR 0066 決定 13）。名前の横にヘッドフォンの印を出す。
-   * 「いま起きていること」なので琥珀にし、押せるようにはしない（入るのはヘッダーか会話のメッセージから）。
+   * 進行中のハドル（ADR 0066 決定 13・追記 C）。名前の横に、入っている人の顔とヘッドフォンの印と人数を出す（Slack と同じ）。
+   * 「いま起きていること」なので印は琥珀にし、押せるようにはしない（入るのはヘッダーか会話のメッセージから）。
    */
-  huddleActive?: boolean;
+  huddle?: { participants: UserRef[] };
 };
 
 export type MessageAttachmentView =

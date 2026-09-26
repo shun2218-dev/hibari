@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { HuddleProblemScreen, HuddleScreen } from "./huddle-screen";
+import { HuddleBar, HuddleProblemScreen, HuddleScreen } from "./huddle-screen";
 import type { HuddleScreenView } from "./types";
 
 const you = { id: "u-you", name: "あなた" };
@@ -95,6 +95,37 @@ describe("HuddleScreen（ADR 0066 追記 C）", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent(text);
     expect(screen.queryByText("3 人")).not.toBeInTheDocument();
+  });
+});
+
+describe("HuddleBar（ADR 0066 追記 C）", () => {
+  it("ルームと人数、同じ操作の列、「新しいウィンドウで開く」と「退出する」を出す", async () => {
+    const onPopOut = vi.fn();
+    const onLeave = vi.fn();
+    const onToggleMute = vi.fn();
+    render(<HuddleBar huddle={huddle()} onPopOut={onPopOut} onLeave={onLeave} onToggleMute={onToggleMute} />);
+
+    const bar = screen.getByRole("region", { name: "ハドルミーティング" });
+    expect(bar).toHaveTextContent("デザインレビューでのハドルミーティング");
+    expect(within(bar).getByText("3 人が参加中")).toBeInTheDocument();
+    await userEvent.click(within(bar).getByRole("button", { name: "ミュート" }));
+    await userEvent.click(within(bar).getByRole("button", { name: "ハドルミーティングを新しいウィンドウで開く" }));
+    await userEvent.click(within(bar).getByRole("button", { name: "退出する" }));
+    expect(onToggleMute).toHaveBeenCalledOnce();
+    expect(onPopOut).toHaveBeenCalledOnce();
+    expect(onLeave).toHaveBeenCalledOnce();
+  });
+
+  it("自分しかいなければ、そう書く", () => {
+    render(<HuddleBar huddle={huddle({ participants: [{ ...you, muted: false }] })} />);
+
+    expect(screen.getByText("ほかの参加者はいません")).toBeInTheDocument();
+  });
+
+  it("つないでいる間は、人数の代わりにその状態を出す", () => {
+    render(<HuddleBar huddle={huddle({ connection: "reconnecting" })} />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("再接続しています…");
   });
 });
 
