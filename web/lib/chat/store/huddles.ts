@@ -54,11 +54,23 @@ export function createHuddles(core: StoreCore) {
     await core.api.huddleJoiningSoon(huddleId);
   }
 
+  /** このタブで通話しているルーム（state の huddleCallRoomId）。通話を始めたら入れ、終わったら null にする。 */
+  function setHuddleCallRoom(roomId: string | null) {
+    update((s) => (s.huddleCallRoomId === roomId ? s : { ...s, huddleCallRoomId: roomId }));
+  }
+
+  /** 使える機能を読む。失敗したら使えないものとして扱う（ボタンを出さない）。 */
+  async function loadFeatures() {
+    if (core.state.features !== null) return;
+    const features = await core.api.features().catch(() => ({ huddles: false }));
+    update((s) => ({ ...s, features }));
+  }
+
   return {
     receiveHuddleUpdated,
     receiveHuddleRinging,
     stop: () => clearTimeout(ringTimer),
-    actions: { dismissHuddleRing, huddleJoiningSoon },
+    actions: { dismissHuddleRing, huddleJoiningSoon, setHuddleCallRoom, loadFeatures },
   };
 }
 

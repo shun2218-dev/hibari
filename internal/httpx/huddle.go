@@ -335,3 +335,14 @@ func (h *chatHandlers) huddleJoiningSoon(w http.ResponseWriter, r *http.Request)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// featuresResponse は、サーバーの設定で使えるかが変わる機能（ADR 0066 決定 15）。
+// Web は起動したときに 1 回読み、使えない機能の入口（ボタン）を出さない。
+type featuresResponse struct {
+	// Huddles は音声のハドル。Cloudflare の設定がなければ false。
+	Huddles bool `json:"huddles"`
+}
+
+func (h *chatHandlers) getFeatures(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, featuresResponse{Huddles: h.svc.HuddlesEnabled()})
+}

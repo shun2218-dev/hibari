@@ -44,16 +44,31 @@ function keyOf(target: Target): string {
   return `${target.kind}:${target.id}`;
 }
 
-/** 表示中のワークスペースと、そのサイドバーのルーム（参加中と、読める public）。外されたものは購読しない。 */
+/**
+ * 表示中のワークスペースと、そのサイドバーのルーム（参加中と、読める public）。外されたものは購読しない。
+ * このタブで通話しているハドルのルームは、別のワークスペースを開いていても購読し続ける（ADR 0066 追記 C）。
+ */
 function desiredTargets(state: ChatState): Target[] {
+  const targets: Target[] = [];
   const workspaceId = state.activeWorkspaceId;
-  if (!workspaceId || state.removedWorkspaces[workspaceId]) return [];
-  const targets: Target[] = [{ kind: "workspace", id: workspaceId }];
-  const list = state.roomLists[workspaceId];
-  if (list?.status === "ready") {
-    for (const id of list.ids) if (!state.removedRooms[id]) targets.push({ kind: "room", id });
+  if (workspaceId && !state.removedWorkspaces[workspaceId]) {
+    targets.push({ kind: "workspace", id: workspaceId });
+    const list = state.roomLists[workspaceId];
+    if (list?.status === "ready") {
+      for (const id of list.ids) if (!state.removedRooms[id]) targets.push({ kind: "room", id });
+    }
+  }
+  const call = state.huddleCallRoomId;
+  if (call && !state.removedRooms[call] && !targets.some((t) => t.kind === "room" && t.id === call)) {
+    targets.push({ kind: "room", id: call });
   }
   return targets;
+}
+
+/** 購読したルームのワークスペース（一覧の取り直し先）。ハドルのルームは表示中とは別のワークスペースのことがある。 */
+function workspacesOf(state: ChatState, targets: Target[]): string[] {
+  const ids = targets.flatMap((t) => (t.kind === "workspace" ? [t.id] : (state.rooms[t.id]?.workspace_id ?? [])));
+  return [...new Set(ids)];
 }
 
 /**
@@ -176,7 +191,6 @@ export function createRealtime({ store, createActivity: makeActivity, onEvent, .
     }
 
     const generation = subscribed;
-    const workspaceId = state.activeWorkspaceId!;
     batches++;
     for (const target of added) subscribing.add(keyOf(target));
     const results = await Promise.all(added.map(subscribe));
@@ -186,9 +200,9 @@ export function createRealtime({ store, createActivity: makeActivity, onEvent, .
     const ok = added.filter((_, i) => results[i] === "ok");
     if (results.includes("not_found")) {
       // 読めなくなった（外された、削除された）。一覧を取り直すと消える
-      await store.reloadRooms(workspaceId);
+      await Promise.all(workspacesOf(state, added).map((id) => store.reloadRooms(id)));
     } else if (ok.length > 0) {
-      await syncAfterSubscribe(workspaceId, ok);
+      await Promise.all(workspacesOf(state, ok).map((id) => syncAfterSubscribe(id, ok)));
     }
     if (generation !== subscribed) return;
     batches--;
@@ -235,7 +249,7 @@ export function createRealtime({ store, createActivity: makeActivity, onEvent, .
     // アクティビティには差分のカーソルがないので、読み込んでいる一覧と未読の件数を取り直す（ADR 0058 決定 9）
     if (state.activity[workspaceId]) tasks.push(store.reloadActivity(workspaceId));
     for (const { kind, id } of targets) {
-      if (kind !== "room") continue;
+      if (kind !== "room" || state.rooms[id]?.workspace_id !== workspaceId) continue;
       if (state.timelines[id]?.status === "ready") tasks.push(store.syncTimeline(id));
       // メンバー一覧（presence を含む）は、開いているルームの分だけ取り直す。ほかはパネルを開いたときに取る
       if (state.focus?.roomId === id && state.roomMembers[id]) tasks.push(store.loadRoomMembers(id));
@@ -283,6 +297,23 @@ export function createRealtime({ store, createActivity: makeActivity, onEvent, .
           ? { type: "typing", room_id: roomId }
           : { type: "typing", room_id: roomId, thread_root_id: threadRootId },
       );
+    },
+
+    /**
+     * ハドルの心拍（ADR 0066 決定 5）。入っている間 10 秒ごとに送る。
+     * - ok: 期限が延びた
+     * - gone: 参加がもうない（外れた・別の端末に移った）。通話を片付ける
+     * - unsent: つながっていない・ack が来なかった。次の心拍で送り直す（30 秒の期限の間に届けばよい）
+     */
+    async huddleHeartbeat(huddleId: string, participantId: string): Promise<"ok" | "gone" | "unsent"> {
+      if (connectionState.status !== "open") return "unsent";
+      try {
+        const ack = await connection.request({ type: "huddle_heartbeat", huddle_id: huddleId, participant_id: participantId });
+        if (ack.error === undefined) return "ok";
+        return ack.error === "not_found" ? "gone" : "unsent";
+      } catch {
+        return "unsent";
+      }
     },
 
     /** 「再試行」ボタン。 */

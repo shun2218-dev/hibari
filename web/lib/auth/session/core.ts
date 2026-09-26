@@ -168,10 +168,12 @@ export function createSessionCore({ baseUrl, fetch: fetchImpl = fetch, now = Dat
    * JSON を送って JSON を受け取る。2xx 以外は ApiError を投げる。
    * ボディのない成功（204、202 の verify-email/request など）は undefined を返す。
    */
-  async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async function request<T>(method: string, path: string, body?: unknown, options: { keepalive?: boolean } = {}): Promise<T> {
     const res = await authorizedFetch(path, {
       method,
       body: body === undefined ? undefined : JSON.stringify(body),
+      // タブを閉じるときに送る要求（ハドルから抜ける。ADR 0066 決定 4）は、ページが消えても届くようにする
+      keepalive: options.keepalive,
     });
     if (!res.ok) throw await apiErrorFrom(res);
     const text = await res.text();

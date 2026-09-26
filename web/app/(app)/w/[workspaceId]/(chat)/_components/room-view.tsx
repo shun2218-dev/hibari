@@ -15,6 +15,7 @@ import {
 import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { ConfirmMentionAllDialog } from "@/components/chat/dialogs/confirm-mention-all";
+import { useHuddle } from "@/hooks/chat/use-huddle";
 import { useMessageActions } from "@/hooks/chat/use-message-actions";
 import { type ProfileSender, useSenders } from "@/hooks/chat/use-senders";
 import { useProfileHoverCard } from "@/hooks/chat/use-profile-hover-card";
@@ -51,6 +52,7 @@ import { useOrigin } from "@/hooks/use-origin";
 import { memberSettings, mentionAllRecipients, toMemberNames, toMentionCandidates } from "@/lib/chat/views/members";
 import { permalinksIn, previewImageIds, toAttachmentDraftView } from "@/lib/chat/views/message";
 import { canPost, roomArchiveActions } from "@/lib/chat/views/permissions";
+import { huddleHeaderState } from "@/lib/chat/views/huddles";
 import { roomName } from "@/lib/chat/views/rooms";
 import { toTimelineItems } from "@/lib/chat/views/timeline";
 import { useDocumentVisible } from "@/hooks/use-document-visible";
@@ -116,6 +118,8 @@ export function RoomView({
   const typing = useChatState((s) => s.typing[roomId]);
   const removal = useChatState((s) => s.removedRooms[roomId]);
   const workspaceRemoval = useChatState((s) => s.removedWorkspaces[workspaceId]);
+  const huddle = useHuddle();
+  const huddlesEnabled = useChatState((s) => s.features?.huddles ?? false);
   const [joining, setJoining] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
@@ -212,7 +216,16 @@ export function RoomView({
   const messages = timeline?.messages;
   const unreadAfterSeq = timeline?.unreadAfterSeq ?? null;
   // アバターと画像の URL は、chat のレスポンスに載らないので、画面に出すものの ID を集めて引く（ADR 0013 / 0020 / 0028）
-  const senderIds = useMemo(() => [...(messages ?? []).map((m) => m.sender.id), ...(me ? [me.id] : [])], [messages, me]);
+  // ヘッダーのハドルのボタンに、いま入っている人の顔を出す（ADR 0066 決定 17）
+  const huddleParticipants = room?.huddle?.participants;
+  const senderIds = useMemo(
+    () => [
+      ...(messages ?? []).map((m) => m.sender.id),
+      ...(me ? [me.id] : []),
+      ...(huddleParticipants ?? []).map((p) => p.user_id),
+    ],
+    [messages, me, huddleParticipants],
+  );
   const avatarUrls = useAvatarUrls(senderIds);
   // 一覧にいない人（外された人）のカードとパネルの名前は、メッセージの送信者の値から引く（ADR 0050 決定 5）
   const senderOf = useSenders(messages);
@@ -381,6 +394,12 @@ export function RoomView({
 
   const removedFromWorkspace = workspaceRemoval?.reason === "removed";
   const archived = room.archived_at !== null;
+  // ハドルを始められる・入れるのは、投稿できる人だけ（ADR 0066 決定 3。サーバーの authz と同じ条件）。
+  // サーバーに Cloudflare の設定がない・WebRTC のないブラウザでは、ボタンごと出さない（決定 15）
+  const startHuddle =
+    huddle && huddlesEnabled && me && !removedFromWorkspace && canPost(room)
+      ? () => huddle.surface.start(roomId)
+      : undefined;
   const header = (
     <RoomHeader
       archived={archived}
@@ -394,6 +413,11 @@ export function RoomView({
       onOpenSettings={room.kind === "dm" || removedFromWorkspace ? undefined : () => setSettingsOpen(true)}
       // ミュートと通知の設定（ADR 0055）。参加していない public ルームと、外されたワークスペースでは出さない
       notifications={removedFromWorkspace ? undefined : notifications}
+      huddle={
+        startHuddle && me
+          ? { ...huddleHeaderState(room, me.id, workspaceMemberNames, avatarUrls), onClick: startHuddle }
+          : undefined
+      }
       onBack={onBack}
     />
   );
@@ -456,6 +480,7 @@ export function RoomView({
               if (rootId) onOpenThread(rootId);
             }}
             openThreadKey={openThreadId}
+            onJoinHuddle={startHuddle}
             onOpenProfile={(userId) => onOpenProfile(userId, senderOf(userId))}
             profileHoverCardFor={profileHoverCardFor}
           />

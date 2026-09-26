@@ -77,6 +77,15 @@ func TestHuddleAPI(t *testing.T) {
 	f := newHuddleFixture(t, c)
 	roomPath := "/api/v1/rooms/" + f.room.ID
 
+	t.Run("使える機能に huddles が載る", func(t *testing.T) {
+		r := c.as(f.owner, http.MethodGet, "/api/v1/features", nil)
+		expectStatus(t, r, http.StatusOK)
+		if got := decode[struct {
+			Huddles bool `json:"huddles"`
+		}](t, r); !got.Huddles {
+			t.Errorf("features = %s", r.body)
+		}
+	})
 	t.Run("ICE サーバーは入れる人にだけ出す", func(t *testing.T) {
 		r := c.as(f.owner, http.MethodPost, roomPath+"/huddle/ice-servers", nil)
 		expectStatus(t, r, http.StatusOK)
@@ -158,7 +167,14 @@ func TestHuddleAPIUnavailable(t *testing.T) {
 	f := newHuddleFixture(t, c)
 
 	expectProblem(t, c.as(f.owner, http.MethodPost, "/api/v1/rooms/"+f.room.ID+"/huddle/ice-servers", nil), http.StatusServiceUnavailable, "huddles-unavailable")
-	r := c.as(f.owner, http.MethodPost, "/api/v1/rooms/"+f.room.ID+"/huddle/participants", map[string]any{"offer": testOffer, "mid": "0"})
+	r := c.as(f.owner, http.MethodGet, "/api/v1/features", nil)
+	expectStatus(t, r, http.StatusOK)
+	if got := decode[struct {
+		Huddles bool `json:"huddles"`
+	}](t, r); got.Huddles {
+		t.Errorf("features = %s", r.body)
+	}
+	r = c.as(f.owner, http.MethodPost, "/api/v1/rooms/"+f.room.ID+"/huddle/participants", map[string]any{"offer": testOffer, "mid": "0"})
 	expectProblem(t, r, http.StatusServiceUnavailable, "huddles-unavailable")
 }
 

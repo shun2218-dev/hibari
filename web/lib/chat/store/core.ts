@@ -47,6 +47,8 @@ export function createStoreCore(
     activity: {},
     connection: { banner: null, unavailable: null },
     huddleRing: null,
+    huddleCallRoomId: null,
+    features: null,
   };
 
   const listeners = new Set<() => void>();

@@ -3,9 +3,14 @@
 import { type ReactNode, createContext, useEffect, useState } from "react";
 
 import { useSession } from "@/hooks/auth/use-session";
+import { DESKTOP_QUERY } from "@/hooks/use-media-query";
 import { getApiBaseUrl } from "@/lib/api/base-url";
 import type { ServerEvent } from "@/lib/api/types.gen";
 import { createChatApi } from "@/lib/chat/api/chat-api";
+import { browserCallEnv, callSupported } from "@/lib/chat/huddle/browser";
+import { type CallEnv, type HuddleCall, createHuddleCall } from "@/lib/chat/huddle/call";
+import { type HuddleSurfaceStore, createHuddleSurface } from "@/lib/chat/huddle/surface";
+import { type HuddleWindow, openHuddleWindow } from "@/lib/chat/huddle/window";
 import { channelTable } from "@/lib/chat/format/channel-links";
 import { createSearchStore, type SearchStore } from "@/lib/chat/search/search-store";
 import { type LinkCardStore, createLinkCardStore } from "@/lib/chat/format/link-cards";
@@ -36,10 +41,24 @@ export type ChatContextValue = {
    */
   search: SearchStore;
   createUploader: (roomId: string) => AttachmentUploader;
+  /**
+   * 音声のハドルの通話と、その画面の出し先（ADR 0066 追記 C）。通話はチャットのタブが持つので、ルームや
+   * ワークスペースを移っても切れないよう、ここで 1 つだけ作る。WebRTC のないブラウザでは null（ボタンを出さない）。
+   */
+  huddle: { call: HuddleCall; surface: HuddleSurfaceStore } | null;
 };
 
 /** 値を読むフックは hooks/chat/ に置く（ADR 0060）。ここは作って配るだけ。 */
 export const ChatContext = createContext<ChatContextValue | null>(null);
+
+/** 通話に渡すブラウザの API。テストでは偽物を返す。 */
+export type HuddleEnvFactory = (base: Pick<CallEnv, "api" | "userId" | "heartbeat" | "setCallRoom">) => CallEnv;
+
+/** ハドルの画面の出し先。テストでは、タブを開かずに全画面に出す。 */
+export type HuddleWindowOptions = {
+  open: (onClose: () => void) => HuddleWindow | null;
+  preferOverlay: () => boolean;
+};
 
 /** WebSocket の接続先と作り方。テストでは偽のソケットと、再接続を待たないジッター（random）を渡す。 */
 export type RealtimeTransport = { url: string; createSocket: (url: string) => SocketLike; random?: () => number };
@@ -59,12 +78,17 @@ export function ChatProvider({
   userId,
   transport,
   upload,
+  huddleEnv,
+  huddleWindow,
 }: {
   children: ReactNode;
   userId: string;
   transport?: RealtimeTransport;
   /** ストレージへの PUT と画像の寸法の読み取り。テストでは XMLHttpRequest と createImageBitmap の代わりを渡す。 */
   upload?: UploaderOptions;
+  /** 通話に渡すブラウザの API。渡さなければ本物（WebRTC のないブラウザと、偽のソケットのテストでは通話を作らない）。 */
+  huddleEnv?: HuddleEnvFactory;
+  huddleWindow?: HuddleWindowOptions;
 }) {
   const session = useSession();
   const [value] = useState<ChatContextValue>(() => {
@@ -73,6 +97,20 @@ export function ChatProvider({
     const { url, createSocket, random } = transport ?? browserTransport();
     // 偽のソケットで描くテストでは、ブラウザ通知の係を作らない（本物の Notification と Web Locks を使うため）
     const desktop = transport ? null : createDesktop();
+    // realtime より先に作れないので、心拍は後から入れる realtime を読む
+    const late: { realtime?: Realtime } = {};
+    const envFactory = huddleEnv ?? (!transport && callSupported() ? browserCallEnv : undefined);
+    const call = envFactory
+      ? createHuddleCall(
+          envFactory({
+            api,
+            userId,
+            heartbeat: (huddleId, participantId) =>
+              late.realtime?.huddleHeartbeat(huddleId, participantId) ?? Promise.resolve("unsent" as const),
+            setCallRoom: (roomId) => store.setHuddleCallRoom(roomId),
+          }),
+        )
+      : null;
     const realtime = createRealtime({
       store,
       url,
@@ -80,8 +118,17 @@ export function ChatProvider({
       random,
       issueTicket: api.issueTicket,
       revalidateSession: () => session.revalidate(),
-      onEvent: desktop ? (event) => notifyOf(event, store, userId, desktop.notifier) : undefined,
+      onEvent: (event) => {
+        // 自分の参加が外れた（別の端末で抜けた・移った・権限の変更・心拍の期限切れ）。通話を片付ける（決定 5・8）
+        if (event.type === "huddle.left") call?.receiveLeft(event.data);
+        if (desktop) notifyOf(event, store, userId, desktop.notifier);
+      },
     });
+    late.realtime = realtime;
+    const windows = huddleWindow ?? browserHuddleWindow();
+    const huddle = call
+      ? { call, surface: createHuddleSurface({ call, openWindow: windows.open, preferOverlay: windows.preferOverlay }) }
+      : null;
     const media = createMediaStore(api);
     const linkCards = createLinkCardStore(api);
     const search = createSearchStore(api);
@@ -93,13 +140,29 @@ export function ChatProvider({
       linkCards,
       search,
       createUploader: (roomId) => createAttachmentUploader(api, roomId, upload),
+      huddle,
     };
   });
+
+  // チャットのタブを閉じる・再読み込みしたら、ハドルから抜ける（通話を持っているのがこのタブなので。ADR 0066 決定 4・追記 C）。
+  // ページが消えても届くよう keepalive で送る。届かなければ心拍の期限（30 秒）で外れる
+  useEffect(() => {
+    const huddle = value.huddle;
+    if (!huddle) return;
+    function leave() {
+      void huddle?.call.leave({ keepalive: true });
+      huddle?.surface.hide();
+    }
+    window.addEventListener("pagehide", leave);
+    return () => window.removeEventListener("pagehide", leave);
+  }, [value]);
 
   useEffect(() => {
     value.realtime.start();
     value.desktop?.notifier.start();
     return () => {
+      value.huddle?.surface.hide();
+      value.huddle?.call.dispose();
       value.realtime.stop();
       value.desktop?.notifier.stop();
       value.store.dispose();
@@ -107,6 +170,14 @@ export function ChatProvider({
   }, [value]);
 
   return <ChatContext value={value}>{children}</ChatContext>;
+}
+
+/** 本物のタブ。モバイル（md より狭い）では全画面に出す（追記 C）。 */
+function browserHuddleWindow(): HuddleWindowOptions {
+  return {
+    open: (onClose) => openHuddleWindow(window, { onClose }),
+    preferOverlay: () => !window.matchMedia(DESKTOP_QUERY).matches,
+  };
 }
 
 /**

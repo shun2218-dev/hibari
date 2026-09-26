@@ -143,6 +143,66 @@ describe("createRealtime", () => {
     realtime.stop();
   });
 
+  // ADR 0066 追記 C: 通話はチャットのタブが持つので、別のワークスペースを開いても、ハドルの出入りを受け続ける
+  it("keeps the room of the huddle call subscribed after switching workspaces, and syncs it with its own workspace", async () => {
+    const { store, realtime, sockets, log } = setup({
+      "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "r1")] }),
+      "GET /api/v1/workspaces/ws-2/rooms": () => json(200, { rooms: [room("r9", "r9", { workspace_id: "ws-2" })] }),
+      "GET /api/v1/workspaces/ws-2/threads?limit=200": () => json(200, { threads: [] }),
+    });
+    await Promise.all([store.loadRooms("ws-1"), store.loadRooms("ws-2")]);
+    store.setActiveWorkspace("ws-1");
+    realtime.start();
+    await vi.advanceTimersByTimeAsync(0);
+    sockets.last().open();
+    await vi.advanceTimersByTimeAsync(0);
+
+    store.setHuddleCallRoom("r1");
+    store.setActiveWorkspace("ws-2");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sockets.last().messages().slice(2)).toEqual([
+      { type: "unsubscribe", workspace_id: "ws-1" },
+      { type: "subscribe", workspace_id: "ws-2" },
+      { type: "subscribe", room_id: "r9" },
+    ]);
+
+    // 通話が終わったら外す
+    store.setHuddleCallRoom(null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sockets.last().messages().at(-1)).toEqual({ type: "unsubscribe", room_id: "r1" });
+
+    // 表示していないワークスペースのルームを新しく購読したら、そのワークスペースの一覧を取り直す
+    log.length = 0;
+    store.setHuddleCallRoom("r1");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(log).toContain("ws subscribe r1");
+    expect(log).toContain("GET /api/v1/workspaces/ws-1/rooms");
+    realtime.stop();
+  });
+
+  it("sends the huddle heartbeat and tells whether the participation is gone (ADR 0066 決定 5)", async () => {
+    const { store, realtime, sockets } = setup({ "GET /api/v1/workspaces/ws-1/rooms": roomsOf("r1") }, { autoAck: false });
+    // つながる前は送らない
+    await expect(realtime.huddleHeartbeat("h-1", "p-1")).resolves.toBe("unsent");
+
+    await store.loadRooms("ws-1");
+    realtime.start();
+    await vi.advanceTimersByTimeAsync(0);
+    sockets.last().open();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const ok = realtime.huddleHeartbeat("h-1", "p-1");
+    const sent = sockets.last().sent.at(-1)!;
+    expect(sent).toMatchObject({ type: "huddle_heartbeat", huddle_id: "h-1", participant_id: "p-1" });
+    sockets.last().receive({ type: "ack", id: sent.id! });
+    await expect(ok).resolves.toBe("ok");
+
+    const gone = realtime.huddleHeartbeat("h-1", "p-1");
+    sockets.last().receive({ type: "ack", id: sockets.last().sent.at(-1)!.id!, error: "not_found" });
+    await expect(gone).resolves.toBe("gone");
+    realtime.stop();
+  });
+
   // ADR 0049 決定 3: 接続は「見ていない」から始まるので、つないだ直後に今の値を送り、あとは変わったときだけ送る
   it("sends the activity right after connecting and whenever it changes", async () => {
     let notify!: (active: boolean) => void;

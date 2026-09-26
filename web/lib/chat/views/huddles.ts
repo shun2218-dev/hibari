@@ -1,4 +1,12 @@
-import type { HuddleHeaderState, HuddleMessageView, RoomKind, UserRef } from "@/components/chat/types";
+import type {
+  HuddleHeaderState,
+  HuddleMessageView,
+  HuddlePreviewView,
+  HuddleScreenView,
+  RoomKind,
+  UserRef,
+} from "@/components/chat/types";
+import type { HuddleCallState } from "@/lib/chat/huddle/call";
 import type { MessageHuddle, Room, RoomHuddle, UserProfile } from "@/lib/api/types.gen";
 
 import type { UrlTable } from "./message";
@@ -115,5 +123,54 @@ export function roomHuddleBadge(room: Room, names: Names, avatarUrls: UrlTable =
   if (h === null || h.participants.length === 0) return undefined;
   return {
     participants: h.participants.map((p) => ({ id: p.user_id, name: names[p.user_id] ?? "メンバー", avatarUrl: avatarUrls[p.user_id] ?? undefined })),
+  };
+}
+
+type CallPhase<P extends HuddleCallState["phase"]> = Extract<HuddleCallState, { phase: P }>;
+
+/** ハドルの画面のルームの表示（「#general」「佐藤 直樹」）。 */
+function screenRoom(room: Room): HuddleScreenView["room"] {
+  return { kind: room.kind, name: room.kind === "dm" ? (room.dm_peer?.display_name ?? "") : (room.name ?? "") };
+}
+
+/** 参加する前のプレビュー（追記 B）。進行中のハドルに誰かいれば「参加する」、いなければ「開始する」。 */
+export function toHuddlePreviewView(room: Room, call: CallPhase<"preview">, self: UserRef): HuddlePreviewView {
+  return {
+    room: screenRoom(room),
+    action: room.huddle !== null && room.huddle.participants.length > 0 ? "join" : "start",
+    self,
+    micOn: call.micOn,
+    mics: call.mics,
+    micId: call.micId,
+    speakers: call.speakers,
+    speakerId: call.speakerId,
+    problem: call.problem,
+  };
+}
+
+/**
+ * ハドルの画面と帯（追記 C）。いま入っている人は、ルームのハドル（huddle.updated の全体）から出す。
+ * 自分は先頭にし、自分のミュートは通話の値を使う（サーバーの往復を待たずに印を変える）。
+ * 自分がまだ並んでいない（入る途中・huddle.updated が届く前）ときも、自分のタイルは出す。
+ */
+export function toHuddleScreenView(
+  room: Room,
+  call: CallPhase<"call">,
+  { me, names, avatarUrls = {} }: { me: UserRef; names: Names; avatarUrls?: UrlTable },
+): HuddleScreenView {
+  const huddle = room.huddle !== null && (call.huddleId === undefined || room.huddle.id === call.huddleId) ? room.huddle : null;
+  const ref = (id: string): UserRef =>
+    id === me.id ? me : { id, name: names[id] ?? "メンバー", avatarUrl: avatarUrls[id] ?? undefined };
+  const speaking = new Set(call.speaking);
+  const others = (huddle?.participants ?? []).filter((p) => p.user_id !== me.id);
+  return {
+    room: screenRoom(room),
+    connection: call.connection,
+    participants: [
+      { ...me, muted: call.muted, speaking: speaking.has(me.id) },
+      ...others.map((p) => ({ ...ref(p.user_id), muted: p.muted, speaking: !p.muted && speaking.has(p.user_id) })),
+    ],
+    joiningSoon: (huddle?.joining_soon ?? []).filter((id) => id !== me.id).map(ref),
+    muted: call.muted,
   };
 }
