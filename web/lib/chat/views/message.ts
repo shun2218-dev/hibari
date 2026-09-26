@@ -52,6 +52,9 @@ export function systemMessageText(message: Pick<Message, "sender" | "system">): 
       return `${name} がチャンネルをアーカイブしました`;
     case "room_unarchived":
       return `${name} がチャンネルを復元しました`;
+    case "huddle":
+      // サイドバーの最終メッセージの 1 行。会話の中はハドルの行（views/huddles.ts）で描く（ADR 0066 決定 12）
+      return `${name} がハドルミーティングを開始しました`;
     case "message_pinned":
       // いまは書かれない（ADR 0054 決定 3 の追記）。改める前に書かれた行のための文言
       return `${name} がこのチャンネルにメッセージをピン留めしました`;

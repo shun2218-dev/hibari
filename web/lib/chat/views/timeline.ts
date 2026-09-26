@@ -1,11 +1,13 @@
-import type { MessageView, TimelineItem, UserStatusView } from "@/components/chat/types";
+import type { MessageView, RoomKind, TimelineItem, UserStatusView } from "@/components/chat/types";
 import type {
   LinkPreview,
   Mention,
   Message,
   MessageAttachment,
+  MessageHuddle,
   MessageLink,
   MessageReaction,
+  RoomHuddle,
   UserProfile,
 } from "@/lib/api/types.gen";
 import { dayKey, formatDate, formatListTime, formatTime } from "@/lib/chat/format/time";
@@ -13,6 +15,7 @@ import type { MediaState } from "@/lib/chat/media/media-store";
 import { inChannel } from "@/lib/chat/rules/messages";
 import type { OutgoingMessage } from "@/lib/chat/store/state";
 
+import { toHuddleMessageView } from "./huddles";
 import {
   mentionsUser,
   systemMessageText,
@@ -67,6 +70,10 @@ export type TimelineOptions = {
    */
   workspaceMemberNames?: Readonly<Record<string, string>>;
   timeZone?: string;
+  /** ルームの種類。DM のハドルのメッセージを「不在着信」「応答なし」にするのに使う（ADR 0066 決定 12）。 */
+  roomKind?: RoomKind;
+  /** ルームの進行中のハドル（ADR 0066 決定 13）。ハドルのメッセージに、いま入っている人を出すのに使う。 */
+  activeHuddle?: RoomHuddle | null;
   /** 「最終返信」の相対的な時刻（「昨日」など）の基準。省けば今。 */
   now?: Date;
   /**
@@ -106,6 +113,8 @@ type Entry = {
   reactions: readonly MessageReaction[];
   /** 外部のリンクのプレビュー（ADR 0065）。送信中のメッセージはまだ付いていないので空（サーバーの応答で付く）。 */
   linkPreviews: readonly LinkPreview[];
+  /** ハドルのメッセージ（ADR 0066 決定 12）なら、そのハドル。 */
+  huddle?: MessageHuddle;
 };
 
 /**
@@ -156,6 +165,7 @@ export function fromMessage(message: Message, broadcast: MessageView["broadcast"
     mentions: message.mentions,
     reactions: message.reactions,
     linkPreviews: message.link_previews,
+    huddle: message.system?.type === "huddle" ? message.huddle : undefined,
   };
 }
 
@@ -204,6 +214,8 @@ export function toTimelineItems(
     now = new Date(),
     threadRootId,
     broadcastDoneLabel,
+    roomKind,
+    activeHuddle,
   }: TimelineOptions,
 ): TimelineItem[] {
   const inThread = threadRootId !== undefined;
@@ -253,6 +265,29 @@ export function toTimelineItems(
     }
     // 流した返信は、直前が同じ人の発言でも続けて表示にしない。スレッドから来た行だと分かるようにするため（docs/ui/README.md）
     if (entry.broadcast?.in === "channel") breakGroup = true;
+
+    if (entry.huddle !== undefined) {
+      // ハドルのメッセージは、参加のボタンと参加者とスレッドを持つので、ログの 1 行ではなくハドルの行にする（ADR 0066 追記 D）
+      items.push({
+        type: "huddle",
+        huddle: toHuddleMessageView(
+          { id: entry.key, sender: entry.sender, huddle: entry.huddle },
+          {
+            me,
+            roomKind,
+            activeHuddle,
+            names: { ...workspaceMemberNames, ...memberNames },
+            avatarUrls,
+            timeLabel: formatTime(entry.createdAt, timeZone),
+            thread: entry.thread
+              ? { replyCount: entry.thread.replyCount, lastReplyLabel: formatListTime(entry.thread.lastReplyAt, now, timeZone) }
+              : undefined,
+          },
+        ),
+      });
+      previous = undefined;
+      continue;
+    }
 
     if (entry.systemText !== undefined) {
       // ログは人の発言ではないので、続けて表示（grouped）の基準にもしない

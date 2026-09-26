@@ -274,8 +274,12 @@ export function RoomView({
         memberNames,
         workspaceMemberNames,
         statuses: statusEmojis,
+        roomKind: room?.kind,
+        activeHuddle: room?.huddle,
       }),
     [
+      room?.kind,
+      room?.huddle,
       messages,
       unreadAfterSeq,
       outgoing,

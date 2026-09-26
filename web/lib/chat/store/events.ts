@@ -11,6 +11,7 @@ import type { Threads } from "./threads";
 import type { Typing } from "./typing";
 import type { Timeline } from "./timeline";
 import type { Rooms } from "./rooms";
+import type { Huddles } from "./huddles";
 
 /**
  * イベント（WebSocket で届いたものを状態に当てる）。
@@ -26,6 +27,7 @@ export function createEvents(
     typing,
     timeline,
     rooms,
+    huddles,
   }: {
     workspaces: Workspaces;
     members: Members;
@@ -35,6 +37,7 @@ export function createEvents(
     typing: Typing;
     timeline: Timeline;
     rooms: Rooms;
+    huddles: Huddles;
   },
 ) {
   const { patchMembers, patchRoom, patchThread, patchThreadList, patchWorkspaceMembers, update, userId } = core;
@@ -46,6 +49,7 @@ export function createEvents(
   const { receiveTyping, removeTyping } = typing;
   const { receiveMessage, refreshRoom } = timeline;
   const { joinedRoom, reloadRoomMembers, removedFromRoom, roomDeleted } = rooms;
+  const { receiveHuddleUpdated, receiveHuddleRinging } = huddles;
 
   function applyEvent(event: ServerEvent) {
     switch (event.type) {
@@ -97,6 +101,15 @@ export function createEvents(
       }
       case "room.deleted":
         roomDeleted(event.data.workspace_id, event.data.room_id, "removed");
+        return;
+      // 音声のハドル（ADR 0066 決定 13）。huddle.left は通話そのもの（lib/chat/huddle）が受ける
+      case "huddle.updated":
+        receiveHuddleUpdated(event.data);
+        return;
+      case "huddle.ringing":
+        receiveHuddleRinging(event.data);
+        return;
+      case "huddle.left":
         return;
       case "room.member_removed":
         removedFromRoom(event.data.workspace_id, event.data.room_id, event.data.reason);

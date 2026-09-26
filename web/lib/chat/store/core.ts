@@ -46,6 +46,7 @@ export function createStoreCore(
     notificationLevels: {},
     activity: {},
     connection: { banner: null, unavailable: null },
+    huddleRing: null,
   };
 
   const listeners = new Set<() => void>();

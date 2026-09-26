@@ -17,6 +17,7 @@ import { createHistory } from "./history";
 import { createSend } from "./send";
 import { createMessageActions } from "./message-actions";
 import { createRooms } from "./rooms";
+import { createHuddles } from "./huddles";
 import { createEvents } from "./events";
 import { createStoreCore } from "./core";
 
@@ -50,7 +51,8 @@ export function createChatStore(api: ChatApi, options: ChatStoreOptions) {
   const send = createSend(core, { timeline });
   const messageActions = createMessageActions(core, { timeline });
   const rooms = createRooms(core, { activity, saved, timeline, send });
-  const events = createEvents(core, { workspaces, members, activity, saved, threads, typing, timeline, rooms });
+  const huddles = createHuddles(core);
+  const events = createEvents(core, { workspaces, members, activity, saved, threads, typing, timeline, rooms, huddles });
 
   return {
     ...core.actions,
@@ -65,12 +67,18 @@ export function createChatStore(api: ChatApi, options: ChatStoreOptions) {
     ...saved.actions,
     ...threads.actions,
     ...typing.actions,
+    ...huddles.actions,
     ...timeline.actions,
     ...history.actions,
     ...send.actions,
     ...messageActions.actions,
     ...rooms.actions,
     ...events.actions,
+    /** タイマー（入力中の表示・ミュートの期限・ハドルの呼び出し）を止める。ログアウトなどでストアを捨てるときに呼ぶ。 */
+    dispose() {
+      core.actions.dispose();
+      huddles.stop();
+    },
   };
 }
 

@@ -12,6 +12,7 @@ import { createSearchApi } from "./search";
 import { createMediaApi } from "./media";
 import { createLinkPreviewApi } from "./link-previews";
 import { createRealtimeApi } from "./realtime";
+import { createHuddleApi } from "./huddles";
 
 /**
  * チャットの REST API。パスとリクエスト・レスポンスの型の対応だけを持ち、状態は持たない。
@@ -33,6 +34,7 @@ export function createChatApi(request: Session["request"]) {
     ...createMediaApi(request),
     ...createLinkPreviewApi(request),
     ...createRealtimeApi(request),
+    ...createHuddleApi(request),
   };
 }
 

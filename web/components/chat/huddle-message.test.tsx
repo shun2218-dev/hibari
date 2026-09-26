@@ -26,6 +26,12 @@ describe("HuddleMessage（ADR 0066 決定 12・追記 D）", () => {
     expect(onJoin).toHaveBeenCalledOnce();
   });
 
+  it("入る操作が渡されていなければ（入れない人・ハドルが無効）、「参加」を出さない", () => {
+    render(<HuddleMessage huddle={huddle()} />);
+
+    expect(screen.queryByRole("button", { name: "参加" })).not.toBeInTheDocument();
+  });
+
   it("自分が入っていれば「参加」を出さず、参加中と書く", () => {
     render(<HuddleMessage huddle={huddle({ participants: [you, naoki], participantsLabel: "あなた、佐藤 直樹", joined: true })} />);
 
