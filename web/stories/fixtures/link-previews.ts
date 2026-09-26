@@ -11,7 +11,7 @@ import { naoki } from "./users";
  * 寸法は実物と同じ値を入れてあるので、枠は読み込み前から正しい大きさになる。
  */
 
-/** 画像・アイコン・説明がそろったカード。説明は 2 行で切れる長さにしてある。 */
+/** 画像・アイコン・説明がそろったカード。画像は OGP の標準の横長（1200×630）なので、上に大きく出る。説明は 2 行で切れる長さにしてある。 */
 export const fullPreview: LinkPreviewView = {
   id: "lp-1",
   url: "https://design-notes.example/posts/color-roles",
@@ -22,6 +22,18 @@ export const fullPreview: LinkPreviewView = {
   image: { width: 1200, height: 630, url: "/dev/ogp-1.png" },
   hasIcon: true,
   iconUrl: "/dev/site-icon-1.png",
+};
+
+/** 横長ではない画像のカード。右のサムネイルに出る（ADR 0065 の追記）。 */
+export const thumbnailPreview: LinkPreviewView = {
+  id: "lp-5",
+  url: "https://photo-walk.example/2026/09/morning-light",
+  siteName: "Photo Walk",
+  title: "朝の光で撮る: 窓辺の縦の構図",
+  description: "縦に長い窓は、縦の構図で撮ると光の入り方がよく分かる。露出は窓の外に合わせて、室内は少し暗く残す。",
+  image: { width: 800, height: 1200, url: "/dev/photo-4.png" },
+  hasIcon: true,
+  iconUrl: "/dev/site-icon-2.png",
 };
 
 /** 画像のないカード（OGP に画像のないページ）。 */
@@ -73,6 +85,13 @@ export const timelineWithLinkPreviews: TimelineItem[] = timeline.map((item) => {
       return item;
   }
 });
+
+/** サムネイルのカードのあるタイムライン（chat/link/link-preview-thumbnail.png）。いちばん下のカードを差し替える。 */
+export const timelineWithThumbnailPreview: TimelineItem[] = timelineWithLinkPreviews.map((item) =>
+  item.type === "message" && item.message.key === "m-1105"
+    ? withPreview(item.message, `朝の写真はこの記事を参考にしました。\n${thumbnailPreview.url}`, thumbnailPreview)
+    : item,
+);
 
 /** 本人（あなた）のプレビューのあるメッセージの key。「x」を出す画面で使う。 */
 export const myLinkPreviewKey = myMessageKey;

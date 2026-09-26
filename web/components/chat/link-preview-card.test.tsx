@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { ComposerLinkPreview, LinkPreviewCard } from "./link-preview-card";
+import { ComposerLinkPreview, LinkPreviewCard, isLargeImage } from "./link-preview-card";
 import type { LinkPreviewView } from "./types";
 
 function preview(overrides: Partial<LinkPreviewView> = {}): LinkPreviewView {
@@ -36,7 +36,32 @@ describe("LinkPreviewCard", () => {
     const { container } = render(<LinkPreviewCard preview={preview()} />);
 
     const srcs = Array.from(container.querySelectorAll("img")).map((img) => img.getAttribute("src"));
-    expect(srcs).toEqual(["https://storage.example/lp/icon", "https://storage.example/lp/image"]);
+    // 横長の画像は上に出るので、画像が先
+    expect(srcs).toEqual(["https://storage.example/lp/image", "https://storage.example/lp/icon"]);
+  });
+
+  // ADR 0065 の追記: 横長の画像は右の枠では左右が切れるので、上に幅いっぱいで出す
+  it("大きい横長の画像は、文字の上に縦横比のまま出す", () => {
+    const { container } = render(<LinkPreviewCard preview={preview()} />);
+
+    const card = screen.getByRole("article");
+    expect(card).toHaveClass("flex-col");
+    const frame = container.querySelector("img")!.parentElement!;
+    expect(frame.style.aspectRatio).toBe("1200 / 630");
+    // 画像の枠は文字（タイトル）より前にある
+    expect(frame.compareDocumentPosition(within(card).getByRole("link")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("横長ではない・小さい画像は、右のサムネイルに出す", () => {
+    for (const image of [
+      { width: 800, height: 1200 },
+      { width: 300, height: 157 },
+    ]) {
+      const { container, unmount } = render(<LinkPreviewCard preview={preview({ image: { ...image, url: "https://storage.example/lp/image" } })} />);
+      expect(screen.getByRole("article")).not.toHaveClass("flex-col");
+      expect(container.querySelector("img[src='https://storage.example/lp/image']")!.parentElement!.style.aspectRatio).toBe("");
+      unmount();
+    }
   });
 
   it("画像とアイコンの URL が取れるまでは、画像を読みに行かない", () => {
@@ -110,5 +135,19 @@ describe("ComposerLinkPreview", () => {
     await userEvent.click(screen.getByRole("button", { name: "プレビューを削除" }));
 
     expect(onRemove).toHaveBeenCalledWith("https://example.com/post/1");
+  });
+});
+
+describe("isLargeImage（ADR 0065 の追記）", () => {
+  it.each([
+    [{ width: 1200, height: 630 }, true],
+    [{ width: 1280, height: 720 }, true],
+    [{ width: 400, height: 266 }, true],
+    [{ width: 399, height: 200 }, false],
+    [{ width: 1200, height: 1200 }, false],
+    [{ width: 800, height: 1200 }, false],
+    [{ width: 1200, height: 900 }, false],
+  ])("%j → %s（幅 400px 以上で、幅 ÷ 高さが 1.5 以上）", (image, want) => {
+    expect(isLargeImage(image)).toBe(want);
   });
 });

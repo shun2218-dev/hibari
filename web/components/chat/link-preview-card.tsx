@@ -12,6 +12,7 @@ import type { ComposerLinkPreviewView, LinkPreviewView } from "./types";
  *
  * 形は Slack のカードに合わせる（オーナーが示した Slack の画面。ADR 0065 の背景）:
  * 左にタイトル・説明・サイトのアイコンと名前、右に画像のサムネイル。
+ * 大きい横長の画像（isLargeImage）は、右の枠では切れてしまうので、上に幅いっぱいで出し、その下に文字を並べる（ADR 0065 の追記）。
  *
  * 消せるのは投稿した本人だけなので、`onRemove` は本人のメッセージのときだけ渡す。
  * 確認のダイアログは出さず、押したらすぐ消す（ADR 0065 決定 5）。誤って押しにくいように、「x」はホバーかフォーカスのときだけ出す。
@@ -27,12 +28,31 @@ export function LinkPreviewCard({
   forceRemoveVisible?: boolean;
 }) {
   const heading = preview.title ?? preview.siteName;
+  const large = preview.image !== undefined && isLargeImage(preview.image);
 
   return (
     <article
       aria-label={`${heading} のプレビュー`}
-      className="group/preview relative flex w-150 max-w-full rounded-md border border-border bg-surface"
+      // 大きい画像のカードは幅を 400px までにする。600px のカードいっぱいでは、画像だけで画面の半分を占める（Slack の大きい画像も 400px 前後）
+      className={cx(
+        "group/preview relative flex max-w-full rounded-md border border-border bg-surface",
+        large ? "w-100 flex-col" : "w-150",
+      )}
     >
+      {large && preview.image && (
+        // 画像の縦横比のまま、切らずに出す。寸法はサーバーが測っているので、読み込む前から同じ高さの枠を取り、読み込みで画面をずらさない。
+        // 縦横比は画像ごとの値なので、トークンではなく style で渡す
+        <div
+          className="w-full overflow-hidden rounded-t-md border-b border-border bg-surface-muted"
+          style={{ aspectRatio: `${preview.image.width} / ${preview.image.height}` }}
+        >
+          {preview.image.url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={preview.image.url} alt="" loading="lazy" className="size-full object-cover" />
+          )}
+        </div>
+      )}
+
       <div className="min-w-0 flex-1 px-3.5 py-2.5">
         {/* 本文に書かれた URL へ飛ぶ（リダイレクトの後の URL ではない。ADR 0065 決定 6）。
             Slack と同じく、タイトルは本文の色の太字にする。リンクであることは下線で示す */}
@@ -50,13 +70,14 @@ export function LinkPreviewCard({
         <SiteLine siteName={preview.siteName} hasIcon={preview.hasIcon} iconUrl={preview.iconUrl} className="mt-2" />
       </div>
 
-      {preview.image && (
+      {preview.image && !large && (
         // サムネイルはカードの高さに合わせて切り取る（Slack と同じ）。URL が取れるまでは枠だけ出し、読み込みでカードの高さを変えない
-        <div className="w-20 shrink-0 overflow-hidden rounded-r-md border-l border-border bg-surface-muted md:w-30">
+        // 画像は枠に重ねて置き（absolute）、カードの高さを決めさせない。縦長の画像でカードが文字より高くならないように
+        <div className="relative w-20 shrink-0 overflow-hidden rounded-r-md border-l border-border bg-surface-muted md:w-30">
           {preview.image.url && (
             // 署名付き URL は短時間で失効し、next/image の最適化（サーバー経由の取得）も使えないので img を使う（添付と同じ）
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={preview.image.url} alt="" loading="lazy" className="size-full object-cover" />
+            <img src={preview.image.url} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />
           )}
         </div>
       )}
@@ -80,6 +101,19 @@ export function LinkPreviewCard({
       )}
     </article>
   );
+}
+
+/** この幅（px）以上の画像を大きく出す候補にする。小さい画像を引き伸ばすとぼやけるため。 */
+export const LARGE_IMAGE_MIN_WIDTH = 400;
+/** 幅 ÷ 高さがこれ以上の横長の画像を大きく出す。正方形に近いロゴは、右のサムネイルで切れずに収まる。 */
+export const LARGE_IMAGE_MIN_RATIO = 1.5;
+
+/**
+ * 画像を上に大きく出すか（ADR 0065 の追記）。OGP の標準の画像（1200×630）は大きく出る。
+ * 横長の画像を右のサムネイル（縦長の枠）に入れると、左右が切れて何の画像か分からなくなるため。
+ */
+export function isLargeImage({ width, height }: { width: number; height: number }): boolean {
+  return width >= LARGE_IMAGE_MIN_WIDTH && height > 0 && width / height >= LARGE_IMAGE_MIN_RATIO;
 }
 
 /**

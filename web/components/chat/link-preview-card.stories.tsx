@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { fullPreview, minimalPreview, textOnlyPreview } from "@/stories/fixtures/link-previews";
+import { fullPreview, minimalPreview, textOnlyPreview, thumbnailPreview } from "@/stories/fixtures/link-previews";
 
 import { LinkPreviewCard } from "./link-preview-card";
 
@@ -21,7 +21,9 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Full: Story = { name: "画像・アイコン・説明あり" };
+export const Full: Story = { name: "画像・アイコン・説明あり（横長の画像は上に大きく）" };
+
+export const Thumbnail: Story = { name: "横長ではない画像（右のサムネイル）", args: { preview: thumbnailPreview } };
 
 export const TextOnly: Story = { name: "画像なし", args: { preview: textOnlyPreview } };
 
