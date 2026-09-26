@@ -1448,9 +1448,10 @@ describe("WorkspaceScreen", () => {
         const card = await history().findByRole("article", { name: "記事のタイトル のプレビュー" });
         expect(within(card).getByRole("link", { name: "記事のタイトル" })).toHaveAttribute("href", article);
         await waitFor(() =>
+          // 横長の画像（1200×630）は上に大きく出るので、画像が先（ADR 0065 の追記）
           expect(Array.from(card.querySelectorAll("img")).map((img) => img.getAttribute("src"))).toEqual([
-            "https://storage.test/lp-1/icon",
             "https://storage.test/lp-1/image",
+            "https://storage.test/lp-1/icon",
           ]),
         );
       });
