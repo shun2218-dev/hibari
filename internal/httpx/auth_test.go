@@ -20,6 +20,7 @@ import (
 	"github.com/shun2218-dev/hibari/internal/auth/authtest"
 	"github.com/shun2218-dev/hibari/internal/chat"
 	"github.com/shun2218-dev/hibari/internal/chat/chattest"
+	"github.com/shun2218-dev/hibari/internal/chat/huddle"
 	"github.com/shun2218-dev/hibari/internal/chat/presence"
 	"github.com/shun2218-dev/hibari/internal/chat/realtime"
 	"github.com/shun2218-dev/hibari/internal/httpx"
@@ -58,10 +59,16 @@ type apiOptions struct {
 	trusted httpx.TrustedProxies
 	// requireVerifiedEmail は本番と同じく email の検証を求めるか。
 	requireVerifiedEmail bool
+	// withoutHuddles は Cloudflare の設定がない（ハドルが無効な）サーバーにする（ADR 0066 決定 15）。
+	withoutHuddles bool
 }
 
 // apiOption は newAPI の組み立てを変える。
 type apiOption func(*apiOptions)
+
+func withoutHuddles() apiOption {
+	return func(o *apiOptions) { o.withoutHuddles = true }
+}
 
 func withAuthOptions(opts ...authtest.Option) apiOption {
 	return func(o *apiOptions) { o.auth = append(o.auth, opts...) }
@@ -143,11 +150,18 @@ func startInstance(t *testing.T, env *authtest.Env, o apiOptions) *apiClient {
 	}()
 
 	fetcher := &chattest.Fetcher{}
+	// ハドル（ADR 0066）。Cloudflare は偽物、いま入っている人は実物の Redis。
+	// httpx のテストは掃除を動かさないので、名前空間を分けなくてもほかのテストの参加を外さない（インスタンスの間では共有する）
+	huddleDeps := chat.HuddleDeps{States: huddle.New(rdb), Media: &chattest.Media{}, Limiter: ratelimit.New(rdb, env.Clock)}
+	if o.withoutHuddles {
+		huddleDeps = chat.HuddleDeps{}
+	}
 	chatService := chat.NewService(chat.Deps{
 		DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Random: rand.Reader, Logger: logger,
 		Storage: chattest.NewStorage(t), AttachmentLimits: chattest.AttachmentLimits,
 		Delivery: delivery, Presence: realtime.PresenceStates{Store: presenceStore},
 		LinkPreviews: chat.LinkPreviewDeps{Fetcher: fetcher, AppBaseURL: chattest.AppBaseURL, Limiter: ratelimit.New(rdb, env.Clock)},
+		Huddles:      huddleDeps,
 	})
 	h := httpx.NewRouter(httpx.Deps{
 		Logger:         logger,

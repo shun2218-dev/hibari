@@ -70,7 +70,9 @@ const (
 )
 
 type wsHandlers struct {
-	hub      RealtimeHub
+	hub RealtimeHub
+	// chat はハドルの心拍（ADR 0066 決定 5）を受けるのに使う。
+	chat     ChatService
 	tickets  WSTicketStore
 	sessions authn.SessionChecker
 	cfg      WSConfig
@@ -78,7 +80,7 @@ type wsHandlers struct {
 }
 
 func registerWSRoutes(mux *http.ServeMux, d Deps) {
-	h := &wsHandlers{hub: d.Realtime, tickets: d.WSTickets, sessions: d.Sessions, cfg: d.WS, logger: d.Logger}
+	h := &wsHandlers{hub: d.Realtime, chat: d.Chat, tickets: d.WSTickets, sessions: d.Sessions, cfg: d.WS, logger: d.Logger}
 	// ws-ticket を発行しなければ接続できないので、email の検証はここで止めれば WebSocket にも及ぶ（ADR 0053 決定 1）。
 	mux.Handle("POST /api/v1/ws/ticket", requireChatUser(d)(http.HandlerFunc(h.issueTicket)))
 	// Access Token ではなく ws-ticket で認証する。ブラウザの WebSocket はヘッダを付けられないため（ADR 0007）。

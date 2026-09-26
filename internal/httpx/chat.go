@@ -78,6 +78,17 @@ type ChatService interface {
 	PreviewLink(ctx context.Context, actor, roomID ulid.ULID, rawURL string) (*chat.ComposerLinkPreview, error)
 	LinkPreviewURLs(ctx context.Context, actor, roomID, messageID, previewID ulid.ULID) (image, icon *chat.SignedURL, err error)
 	RemoveLinkPreview(ctx context.Context, actor, roomID, messageID, previewID ulid.ULID) error
+
+	// 音声のハドル（ADR 0066）
+	HuddleICEServers(ctx context.Context, actor, roomID ulid.ULID) (chat.ICECredentials, error)
+	JoinHuddle(ctx context.Context, actor, authSessionID, roomID ulid.ULID, in chat.JoinHuddleInput) (chat.JoinedHuddle, error)
+	SubscribeHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, userIDs []ulid.ULID) (chat.SubscribedHuddle, error)
+	RenegotiateHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, answer chat.SessionDescription) error
+	UnsubscribeHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, mids []string) error
+	SetHuddleMuted(ctx context.Context, actor, huddleID, participantID ulid.ULID, muted bool) error
+	LeaveHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID) error
+	HuddleJoiningSoon(ctx context.Context, actor, huddleID ulid.ULID) error
+	HeartbeatHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID) (bool, error)
 }
 
 type chatHandlers struct {
@@ -171,6 +182,15 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("POST /api/v1/rooms/{roomID}/link-previews", h.previewLink)
 	handle("GET /api/v1/rooms/{roomID}/messages/{messageID}/link-previews/{previewID}/urls", h.getLinkPreviewURLs)
 	handle("DELETE /api/v1/rooms/{roomID}/messages/{messageID}/link-previews/{previewID}", h.removeLinkPreview)
+	// 音声のハドル（ADR 0066 決定 4）。入った後の操作は参加 ID（この端末のこの参加）のパスの下に置く
+	handle("POST /api/v1/rooms/{roomID}/huddle/ice-servers", h.getHuddleICEServers)
+	handle("POST /api/v1/rooms/{roomID}/huddle/participants", h.joinHuddle)
+	handle("POST /api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions", h.subscribeHuddle)
+	handle("POST /api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions/close", h.unsubscribeHuddle)
+	handle("PUT /api/v1/huddles/{huddleID}/participants/{participantID}/renegotiate", h.renegotiateHuddle)
+	handle("PATCH /api/v1/huddles/{huddleID}/participants/{participantID}", h.updateHuddleParticipant)
+	handle("DELETE /api/v1/huddles/{huddleID}/participants/{participantID}", h.leaveHuddle)
+	handle("POST /api/v1/huddles/{huddleID}/joining-soon", h.huddleJoiningSoon)
 	handle("POST /api/v1/attachments/{attachmentID}/complete", h.completeAttachment)
 	handle("GET /api/v1/attachments/{attachmentID}/url", h.getAttachmentURL)
 }

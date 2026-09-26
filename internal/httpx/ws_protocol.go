@@ -26,6 +26,9 @@ type clientMessage struct {
 	ThreadRootID string `json:"thread_root_id,omitempty"`
 	// Active は activity でだけ使う。この接続が画面を見ているか（ADR 0049 決定 3）。
 	Active bool `json:"active,omitempty"`
+	// HuddleID と ParticipantID は huddle_heartbeat でだけ使う（ADR 0066 決定 5）。
+	HuddleID      string `json:"huddle_id,omitempty"`
+	ParticipantID string `json:"participant_id,omitempty"`
 }
 
 // clientMessageType はクライアントからのメッセージの type。
@@ -37,6 +40,8 @@ const (
 	clientTyping      clientMessageType = "typing"
 	clientActivity    clientMessageType = "activity"
 	clientPing        clientMessageType = "ping"
+	// clientHuddleHeartbeat はハドルの心拍（ADR 0066 決定 5）。入っている間 10 秒ごとに送る。
+	clientHuddleHeartbeat clientMessageType = "huddle_heartbeat"
 )
 
 // ackType は ack の type。サーバーからのフレームは、イベントか ack のどちらか。
@@ -113,6 +118,22 @@ func (h *wsHandlers) handleMessage(ctx context.Context, client *realtime.Client,
 		}
 		h.hub.SetActivity(ctx, client, m.Active)
 		return reply(nil)
+	case clientHuddleHeartbeat:
+		// 心拍は REST ではなく WebSocket で受ける。認証済みの接続がすでにあり、小さな定期的なメッセージは typing と同じ経路が合う（決定 5）。
+		// 参加がもうなければ not_found を返す。クライアントは自分が外れたと分かり、接続を片付ける
+		if m.RoomID != "" || m.WorkspaceID != "" {
+			return reply(errInvalidMessage)
+		}
+		huddleID, err1 := ulid.ParseStrict(m.HuddleID)
+		participantID, err2 := ulid.ParseStrict(m.ParticipantID)
+		if err1 != nil || err2 != nil {
+			return reply(errInvalidMessage)
+		}
+		ok, err := h.chat.HeartbeatHuddle(ctx, client.Identity().UserID, huddleID, participantID)
+		if err == nil && !ok {
+			err = chat.ErrNotFound
+		}
+		return reply(err)
 	case clientPing:
 		// ブラウザは WebSocket の ping フレームを送れないので、アプリケーションの ping には id がなくても ack を返す。
 		return &ackMessage{Type: ackType, ID: m.ID}

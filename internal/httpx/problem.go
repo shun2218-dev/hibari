@@ -50,6 +50,11 @@ const (
 	problemUnauthenticated       problemType = "unauthenticated"
 	problemWSTicketInvalid       problemType = "ws-ticket-invalid"
 	problemEmailUnverified       problemType = "email-unverified"
+	// 音声のハドル（ADR 0066）
+	problemHuddlesUnavailable        problemType = "huddles-unavailable"
+	problemHuddleFull                problemType = "huddle-full"
+	problemHuddleParticipantGone     problemType = "huddle-participant-gone"
+	problemHuddleNegotiationConflict problemType = "huddle-negotiation-conflict"
 )
 
 // problem は RFC 9457 の Problem Details。
@@ -141,6 +146,17 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		writeProblem(w, r, problem{Type: problemAttachmentNotUploaded, Title: "The file has not been uploaded", Status: http.StatusConflict})
 	case errors.Is(err, chat.ErrAttachmentMismatch):
 		writeProblem(w, r, problem{Type: problemAttachmentMismatch, Title: "The uploaded file does not match the declared size or type", Status: http.StatusConflict})
+	case errors.Is(err, chat.ErrHuddlesUnavailable):
+		// Cloudflare の設定がなく、ハドルだけが無効（ADR 0066 決定 15）。Web はボタンを出さない
+		writeProblem(w, r, problem{Type: problemHuddlesUnavailable, Title: "Huddles are not available", Status: http.StatusServiceUnavailable})
+	case errors.Is(err, chat.ErrHuddleFull):
+		writeProblem(w, r, problem{Type: problemHuddleFull, Title: "The huddle is full", Status: http.StatusConflict})
+	case errors.Is(err, chat.ErrHuddleParticipantGone):
+		// 抜けた・外された・別の端末に移った（決定 4・6）。クライアントは接続を片付ける
+		writeProblem(w, r, problem{Type: problemHuddleParticipantGone, Title: "You are no longer in the huddle", Status: http.StatusConflict})
+	case errors.Is(err, chat.ErrHuddleNegotiationConflict):
+		// 同じ Cloudflare のセッションへの変更が重なった（決定 4）。クライアントはやり直す
+		writeProblem(w, r, problem{Type: problemHuddleNegotiationConflict, Title: "Another negotiation is in progress", Status: http.StatusConflict})
 	case errors.Is(err, chat.ErrOwnerMustTransfer):
 		writeProblem(w, r, problem{Type: problemOwnerMustTransfer, Title: "Transfer ownership before leaving", Status: http.StatusConflict})
 	case errors.As(err, &lerr):
