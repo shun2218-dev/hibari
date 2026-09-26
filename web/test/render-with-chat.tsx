@@ -7,6 +7,7 @@ import { ChatProvider } from "@/providers/chat-provider";
 import { SessionProvider } from "@/providers/session-provider";
 
 import { type Handler, TEST_API_BASE, fakeApi, json, testUser, tokens } from "./fake-api";
+import { fakeCallEnv, overlayOnly } from "./fake-call-env";
 import { fakeSockets } from "./fake-socket";
 
 /**
@@ -16,7 +17,7 @@ import { fakeSockets } from "./fake-socket";
 export function renderWithChat(
   ui: ReactElement,
   routes: Record<string, Handler>,
-  { upload }: { upload?: UploaderOptions } = {},
+  { upload, huddle = false }: { upload?: UploaderOptions; /** 音声のハドルの通話を偽のブラウザの API で作る。 */ huddle?: boolean } = {},
 ) {
   let tickets = 0;
   const api = fakeApi({
@@ -33,6 +34,8 @@ export function renderWithChat(
     <SessionProvider session={session}>
       <ChatProvider userId={testUser.id} transport={{ url: "ws://api.test/api/v1/ws", createSocket: sockets.createSocket, random: () => 0 }}
         upload={upload}
+        huddleEnv={huddle ? fakeCallEnv : undefined}
+        huddleWindow={huddle ? overlayOnly : undefined}
       >
         {ui}
       </ChatProvider>

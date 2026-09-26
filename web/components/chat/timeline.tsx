@@ -317,7 +317,8 @@ export function Timeline({
                 <li key={item.huddle.key} data-key={item.huddle.key}>
                   <HuddleMessage
                     huddle={item.huddle}
-                    onJoin={() => onJoinHuddle?.(item.huddle.key)}
+                    // ハドルを使えない（サーバーの設定がない・投稿できない）ときは「参加」を出さない
+                    onJoin={onJoinHuddle ? () => onJoinHuddle(item.huddle.key) : undefined}
                     // ハドルのチャットは、ハドルのメッセージを親にした普通のスレッド（ADR 0066 追記 A）
                     onOpenThread={() => onOpenThread?.(item.huddle.key)}
                     threadOpen={openThreadKey === item.huddle.key}

@@ -21,19 +21,29 @@ export function useDismiss(
     if (!panel || !enabled) return;
     function dismissIfOutside(event: PointerEvent) {
       const target = event.target;
-      if (!(target instanceof Node)) return;
+      if (!isNode(target)) return;
       if (panel?.contains(target) || ignore?.current?.contains(target)) return;
-      if (target instanceof Element && target.closest('[aria-expanded="true"]')) return;
+      if (target.nodeType === Node.ELEMENT_NODE && (target as Element).closest('[aria-expanded="true"]')) return;
       dismiss();
     }
     function dismissOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") dismiss();
     }
-    document.addEventListener("pointerdown", dismissIfOutside);
-    document.addEventListener("keydown", dismissOnEscape);
+    // パネルのある document で聞く。ハドルのタブ（about:blank）に portal で描いたメニューもある（ADR 0066 追記 C）
+    const doc = panel.ownerDocument;
+    doc.addEventListener("pointerdown", dismissIfOutside);
+    doc.addEventListener("keydown", dismissOnEscape);
     return () => {
-      document.removeEventListener("pointerdown", dismissIfOutside);
-      document.removeEventListener("keydown", dismissOnEscape);
+      doc.removeEventListener("pointerdown", dismissIfOutside);
+      doc.removeEventListener("keydown", dismissOnEscape);
     };
   }, [panel, enabled, ignore]);
+}
+
+/**
+ * instanceof Node は使わない。ハドルのタブ（about:blank）の要素は、そのタブの Node から作られていて、
+ * チャットのタブの Node の instanceof に当たらないため。
+ */
+function isNode(target: EventTarget | null): target is Node {
+  return target !== null && typeof (target as Partial<Node>).nodeType === "number";
 }

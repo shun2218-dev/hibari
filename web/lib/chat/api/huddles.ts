@@ -1,4 +1,5 @@
 import type {
+  Features,
   HuddleICEServers,
   JoinedHuddle,
   JoinHuddleRequest,
@@ -15,6 +16,9 @@ export function createHuddleApi(request: Session["request"]) {
   const participant = (huddleId: string, participantId: string) =>
     `/api/v1/huddles/${encodeURIComponent(huddleId)}/participants/${encodeURIComponent(participantId)}`;
   return {
+    /** サーバーの設定で使えるかが変わる機能（ハドルは Cloudflare の設定がなければ使えない。決定 15）。 */
+    features: () => request<Features>("GET", "/api/v1/features"),
+
     /** RTCPeerConnection を作る前に取る。TURN の認証情報は 12 時間で切れる（決定 14）。 */
     huddleIceServers: (roomId: string) =>
       request<HuddleICEServers>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/huddle/ice-servers`),
@@ -38,7 +42,9 @@ export function createHuddleApi(request: Session["request"]) {
     setHuddleMuted: (huddleId: string, participantId: string, muted: boolean) =>
       request<void>("PATCH", participant(huddleId, participantId), { muted }),
 
-    leaveHuddle: (huddleId: string, participantId: string) => request<void>("DELETE", participant(huddleId, participantId)),
+    /** 抜ける。keepalive はタブを閉じるときに使う（ページが消えても届くように。決定 4）。 */
+    leaveHuddle: (huddleId: string, participantId: string, options: { keepalive?: boolean } = {}) =>
+      request<void>("DELETE", participant(huddleId, participantId), undefined, options),
 
     /** DM の呼び出しの「もうすぐ参加する」（決定 11）。 */
     huddleJoiningSoon: (huddleId: string) =>

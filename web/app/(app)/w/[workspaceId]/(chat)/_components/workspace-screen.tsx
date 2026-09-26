@@ -32,6 +32,7 @@ import { MyStatusDialog } from "./my-status";
 
 import { CreateWorkspace } from "@/app/(app)/_components/create-workspace";
 import { CreateRoom } from "./create-room";
+import { HuddleCall, HuddleCallBar } from "./huddle-call";
 import { useDesktopNotifications } from "@/hooks/chat/use-desktop-notifications";
 import { StartDm } from "./start-dm";
 import type { ProfileSender } from "@/hooks/chat/use-senders";
@@ -518,6 +519,8 @@ export function WorkspaceScreen() {
         tabBar={<SideNavBar items={sideItems} current={side} onNavigate={() => setListShownFor(mainKey)} />}
         // 検索中はサイドバーを畳んで、メインの領域を全幅で使う（Slack と同じ。ADR 0061 決定 9）
         sidebar={searching ? undefined : sidePane}
+        // ハドルのタブを閉じている間の帯（ADR 0066 追記 C）
+        huddleBar={<HuddleCallBar />}
         panel={
           searching ? undefined : roomId && profileId && !roomRemoved ? (
             <RoomProfile
@@ -590,6 +593,7 @@ export function WorkspaceScreen() {
       )}
       <CreateRoom workspaceId={workspaceId} open={creatingRoom} onClose={() => setCreatingRoom(false)} />
       <StartDm workspaceId={workspaceId} open={startingDm} onClose={() => setStartingDm(false)} />
+      <HuddleCall roomId={roomRemoved ? undefined : roomId} />
     </ChannelLinksProvider>
   );
 }

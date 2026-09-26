@@ -104,3 +104,20 @@ describe("huddle.ringing（ADR 0066 決定 11）", () => {
     expect(t.api.paths()).toContain("POST /api/v1/huddles/h-1/joining-soon");
   });
 });
+
+describe("loadFeatures（ADR 0066 決定 15）", () => {
+  it("サーバーの設定で使える機能を読む。一度読んだら読み直さない", async () => {
+    const features = vi.fn(() => json(200, { huddles: true }));
+    const t = setup({ "GET /api/v1/features": features });
+    await t.store.loadFeatures();
+    await t.store.loadFeatures();
+    expect(t.store.getSnapshot().features).toEqual({ huddles: true });
+    expect(features).toHaveBeenCalledTimes(1);
+  });
+
+  it("読めなければ、使えないものとして扱う（ボタンを出さない）", async () => {
+    const t = setup({ "GET /api/v1/features": () => json(500, {}) });
+    await t.store.loadFeatures();
+    expect(t.store.getSnapshot().features).toEqual({ huddles: false });
+  });
+});

@@ -1,6 +1,7 @@
 import type { ConnectionBannerStatus } from "@/components/chat/types";
 import { ApiError } from "@/lib/api/error";
 import type {
+  Features,
   FollowedThread,
   Invite,
   Member,
@@ -181,6 +182,13 @@ export type ChatState = {
    * 60 秒・参加・「もうすぐ参加する」・ハドルの終了・自分が入った（別の端末を含む）で消える。
    */
   huddleRing: { roomId: string; huddleId: string; callerId: string } | null;
+  /**
+   * このタブで通話しているハドルのルーム（ADR 0066 追記 C）。通話の係（lib/chat/huddle）が入れる。
+   * 別のワークスペースを開いても、このルームの購読は外さない（抜けた人・入った人の huddle.updated を受けて、音声を受け直すため）。
+   */
+  huddleCallRoomId: string | null;
+  /** サーバーの設定で使えるかが変わる機能（ハドルは Cloudflare の設定がなければ使えない。ADR 0066 決定 15）。読む前は null。 */
+  features: Features | null;
 };
 
 /** 未読のアクティビティの件数の上限（API と同じ。バッジは「99+」）。 */

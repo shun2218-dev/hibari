@@ -9,6 +9,8 @@ import {
   huddleParticipantNames,
   roomHuddleBadge,
   toHuddleMessageView,
+  toHuddlePreviewView,
+  toHuddleScreenView,
 } from "./huddles";
 
 const names = { [naoki.id]: naoki.display_name, [miyuki.id]: miyuki.display_name, [kei.id]: kei.display_name };
@@ -119,6 +121,65 @@ describe("ヘッダーとサイドバー", () => {
     expect(roomHuddleBadge(room("r1", "雑談", { huddle: roomHuddle([miyuki.id, kei.id]) }), names)?.participants.map((p) => p.name)).toEqual([
       miyuki.display_name,
       kei.display_name,
+    ]);
+  });
+});
+
+describe("toHuddlePreviewView（追記 B）", () => {
+  const self = { id: naoki.id, name: naoki.display_name };
+  const preview = { phase: "preview" as const, roomId: "room-1", micOn: true, mics: [{ id: "m", label: "マイク" }], micId: "m" };
+
+  it("進行中のハドルに誰かいれば「参加する」、いなければ「開始する」", () => {
+    expect(toHuddlePreviewView(room("room-1", "雑談", { huddle: null }), preview, self).action).toBe("start");
+    expect(toHuddlePreviewView(room("room-1", "雑談", { huddle: roomHuddle([miyuki.id]) }), preview, self).action).toBe("join");
+  });
+
+  it("DM はルーム名の代わりに相手の名前", () => {
+    const dm = room("room-1", "", { kind: "dm", name: null, dm_peer: { ...miyuki, presence: "offline" } });
+    expect(toHuddlePreviewView(dm, preview, self).room).toEqual({ kind: "dm", name: miyuki.display_name });
+  });
+});
+
+describe("toHuddleScreenView（追記 C）", () => {
+  const me = { id: naoki.id, name: naoki.display_name };
+  const call = {
+    phase: "call" as const,
+    roomId: "room-1",
+    huddleId: "h-1",
+    participantId: "p-1",
+    connection: "connected" as const,
+    muted: true,
+    speaking: [miyuki.id, kei.id],
+    mics: [],
+  };
+
+  it("自分を先頭にし、自分のミュートは通話の値を使う。ミュートしている人は話している印を出さない", () => {
+    const h = roomHuddle([miyuki.id, naoki.id, kei.id]);
+    h.participants[2] = { user_id: kei.id, muted: true };
+    const view = toHuddleScreenView(room("room-1", "雑談", { huddle: h }), call, { me, names });
+    expect(view.participants.map((p) => [p.name, p.muted, p.speaking])).toEqual([
+      [naoki.display_name, true, false],
+      [miyuki.display_name, false, true],
+      [kei.display_name, true, false],
+    ]);
+    expect(view.muted).toBe(true);
+    expect(view.connection).toBe("connected");
+  });
+
+  it("状態が届く前（入る途中）も、自分のタイルは出す", () => {
+    const view = toHuddleScreenView(room("room-1", "雑談", { huddle: null }), { ...call, huddleId: undefined }, { me, names });
+    expect(view.participants.map((p) => p.id)).toEqual([naoki.id]);
+  });
+
+  it("別のハドル（終わって新しく始まった）の人は出さない", () => {
+    const view = toHuddleScreenView(room("room-1", "雑談", { huddle: roomHuddle([miyuki.id], { id: "h-2" }) }), call, { me, names });
+    expect(view.participants.map((p) => p.id)).toEqual([naoki.id]);
+  });
+
+  it("「もうすぐ参加する」を押した人（自分を除く）", () => {
+    const h = roomHuddle([miyuki.id], { joining_soon: [kei.id, naoki.id] });
+    expect(toHuddleScreenView(room("room-1", "雑談", { huddle: h }), call, { me, names }).joiningSoon).toEqual([
+      { id: kei.id, name: kei.display_name, avatarUrl: undefined },
     ]);
   });
 });
