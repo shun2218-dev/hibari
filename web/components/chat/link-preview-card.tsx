@@ -62,18 +62,21 @@ export function LinkPreviewCard({
       )}
 
       {onRemove && (
-        // Slack と同じく、カードの左の外側（アバターの列との間）に出す。カードの中に置くとタイトルの先頭の文字に重なる
-        <IconButton
-          label="プレビューを削除"
+        // Slack と同じく、カードの左の外側（アバターの列との間）に出す。カードの中に置くとタイトルの先頭の文字に重なる。
+        // 目立たせない（オーナーの要望）: 枠も地の色も付けず、小さなアイコンだけにし、ホバーで色を濃くする。
+        // IconButton は大きさ（size-8）とホバーの地の色を持っていて、cx では上書きできないので、素の button で書く
+        <button
+          type="button"
+          aria-label="プレビューを削除"
           title="プレビューを削除"
           onClick={() => onRemove(preview.id)}
           className={cx(
-            "absolute top-1.5 -left-8 size-6 rounded-full border border-border bg-surface",
+            "absolute top-2 -left-6 size-5 items-center justify-center rounded-sm text-text-muted hover:text-text",
             forceRemoveVisible ? "flex" : "hidden group-focus-within/preview:flex group-hover/preview:flex",
           )}
         >
-          <CloseIcon className="size-3.5" />
-        </IconButton>
+          <CloseIcon className="size-3" />
+        </button>
       )}
     </article>
   );
