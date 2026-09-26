@@ -227,7 +227,8 @@ export function createHuddleCall(env: CallEnv) {
     try {
       const ice = await env.api.huddleIceServers(roomId);
       if (gen !== generation) return;
-      pc = env.createPeerConnection({ iceServers: toIceServers(ice) });
+      // relay はサーバーが開発で TURN の経路を確かめるときだけ返す（HUDDLE_ICE_TRANSPORT_POLICY）。値の判断はサーバーに任せる
+      pc = env.createPeerConnection({ iceServers: toIceServers(ice), iceTransportPolicy: ice.ice_transport_policy });
       scheduleIceRefresh(roomId, ice, gen);
       watchConnection(pc, gen);
       const track = stream.getAudioTracks()[0];

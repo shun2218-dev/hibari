@@ -8770,11 +8770,16 @@
             "type": "string",
             "format": "date-time",
             "description": "expires_at は TURN の認証情報の期限。長いハドルでは、切れる前に取り直して setConfiguration で差し替える（決定 14）。"
+          },
+          "ice_transport_policy": {
+            "$ref": "#/components/schemas/ICETransportPolicy",
+            "description": "ice_transport_policy は RTCConfiguration の iceTransportPolicy にそのまま渡す。"
           }
         },
         "required": [
           "ice_servers",
-          "expires_at"
+          "expires_at",
+          "ice_transport_policy"
         ]
       },
       "HuddleParticipant": {
@@ -8825,6 +8830,13 @@
         },
         "required": [
           "urls"
+        ]
+      },
+      "ICETransportPolicy": {
+        "type": "string",
+        "enum": [
+          "all",
+          "relay"
         ]
       },
       "Invite": {

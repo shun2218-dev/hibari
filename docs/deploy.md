@@ -215,6 +215,20 @@ curl -s -X POST "https://rtc.live.cloudflare.com/v1/apps/<App ID>/sessions/new" 
 curl -s -X POST "https://rtc.live.cloudflare.com/v1/turn/keys/<Key ID>/credentials/generate-ice-servers" -H "Authorization: Bearer $(cat keys/cloudflare_turn_api_token)" -H "Content-Type: application/json" -d '{"ttl":60}'
 ```
 
+### TURN を通る経路を確かめる（開発）
+
+同じ Mac の 2 つのブラウザでは、どちらも Cloudflare の SFU に直接つながるので、TURN の中継は使われない。
+違うネットワークを用意しなくても中継の経路を確かめられるように、ブラウザに直接の経路を捨てさせる切り替えがある。
+
+1. `.env` に `HUDDLE_ICE_TRANSPORT_POLICY=relay` を足して、server を作り直す（`docker compose up -d server`）。
+   起動のログの `huddles: enabled` に `relay_only=true` が出る。
+2. 2 つのブラウザでハドルに入り、互いの声が聞こえることを確かめる。
+3. Chrome なら `chrome://webrtc-internals` を開き、ハドルの `RTCPeerConnection` の `candidate-pair` で、選ばれたもの（`nominated`・`state: succeeded`）の local 側の `candidateType` が `relay` になっていることを見る。
+4. 終わったら `HUDDLE_ICE_TRANSPORT_POLICY` を消して server を作り直す。中継は SFU と同じ無料の枠を使うので、つけっぱなしにしない。
+
+値は `all`（既定）と `relay` だけ（`RTCConfiguration` の `iceTransportPolicy` と同じ名前と値）。ほかの値だと起動しない。
+ハドルが無効（`CLOUDFLARE_*` がない）のときは読まない。**本番では設定しない。**
+
 ### 本番（Fly.io）
 
 秘密はメールの API キーと同じく、Fly のシークレットをファイルとして置く（上の「API キーの渡し方」）。

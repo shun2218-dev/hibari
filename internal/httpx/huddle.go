@@ -118,7 +118,19 @@ type huddleICEServersResponse struct {
 	ICEServers []iceServerResponse `json:"ice_servers"`
 	// ExpiresAt は TURN の認証情報の期限。長いハドルでは、切れる前に取り直して setConfiguration で差し替える（決定 14）。
 	ExpiresAt time.Time `json:"expires_at"`
+	// ICETransportPolicy は RTCConfiguration の iceTransportPolicy にそのまま渡す。
+	ICETransportPolicy iceTransportPolicy `json:"ice_transport_policy"`
 }
+
+// iceTransportPolicy は RTCIceTransportPolicy と同じ値。
+// relay は開発で TURN を通る経路を確かめるときだけ使う（HUDDLE_ICE_TRANSPORT_POLICY）。
+// 違うネットワークを用意しなくても、ブラウザに直接の経路を捨てさせれば中継を通る。
+type iceTransportPolicy string
+
+const (
+	iceTransportAll   iceTransportPolicy = "all"
+	iceTransportRelay iceTransportPolicy = "relay"
+)
 
 // getHuddleICEServers は、ルームのハドルに入るための ICE サーバーを発行する（決定 4・14）。
 func (h *chatHandlers) getHuddleICEServers(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +144,10 @@ func (h *chatHandlers) getHuddleICEServers(w http.ResponseWriter, r *http.Reques
 		writeError(h.logger, w, r, err)
 		return
 	}
-	resp := huddleICEServersResponse{ICEServers: []iceServerResponse{}, ExpiresAt: creds.ExpiresAt}
+	resp := huddleICEServersResponse{ICEServers: []iceServerResponse{}, ExpiresAt: creds.ExpiresAt, ICETransportPolicy: iceTransportAll}
+	if creds.RelayOnly {
+		resp.ICETransportPolicy = iceTransportRelay
+	}
 	for _, s := range creds.Servers {
 		resp.ICEServers = append(resp.ICEServers, iceServerResponse(s))
 	}
