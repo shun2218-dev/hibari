@@ -206,6 +206,35 @@ func TestHuddlesUnavailable(t *testing.T) {
 }
 
 // 2 人が同時に始めても、ルームのハドルは 1 つになる（ADR 0066 決定 3。CLAUDE.md の並行テスト）。
+// 入れるのは 20 人まで。21 人目は ErrHuddleFull（HTTP では 409 huddle-full。ADR 0066 決定 7）。
+// 入れなかった人の Cloudflare のセッションは閉じる（音声を送り始めさせない）。
+func TestJoinHuddleFull(t *testing.T) {
+	env := chattest.New(t)
+	r := setupRoles(t, env)
+	room := createRoom(t, env, r.member, r.ws.ID, "public", "full")
+	users := env.CreateUsers(t, 21)
+	for _, u := range users {
+		env.AddMember(t, r.ws.ID, u, authz.RoleMember)
+		env.InsertRoomMember(t, room.ID, u)
+	}
+	for _, u := range users[:20] {
+		joinHuddle(t, env, u, room.ID)
+	}
+	closedBefore := len(env.Media.Closed())
+
+	_, err := env.Service.JoinHuddle(t.Context(), users[20], env.IDs.New(), room.ID, chat.JoinHuddleInput{Offer: chattest.Offer, Mid: "0"})
+	if !errors.Is(err, chat.ErrHuddleFull) {
+		t.Fatalf("21st join err = %v, want ErrHuddleFull", err)
+	}
+	got, _ := env.Service.GetRoom(t.Context(), r.member, room.ID)
+	if got.Huddle == nil || len(got.Huddle.Participants) != 20 {
+		t.Errorf("participants = %+v", got.Huddle)
+	}
+	if len(env.Media.Closed()) != closedBefore+1 {
+		t.Errorf("closed sessions = %v (before %d)", env.Media.Closed(), closedBefore)
+	}
+}
+
 func TestConcurrentHuddleStart(t *testing.T) {
 	env := chattest.New(t)
 	r := setupRoles(t, env)
@@ -282,6 +311,7 @@ func TestLeaveHuddle(t *testing.T) {
 	})
 	t.Run("最後の人が抜けると終わる", func(t *testing.T) {
 		env.Clock.Advance(12 * time.Minute)
+		before := roomLastChangeSeq(t, env, room.ID)
 		if err := env.Service.LeaveHuddle(t.Context(), r.member2, b.Huddle.ID, b.ParticipantID); err != nil {
 			t.Fatal(err)
 		}
@@ -301,6 +331,11 @@ func TestLeaveHuddle(t *testing.T) {
 		got, _ := env.Service.GetRoom(t.Context(), r.member, room.ID)
 		if got.Huddle != nil {
 			t.Errorf("room huddle = %+v", got.Huddle)
+		}
+		// イベントを取りこぼしても、再接続の差分（after_change_seq）で終わったことがそろう（ルール 4）
+		page := changesAfter(t, env, r.member, room.ID, before)
+		if len(page.Messages) != 1 || page.Messages[0].ID != a.Huddle.MessageID || page.Messages[0].Huddle.EndedAt == nil {
+			t.Errorf("changes after %d = %+v", before, page.Messages)
 		}
 	})
 	t.Run("終わった後は新しいハドルが始まる", func(t *testing.T) {
