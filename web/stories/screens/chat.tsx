@@ -68,6 +68,7 @@ import {
   myLinkPreviewKey,
   timelineWithLinkPreviews,
   timelineWithMyLinkPreview,
+  timelineWithThumbnailPreview,
 } from "@/stories/fixtures/link-previews";
 import { timelineWithLinkCards } from "@/stories/fixtures/links";
 import { pinCandidateKey, pinnedMessageKey, pinnedMessages, timelineWithPins } from "@/stories/fixtures/pins";
@@ -195,7 +196,7 @@ export type ChatOptions = {
    * - timeline: 画像つき・画像なし・いちばん小さいカード
    * - remove: 本人のカードにポインタを乗せて「x」が出たところ
    */
-  linkPreviews?: "timeline" | "remove";
+  linkPreviews?: "timeline" | "remove" | "thumbnail";
   /**
    * リッチテキストの入力欄（ADR 0052）。
    * - formatted: 書式とメンションのチップを入れた下書き
@@ -501,7 +502,11 @@ export function chat({
       : linkCards
       ? timelineWithLinkCards
       : linkPreviews
-      ? linkPreviews === "remove" ? timelineWithMyLinkPreview : timelineWithLinkPreviews
+      ? linkPreviews === "remove"
+        ? timelineWithMyLinkPreview
+        : linkPreviews === "thumbnail"
+          ? timelineWithThumbnailPreview
+          : timelineWithLinkPreviews
       : formatting
       ? timelineWithFormatting
       : jump

@@ -97,6 +97,13 @@ export const LinkPreviewDark: Story = {
   render: () => chat({ linkPreviews: "timeline" }),
 };
 
+/** 横長ではない画像は、右のサムネイルに出す（ADR 0065 の追記）。 */
+export const LinkPreviewThumbnail: Story = {
+  name: "外部のリンクのプレビュー: 横長ではない画像（サムネイル）",
+  tags: ["since:6.17"],
+  render: () => chat({ linkPreviews: "thumbnail" }),
+};
+
 export const LinkPreviewRemove: Story = {
   name: "外部のリンクのプレビュー: 本人の「x」",
   tags: ["since:6.17"],
