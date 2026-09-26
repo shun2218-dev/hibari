@@ -323,10 +323,10 @@ func newHuddleDeps(c config.RealtimeConfig, rdb *goredis.Client, clk clock.Clock
 	if err != nil {
 		return chat.HuddleDeps{}, err
 	}
-	logger.Info("huddles: enabled (Cloudflare Realtime)")
+	logger.Info("huddles: enabled (Cloudflare Realtime)", slog.Bool("relay_only", c.RelayOnly))
 	return chat.HuddleDeps{
 		States:  huddle.New(rdb),
-		Media:   huddle.Media{SFU: sfuClient, TURN: turnClient},
+		Media:   huddle.Media{SFU: sfuClient, TURN: turnClient, RelayOnly: c.RelayOnly},
 		Limiter: ratelimit.New(rdb, clk),
 	}, nil
 }

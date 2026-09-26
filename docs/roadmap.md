@@ -1289,6 +1289,7 @@ Push 通知（APNs / FCM）は Phase 7 以降のまま。ここで作るのは�
 **DoD**
 - [ ] DM とチャンネルでハドルを始めて入ると、互いの声が聞こえる（実物。2 つのブラウザと、TURN を通る違うネットワークで）
   - 2 つのブラウザ（同じ Mac）ではオーナーが確認した（2026-09-26）。**TURN を通る経路（違うネットワーク・relay だけ）はまだ**
+  - relay だけでつながせる開発用の切り替え（`HUDDLE_ICE_TRANSPORT_POLICY=relay`）を足した。確かめ方は `docs/deploy.md` の「TURN を通る経路を確かめる」
 - [x] 2 人が同時に始めても、ルームのハドルは 1 つになる（並行テスト）（`TestConcurrentHuddleStart`）
 - [x] 最後の人が抜けるとハドルが終わり、会話のメッセージが「終了」になる。再接続の同期（`after_change_seq` とルームの取得）でもそろう（`TestLeaveHuddle`）
 - [x] タブを閉じる・心拍が途絶えると、ほかの人の画面から消える（`Clock` を固定したテスト）。掃除のジョブの goroutine が残らない（`TestSweepHuddles`・`TestRunHuddleSweeperStops`。タブを閉じるのは実物）

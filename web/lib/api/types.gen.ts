@@ -42,6 +42,8 @@ export type ActivityReason = "dm" | "mention" | "thread" | "channel" | "reaction
 
 export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "room-archived" | "room-not-archived" | "room-protected" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified" | "huddles-unavailable" | "huddle-full" | "huddle-participant-gone" | "huddle-negotiation-conflict";
 
+export type ICETransportPolicy = "all" | "relay";
+
 export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "activity" | "ping" | "huddle_heartbeat";
 
 export type AckError = "invalid_message" | "not_found" | "not_subscribed" | "forbidden" | "too_many_subscriptions" | "internal";
@@ -519,6 +521,8 @@ export interface HuddleICEServers {
   ice_servers: ICEServer[];
   /** expires_at は TURN の認証情報の期限。長いハドルでは、切れる前に取り直して setConfiguration で差し替える（決定 14）。 */
   expires_at: string;
+  /** ice_transport_policy は RTCConfiguration の iceTransportPolicy にそのまま渡す。 */
+  ice_transport_policy: ICETransportPolicy;
 }
 
 export interface Features {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/error";
-import { PROBLEM_TYPE_PREFIX, type RoomHuddle } from "@/lib/api/types.gen";
+import { type HuddleICEServers, PROBLEM_TYPE_PREFIX, type RoomHuddle } from "@/lib/api/types.gen";
 
 import { type CallEnv, type HuddleCallState, HEARTBEAT_INTERVAL_MS, SPEAKING_POLL_MS, createHuddleCall } from "./call";
 
@@ -86,9 +86,10 @@ function setup(overrides: Partial<CallEnv> = {}) {
   const levels = new Map<MediaStream, number>();
   const prefs: Record<string, string> = {};
   const api = {
-    huddleIceServers: vi.fn(async () => ({
+    huddleIceServers: vi.fn(async (): Promise<HuddleICEServers> => ({
       ice_servers: [{ urls: ["turn:turn.example"], username: "u", credential: "c" }],
       expires_at: new Date(Date.parse("2026-09-26T12:00:00Z")).toISOString(),
+      ice_transport_policy: "all",
     })),
     joinHuddle: vi.fn(async () => ({
       huddle: huddle([ME]),
@@ -272,6 +273,7 @@ describe("入る（決定 4）", () => {
     const pc = t.pcs[0];
     expect(t.env.createPeerConnection).toHaveBeenCalledWith({
       iceServers: [{ urls: ["turn:turn.example"], username: "u", credential: "c" }],
+      iceTransportPolicy: "all",
     });
     expect(pc.addTransceiver).toHaveBeenCalledWith(expect.anything(), { direction: "sendonly" });
     expect(t.api.joinHuddle).toHaveBeenCalledWith(ROOM, { offer: { type: "offer", sdp: "local-offer" }, mid: "0" });
@@ -279,6 +281,18 @@ describe("入る（決定 4）", () => {
     expect(phase(t.call.getSnapshot(), "call")).toMatchObject({ huddleId: "h-1", participantId: "p-1", connection: "connecting" });
     // 別のワークスペースを開いても購読を残すよう、ストアに知らせる
     expect(t.setCallRoom).toHaveBeenCalledWith(ROOM);
+  });
+
+  it("サーバーが relay を返したら、TURN の中継だけでつなぐ（開発で TURN の経路を確かめるため）", async () => {
+    const t = setup();
+    t.api.huddleIceServers.mockResolvedValueOnce({
+      ice_servers: [{ urls: ["turn:turn.example"], username: "u", credential: "c" }],
+      expires_at: "2026-09-26T12:00:00Z",
+      ice_transport_policy: "relay",
+    });
+    await t.call.openPreview(ROOM);
+    await t.call.join();
+    expect(t.env.createPeerConnection).toHaveBeenCalledWith(expect.objectContaining({ iceTransportPolicy: "relay" }));
   });
 
   it("先に入っている人の音声を、入った直後に受ける", async () => {
@@ -336,6 +350,7 @@ describe("入る（決定 4）", () => {
     t.api.huddleIceServers.mockResolvedValueOnce({
       ice_servers: [{ urls: ["turn:new.example"], username: "u2", credential: "c2" }],
       expires_at: "2026-09-27T00:00:00Z",
+      ice_transport_policy: "all",
     });
     t.runTimeouts();
     await flush();

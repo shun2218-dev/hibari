@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/shun2218-dev/hibari/internal/chat"
 	"github.com/shun2218-dev/hibari/internal/chat/huddle"
@@ -141,5 +142,24 @@ func TestMediaSubscribe(t *testing.T) {
 	want := []chat.SubscribedTrack{{SessionID: "s-2", Mid: "1", OK: true}, {SessionID: "s-3", OK: false}}
 	if res.Offer == nil || res.Offer.SDP != "v=0 pull" || !slices.Equal(res.Tracks, want) {
 		t.Errorf("Subscribe = %+v", res)
+	}
+}
+
+// relay だけにする切り替えは、発行した認証情報に載ってブラウザまで届く（開発で TURN の経路を確かめるため）。
+func TestMediaICEServersRelayOnly(t *testing.T) {
+	for _, relayOnly := range []bool{false, true} {
+		m, _ := newMedia(t, map[string]response{
+			"POST /turn/keys/key/credentials/generate-ice-servers": {http.StatusCreated,
+				`{"iceServers":[{"urls":["turn:turn.cloudflare.com:3478?transport=udp"],"username":"user-1","credential":"cred-1"}]}`},
+		})
+		m.RelayOnly = relayOnly
+
+		creds, err := m.ICEServers(context.Background(), time.Hour, time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if creds.RelayOnly != relayOnly || creds.Username != "user-1" || len(creds.Servers) != 1 {
+			t.Errorf("RelayOnly = %v: creds = %+v", relayOnly, creds)
+		}
 	}
 }
