@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { RoomHeader } from "./room-header";
+import type { HuddleHeaderState } from "./types";
 
 describe("RoomHeader の「通知」（ADR 0055）", () => {
   it("押すとメニューを開き、開いている間だけ中身を出す", async () => {
@@ -51,10 +52,10 @@ describe("RoomHeader のアーカイブ（ADR 0059）", () => {
 describe("RoomHeader のハドル（ADR 0066 決定 17）", () => {
   const naoki = { id: "u2", name: "佐藤 直樹" };
 
-  it.each([
-    [{ state: "idle" } as const, "ハドルミーティングを開始する"],
-    [{ state: "active", participants: [naoki] } as const, "ハドルミーティングに参加する"],
-    [{ state: "joined", participants: [naoki] } as const, "ハドルミーティングから退出する"],
+  it.each<[HuddleHeaderState, string]>([
+    [{ state: "idle" }, "ハドルミーティングを開始する"],
+    [{ state: "active", participants: [naoki] }, "ハドルミーティングに参加する"],
+    [{ state: "joined", participants: [naoki] }, "ハドルミーティングから退出する"],
   ])("%o のボタンは「%s」", async (state, label) => {
     const onClick = vi.fn();
     render(<RoomHeader kind="public" name="雑談" memberCount={3} huddle={{ ...state, onClick }} />);
