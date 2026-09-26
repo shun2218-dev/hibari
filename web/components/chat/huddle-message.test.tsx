@@ -14,27 +14,26 @@ function huddle(overrides: Partial<HuddleMessageView> = {}): HuddleMessageView {
   return { key: "h-1", starter: naoki, timeLabel: "11:20", state: "active", participants: [naoki, miyuki], ...overrides };
 }
 
-describe("HuddleMessage（ADR 0066 決定 12）", () => {
-  it("進行中は、いま入っている人と「参加」を出す", async () => {
+describe("HuddleMessage（ADR 0066 決定 12・追記 D）", () => {
+  it("進行中は「ライブ」と、いま入っている人と「参加」を出す", async () => {
     const onJoin = vi.fn();
-    render(<HuddleMessage huddle={huddle()} onJoin={onJoin} />);
+    render(<HuddleMessage huddle={huddle({ participantsLabel: "佐藤 直樹、高橋 みゆきが参加中" })} onJoin={onJoin} />);
 
-    const article = screen.getByRole("article", { name: "佐藤 直樹 11:20" });
-    expect(within(article).getByText("ハドルミーティングを開始しました")).toBeInTheDocument();
-    expect(within(article).getByText("ハドルミーティング中")).toBeInTheDocument();
-    expect(within(article).getByText("佐藤 直樹、高橋 みゆき が参加中")).toBeInTheDocument();
+    const article = screen.getByRole("article", { name: "ハドルミーティング 11:20" });
+    expect(within(article).getByText("ライブ")).toBeInTheDocument();
+    expect(within(article).getByText("佐藤 直樹、高橋 みゆきが参加中")).toBeInTheDocument();
     await userEvent.click(within(article).getByRole("button", { name: "参加" }));
     expect(onJoin).toHaveBeenCalledOnce();
   });
 
-  it("自分が入っていれば、「参加」の代わりに「参加中」を出す", () => {
-    render(<HuddleMessage huddle={huddle({ participants: [you, naoki], joined: true })} />);
+  it("自分が入っていれば「参加」を出さず、参加中と書く", () => {
+    render(<HuddleMessage huddle={huddle({ participants: [you, naoki], participantsLabel: "あなた、佐藤 直樹", joined: true })} />);
 
     expect(screen.queryByRole("button", { name: "参加" })).not.toBeInTheDocument();
-    expect(screen.getByText("参加中")).toBeInTheDocument();
+    expect(screen.getByText("参加中 · あなた、佐藤 直樹")).toBeInTheDocument();
   });
 
-  it("終わったら、所要時間と参加した人を出し、入れなくする", () => {
+  it("終わったら「ライブ」を外し、所要時間と参加した人を出す", () => {
     render(
       <HuddleMessage
         huddle={huddle({
@@ -47,13 +46,22 @@ describe("HuddleMessage（ADR 0066 決定 12）", () => {
     );
 
     expect(screen.getByText("ハドルミーティングは終了しました")).toBeInTheDocument();
+    expect(screen.queryByText("ライブ")).not.toBeInTheDocument();
     expect(screen.getByText("12 分 · あなた、佐藤 直樹、ほか 1 人が参加しました")).toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
+  it("ハドルのチャット（スレッド）の返信があれば「N 件の返信」を出し、押すと開く（追記 A）", async () => {
+    const onOpenThread = vi.fn();
+    render(<HuddleMessage huddle={huddle({ state: "ended", thread: { replyCount: 2, lastReplyLabel: "11:24" } })} onOpenThread={onOpenThread} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /2 件の返信/ }));
+    expect(onOpenThread).toHaveBeenCalledOnce();
+  });
+
   it("DM で入らなかった人には不在着信、始めた人には応答なしと出す", () => {
     const { rerender } = render(<HuddleMessage huddle={huddle({ state: "missed", participants: [naoki] })} />);
-    expect(screen.getByText("不在着信")).toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "不在着信 11:20" })).toBeInTheDocument();
     expect(screen.getByText("佐藤 直樹 さんからのハドルミーティング")).toBeInTheDocument();
 
     rerender(<HuddleMessage huddle={huddle({ starter: you, state: "unanswered", participants: [you] })} />);

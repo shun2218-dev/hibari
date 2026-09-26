@@ -103,8 +103,9 @@ export function RoomHeader({
 
 
 /**
- * 進行中でなければヘッドフォンのアイコンだけ。進行中は、入っている人のアバターと「参加」（押せるので緑）、
- * 自分が入っていれば「退出」にする。どちらもアイコンだけより目立たせ、進行中であることがヘッダーでも分かるようにする。
+ * 進行中でなければヘッドフォンのアイコンだけ。進行中は、入っている人のアバターと「参加」（押せるので緑）。
+ * 自分が入っていれば緑の地のアイコンにし、押すとハドルのタブを前に出す（Slack の緑のヘッドフォンと同じ。ADR 0066 追記 C）。
+ * 抜けるのはハドルの画面の「退出する」から。
  */
 function HuddleButton({ huddle }: { huddle: HuddleHeaderState & { onClick?: () => void } }) {
   if (huddle.state === "idle") {
@@ -114,19 +115,25 @@ function HuddleButton({ huddle }: { huddle: HuddleHeaderState & { onClick?: () =
       </IconButton>
     );
   }
-  const joined = huddle.state === "joined";
+  if (huddle.state === "joined") {
+    return (
+      <button
+        type="button"
+        onClick={huddle.onClick}
+        aria-label="ハドルミーティングの画面を表示する"
+        className="mr-1 inline-flex size-8 items-center justify-center rounded-sm bg-primary text-on-primary hover:bg-primary-hover"
+      >
+        <HeadphonesIcon className="size-4" />
+      </button>
+    );
+  }
   return (
     <button
       type="button"
       onClick={huddle.onClick}
-      aria-label={joined ? "ハドルミーティングから退出する" : "ハドルミーティングに参加する"}
-      className={cx(
-        // モバイルは名前の幅が足りないので、アイコンだけの四角にする。入っている間は上の帯に「退出」があるので出さない
-        "mr-1 h-8 items-center justify-center gap-1.5 rounded-sm border text-sm font-medium max-md:w-8 md:pr-3 md:pl-2",
-        joined
-          ? "hidden border-border bg-surface text-text-secondary hover:bg-surface-muted md:inline-flex"
-          : "inline-flex border-primary bg-primary-subtle text-primary hover:bg-surface-muted",
-      )}
+      aria-label="ハドルミーティングに参加する"
+      // モバイルは名前の幅が足りないので、アイコンだけの四角にする
+      className="mr-1 inline-flex h-8 items-center justify-center gap-1.5 rounded-sm border border-primary bg-primary-subtle text-sm font-medium text-primary hover:bg-surface-muted max-md:w-8 md:pr-3 md:pl-2"
     >
       <HeadphonesIcon className="size-4 shrink-0" />
       <span aria-hidden className="hidden -space-x-1.5 md:flex">
@@ -134,7 +141,7 @@ function HuddleButton({ huddle }: { huddle: HuddleHeaderState & { onClick?: () =
           <Avatar key={p.id} id={p.id} name={p.name} imageUrl={p.avatarUrl} size="xs" className="rounded-full ring-2 ring-surface" />
         ))}
       </span>
-      <span className="hidden md:inline">{joined ? "退出" : "参加"}</span>
+      <span className="hidden md:inline">参加</span>
     </button>
   );
 }

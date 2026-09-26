@@ -70,6 +70,7 @@ import {
   Underline,
   UserMinus,
   Users,
+  Volume2,
   X,
   Eye,
   EyeOff,
@@ -173,3 +174,5 @@ export const MicIcon = withDefaults(Mic);
 export const MicOffIcon = withDefaults(MicOff);
 /** DM の不在着信と応答なし（ADR 0066 決定 12）。 */
 export const PhoneMissedIcon = withDefaults(PhoneMissed);
+/** スピーカーの選択（参加前のプレビューと、ハドルの画面の機器の選択）。 */
+export const SpeakerIcon = withDefaults(Volume2);

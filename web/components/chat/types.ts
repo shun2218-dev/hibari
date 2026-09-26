@@ -352,7 +352,7 @@ export type ProfileView =
 export type HuddleParticipantView = UserRef & { muted: boolean; speaking?: boolean };
 
 /**
- * 会話に残すハドルのメッセージ（ADR 0066 決定 12）。見る人によって見え方が変わるので、state はデータ層が決める。
+ * 会話に残すハドルのメッセージ（ADR 0066 決定 12・追記 D）。見る人によって見え方が変わるので、state はデータ層が決める。
  * - active: 進行中。いま入っている人と「参加」のボタン（自分が入っていれば「参加中」）
  * - ended: 終わった。所要時間と参加した人
  * - missed: DM で、自分が一度も入らないまま終わった（不在着信）
@@ -363,29 +363,58 @@ export type HuddleMessageView = {
   starter: UserRef;
   timeLabel: string;
   state: "active" | "ended" | "missed" | "unanswered";
-  /** active のときは、いま入っている人。ended のときは、参加した人（自分が参加していれば先頭）。 */
+  /** active のときは、いま入っている人。ended のときは、参加した人（自分が参加していれば先頭）。顔を並べる。 */
   participants: UserRef[];
-  /** ended の参加者の文言。「あなた、佐藤 直樹、ほか 3 人が参加しました」の形はデータ層が作る。 */
+  /**
+   * 参加者の文言。データ層が作る（決定 12 の「2 人まで名前、それより多ければほか N 人」）。
+   * 例: 「佐藤 直樹、高橋 みゆき、ほか 1 人が参加中」「あなた、佐藤 直樹、ほか 3 人が参加しました」「あなたが 1 人で参加しました」
+   */
   participantsLabel?: string;
   /** ended の所要時間（「12 分」）。 */
   durationLabel?: string;
   /** active で、自分がもう入っている。 */
   joined?: boolean;
+  /** ハドルのチャット（ハドルのメッセージのスレッド。追記 A）。返信がなければ持たない。 */
+  thread?: ThreadSummaryLabel;
 };
 
-/** ヘッダーのハドルのボタン（ADR 0066 決定 17）。idle は始める、active は入る、joined は抜ける。 */
+/**
+ * ヘッダーのハドルのボタン（ADR 0066 決定 17・追記 C）。
+ * idle は始める、active は入る、joined はハドルのタブを前に出す（抜けるのはハドルの画面から）。
+ */
 export type HuddleHeaderState =
   | { state: "idle" }
   | { state: "active"; participants: UserRef[] }
-  | { state: "joined"; participants: UserRef[] };
+  | { state: "joined" };
+
+/** マイク・スピーカーの選択肢（`MediaDeviceInfo` の deviceId と label）。 */
+export type MediaDeviceView = { id: string; label: string };
 
 /**
- * 入っている間に出すハドルの窓（ADR 0066 決定 17）。
+ * 参加する前のプレビュー（ADR 0066 追記 B）。
+ * - speakers: スピーカーを選べないブラウザ（`setSinkId` がない）では持たない
+ * - problem: マイクの許可がない・マイクがない。開始のボタンを押せなくする
+ */
+export type HuddlePreviewView = {
+  room: { kind: RoomKind; name: string };
+  /** 進行中のハドルがなければ start（「開始する」）、あれば join（「参加する」）。 */
+  action: "start" | "join";
+  self: UserRef;
+  micOn: boolean;
+  mics: MediaDeviceView[];
+  micId?: string;
+  speakers?: MediaDeviceView[];
+  speakerId?: string;
+  problem?: "mic-denied" | "no-mic";
+};
+
+/**
+ * ハドルの画面（別のタブ。ADR 0066 追記 C）。
  * - connecting: 入る要求と SDP のやり取りの最中
  * - connected: つながっている
  * - reconnecting: WebRTC か WebSocket が切れて、つなぎ直している
  */
-export type HuddleWindowView = {
+export type HuddleScreenView = {
   room: { kind: RoomKind; name: string };
   connection: "connecting" | "connected" | "reconnecting";
   /** 自分を含めた、いま入っている人。自分が先頭。 */
@@ -397,12 +426,11 @@ export type HuddleWindowView = {
 };
 
 /**
- * ハドルに入れなかった・外れた理由（ADR 0066 決定 17）。窓の代わりに同じ場所へ出す。
- * - mic-denied: ブラウザがマイクの使用を許可していない
- * - no-mic: マイクが見つからない
+ * ハドルに入れなかった・外れた理由（ADR 0066 決定 17）。ハドルの画面の代わりに、同じタブに出す。
+ * マイクの許可がない・マイクがないは、入る前のプレビューで知らせる（`HuddlePreviewView.problem`）。
  * - failed: Cloudflare とつながらなかった
  * - full: 上限の 20 人に達している（決定 7）
  * - disconnected: 心拍が途絶えて外れた（決定 5）
  * - removed: 権限が変わって外された（決定 8）
  */
-export type HuddleProblem = "mic-denied" | "no-mic" | "failed" | "full" | "disconnected" | "removed";
+export type HuddleProblem = "failed" | "full" | "disconnected" | "removed";

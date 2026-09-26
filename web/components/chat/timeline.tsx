@@ -315,7 +315,13 @@ export function Timeline({
             case "huddle":
               return (
                 <li key={item.huddle.key} data-key={item.huddle.key}>
-                  <HuddleMessage huddle={item.huddle} onJoin={() => onJoinHuddle?.(item.huddle.key)} />
+                  <HuddleMessage
+                    huddle={item.huddle}
+                    onJoin={() => onJoinHuddle?.(item.huddle.key)}
+                    // ハドルのチャットは、ハドルのメッセージを親にした普通のスレッド（ADR 0066 追記 A）
+                    onOpenThread={() => onOpenThread?.(item.huddle.key)}
+                    threadOpen={openThreadKey === item.huddle.key}
+                  />
                 </li>
               );
             case "message": {

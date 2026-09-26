@@ -55,7 +55,7 @@ describe("RoomHeader のハドル（ADR 0066 決定 17）", () => {
   it.each<[HuddleHeaderState, string]>([
     [{ state: "idle" }, "ハドルミーティングを開始する"],
     [{ state: "active", participants: [naoki] }, "ハドルミーティングに参加する"],
-    [{ state: "joined", participants: [naoki] }, "ハドルミーティングから退出する"],
+    [{ state: "joined" }, "ハドルミーティングの画面を表示する"],
   ])("%o のボタンは「%s」", async (state, label) => {
     const onClick = vi.fn();
     render(<RoomHeader kind="public" name="雑談" memberCount={3} huddle={{ ...state, onClick }} />);
