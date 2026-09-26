@@ -155,6 +155,97 @@ email を検証するまで、chat の API と WebSocket は 403（`email-unveri
 
 `MAIL_TRANSPORT=smtp` のときに `false` にすると起動しない。メールが届く環境で検証を外す理由はないので、本番で誤って外れることがない。
 
+## ハドル（Cloudflare Realtime。ADR 0066）
+
+ハドルの音声は Cloudflare Realtime の SFU を通し、つながらないときは Cloudflare の TURN で中継する（ADR 0066 決定 1・14）。
+**Cloudflare にはローカルで動く版がないので、開発でも本物の Cloudflare を使う。** 公式の推奨どおり、開発用と本番用でアプリとキーを分ける。
+
+| 環境変数 | 値 |
+|---|---|
+| `CLOUDFLARE_REALTIME_APP_ID` | SFU のアプリの App ID（秘密ではない） |
+| `CLOUDFLARE_REALTIME_APP_SECRET_FILE` | SFU のアプリの App Secret を書いたファイルのパス |
+| `CLOUDFLARE_TURN_KEY_ID` | TURN のキーの ID（秘密ではない） |
+| `CLOUDFLARE_TURN_KEY_API_TOKEN_FILE` | TURN のキーの API Token を書いたファイルのパス |
+
+- **4 つとも設定しなければ、ハドルだけが無効になって起動する**（API は 503 `huddles-unavailable`、Web はボタンを出さない）。Cloudflare のアカウントがなくても、ほかの開発はできる。
+- 一部だけ設定すると起動しない（書き忘れて、ハドルが黙って消えるのを防ぐ）。
+- 使いすぎのときに止めたければ、4 つとも外して再起動する。
+
+### Cloudflare の準備
+
+開発用（`hibari-dev`）と本番用（`hibari-prod`）で、同じ手順を 2 回行う。
+
+1. ダッシュボードで「Realtime」→「Serverless SFU」→ アプリを作る。**App ID** と **App Secret** を控える（App Secret はすぐに保存する）。
+2. 「Realtime」→「TURN Server」→ キーを作る。**Key ID** と **API Token** を控える。
+3. 「Manage Account」→「Billing」→「Billable Usage」→「Create budget alert」で、少額（1 ドルなど）の予算の通知を作る。
+   SFU と TURN は合わせて月 1,000 GB まで無料で、超えると 1 GB 0.05 ドル。**Cloudflare には使用量で止める仕組みがない**ので、超えたことにメールで気づけるようにする（ADR 0066 の結果）。
+
+### ローカル（compose）
+
+秘密は `keys/` にファイルで置く（`.gitignore` 済みで、`/src/keys` に bind mount されている）。
+
+```bash
+pbpaste > keys/cloudflare_realtime_app_secret
+```
+
+```bash
+pbpaste > keys/cloudflare_turn_api_token
+```
+
+```bash
+chmod 600 keys/cloudflare_*
+```
+
+`.env`（compose が server に渡す。開発用で、コミットしない）に 4 つを書く。ID は自分の開発用のアプリのもの。
+
+```
+CLOUDFLARE_REALTIME_APP_ID=<App ID>
+CLOUDFLARE_REALTIME_APP_SECRET_FILE=/src/keys/cloudflare_realtime_app_secret
+CLOUDFLARE_TURN_KEY_ID=<Key ID>
+CLOUDFLARE_TURN_KEY_API_TOKEN_FILE=/src/keys/cloudflare_turn_api_token
+```
+
+キーが使えるかは、ホストから確かめられる。SFU は `{"sessionId":"..."}`、TURN は `iceServers` が返れば使える。
+
+```bash
+curl -s -X POST "https://rtc.live.cloudflare.com/v1/apps/<App ID>/sessions/new" -H "Authorization: Bearer $(cat keys/cloudflare_realtime_app_secret)"
+```
+
+```bash
+curl -s -X POST "https://rtc.live.cloudflare.com/v1/turn/keys/<Key ID>/credentials/generate-ice-servers" -H "Authorization: Bearer $(cat keys/cloudflare_turn_api_token)" -H "Content-Type: application/json" -d '{"ttl":60}'
+```
+
+### 本番（Fly.io）
+
+秘密はメールの API キーと同じく、Fly のシークレットをファイルとして置く（上の「API キーの渡し方」）。
+
+```toml
+# fly.toml
+[env]
+CLOUDFLARE_REALTIME_APP_ID = "<本番の App ID>"
+CLOUDFLARE_REALTIME_APP_SECRET_FILE = "/run/secrets/cloudflare_realtime_app_secret"
+CLOUDFLARE_TURN_KEY_ID = "<本番の Key ID>"
+CLOUDFLARE_TURN_KEY_API_TOKEN_FILE = "/run/secrets/cloudflare_turn_api_token"
+
+[[files]]
+guest_path = "/run/secrets/cloudflare_realtime_app_secret"
+secret_name = "CLOUDFLARE_REALTIME_APP_SECRET"
+
+[[files]]
+guest_path = "/run/secrets/cloudflare_turn_api_token"
+secret_name = "CLOUDFLARE_TURN_KEY_API_TOKEN"
+```
+
+```bash
+fly secrets set CLOUDFLARE_REALTIME_APP_SECRET="$(pbpaste | base64)"
+```
+
+```bash
+fly secrets set CLOUDFLARE_TURN_KEY_API_TOKEN="$(pbpaste | base64)"
+```
+
+音声は利用者のブラウザと Cloudflare の間を直接流れ、Fly を通らない（ADR 0066 決定 2）。Fly で UDP を受ける設定（専用の IPv4 など）は要らない。
+
 ## 置き場所（ADR 0046）
 
 | 役割 | 本番 | ローカル |

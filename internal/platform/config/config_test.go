@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"log/slog"
+	"maps"
 	netmail "net/mail"
 	"net/netip"
 	"net/url"
@@ -285,6 +286,62 @@ func TestLoadSMTP(t *testing.T) {
 			}
 			if !got.RequireVerifiedEmail {
 				t.Fatal("RequireVerifiedEmail = false, want true by default with smtp")
+			}
+		})
+	}
+}
+
+// Cloudflare Realtime は 4 つとも揃えばハドルを有効に、どれもなければ無効にする。一部だけなら起動を止める（ADR 0066 決定 15）。
+func TestLoadRealtime(t *testing.T) {
+	base := map[string]string{
+		"DATABASE_URL": "postgres://localhost/hibari", "REDIS_URL": "redis://localhost:6379/0",
+		"JWT_PRIVATE_KEY_FILE": "/keys/jwt.pem", "MAIL_TRANSPORT": "log",
+		"S3_ENDPOINT": "http://s3:9000", "S3_BUCKET": "hibari", "S3_ACCESS_KEY_ID": "id", "S3_SECRET_ACCESS_KEY": "secret",
+	}
+	all := map[string]string{
+		"CLOUDFLARE_REALTIME_APP_ID":          "app-1",
+		"CLOUDFLARE_REALTIME_APP_SECRET_FILE": "/keys/cloudflare_realtime_app_secret",
+		"CLOUDFLARE_TURN_KEY_ID":              "key-1",
+		"CLOUDFLARE_TURN_KEY_API_TOKEN_FILE":  "/keys/cloudflare_turn_api_token",
+	}
+	merged := func(extra map[string]string) map[string]string {
+		m := maps.Clone(base)
+		maps.Copy(m, extra)
+		return m
+	}
+
+	t.Run("none disables huddles", func(t *testing.T) {
+		got, err := config.Load(env(base))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Realtime != (config.RealtimeConfig{}) {
+			t.Errorf("Realtime = %+v", got.Realtime)
+		}
+	})
+
+	t.Run("all enables huddles", func(t *testing.T) {
+		got, err := config.Load(env(merged(all)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := config.RealtimeConfig{
+			Enabled: true, AppID: "app-1", AppSecretFile: "/keys/cloudflare_realtime_app_secret",
+			TURNKeyID: "key-1", TURNKeyAPITokenFile: "/keys/cloudflare_turn_api_token",
+		}
+		if got.Realtime != want {
+			t.Errorf("Realtime = %+v", got.Realtime)
+		}
+	})
+
+	for key := range all {
+		t.Run("missing "+key, func(t *testing.T) {
+			partial := maps.Clone(all)
+			delete(partial, key)
+
+			_, err := config.Load(env(merged(partial)))
+			if err == nil || !strings.Contains(err.Error(), key) {
+				t.Errorf("err = %v, want it to name %s", err, key)
 			}
 		})
 	}

@@ -61,6 +61,21 @@ type Config struct {
 	// AttachmentAllowedTypes は添付ファイルとして受け付ける Content-Type。
 	// 種類の分からないファイルはクライアントが application/octet-stream として申告する（ADR 0013）。
 	AttachmentAllowedTypes []string
+
+	// Realtime はハドルに使う Cloudflare Realtime の SFU と TURN（ADR 0066 決定 15）。
+	// 設定がなければ Enabled が false で、ハドルだけを無効にして起動する。
+	Realtime RealtimeConfig
+}
+
+// RealtimeConfig は Cloudflare Realtime の設定。秘密はファイルのパスで受け取り、起動時に読む（JWT の鍵と同じ）。
+type RealtimeConfig struct {
+	Enabled bool
+	// AppID / AppSecretFile は SFU のアプリの ID と秘密のファイル。
+	AppID         string
+	AppSecretFile string
+	// TURNKeyID / TURNKeyAPITokenFile は TURN のキーの ID と API トークンのファイル。
+	TURNKeyID           string
+	TURNKeyAPITokenFile string
 }
 
 // DefaultAttachmentMaxBytes は ATTACHMENT_MAX_BYTES の既定値（25 MiB）。
@@ -225,10 +240,52 @@ func Load(lookup LookupEnv) (Config, error) {
 	cfg.AvatarMaxBytes = maxBytesVar(&errs, optional, "AVATAR_MAX_BYTES", DefaultAvatarMaxBytes)
 	cfg.AvatarAllowedTypes = mediaTypesVar(&errs, optional, "AVATAR_ALLOWED_TYPES", DefaultAvatarAllowedTypes)
 
+	cfg.Realtime = realtimeVar(&errs, optional)
+
 	if len(errs) > 0 {
 		return Config{}, fmt.Errorf("load config: %w", errors.Join(errs...))
 	}
 	return cfg, nil
+}
+
+// realtimeVars は Cloudflare Realtime の 4 つの環境変数（ADR 0066 決定 15）。
+var realtimeVars = []string{
+	"CLOUDFLARE_REALTIME_APP_ID",
+	"CLOUDFLARE_REALTIME_APP_SECRET_FILE",
+	"CLOUDFLARE_TURN_KEY_ID",
+	"CLOUDFLARE_TURN_KEY_API_TOKEN_FILE",
+}
+
+// realtimeVar は Cloudflare Realtime の設定を読む。
+//
+// 4 つとも空ならハドルを無効にする。Cloudflare のアカウントがなくても、開発やテストができるようにするため（ローカルで動く版がない）。
+// 一部だけ設定されているのは設定の誤りなので、黙って無効にせず起動を止める。本番で 1 つ書き忘れて、ハドルが消えたことに気づかないのを防ぐ。
+func realtimeVar(errs *[]error, optional func(string, string) string) RealtimeConfig {
+	values := make([]string, len(realtimeVars))
+	var set, missing []string
+	for i, key := range realtimeVars {
+		values[i] = optional(key, "")
+		if values[i] == "" {
+			missing = append(missing, key)
+		} else {
+			set = append(set, key)
+		}
+	}
+	if len(set) == 0 {
+		return RealtimeConfig{}
+	}
+	if len(missing) > 0 {
+		*errs = append(*errs, fmt.Errorf("%s: required when %s is set (set all four to enable huddles, or none to disable them)",
+			strings.Join(missing, ", "), strings.Join(set, ", ")))
+		return RealtimeConfig{}
+	}
+	return RealtimeConfig{
+		Enabled:             true,
+		AppID:               values[0],
+		AppSecretFile:       values[1],
+		TURNKeyID:           values[2],
+		TURNKeyAPITokenFile: values[3],
+	}
 }
 
 // mailVar はメールの設定を読む。
