@@ -89,6 +89,10 @@ func (s *Service) setRoomArchived(ctx context.Context, actor, roomID ulid.ULID, 
 	}
 	// 読めることは変わらないので、購読は外さない（決定 5）。
 	s.deliver(ctx, Event{Type: EventRoomUpdated, To: roomUpdatedAudience(room), Data: roomUpdated(room)}, logged)
+	// アーカイブしたルームではハドルに入れないので、進行中のハドルは入っている人ごと終わらせる（ADR 0066 決定 7）
+	if archive {
+		s.endRoomHuddle(ctx, roomID)
+	}
 	return room, nil
 }
 
@@ -100,6 +104,7 @@ func (s *Service) DeleteRoom(ctx context.Context, actor, roomID ulid.ULID) error
 		workspaceID ulid.ULID
 		kind        RoomKind
 		members     []ulid.ULID
+		huddleID    *ulid.ULID
 	)
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		q := store.New(tx)
@@ -120,6 +125,13 @@ func (s *Service) DeleteRoom(ctx context.Context, actor, roomID ulid.ULID) error
 		}
 		if members, err = q.ListRoomMemberIDs(ctx, roomID); err != nil {
 			return fmt.Errorf("list room members: %w", err)
+		}
+		// 進行中のハドルは行ごと消える（CASCADE）ので、入っている人を外すために ID を先に読む（ADR 0066 決定 7）
+		switch h, err := q.LockActiveHuddle(ctx, roomID); {
+		case err == nil:
+			huddleID = &h.ID
+		case !errors.Is(err, pgx.ErrNoRows):
+			return fmt.Errorf("lock active huddle: %w", err)
 		}
 		now := s.clock.Now()
 		if err := q.EnqueueRoomStorageDeletions(ctx, store.EnqueueRoomStorageDeletionsParams{
@@ -151,5 +163,8 @@ func (s *Service) DeleteRoom(ctx context.Context, actor, roomID ulid.ULID) error
 		ClosedRooms: []ulid.ULID{roomID},
 		Data:        RoomDeleted{WorkspaceID: workspaceID, RoomID: roomID},
 	})
+	if huddleID != nil && s.huddles.enabled() {
+		s.clearEndedHuddle(context.WithoutCancel(ctx), roomID, *huddleID)
+	}
 	return nil
 }

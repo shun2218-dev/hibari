@@ -233,6 +233,8 @@ func (s *Service) RemoveMember(ctx context.Context, actor, workspaceID, target u
 		events = append(events, memberLeftEvent(workspaceID, roomID, target))
 	}
 	s.deliver(ctx, events...)
+	// ワークスペースのハドルに入っていれば、すぐに外す（CLAUDE.md ルール 8。ADR 0066 決定 8）
+	s.removeFromHuddle(ctx, target, func(h store.GetHuddleRoomRow) bool { return h.WorkspaceID == workspaceID })
 	return nil
 }
 

@@ -40,7 +40,9 @@ type roomResponse struct {
 	Notifications *roomNotificationsBody `json:"notifications"`
 	// ArchivedAt はアーカイブされていなければ null（ADR 0059 決定 5）。一覧はアーカイブ済みも返す。
 	ArchivedAt *time.Time `json:"archived_at"`
-	CreatedAt  time.Time  `json:"created_at"`
+	// Huddle は進行中のハドル（ADR 0066 決定 13）。なければ null。再接続したクライアントはここから読み直す。
+	Huddle    *roomHuddleResponse `json:"huddle"`
+	CreatedAt time.Time           `json:"created_at"`
 }
 
 // dmPeerResponse は DM の相手。presence は自動で決まる状態の初期値（ADR 0015 / 0049）。
@@ -86,6 +88,7 @@ func newRoomResponse(r chat.Room, withCount bool) roomResponse {
 		UnreadCount:     r.UnreadCount,
 		MentionCount:    r.MentionCount,
 		ArchivedAt:      r.ArchivedAt,
+		Huddle:          newRoomHuddleResponse(r.Huddle),
 		CreatedAt:       r.CreatedAt,
 	}
 	if m := r.LastMessage; m != nil {

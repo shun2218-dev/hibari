@@ -38,6 +38,7 @@ export function room(id: string, name: string, overrides: Partial<Room> = {}): R
     // 参加しているルームの既定（上書きなし・ミュートなし。ADR 0055）
     notifications: { level: null, muted: false, muted_until: null },
     archived_at: null,
+    huddle: null,
     created_at: "2026-09-01T00:00:00Z",
     ...overrides,
   };

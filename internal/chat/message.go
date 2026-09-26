@@ -77,6 +77,8 @@ type Message struct {
 	Reactions []MessageReaction
 	// LinkPreviews は外部のリンクのプレビュー（ADR 0065）。見せるもの（取れていて、本人が消していない）だけ。削除済みでは空。
 	LinkPreviews []MessageLinkPreview
+	// Huddle はハドルのメッセージ（system の huddle）だけで入る（ADR 0066 決定 12）。始めた時刻・終わった時刻・一度でも入った人。
+	Huddle *MessageHuddle
 	// Pinned はピン留めされているときだけ入る（ADR 0054）。削除するとピンも外れるので、削除済みでは常に nil。
 	Pinned *MessagePin
 	// Saved は閲覧者が「後で」に保存しているか（ADR 0054 決定 10）。**受け取る人ごとの値**なので REST でしか意味を持たない。
@@ -159,7 +161,7 @@ type SendMessageInput struct {
 	// ClientMsgID はクライアントが生成する ULID。同じ値の再送は冪等になる（ADR 0004）。
 	ClientMsgID ulid.ULID
 	Body        string
-	// ThreadRootID は返信するスレッドの親（同じルームの、システムメッセージでも返信でもないメッセージ）。チャンネルへの投稿なら nil。
+	// ThreadRootID は返信するスレッドの親（同じルームの、システムメッセージでも返信でもないメッセージ。例外はハドルのメッセージ）。チャンネルへの投稿なら nil。
 	ThreadRootID *ulid.ULID
 	// AlsoInChannel は、返信をチャンネルのタイムラインにも出す（ADR 0039）。ThreadRootID があるときだけ指定できる。送信後は変えられない。
 	AlsoInChannel bool
@@ -287,6 +289,9 @@ func getMessage(ctx context.Context, q *store.Queries, roomID, viewer, id ulid.U
 		return Message{}, err
 	}
 	if err := loadMessageReactions(ctx, q, roomID, viewer, msgs); err != nil {
+		return Message{}, err
+	}
+	if err := loadMessageHuddles(ctx, q, msgs); err != nil {
 		return Message{}, err
 	}
 	if err := loadMessageLinkPreviews(ctx, q, roomID, msgs); err != nil {

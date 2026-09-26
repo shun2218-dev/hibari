@@ -25,8 +25,27 @@ func errInvalidThreadRoot() error {
 }
 
 // isThreadRoot は、そのメッセージがスレッドの親になれるかを返す。入れ子（返信への返信）とシステムメッセージの親は作らない。
-func isThreadRoot(kind string, threadRootID *ulid.ULID) bool {
-	return MessageKind(kind) == MessageKindUser && threadRootID == nil
+// 例外はハドルのメッセージで、そのスレッドがハドルのチャットになる（ADR 0066 追記 A）。
+func isThreadRoot(kind string, systemType *string, threadRootID *ulid.ULID) bool {
+	if threadRootID != nil {
+		return false
+	}
+	switch MessageKind(kind) {
+	case MessageKindUser:
+		return true
+	case MessageKindSystem:
+		return systemType != nil && SystemEventType(*systemType) == SystemHuddle
+	}
+	return false
+}
+
+// systemTypeOf はドメインのメッセージの system_type（isThreadRoot に渡す形）。
+func systemTypeOf(m Message) *string {
+	if m.System == nil {
+		return nil
+	}
+	t := string(m.System.Type)
+	return &t
 }
 
 // sendThreadReply は SendMessage の中で、スレッドに返信する（手順 1・2 の判定と冪等性の確認は済んでいる）。
@@ -43,7 +62,7 @@ func (s *Service) sendThreadReply(ctx context.Context, q *store.Queries, actor, 
 	if err != nil {
 		return Message{}, nil, fmt.Errorf("lock thread root: %w", err)
 	}
-	if !isThreadRoot(root.Kind, root.ThreadRootID) {
+	if !isThreadRoot(root.Kind, root.SystemType, root.ThreadRootID) {
 		return Message{}, nil, errInvalidThreadRoot()
 	}
 	// 削除済みの親にも返信できる。削除と返信は並行して起きうるので、拒んでも結局生まれる（ADR 0012 の返信と同じ）。
@@ -271,7 +290,7 @@ func (s *Service) ListThreadMessages(ctx context.Context, actor, roomID, rootID 
 	if err != nil {
 		return ThreadPage{}, err
 	}
-	if !isThreadRoot(string(root.Kind), root.ThreadRootID) {
+	if !isThreadRoot(string(root.Kind), systemTypeOf(root), root.ThreadRootID) {
 		return ThreadPage{}, ErrNotFound
 	}
 
@@ -467,7 +486,7 @@ func (s *Service) MarkThreadRead(ctx context.Context, actor, roomID, rootID ulid
 	if err != nil {
 		return ThreadReadState{}, notFoundIfNoRows(err, "get thread root")
 	}
-	if !isThreadRoot(root.Kind, root.ThreadRootID) {
+	if !isThreadRoot(root.Kind, root.SystemType, root.ThreadRootID) {
 		return ThreadReadState{}, ErrNotFound
 	}
 	row, err := q.AdvanceThreadRead(ctx, store.AdvanceThreadReadParams{Seq: seq, ThreadRootID: rootID, UserID: actor})

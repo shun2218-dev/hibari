@@ -201,6 +201,16 @@ func (c *Client) CloseTracks(ctx context.Context, sessionID string, mids []strin
 	return nil
 }
 
+// Tracks はセッションのトラックの一覧（GET session）。状態が active / inactive / initializing のものを返す。
+// サーバーの側からセッションのトラックを全部閉じるときに、閉じる mid を知るために使う。
+func (c *Client) Tracks(ctx context.Context, sessionID string) ([]TrackResult, error) {
+	var res tracksResponse
+	if err := c.do(ctx, http.MethodGet, c.sessionPath(sessionID, ""), nil, &res); err != nil {
+		return nil, fmt.Errorf("get session: %w", err)
+	}
+	return res.results(), nil
+}
+
 func (c *Client) appPath(p string) string { return c.base + "/apps/" + c.appID + p }
 
 func (c *Client) sessionPath(sessionID, p string) string {

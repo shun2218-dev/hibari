@@ -35,7 +35,9 @@ type messageResponse struct {
 	Kind chat.MessageKind `json:"kind"`
 	// System は kind が system のときだけ入る。文言はクライアントが作る。
 	System *systemEventResponse `json:"system,omitzero"`
-	Body   string               `json:"body"`
+	// Huddle はハドルのメッセージ（system の huddle）だけで入る（ADR 0066 決定 12）。見る人によらない値なので、配信でもそのまま載せる。
+	Huddle *messageHuddleResponse `json:"huddle,omitzero"`
+	Body   string                 `json:"body"`
 	// ThreadRootID はスレッドの親の ID。チャンネルの投稿なら null（ADR 0036）。
 	ThreadRootID *string `json:"thread_root_id"`
 	// ThreadSeq はスレッドの中で何番目の返信か。返信だけが持つ。順序には seq を使う。
@@ -104,6 +106,8 @@ type systemEventResponse struct {
 	// MessageID は message_pinned だけで入る。ピン留めした対象（ADR 0054 決定 3）。
 	// 対象が読めるか・削除されていないかは、クライアントが手元のメッセージで判断する（ここでは判定しない）。
 	MessageID string `json:"message_id,omitzero"`
+	// HuddleID は huddle だけで入る（ADR 0066 決定 12）。中身はメッセージの huddle。
+	HuddleID string `json:"huddle_id,omitzero"`
 }
 
 func newSystemEventResponse(e *chat.SystemEvent) *systemEventResponse {
@@ -113,6 +117,9 @@ func newSystemEventResponse(e *chat.SystemEvent) *systemEventResponse {
 	resp := &systemEventResponse{Type: e.Type, OldName: e.OldName, NewName: e.NewName}
 	if e.MessageID != nil {
 		resp.MessageID = e.MessageID.String()
+	}
+	if e.HuddleID != nil {
+		resp.HuddleID = e.HuddleID.String()
 	}
 	return resp
 }
@@ -128,6 +135,7 @@ func newMessageResponse(m chat.Message) messageResponse {
 		ClientMsgID:  m.ClientMsgID.String(),
 		Kind:         m.Kind,
 		System:       newSystemEventResponse(m.System),
+		Huddle:       newMessageHuddleResponse(m.Huddle),
 		Body:         m.Body,
 		Attachments:  newMessageAttachmentsResponse(m.Attachments),
 		Mentions:     newMentionsResponse(m.Mentions),

@@ -56,6 +56,10 @@ const (
 	EventActivityReactionRemoved EventType = "activity.reaction_removed"
 	// ルームが削除された（ADR 0059 決定 7）。
 	EventRoomDeleted EventType = "room.deleted"
+	// ハドル（ADR 0066 決定 13）。huddle.updated はルームの購読者、ほかの 2 つは本人のすべての接続に届く。
+	EventHuddleUpdated EventType = "huddle.updated"
+	EventHuddleRinging EventType = "huddle.ringing"
+	EventHuddleLeft    EventType = "huddle.left"
 )
 
 // Audience はイベントの宛先。複数の経路で同じ接続に当たっても、実装は 1 回だけ届ける。
@@ -109,6 +113,9 @@ type Event struct {
 //	room.notifications_updated          → RoomNotificationsUpdated
 //	thread.notifications_updated        → ThreadNotificationsUpdated
 //	room.deleted                        → RoomDeleted
+//	huddle.updated                      → HuddleUpdated
+//	huddle.ringing                      → HuddleRinging
+//	huddle.left                         → HuddleLeftData
 
 // RemovalReason はメンバーから外れた理由。
 type RemovalReason string
@@ -285,4 +292,26 @@ func memberStatusChangedEvent(workspaceID, userID ulid.ULID, away bool, status *
 		To:   Audience{Workspaces: []ulid.ULID{workspaceID}, Users: []ulid.ULID{userID}},
 		Data: MemberStatusChanged{WorkspaceID: workspaceID, UserID: userID, Away: away, Status: status},
 	}
+}
+
+// HuddleUpdated はハドルのいまの状態（ADR 0066 決定 13）。差分ではなく全体を配り、クライアントは手元より古い版を捨てる。
+// Huddle が nil なら、ルームのハドルが終わった。
+type HuddleUpdated struct {
+	RoomID ulid.ULID
+	Huddle *RoomHuddle
+}
+
+// HuddleRinging は DM の相手への呼び出し（ADR 0066 決定 11）。ミュートした DM で鳴らさないのは、クライアントが決める。
+type HuddleRinging struct {
+	RoomID   ulid.ULID
+	HuddleID ulid.ULID
+	CallerID ulid.ULID
+}
+
+// HuddleLeftData は、自分の参加が外れたこと（ADR 0066 決定 5・6・8）。本人のすべての接続に届く。
+type HuddleLeftData struct {
+	RoomID        ulid.ULID
+	HuddleID      ulid.ULID
+	ParticipantID ulid.ULID
+	Reason        HuddleLeftReason
 }

@@ -157,6 +157,21 @@ func TestCloseTracksForces(t *testing.T) {
 	assertJSON(t, got.body, map[string]any{"force": true, "tracks": []any{map[string]any{"mid": "0"}, map[string]any{"mid": "1"}}})
 }
 
+func TestTracks(t *testing.T) {
+	c, got := fakeCloudflare(t, http.StatusOK, `{"tracks":[{"location":"local","mid":"0","trackName":"audio","status":"active"},{"location":"remote","mid":"1","trackName":"audio","sessionId":"s-2","status":"active"}]}`)
+
+	tracks, err := c.Tracks(context.Background(), "s-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.method != http.MethodGet || got.path != "/apps/app-1/sessions/s-1" {
+		t.Errorf("request = %s %s", got.method, got.path)
+	}
+	if len(tracks) != 2 || tracks[0].Mid != "0" || tracks[1].Mid != "1" {
+		t.Errorf("tracks = %+v", tracks)
+	}
+}
+
 func TestCloseNoTracksDoesNothing(t *testing.T) {
 	c, got := fakeCloudflare(t, http.StatusOK, `{}`)
 

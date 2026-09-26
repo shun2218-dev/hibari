@@ -17,6 +17,7 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/huddle"
 	"github.com/shun2218-dev/hibari/internal/chat/presence"
 	"github.com/shun2218-dev/hibari/internal/chat/realtime"
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
@@ -46,6 +47,9 @@ type Env struct {
 	Deliveries *Recorder
 	// Fetcher はリンクのプレビューを URL から決めて返す（ネットワークに出ない。ADR 0065）。
 	Fetcher *Fetcher
+	// Huddles はハドルにいま入っている人（実物の Redis）、Media は偽の Cloudflare（ADR 0066）。
+	Huddles *huddle.Store
+	Media   *Media
 	Service *chat.Service
 }
 
@@ -84,8 +88,9 @@ func NewPresence(t testing.TB) *presence.Store {
 }
 
 type options struct {
-	start    time.Time
-	presence chat.PresenceReader
+	start          time.Time
+	presence       chat.PresenceReader
+	withoutHuddles bool
 }
 
 // Option は New の組み立てを変える。
@@ -115,6 +120,11 @@ func (o OnlineUsers) Presence(_ context.Context, userIDs []ulid.ULID) (map[ulid.
 		}
 	}
 	return out, nil
+}
+
+// WithoutHuddles は Cloudflare の設定がない（ハドルが無効な）Service にする（ADR 0066 決定 15）。
+func WithoutHuddles() Option {
+	return func(o *options) { o.withoutHuddles = true }
 }
 
 // WithPresenceReader は Service が使う presence を差し替える（Env.Presence は実物のままにする）。
@@ -149,6 +159,13 @@ func New(t testing.TB, opts ...Option) *Env {
 	if o.presence != nil {
 		svcPresence = o.presence
 	}
+	// テストごとに名前空間を分ける（掃除が並行に動くほかのテストの参加を外さないように）
+	huddles := huddle.NewNamespaced(rdb, "test:"+ids.New().String()+":")
+	media := &Media{}
+	huddleDeps := chat.HuddleDeps{States: huddles, Media: media, Limiter: ratelimit.New(rdb, clk)}
+	if o.withoutHuddles {
+		huddleDeps = chat.HuddleDeps{}
+	}
 	return &Env{
 		Pool:       pool,
 		Clock:      clk,
@@ -157,6 +174,8 @@ func New(t testing.TB, opts ...Option) *Env {
 		Presence:   pr,
 		Deliveries: rec,
 		Fetcher:    fetcher,
+		Huddles:    huddles,
+		Media:      media,
 		Service: chat.NewService(chat.Deps{
 			DB:               pool,
 			Clock:            clk,
@@ -168,6 +187,7 @@ func New(t testing.TB, opts ...Option) *Env {
 			Delivery:         rec,
 			Presence:         svcPresence,
 			LinkPreviews:     chat.LinkPreviewDeps{Fetcher: fetcher, AppBaseURL: AppBaseURL, Limiter: ratelimit.New(rdb, clk)},
+			Huddles:          huddleDeps,
 		}),
 	}
 }

@@ -17,8 +17,11 @@ import (
 	"syscall"
 	"time"
 
+	goredis "github.com/redis/go-redis/v9"
+
 	"github.com/shun2218-dev/hibari/internal/auth"
 	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/huddle"
 	"github.com/shun2218-dev/hibari/internal/chat/linkpreview"
 	"github.com/shun2218-dev/hibari/internal/chat/presence"
 	"github.com/shun2218-dev/hibari/internal/chat/realtime"
@@ -33,7 +36,9 @@ import (
 	"github.com/shun2218-dev/hibari/internal/platform/ratelimit"
 	"github.com/shun2218-dev/hibari/internal/platform/redis"
 	"github.com/shun2218-dev/hibari/internal/platform/safehttp"
+	"github.com/shun2218-dev/hibari/internal/platform/sfu"
 	"github.com/shun2218-dev/hibari/internal/platform/storage"
+	"github.com/shun2218-dev/hibari/internal/platform/turn"
 )
 
 // version はビルド時に -ldflags "-X main.version=vX.Y.Z" で埋め込む（CLAUDE.md「リリース手順」）。
@@ -175,6 +180,11 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		return err
 	}
 
+	huddleDeps, err := newHuddleDeps(cfg.Realtime, rdb, clk, logger)
+	if err != nil {
+		return err
+	}
+
 	chatService := chat.NewService(chat.Deps{
 		DB:               pool,
 		Clock:            clk,
@@ -191,6 +201,7 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 			AppBaseURL: cfg.AppBaseURL,
 			Limiter:    ratelimit.New(rdb, clk),
 		},
+		Huddles: huddleDeps,
 	})
 
 	// 添付の掃除ジョブ（ADR 0013）。DB のプールを閉じる前に止めて、終わるのを待つ。
@@ -200,9 +211,17 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	var jobs sync.WaitGroup
 	jobs.Go(func() { chatService.RunAttachmentCleanup(jobCtx, chat.AttachmentCleanupInterval) })
 	jobs.Go(func() { chatService.RunLinkPreviews(jobCtx, chat.LinkPreviewInterval) })
+	// 心拍の途絶えたハドルの参加の掃除（ADR 0066 決定 5）。ハドルが無効ならすぐに戻る
+	jobs.Go(func() { chatService.RunHuddleSweeper(jobCtx, chat.HuddleSweepInterval) })
 	jobs.Go(func() { hub.Run(jobCtx, presence.RefreshInterval, realtime.RevalidateInterval) })
 	jobs.Go(func() {
-		if err := revocations.Run(jobCtx, hub.CloseSessions); err != nil {
+		// 失効したセッションの WebSocket を切り、そのセッションで入っていたハドルからも外す（ADR 0066 決定 8）。
+		// chat は authn の型を知らないので、ここで ID に分けて渡す（ADR 0001）
+		onRevoked := func(ctx context.Context, rev authn.Revocation) {
+			hub.CloseSessions(ctx, rev)
+			chatService.RemoveRevokedHuddleSession(ctx, rev.UserID, rev.SessionID, rev.All)
+		}
+		if err := revocations.Run(jobCtx, onRevoked); err != nil {
 			// Redis との接続が切れて購読が終わった。失効の反映は定期の再検証（5 分ごと）に頼ることになる。
 			logger.ErrorContext(jobCtx, "revocation subscription stopped", slog.Any("error", err))
 		}
@@ -280,6 +299,49 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	}
 	logger.InfoContext(ctx, "server stopped")
 	return nil
+}
+
+// newHuddleDeps はハドルの依存を組み立てる（ADR 0066 決定 15）。Cloudflare の設定がなければ空（ハドルは無効）を返す。
+func newHuddleDeps(c config.RealtimeConfig, rdb *goredis.Client, clk clock.Clock, logger *slog.Logger) (chat.HuddleDeps, error) {
+	if !c.Enabled {
+		logger.Info("huddles: disabled (CLOUDFLARE_REALTIME_* is not set)")
+		return chat.HuddleDeps{}, nil
+	}
+	appSecret, err := readSecretFile("CLOUDFLARE_REALTIME_APP_SECRET_FILE", c.AppSecretFile)
+	if err != nil {
+		return chat.HuddleDeps{}, err
+	}
+	turnToken, err := readSecretFile("CLOUDFLARE_TURN_KEY_API_TOKEN_FILE", c.TURNKeyAPITokenFile)
+	if err != nil {
+		return chat.HuddleDeps{}, err
+	}
+	sfuClient, err := sfu.New(sfu.Config{AppID: c.AppID, AppSecret: appSecret})
+	if err != nil {
+		return chat.HuddleDeps{}, err
+	}
+	turnClient, err := turn.New(turn.Config{KeyID: c.TURNKeyID, APIToken: turnToken})
+	if err != nil {
+		return chat.HuddleDeps{}, err
+	}
+	logger.Info("huddles: enabled (Cloudflare Realtime)")
+	return chat.HuddleDeps{
+		States:  huddle.New(rdb),
+		Media:   huddle.Media{SFU: sfuClient, TURN: turnClient},
+		Limiter: ratelimit.New(rdb, clk),
+	}, nil
+}
+
+// readSecretFile は秘密のファイルを読む。末尾の改行は取り除く（echo で作ると付く）。
+func readSecretFile(name, path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", name, err)
+	}
+	v := strings.TrimSpace(string(b))
+	if v == "" {
+		return "", fmt.Errorf("%s is empty", name)
+	}
+	return v, nil
 }
 
 // newMailer は MAIL_TRANSPORT に応じた Mailer を返す（ADR 0053 決定 5）。

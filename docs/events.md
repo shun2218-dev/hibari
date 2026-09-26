@@ -97,6 +97,9 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | `thread.notifications_updated` | 本人 | スレッドの返信の通知が変わった（別の端末を含む。ADR 0056） |
 | `activity.reaction_added` | 本人（メッセージの送信者） | 自分のメッセージに、ほかの人がリアクションを付けた（ADR 0058） |
 | `activity.reaction_removed` | 本人（メッセージの送信者） | そのリアクションが外された（ADR 0058） |
+| `huddle.updated` | room | ハドルが始まった・誰かが入った・抜けた・外れた・ミュートが変わった・「もうすぐ参加する」が押された・終わった（ADR 0066） |
+| `huddle.ringing` | 本人（DM の相手） | DM でハドルが始まった（ADR 0066 決定 11） |
+| `huddle.left` | 本人 | 自分の参加が外れた（別の端末で抜けた・移った場合も届く。ADR 0066） |
 
 #### `message.created` / `message.updated` / `message.deleted`
 
@@ -213,7 +216,20 @@ REST（履歴の取得と、リアクションの `PUT` / `DELETE` の応答）�
 }
 ```
 
-`type` は `room_created` / `member_joined` / `member_left` / `member_removed` / `room_renamed` / `room_archived` / `room_unarchived`（ADR 0059）。**sender はその行の主語**（参加した人、名前を変えた人）。DM には出ない。
+`type` は `room_created` / `member_joined` / `member_left` / `member_removed` / `room_renamed` / `room_archived` / `room_unarchived`（ADR 0059）/ `huddle`（ADR 0066）。**sender はその行の主語**（参加した人、名前を変えた人）。DM には出ない（`huddle` だけは例外で DM にも出る）。
+
+`huddle`（ハドルを始めた。ADR 0066 決定 12）の行は、`system.huddle_id` と、メッセージの `huddle` を持つ。
+
+```json
+"system": { "type": "huddle", "huddle_id": "01J9..." },
+"huddle": { "id": "01J9...", "started_at": "2026-09-26T11:20:00Z", "ended_at": null, "participant_ids": ["01J8...", "01J8..."] }
+```
+
+- `participant_ids` は一度でも入った人（最初に入った順）。初めて入った人が増えたとき・終わったときに `message.updated` で届き、`change_seq` にも乗る（再接続の同期でそろう）。
+  いま入っている人は `huddle.updated` で届く。
+- 「不在着信」「応答なし」「参加中」などの見え方は、自分の ID と `participant_ids` と `ended_at` から、クライアントが決める。
+- このメッセージには、ハドルのチャットとしてスレッドを付けられる（ADR 0066 追記 A）。ほかのシステムメッセージには付けられない。
+- **DM では未読に数える**（`user_seq` を進める）。始めた人の既読位置も進むので、相手にだけ未読が付く。チャンネルでは数えない。
 
 #### `member.joined`
 
@@ -416,6 +432,53 @@ idle または away       → 離席（色なしのアウトライン）
 
 受け取ってから 6 秒で表示を消す。`typing.stopped` はない。`thread_root_id` があればスレッドでの入力なので、チャンネルの入力中には出さない。
 
+#### `huddle.updated`
+
+ルームの進行中のハドルの**いまの全体**（ADR 0066 決定 13）。差分ではない。
+
+```json
+{
+  "room_id": "01J8...",
+  "huddle": {
+    "id": "01J9...", "room_id": "01J8...", "message_id": "01J9...", "started_at": "2026-09-26T11:20:00Z", "version": 7,
+    "participants": [{ "user_id": "01J8...", "muted": false }, { "user_id": "01J8...", "muted": true }],
+    "joining_soon": ["01J8..."]
+  }
+}
+```
+
+- `version` は状態の版。**手元の同じハドル（`id`）の版より古いものは捨てる**（配信は at-most-once で、複数台から届く順序も保証されない。取りこぼしても次の 1 件で正しくなる）。
+- `huddle` が `null` ならハドルが終わった。
+- `participants` は入った順。同じ人は 1 回しか並ばない（1 人が入れるハドルは 1 つで、別の端末から入ると移る。決定 6）。
+- `joining_soon` は DM の呼び出しで「もうすぐ参加する」を押した人（5 分で消える。決定 11）。
+- 再接続したら、ルームの一覧・1 件の取得の `huddle` から読み直す（Redis の状態は `change_seq` に乗らない。presence と同じ）。
+
+#### `huddle.ringing`
+
+```json
+{ "room_id": "01J8...", "huddle_id": "01J9...", "caller_id": "01J8..." }
+```
+
+DM でハドルが始まったとき、相手のすべての接続に届く（ADR 0066 決定 11）。チャンネルでは届かない。
+
+- クライアントは呼び出しを出し、着信の音を鳴らす。**60 秒**・参加・「もうすぐ参加する」・ハドルの終了（`huddle.updated` の `null`）・自分が入った（`huddle.updated` に自分が並んだ）で止める。
+- **ミュートした DM では鳴らさない**（決めるのはクライアント。ADR 0057 の「ミュートでは出さない」と同じ）。
+
+#### `huddle.left`
+
+```json
+{ "room_id": "01J8...", "huddle_id": "01J9...", "participant_id": "01J9...", "reason": "removed" }
+```
+
+自分の参加が外れた（ADR 0066）。本人のすべての接続に届く。`participant_id` が自分の端末の参加なら、接続を片付けて画面を閉じる。
+
+| `reason` | 意味 |
+|---|---|
+| `left` | 自分で抜けた（別の端末で抜けた場合も含む） |
+| `moved` | 同じ人が別の端末から入ったので、この参加が外れた（決定 6） |
+| `removed` | 権限が変わって外された、またはルームのアーカイブ・削除でハドルが終わった（決定 7・8） |
+| `expired` | 心拍が途絶えて外れた（決定 5） |
+
 ## close コード
 
 | コード | 意味 | クライアントの動き |
@@ -441,7 +504,7 @@ WebSocket の配信は落ちうるので、クライアントはルームごと�
 
 1. ticket を発行して接続する
 2. 表示中のワークスペースと、サイドバーのルームを `subscribe` し、`ack` を待つ
-3. ルーム一覧（未読数・最終メッセージ）を REST で取り直す
+3. ルーム一覧（未読数・最終メッセージ・進行中のハドル）を REST で取り直す（ハドルは `huddle`。`change_seq` に乗らない。ADR 0066 決定 13）
 4. メッセージを表示・キャッシュしているルームごとに、`GET /api/v1/rooms/{id}/messages?after_change_seq=<change_seq>` を `has_more` が false になるまで呼ぶ
    - 受け取ったメッセージは `id` で上書きし、表示は `seq` で並べる
 5. 開いているパネルのルームのメンバー一覧（`presence` を含む）を REST で取り直す

@@ -31,6 +31,8 @@ type Deps struct {
 	Presence PresenceReader
 	// LinkPreviews は外部のリンクのプレビュー（ADR 0065）。
 	LinkPreviews LinkPreviewDeps
+	// Huddles は音声のハドル（ADR 0066）。Media がなければハドルは無効（決定 15）。
+	Huddles HuddleDeps
 }
 
 // PresenceReader は自動で決まる presence（Redis に TTL 付きで置く。CLAUDE.md ルール 5）を読む。
@@ -54,6 +56,7 @@ type Service struct {
 	delivery         Delivery
 	presence         PresenceReader
 	previews         linkPreviews
+	huddles          huddles
 }
 
 // NewService は Service を返す。
@@ -70,6 +73,7 @@ func NewService(d Deps) *Service {
 		delivery:         d.Delivery,
 		presence:         d.Presence,
 		previews:         newLinkPreviews(d.LinkPreviews),
+		huddles:          huddles{states: d.Huddles.States, media: d.Huddles.Media, limiter: d.Huddles.Limiter},
 	}
 }
 

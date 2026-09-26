@@ -176,7 +176,7 @@ func (s *Service) SetThreadNotifications(ctx context.Context, actor, roomID, roo
 	if err != nil {
 		return ThreadNotifications{}, notFoundIfNoRows(err, "get thread root")
 	}
-	if !isThreadRoot(root.Kind, root.ThreadRootID) || root.LastThreadSeq == 0 {
+	if !isThreadRoot(root.Kind, root.SystemType, root.ThreadRootID) || root.LastThreadSeq == 0 {
 		return ThreadNotifications{}, ErrNotFound
 	}
 
