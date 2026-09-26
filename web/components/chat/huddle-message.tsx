@@ -30,13 +30,17 @@ export function HuddleMessage({
   return (
     <article
       aria-label={`${title(huddle)} ${huddle.timeLabel}`}
-      className={cx("flex gap-2.5 px-3 pt-3 pb-1 md:gap-3 md:px-4", threadOpen && "bg-primary-subtle")}
+      className={cx(
+        "flex gap-2.5 px-3 pt-3 pb-1 md:gap-3 md:px-4",
+        // 開いているスレッドの緑を優先し、進行中は行ごと琥珀の地にする（Slack も進行中の行に地の色を付ける）
+        threadOpen ? "bg-primary-subtle" : live && "bg-attention-subtle",
+      )}
     >
       <span
         className={cx(
           "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md md:size-10",
           // 進行中は「いま起きていること」の琥珀（Slack は緑だが、hibari の緑は押せるものの色）
-          live ? "bg-attention-subtle text-attention-text" : "bg-surface-muted text-text-secondary",
+          live ? "bg-attention text-on-attention" : "bg-surface-muted text-text-secondary",
         )}
       >
         {missed ? <PhoneMissedIcon className="size-4 md:size-5" /> : <HeadphonesIcon className="size-4 md:size-5" />}
@@ -45,7 +49,7 @@ export function HuddleMessage({
         <header className="flex flex-wrap items-center gap-x-2">
           <span className="text-sm font-semibold text-text">{title(huddle)}</span>
           {live && (
-            <span className="rounded-sm bg-attention-subtle px-1.5 text-2xs font-semibold text-attention-text">ライブ</span>
+            <span className="rounded-sm bg-attention px-1.5 text-2xs font-semibold text-on-attention">ライブ</span>
           )}
           <time className="font-mono text-2xs text-text-muted">{huddle.timeLabel}</time>
         </header>
@@ -55,7 +59,15 @@ export function HuddleMessage({
             {live && huddle.participants.length > 0 && (
               <span aria-hidden className="flex shrink-0 -space-x-1">
                 {huddle.participants.slice(0, 5).map((p) => (
-                  <Avatar key={p.id} id={p.id} name={p.name} imageUrl={p.avatarUrl} size="xs" className="rounded-full ring-2 ring-surface" />
+                  <Avatar
+                    key={p.id}
+                    id={p.id}
+                    name={p.name}
+                    imageUrl={p.avatarUrl}
+                    size="xs"
+                    // 重ねた顔の縁は、行の地の色に合わせる
+                    className={cx("rounded-full ring-2", threadOpen ? "ring-primary-subtle" : "ring-attention-subtle")}
+                  />
                 ))}
               </span>
             )}
