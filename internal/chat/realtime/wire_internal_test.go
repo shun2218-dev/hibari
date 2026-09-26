@@ -97,6 +97,17 @@ func TestWireRoundTrip(t *testing.T) {
 			}},
 		},
 		{Type: chat.EventActivityReactionRemoved, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ActivityReactionRemoved{WorkspaceID: u(), Key: "r:x:y:👍"}},
+		{
+			// ハドルのいまの全体（ADR 0066 決定 13）。版と、ミュート・「もうすぐ参加する」が往復で落ちないこと
+			Type: chat.EventHuddleUpdated, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}},
+			Data: chat.HuddleUpdated{RoomID: message.RoomID, Huddle: &chat.RoomHuddle{
+				ID: u(), RoomID: message.RoomID, MessageID: u(), StartedAt: at, Version: 7,
+				Participants: []chat.RoomHuddleParticipant{{UserID: user.ID, Muted: true}},
+				JoiningSoon:  []ulid.ULID{u()},
+			}},
+		},
+		{Type: chat.EventHuddleRinging, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.HuddleRinging{RoomID: u(), HuddleID: u(), CallerID: u()}},
+		{Type: chat.EventHuddleLeft, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.HuddleLeftData{RoomID: u(), HuddleID: u(), ParticipantID: u(), Reason: chat.HuddleMoved}},
 	}
 	if len(events) != len(dataDecoders) {
 		t.Fatalf("test covers %d event types, dataDecoders has %d", len(events), len(dataDecoders))

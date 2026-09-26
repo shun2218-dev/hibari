@@ -7842,6 +7842,21 @@
           "checks"
         ]
       },
+      "HuddleParticipant": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "user_id",
+          "muted"
+        ]
+      },
       "Invite": {
         "type": "object",
         "properties": {
@@ -8477,6 +8492,10 @@
             "$ref": "#/components/schemas/SystemEvent",
             "description": "system は kind が system のときだけ入る。文言はクライアントが作る。"
           },
+          "huddle": {
+            "$ref": "#/components/schemas/MessageHuddle",
+            "description": "huddle はハドルのメッセージ（system の huddle）だけで入る（ADR 0066 決定 12）。見る人によらない値なので、配信でもそのまま載せる。"
+          },
           "body": {
             "type": "string"
           },
@@ -8677,6 +8696,43 @@
           "size_bytes",
           "width",
           "height"
+        ]
+      },
+      "MessageHuddle": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ended_at は進行中なら null。"
+          },
+          "participant_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "participant_ids は一度でも入った人（最初に入った順）。"
+          }
+        },
+        "required": [
+          "id",
+          "started_at",
+          "ended_at",
+          "participant_ids"
         ]
       },
       "MessageKind": {
@@ -9240,6 +9296,17 @@
             ],
             "description": "archived_at はアーカイブされていなければ null（ADR 0059 決定 5）。一覧はアーカイブ済みも返す。"
           },
+          "huddle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RoomHuddle"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "huddle は進行中のハドル（ADR 0066 決定 13）。なければ null。再接続したクライアントはここから読み直す。"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -9262,7 +9329,53 @@
           "last_message",
           "notifications",
           "archived_at",
+          "huddle",
           "created_at"
+        ]
+      },
+      "RoomHuddle": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "room_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "description": "version は状態の版。クライアントは手元より古い版を捨てる（決定 13）。"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HuddleParticipant"
+            },
+            "description": "participants はいま入っている人（入った順）。"
+          },
+          "joining_soon": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "joining_soon は「もうすぐ参加する」を押した人の user_id（決定 11）。"
+          }
+        },
+        "required": [
+          "id",
+          "room_id",
+          "message_id",
+          "started_at",
+          "version",
+          "participants",
+          "joining_soon"
         ]
       },
       "RoomKind": {
@@ -9737,6 +9850,10 @@
           "message_id": {
             "type": "string",
             "description": "message_id は message_pinned だけで入る。ピン留めした対象（ADR 0054 決定 3）。 対象が読めるか・削除されていないかは、クライアントが手元のメッセージで判断する（ここでは判定しない）。"
+          },
+          "huddle_id": {
+            "type": "string",
+            "description": "huddle_id は huddle だけで入る（ADR 0066 決定 12）。中身はメッセージの huddle。"
           }
         },
         "required": [
@@ -9753,7 +9870,8 @@
           "room_renamed",
           "message_pinned",
           "room_archived",
-          "room_unarchived"
+          "room_unarchived",
+          "huddle"
         ]
       },
       "ThreadList": {

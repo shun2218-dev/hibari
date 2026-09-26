@@ -30,11 +30,9 @@ func (s *Service) writeSystemMessage(
 	if err != nil {
 		return Event{}, fmt.Errorf("allocate system message seq: %w", err)
 	}
-	var data []byte
-	if event.OldName != "" || event.NewName != "" || event.MessageID != nil {
-		if data, err = json.Marshal(event); err != nil {
-			return Event{}, fmt.Errorf("marshal system data: %w", err)
-		}
+	data, err := marshalSystemEvent(event)
+	if err != nil {
+		return Event{}, err
 	}
 	id := s.ids.New()
 	systemType := string(event.Type)
@@ -54,4 +52,16 @@ func (s *Service) writeSystemMessage(
 		return Event{}, err
 	}
 	return Event{Type: EventMessageCreated, To: Audience{Rooms: []ulid.ULID{roomID}}, Data: msg}, nil
+}
+
+// marshalSystemEvent は system_data の JSON を作る。中身のない種類（参加・退出など）は null にする。
+func marshalSystemEvent(event SystemEvent) ([]byte, error) {
+	if event.OldName == "" && event.NewName == "" && event.MessageID == nil && event.HuddleID == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		return nil, fmt.Errorf("marshal system data: %w", err)
+	}
+	return data, nil
 }

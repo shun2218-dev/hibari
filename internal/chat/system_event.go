@@ -22,6 +22,9 @@ const (
 	// SystemRoomArchived / SystemRoomUnarchived はアーカイブした・戻した（ADR 0059 決定 4）。主語はアーカイブ・復元した人。
 	SystemRoomArchived   SystemEventType = "room_archived"
 	SystemRoomUnarchived SystemEventType = "room_unarchived"
+	// SystemHuddle はハドルを始めた（ADR 0066 決定 12）。主語は始めた人。DM にも書き、スレッドの親にもなる（追記 A）。
+	// 参加した人・終わった時刻は、メッセージの Huddle に載せる（huddles と huddle_participants から読む）。
+	SystemHuddle SystemEventType = "huddle"
 )
 
 // SystemEvent はシステムメッセージの中身。主語は Message.Sender（ADR 0033）。
@@ -32,4 +35,6 @@ type SystemEvent struct {
 	NewName string `json:"new_name,omitzero"`
 	// MessageID は message_pinned だけで入る。ピン留めした対象（ADR 0054 決定 3）。
 	MessageID *ulid.ULID `json:"message_id,omitzero"`
+	// HuddleID は huddle だけで入る（ADR 0066 決定 12）。
+	HuddleID *ulid.ULID `json:"huddle_id,omitzero"`
 }

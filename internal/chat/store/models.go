@@ -25,6 +25,15 @@ type Attachment struct {
 	FileName   string
 }
 
+type Huddle struct {
+	ID        ulid.ULID
+	RoomID    ulid.ULID
+	StartedBy ulid.ULID
+	MessageID ulid.ULID
+	StartedAt time.Time
+	EndedAt   *time.Time
+}
+
 type LinkPreview struct {
 	ID               ulid.ULID
 	Url              string

@@ -70,7 +70,9 @@ type Room struct {
 	Notifications *RoomNotifications
 	// ArchivedAt はアーカイブした時刻（ADR 0059）。アーカイブされていなければ nil。
 	ArchivedAt *time.Time
-	CreatedAt  time.Time
+	// Huddle は進行中のハドル（ADR 0066 決定 13）。なければ nil。いま入っている人は Redis から読む。
+	Huddle    *RoomHuddle
+	CreatedAt time.Time
 }
 
 // MessagePreview はサイドバーに出す最終メッセージ。
@@ -318,6 +320,7 @@ func (s *Service) ListRooms(ctx context.Context, actor, workspaceID ulid.ULID) (
 		return nil, err
 	}
 	s.attachDMPeerPresence(ctx, rooms)
+	s.attachHuddles(ctx, rooms)
 	return rooms, nil
 }
 
@@ -329,6 +332,7 @@ func (s *Service) GetRoom(ctx context.Context, actor, roomID ulid.ULID) (Room, e
 	}
 	rooms := []Room{room}
 	s.attachDMPeerPresence(ctx, rooms)
+	s.attachHuddles(ctx, rooms)
 	return rooms[0], nil
 }
 

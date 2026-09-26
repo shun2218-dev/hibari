@@ -153,6 +153,9 @@ func (s *Service) RemoveRoomMember(ctx context.Context, actor, roomID, target ul
 		},
 		memberLeftEvent(workspaceID, roomID, target),
 	}, systemEvents...)...)
+	// そのルームのハドルに入っていれば、すぐに外す（CLAUDE.md ルール 8。ADR 0066 決定 8）。
+	// 参加していない public は読めても投稿できないので、ハドルにも入れない（決定 7）
+	s.removeFromHuddle(ctx, target, func(h store.GetHuddleRoomRow) bool { return h.RoomID == roomID })
 	return nil
 }
 

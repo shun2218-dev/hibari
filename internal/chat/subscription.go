@@ -101,7 +101,7 @@ func (a *SubscriptionAuthorizer) AuthorizeTyping(ctx context.Context, userID, ro
 		if err != nil {
 			return TypingStarted{}, notFoundIfNoRows(err, "get thread root")
 		}
-		if !isThreadRoot(root.Kind, root.ThreadRootID) {
+		if !isThreadRoot(root.Kind, root.SystemType, root.ThreadRootID) {
 			return TypingStarted{}, ErrNotFound
 		}
 	}

@@ -24,7 +24,9 @@ export type MentionKind = "user" | "channel" | "here";
 
 export type Presence = "active" | "idle" | "offline";
 
-export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed" | "message_pinned" | "room_archived" | "room_unarchived";
+export type SystemEventType = "room_created" | "member_joined" | "member_left" | "member_removed" | "room_renamed" | "message_pinned" | "room_archived" | "room_unarchived" | "huddle";
+
+export type HuddleLeftReason = "left" | "moved" | "removed" | "expired";
 
 export type SavedState = "in_progress" | "archived" | "completed" | "removed";
 
@@ -358,6 +360,8 @@ export interface Room {
   notifications: RoomNotifications | null;
   /** archived_at はアーカイブされていなければ null（ADR 0059 決定 5）。一覧はアーカイブ済みも返す。 */
   archived_at: string | null;
+  /** huddle は進行中のハドル（ADR 0066 決定 13）。なければ null。再接続したクライアントはここから読み直す。 */
+  huddle: RoomHuddle | null;
   created_at: string;
 }
 
@@ -434,6 +438,8 @@ export interface Message {
   kind: MessageKind;
   /** system は kind が system のときだけ入る。文言はクライアントが作る。 */
   system?: SystemEvent;
+  /** huddle はハドルのメッセージ（system の huddle）だけで入る（ADR 0066 決定 12）。見る人によらない値なので、配信でもそのまま載せる。 */
+  huddle?: MessageHuddle;
   body: string;
   /** thread_root_id はスレッドの親の ID。チャンネルの投稿なら null（ADR 0036）。 */
   thread_root_id: string | null;
@@ -467,6 +473,35 @@ export interface SystemEvent {
   new_name?: string;
   /** message_id は message_pinned だけで入る。ピン留めした対象（ADR 0054 決定 3）。 対象が読めるか・削除されていないかは、クライアントが手元のメッセージで判断する（ここでは判定しない）。 */
   message_id?: string;
+  /** huddle_id は huddle だけで入る（ADR 0066 決定 12）。中身はメッセージの huddle。 */
+  huddle_id?: string;
+}
+
+export interface MessageHuddle {
+  id: string;
+  started_at: string;
+  /** ended_at は進行中なら null。 */
+  ended_at: string | null;
+  /** participant_ids は一度でも入った人（最初に入った順）。 */
+  participant_ids: string[];
+}
+
+export interface RoomHuddle {
+  id: string;
+  room_id: string;
+  message_id: string;
+  started_at: string;
+  /** version は状態の版。クライアントは手元より古い版を捨てる（決定 13）。 */
+  version: number;
+  /** participants はいま入っている人（入った順）。 */
+  participants: HuddleParticipant[];
+  /** joining_soon は「もうすぐ参加する」を押した人の user_id（決定 11）。 */
+  joining_soon: string[];
+}
+
+export interface HuddleParticipant {
+  user_id: string;
+  muted: boolean;
 }
 
 export interface ThreadSummary {
@@ -962,6 +997,24 @@ export interface ActivityReactionRemovedData {
   id: string;
 }
 
+export interface HuddleUpdatedData {
+  room_id: string;
+  huddle: RoomHuddle | null;
+}
+
+export interface HuddleRingingData {
+  room_id: string;
+  huddle_id: string;
+  caller_id: string;
+}
+
+export interface HuddleLeftData {
+  room_id: string;
+  huddle_id: string;
+  participant_id: string;
+  reason: HuddleLeftReason;
+}
+
 /** サーバーからのイベント（docs/events.md）。type で data の型が決まる。 */
 export type ServerEvent =
   | { type: "message.created"; data: Message }
@@ -986,7 +1039,10 @@ export type ServerEvent =
   | { type: "thread.notifications_updated"; data: ThreadNotificationsUpdatedData }
   | { type: "activity.reaction_added"; data: ActivityReactionAddedData }
   | { type: "activity.reaction_removed"; data: ActivityReactionRemovedData }
-  | { type: "room.deleted"; data: RoomDeletedData };
+  | { type: "room.deleted"; data: RoomDeletedData }
+  | { type: "huddle.updated"; data: HuddleUpdatedData }
+  | { type: "huddle.ringing"; data: HuddleRingingData }
+  | { type: "huddle.left"; data: HuddleLeftData };
 
 export type ServerEventType = ServerEvent["type"];
 

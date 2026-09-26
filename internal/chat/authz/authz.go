@@ -319,3 +319,12 @@ func CanSubscribeRoom(r Room, a RoomActor) bool {
 func CanSendTyping(r Room, a RoomActor) bool {
 	return CanWriteRoom(r, a)
 }
+
+// ---- ハドル（ADR 0066） ----
+
+// CanJoinHuddle はハドルを始められるか・入れるか・ICE サーバーを取れるかを返す（決定 7）。
+// そのルームに投稿できる人だけ。public のチャンネルを読めるだけの人（参加していない人）は、先に参加する。
+// アーカイブしたルームでは入れない（呼び出し側は authorize で 409 room-archived にする）。
+func CanJoinHuddle(r Room, a RoomActor) bool {
+	return CanWriteRoom(r, a)
+}

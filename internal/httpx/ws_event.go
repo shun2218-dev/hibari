@@ -202,6 +202,12 @@ func eventData(d any) (any, error) {
 		return activityReactionAddedData{d.WorkspaceID.String(), newActivityItemResponse(d.Item)}, nil
 	case chat.ActivityReactionRemoved:
 		return activityReactionRemovedData{d.WorkspaceID.String(), d.Key}, nil
+	case chat.HuddleUpdated:
+		return huddleUpdatedData{d.RoomID.String(), newRoomHuddleResponse(d.Huddle)}, nil
+	case chat.HuddleRinging:
+		return huddleRingingData{d.RoomID.String(), d.HuddleID.String(), d.CallerID.String()}, nil
+	case chat.HuddleLeftData:
+		return huddleLeftData{d.RoomID.String(), d.HuddleID.String(), d.ParticipantID.String(), d.Reason}, nil
 	default:
 		return nil, fmt.Errorf("unknown event data %T", d)
 	}

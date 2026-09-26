@@ -423,3 +423,11 @@ func TestCanSendTyping(t *testing.T) {
 		return !c.archived && known && isWorkspaceMember(c.role) && c.isRoomMember
 	})
 }
+
+func TestCanJoinHuddle(t *testing.T) {
+	checkRoom(t, "CanJoinHuddle", CanJoinHuddle, func(c roomCase) bool {
+		// 入れるのはそのルームに投稿できる人だけ（ADR 0066 決定 7）。読めるだけの public・アーカイブ済みでは入れない。
+		known := c.kind == RoomPublic || c.kind == RoomPrivate || c.kind == RoomDM
+		return !c.archived && known && isWorkspaceMember(c.role) && c.isRoomMember
+	})
+}

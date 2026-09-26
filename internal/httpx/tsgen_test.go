@@ -72,7 +72,8 @@ var tsEnums = []tsEnum{
 	enumOf("Presence", chat.PresenceActive, chat.PresenceIdle, chat.PresenceOffline),
 	enumOf("SystemEventType",
 		chat.SystemRoomCreated, chat.SystemMemberJoined, chat.SystemMemberLeft, chat.SystemMemberRemoved, chat.SystemRoomRenamed,
-		chat.SystemMessagePinned, chat.SystemRoomArchived, chat.SystemRoomUnarchived),
+		chat.SystemMessagePinned, chat.SystemRoomArchived, chat.SystemRoomUnarchived, chat.SystemHuddle),
+	enumOf("HuddleLeftReason", chat.HuddleLeft, chat.HuddleMoved, chat.HuddleRemoved, chat.HuddleExpired),
 	enumOf("SavedState", chat.SavedInProgress, chat.SavedArchived, chat.SavedCompleted, chat.SavedRemoved),
 	enumOf("SavedItemStatus", chat.SavedItemOK, chat.SavedItemUnavailable),
 	enumOf("NotifyLevel", chat.NotifyAll, chat.NotifyMentions, chat.NotifyNone),
@@ -172,6 +173,9 @@ var tsDecls = []tsDecl{
 	request[editMessageRequest]("EditMessageRequest"),
 	response[messageResponse]("Message"),
 	response[systemEventResponse]("SystemEvent"),
+	response[messageHuddleResponse]("MessageHuddle"),
+	response[roomHuddleResponse]("RoomHuddle"),
+	response[huddleParticipantResponse]("HuddleParticipant"),
 	response[threadSummaryResponse]("ThreadSummary"),
 	response[mentionResponse]("Mention"),
 	response[messageReactionResponse]("MessageReaction"),
@@ -245,6 +249,9 @@ var tsDecls = []tsDecl{
 	response[threadNotificationsUpdatedData]("ThreadNotificationsUpdatedData"),
 	response[activityReactionAddedData]("ActivityReactionAddedData"),
 	response[activityReactionRemovedData]("ActivityReactionRemovedData"),
+	response[huddleUpdatedData]("HuddleUpdatedData"),
+	response[huddleRingingData]("HuddleRingingData"),
+	response[huddleLeftData]("HuddleLeftData"),
 }
 
 // tsSkipped は JSON のタグを持つが、クライアントの型にしない struct。
@@ -292,6 +299,9 @@ var tsEvents = []struct {
 	{chat.EventActivityReactionAdded, chat.ActivityReactionAdded{}},
 	{chat.EventActivityReactionRemoved, chat.ActivityReactionRemoved{}},
 	{chat.EventRoomDeleted, chat.RoomDeleted{}},
+	{chat.EventHuddleUpdated, chat.HuddleUpdated{}},
+	{chat.EventHuddleRinging, chat.HuddleRinging{}},
+	{chat.EventHuddleLeft, chat.HuddleLeftData{}},
 }
 
 func TestTypeScriptTypes(t *testing.T) {
