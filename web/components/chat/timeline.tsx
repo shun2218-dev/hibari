@@ -4,6 +4,7 @@ import { type ReactNode, useEffectEvent, useLayoutEffect, useRef } from "react";
 
 import { TextButton } from "@/components/ui/button";
 
+import { HuddleMessage } from "@/components/chat/huddle-message";
 import { type MessageEditingView, MessageItem, type PickerFrom } from "@/components/chat/message-item/message-item";
 import type { HoverAction } from "@/components/chat/message-item/hover-actions";
 import type { TimelineItem } from "./types";
@@ -49,6 +50,8 @@ type TimelineProps = {
   onRemoveLinkPreview?: (key: string, previewId: string) => void;
   /** プレビューの「x」を固定で出すメッセージ（story 用）。 */
   hoveredLinkPreviewKey?: string;
+  /** 会話のハドルのメッセージの「参加」（ADR 0066 決定 12）。key はハドルのメッセージの key。 */
+  onJoinHuddle?: (key: string) => void;
   onMarkAllRead?: () => void;
   /** key ごとの操作の可否。渡さなければ「…」を出さない。 */
   actionsFor?: (key: string) => MessageActions;
@@ -162,6 +165,7 @@ export function Timeline({
   onDeleteAttachment,
   onRemoveLinkPreview,
   hoveredLinkPreviewKey,
+  onJoinHuddle,
   openAttachmentMenu,
   onToggleAttachmentMenu,
   onMarkAllRead,
@@ -306,6 +310,18 @@ export function Timeline({
                 >
                   <span>{item.text}</span>
                   <span className="font-mono text-2xs">{item.timeLabel}</span>
+                </li>
+              );
+            case "huddle":
+              return (
+                <li key={item.huddle.key} data-key={item.huddle.key}>
+                  <HuddleMessage
+                    huddle={item.huddle}
+                    onJoin={() => onJoinHuddle?.(item.huddle.key)}
+                    // ハドルのチャットは、ハドルのメッセージを親にした普通のスレッド（ADR 0066 追記 A）
+                    onOpenThread={() => onOpenThread?.(item.huddle.key)}
+                    threadOpen={openThreadKey === item.huddle.key}
+                  />
                 </li>
               );
             case "message": {

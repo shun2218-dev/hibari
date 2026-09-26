@@ -29,6 +29,7 @@ import {
   Ellipsis,
   File,
   Hash,
+  Headphones,
   House,
   Italic,
   Link,
@@ -44,7 +45,10 @@ import {
   MessageCircleMore,
   Megaphone,
   MessagesSquare,
+  Mic,
+  MicOff,
   Pencil,
+  PhoneMissed,
   Pin,
   PinOff,
   Monitor,
@@ -66,8 +70,10 @@ import {
   Underline,
   UserMinus,
   Users,
+  Volume2,
   X,
   Eye,
+  ExternalLink,
   EyeOff,
 } from "lucide-react";
 
@@ -160,3 +166,16 @@ export const DmIcon = withDefaults(MessageCircleMore);
 export const AtSignIcon = withDefaults(AtSign);
 /** アクティビティの「リアクション」。 */
 export const SmileIcon = withDefaults(Smile);
+
+// ---- ハドル（ADR 0066） ----
+/** ハドルミーティング（Slack と同じヘッドフォン）。ヘッダーのボタン・サイドバーの進行中の印・会話のメッセージ。 */
+export const HeadphonesIcon = withDefaults(Headphones);
+export const MicIcon = withDefaults(Mic);
+/** ミュートしている（自分のボタンと、ほかの参加者のアバターの印）。 */
+export const MicOffIcon = withDefaults(MicOff);
+/** DM の不在着信と応答なし（ADR 0066 決定 12）。 */
+export const PhoneMissedIcon = withDefaults(PhoneMissed);
+/** ハドルの帯の「新しいウィンドウで開く」（ハドルのタブを開き直す。ADR 0066 追記 C）。 */
+export const PopOutIcon = withDefaults(ExternalLink);
+/** スピーカーの選択（参加前のプレビューと、ハドルの画面の機器の選択）。 */
+export const SpeakerIcon = withDefaults(Volume2);

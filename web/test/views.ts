@@ -18,6 +18,8 @@ export function outline(items: TimelineItem[]): string[] {
         return "[unread]";
       case "system":
         return `[system: ${item.text}]`;
+      case "huddle":
+        return `[huddle: ${item.huddle.state}]`;
       case "thread-divider":
         return `[${item.replyCount} replies]`;
       case "message":

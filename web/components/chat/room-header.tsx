@@ -2,10 +2,11 @@ import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/button";
-import { BellIcon, BellOffIcon, ChevronLeftIcon, LockIcon, SettingsIcon, UsersIcon } from "@/components/ui/icons";
+import { Avatar } from "@/components/ui/avatar";
+import { BellIcon, BellOffIcon, ChevronLeftIcon, HeadphonesIcon, LockIcon, SettingsIcon, UsersIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
 
-import type { RoomKind } from "./types";
+import type { HuddleHeaderState, RoomKind } from "./types";
 
 type RoomHeaderProps = {
   kind: RoomKind;
@@ -24,6 +25,11 @@ type RoomHeaderProps = {
   onBack?: () => void;
   /** アーカイブされている（ADR 0059）。名前の横にラベルを出す。 */
   archived?: boolean;
+  /**
+   * ハドルのボタン（ADR 0066 決定 17）。始める・入る・抜けるを 1 つのボタンで切り替える（Slack の ⌘⇧H と同じ）。
+   * 入れない人（参加していない public ルーム・アーカイブ済み）には渡さない（決定 7）。
+   */
+  huddle?: HuddleHeaderState & { onClick?: () => void };
 };
 
 export function RoomHeader({
@@ -36,6 +42,7 @@ export function RoomHeader({
   notifications,
   onBack,
   archived = false,
+  huddle,
 }: RoomHeaderProps) {
   return (
     <header className="relative flex h-14 shrink-0 items-center gap-1 border-b border-border px-2 md:pr-3 md:pl-4">
@@ -56,6 +63,7 @@ export function RoomHeader({
         </h1>
         <p className="text-2xs text-text-muted">メンバー{memberCount}人</p>
       </div>
+      {huddle && <HuddleButton huddle={huddle} />}
       {notifications && (
         // モバイルはヘッダーの右端にそろえてメニューを出す（アイコンの位置に合わせると、画面の左にはみ出す）
         <div className="md:relative">
@@ -93,3 +101,47 @@ export function RoomHeader({
   );
 }
 
+
+/**
+ * 進行中でなければヘッドフォンのアイコンだけ。進行中は、入っている人のアバターと「参加」（押せるので緑）。
+ * 自分が入っていれば緑の地のアイコンにし、押すとハドルのタブを前に出す（Slack の緑のヘッドフォンと同じ。ADR 0066 追記 C）。
+ * 抜けるのはハドルの画面の「退出する」から。
+ */
+function HuddleButton({ huddle }: { huddle: HuddleHeaderState & { onClick?: () => void } }) {
+  if (huddle.state === "idle") {
+    return (
+      <IconButton label="ハドルミーティングを開始する" onClick={huddle.onClick}>
+        <HeadphonesIcon className="size-4" />
+      </IconButton>
+    );
+  }
+  if (huddle.state === "joined") {
+    return (
+      <button
+        type="button"
+        onClick={huddle.onClick}
+        aria-label="ハドルミーティングの画面を表示する"
+        className="mr-1 inline-flex size-8 items-center justify-center rounded-sm bg-primary text-on-primary hover:bg-primary-hover"
+      >
+        <HeadphonesIcon className="size-4" />
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={huddle.onClick}
+      aria-label="ハドルミーティングに参加する"
+      // モバイルは名前の幅が足りないので、アイコンだけの四角にする
+      className="mr-1 inline-flex h-8 items-center justify-center gap-1.5 rounded-sm border border-primary bg-primary-subtle text-sm font-medium text-primary hover:bg-surface-muted max-md:w-8 md:pr-3 md:pl-2"
+    >
+      <HeadphonesIcon className="size-4 shrink-0" />
+      <span aria-hidden className="hidden -space-x-1.5 md:flex">
+        {huddle.participants.slice(0, 3).map((p) => (
+          <Avatar key={p.id} id={p.id} name={p.name} imageUrl={p.avatarUrl} size="xs" className="rounded-full ring-2 ring-surface" />
+        ))}
+      </span>
+      <span className="hidden md:inline">参加</span>
+    </button>
+  );
+}

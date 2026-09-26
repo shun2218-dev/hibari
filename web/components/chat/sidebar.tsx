@@ -4,7 +4,7 @@ import type { ComponentType, ReactNode } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, UnreadBadge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
-import { ChevronDownIcon, HashIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, HashIcon, HeadphonesIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
 
 import type { RoomSummaryView, UserRef, WorkspaceRef } from "./types";
@@ -267,8 +267,18 @@ export function RoomRow({
     DM は 1 通が知らせなので未読の数をそのまま出す。ただの未読のチャンネルには出さない。
     ミュートした DM は、チャンネルと同じくメンションの数だけにする（ADR 0055 決定 6）。
   */
-  const badge =
+  const count =
     room.kind === "dm" && !muted ? <UnreadBadge count={room.unreadCount} /> : <UnreadBadge count={room.mentionCount} mention />;
+  // ハドルが進行中（ADR 0066 決定 13・追記 C）。Slack と同じく行の右端、未読のバッジの前に置く
+  const badge =
+    room.huddle && room.huddle.participants.length > 0 ? (
+      <span className="flex shrink-0 items-center gap-2">
+        <HuddleBadge participants={room.huddle.participants} />
+        {count}
+      </span>
+    ) : (
+      count
+    );
   return (
     <li>
       <Link
@@ -324,5 +334,26 @@ export function RoomRow({
         )}
       </Link>
     </li>
+  );
+}
+
+/** 進行中のハドルの印（Slack と同じく、入っている人の顔・ヘッドフォン・人数）。顔は 2 人まで。 */
+function HuddleBadge({ participants }: { participants: UserRef[] }) {
+  return (
+    <span
+      role="img"
+      aria-label={`ハドルミーティング中（${participants.length} 人）`}
+      className="flex shrink-0 items-center gap-1"
+    >
+      <span aria-hidden className="flex -space-x-1">
+        {participants.slice(0, 2).map((p) => (
+          <Avatar key={p.id} id={p.id} name={p.name} imageUrl={p.avatarUrl} size="xs" className="rounded-full ring-2 ring-surface" />
+        ))}
+      </span>
+      <span aria-hidden className="flex items-center gap-0.5 text-2xs font-semibold text-attention-text">
+        <HeadphonesIcon className="size-3.5 text-attention" />
+        {participants.length}
+      </span>
+    </span>
   );
 }
