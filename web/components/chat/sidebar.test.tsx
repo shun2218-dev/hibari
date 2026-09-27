@@ -326,3 +326,30 @@ describe("Sidebar のアーカイブしたチャンネル（ADR 0059）", () => 
     expect(within(screen.getByRole("link", { name: /デザインレビュー/ })).queryByText("アーカイブ済み")).not.toBeInTheDocument();
   });
 });
+
+describe("Sidebar の「ハドルミーティング」（ADR 0067 決定 6）", () => {
+  it("一覧への入口を出し、進行中のハドルがあるあいだだけ入っている人の顔を出す", () => {
+    const { rerender } = renderSidebar({ huddles: { href: "/huddles", selected: false, participants: [] } });
+
+    expect(screen.getByRole("link", { name: /ハドルミーティング/ })).toHaveAttribute("href", "/huddles");
+    expect(screen.queryByRole("img", { name: /進行中のハドルミーティング/ })).not.toBeInTheDocument();
+
+    rerender(
+      <Sidebar
+        workspace={workspace}
+        currentUser={currentUser}
+        rooms={rooms}
+        roomHref={(id) => `/rooms/${id}`}
+        huddles={{ href: "/huddles", selected: true, participants: [currentUser, { id: "u2", name: "佐藤 直樹" }] }}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /ハドルミーティング/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("img", { name: "進行中のハドルミーティングに 2 人" })).toBeInTheDocument();
+  });
+
+  it("チャンネルを検索している間は出さない（スレッドと同じ）", () => {
+    renderSidebar({ search: "雑", huddles: { href: "/huddles", selected: false, participants: [] } });
+
+    expect(screen.queryByRole("link", { name: /ハドルミーティング/ })).not.toBeInTheDocument();
+  });
+});

@@ -5,7 +5,9 @@ import { HuddleProblemScreen, HuddleScreen } from "@/components/chat/huddle-scre
 import {
   huddlePreview,
   huddlePreviewJoin,
+  huddlePreviewArchived,
   huddlePreviewMicDenied,
+  huddlePreviewNotMember,
   huddleProblemRoom,
   huddleScreen,
   huddleScreenConnecting,
@@ -18,7 +20,7 @@ import { chat, huddleChatPanel } from "@/stories/screens/chat";
 import { noop } from "@/stories/screens/shared";
 
 /**
- * チャット / ハドル（ADR 0066。Phase 6.18a の音声のハドル）。
+ * チャット / ハドル（ADR 0066。Phase 6.18a の音声のハドル。ADR 0067。6.18c の一覧・ハドル中の印・リンク）。
  *
  * チャットのタブの見え方は chat() で、ハドルのタブ（参加前のプレビューとハドルの画面。追記 B・C）は部品を直接描く。
  * ハドルのタブは about:blank に描く別の画面なので、チャットの枠（サイドバーなど）を持たない。
@@ -39,6 +41,9 @@ const mobile = {
   parameters: { screenshot: { size: "390x844" } },
   globals: { viewport: { value: "mobile" } },
 } as const;
+
+/** 操作の列の「…」（ハドルミーティングのリンクをコピー。ADR 0067 決定 1）。実画面と同じく、いつも出す。 */
+const closedMenu = { open: false };
 
 const devices = {
   mics: huddlePreview.mics,
@@ -158,56 +163,56 @@ export const MobilePreview: Story = {
 export const Screen: Story = {
   name: "ハドルの画面",
   tags: ["since:6.18"],
-  render: () => <HuddleScreen huddle={huddleScreen} />,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreen} />,
 };
 
 export const ScreenDark: Story = {
   name: "ハドルの画面（ダーク）",
   tags: ["since:6.18"],
   parameters: { theme: "dark" },
-  render: () => <HuddleScreen huddle={huddleScreen} />,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreen} />,
 };
 
 export const ScreenChat: Story = {
   name: "ハドルの画面: ハドルのチャット",
   tags: ["since:6.18"],
-  render: () => <HuddleScreen huddle={huddleScreen} chat={huddleChatPanel(huddleScreen.room)} chatOpen />,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreen} chat={huddleChatPanel(huddleScreen.room)} chatOpen />,
 };
 
 export const ScreenMuted: Story = {
   name: "ハドルの画面: 自分がミュート",
   tags: ["since:6.18"],
-  render: () => <HuddleScreen huddle={huddleScreenMuted} />,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenMuted} />,
 };
 
 export const ScreenDeviceMenu: Story = {
   name: "ハドルの画面: マイクとスピーカーを選ぶ",
   tags: ["since:6.18"],
-  render: () => <HuddleScreen huddle={huddleScreen} deviceMenu={<HuddleDeviceMenu {...devices} />} />,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreen} deviceMenu={<HuddleDeviceMenu {...devices} />} />,
 };
 
 export const ScreenConnecting: Story = {
   name: "ハドルの画面: 接続している",
   tags: ["since:6.18"],
-  render: () => <HuddleScreen huddle={huddleScreenConnecting} />,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenConnecting} />,
 };
 
 export const ScreenReconnecting: Story = {
   name: "ハドルの画面: 再接続している",
   tags: ["since:6.18"],
-  render: () => <HuddleScreen huddle={huddleScreenReconnecting} />,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenReconnecting} />,
 };
 
 export const ScreenJoiningSoon: Story = {
   name: "ハドルの画面: DM で相手が「もうすぐ参加する」を押した",
   tags: ["since:6.18"],
-  render: () => <HuddleScreen huddle={huddleScreenJoiningSoon} />,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenJoiningSoon} />,
 };
 
 export const ScreenCrowded: Story = {
   name: "ハドルの画面: 大人数",
   tags: ["since:6.18"],
-  render: () => <HuddleScreen huddle={huddleScreenCrowded} />,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenCrowded} />,
 };
 
 export const ScreenFull: Story = {
@@ -226,5 +231,154 @@ export const MobileScreen: Story = {
   name: "ハドルの画面（モバイル）",
   tags: ["since:6.18"],
   ...mobile,
-  render: () => <HuddleScreen huddle={huddleScreen} />,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreen} />,
+};
+
+export const ScreenMenu: Story = {
+  name: "ハドルの画面: 「…」（リンクをコピー）",
+  tags: ["since:6.18"],
+  render: () => <HuddleScreen huddle={huddleScreen} menu={{ open: true }} />,
+};
+
+// ---- ハドルへのリンク（ADR 0067 決定 1・2） ----
+
+export const HeaderMenu: Story = {
+  name: "ヘッダーの「⌄」: ハドルミーティングのリンクをコピー",
+  tags: ["since:6.18"],
+  render: () => chat({ huddle: "header-menu" }),
+};
+
+export const JoinedMenu: Story = {
+  name: "ハドルの帯の「…」: リンクをコピー",
+  tags: ["since:6.18"],
+  render: () => chat({ huddle: "joined-menu" }),
+};
+
+export const LinkCards: Story = {
+  name: "本文のハドルのリンクのカード（進行中でない・進行中・参加中・読めない）",
+  tags: ["since:6.18"],
+  // 4 つの状態を 1 枚に収めるため、縦を伸ばして撮る
+  parameters: { screenshot: { size: "1280x1200" } },
+  render: () => chat({ huddle: "link-cards" }),
+};
+
+export const LinkCardsDark: Story = {
+  name: "本文のハドルのリンクのカード（ダーク）",
+  tags: ["since:6.18"],
+  parameters: { theme: "dark", screenshot: { size: "1280x1200" } },
+  render: () => chat({ huddle: "link-cards" }),
+};
+
+export const PreviewNotMember: Story = {
+  name: "リンクから開いたプレビュー: 参加していないチャンネル",
+  tags: ["since:6.18"],
+  render: () => <HuddlePreview preview={huddlePreviewNotMember} />,
+};
+
+export const PreviewArchived: Story = {
+  name: "リンクから開いたプレビュー: アーカイブしたチャンネル",
+  tags: ["since:6.18"],
+  render: () => <HuddlePreview preview={huddlePreviewArchived} />,
+};
+
+// ---- ハドルの一覧（ADR 0067 決定 6〜8） ----
+
+export const List: Story = {
+  name: "ハドルの一覧",
+  tags: ["since:6.18"],
+  render: () => chat({ huddles: "list" }),
+};
+
+export const ListDark: Story = {
+  name: "ハドルの一覧（ダーク）",
+  tags: ["since:6.18"],
+  parameters: { theme: "dark" },
+  render: () => chat({ huddles: "list" }),
+};
+
+export const ListRowMenu: Story = {
+  name: "ハドルの一覧: 行の「…」",
+  tags: ["since:6.18"],
+  render: () => chat({ huddles: "row-menu" }),
+};
+
+export const ListParticipants: Story = {
+  name: "ハドルの一覧: 参加者を表示する",
+  tags: ["since:6.18"],
+  render: () => chat({ huddles: "participants" }),
+};
+
+export const ListScope: Story = {
+  name: "ハドルの一覧: 範囲を選ぶ",
+  tags: ["since:6.18"],
+  render: () => chat({ huddles: "scope" }),
+};
+
+export const ListMissed: Story = {
+  name: "ハドルの一覧: 参加しなかったハドルミーティング",
+  tags: ["since:6.18"],
+  render: () => chat({ huddles: "missed" }),
+};
+
+export const ListPerson: Story = {
+  name: "ハドルの一覧: 相手を選ぶ",
+  tags: ["since:6.18"],
+  render: () => chat({ huddles: "person" }),
+};
+
+export const ListFiltered: Story = {
+  name: "ハドルの一覧: 相手で絞り込んだ",
+  tags: ["since:6.18"],
+  render: () => chat({ huddles: "filtered" }),
+};
+
+export const ListEmpty: Story = {
+  name: "ハドルの一覧: まだ何もない",
+  tags: ["since:6.18"],
+  render: () => chat({ huddles: "empty" }),
+};
+
+export const MobileList: Story = {
+  name: "ハドルの一覧（モバイル）",
+  tags: ["since:6.18"],
+  ...mobile,
+  render: () => chat({ huddles: "list" }),
+};
+
+export const NewHuddle: Story = {
+  name: "新規ハドルミーティング",
+  tags: ["since:6.18"],
+  render: () => chat({ huddles: "list", newHuddle: "empty" }),
+};
+
+export const NewHuddleSelected: Story = {
+  name: "新規ハドルミーティング: 検索してチャンネルを選んだ",
+  tags: ["since:6.18"],
+  render: () => chat({ huddles: "list", newHuddle: "selected" }),
+};
+
+export const Saved: Story = {
+  name: "「後で」に保存したハドルミーティング",
+  tags: ["since:6.18"],
+  render: () => chat({ side: "later", saved: "in_progress", savedHuddle: true }),
+};
+
+// ---- ハドル中の印（ADR 0067 決定 4） ----
+
+export const StatusMembers: Story = {
+  name: "ハドル中の印: メンバーパネル",
+  tags: ["since:6.18"],
+  render: () => chat({ members: true, huddleStatus: "members" }),
+};
+
+export const StatusProfile: Story = {
+  name: "ハドル中の印: ステータスのない人のカード",
+  tags: ["since:6.18"],
+  render: () => chat({ huddleStatus: "profile" }),
+};
+
+export const StatusProfileWithStatus: Story = {
+  name: "ハドル中の印: ステータスを設定している人のカード",
+  tags: ["since:6.18"],
+  render: () => chat({ huddleStatus: "profile-status" }),
 };

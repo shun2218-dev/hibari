@@ -99,3 +99,25 @@ describe("HuddleDeviceMenu", () => {
     expect(onSelectSpeaker).toHaveBeenCalledWith("s1");
   });
 });
+
+describe("ハドルのリンクから開いたプレビュー（ADR 0067 決定 1）", () => {
+  it("参加していない public のチャンネルでは、開始の代わりに「チャンネルに参加する」を出す", async () => {
+    const user = userEvent.setup();
+    const onJoinRoom = vi.fn();
+    const onStart = vi.fn();
+    render(<HuddlePreview preview={preview({ blocked: "not-member" })} onJoinRoom={onJoinRoom} onStart={onStart} />);
+
+    expect(screen.getByText("このチャンネルに参加すると、ハドルミーティングに参加できます。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "ハドルミーティングを開始する" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "チャンネルに参加する" }));
+    expect(onJoinRoom).toHaveBeenCalledOnce();
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it("アーカイブしたチャンネルでは、理由を出して開始を押せなくする", () => {
+    render(<HuddlePreview preview={preview({ blocked: "archived" })} />);
+
+    expect(screen.getByText("このチャンネルはアーカイブされているため、ハドルミーティングは開始できません。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ハドルミーティングを開始する" })).toBeDisabled();
+  });
+});

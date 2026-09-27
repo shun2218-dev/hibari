@@ -45,3 +45,30 @@ describe("ProfileHoverCard（ADR 0050 決定 6 の追記）", () => {
     expect(screen.getByText("このワークスペースのメンバーではありません")).toBeInTheDocument();
   });
 });
+
+describe("ProfileHoverCard のハドル中（ADR 0067 決定 4）", () => {
+  it("ステータスを設定していれば、名前の横はステータスのまま、カードに「ハドルミーティング中」の行を足す", () => {
+    render(<ProfileHoverCard profile={{ ...naoki, inHuddle: true }} />);
+
+    expect(screen.getByText("会議中")).toBeInTheDocument();
+    expect(screen.getByText("ハドルミーティング中")).toBeInTheDocument();
+    // 📅 は名前の横とステータスの行、🎧 は「ハドルミーティング中」の行だけ
+    expect(screen.getAllByText("📅")).toHaveLength(2);
+    expect(screen.getAllByText("🎧")).toHaveLength(1);
+  });
+
+  it("ステータスがなければ、名前の横に 🎧 を出す", () => {
+    const { user } = naoki as Extract<typeof naoki, { kind: "member" }>;
+    render(<ProfileHoverCard profile={{ ...naoki, user: { ...user, status: undefined }, inHuddle: true }} />);
+
+    expect(screen.getByText("ハドルミーティング中")).toBeInTheDocument();
+    // 名前の横と「ハドルミーティング中」の行の 2 か所
+    expect(screen.getAllByText("🎧")).toHaveLength(2);
+  });
+
+  it("ハドル中でなければ出さない", () => {
+    render(<ProfileHoverCard profile={naoki} />);
+
+    expect(screen.queryByText("ハドルミーティング中")).not.toBeInTheDocument();
+  });
+});

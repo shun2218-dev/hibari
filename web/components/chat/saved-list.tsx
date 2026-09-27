@@ -9,6 +9,7 @@ import {
   BookmarkIcon,
   CheckIcon,
   ChevronLeftIcon,
+  HeadphonesIcon,
   LockIcon,
   MoreIcon,
   PaperclipIcon,
@@ -217,35 +218,55 @@ function SavedRow({
       )}
     >
       {/* 行全体を押せるように、リンクを行の上に広げる。ホバーの操作だけはその上に重ねて押せるようにする */}
-      <Link href={item.href} aria-label={`${item.sender.name} のメッセージへ移動`} className="absolute inset-0" />
+      <Link
+        href={item.href}
+        aria-label={item.huddle ? `${room.name} のハドルミーティングへ移動` : `${item.sender.name} のメッセージへ移動`}
+        className="absolute inset-0"
+      />
       <span className="flex min-w-0 items-center gap-1 text-2xs font-medium text-text-secondary">
         {room.kind === "public" && <span aria-label="公開チャンネル">#</span>}
         {room.kind === "private" && <LockIcon aria-label="非公開チャンネル" aria-hidden={false} role="img" className="size-3" />}
         <span className="truncate">{room.name}</span>
       </span>
-      <div className="flex gap-2.5">
-        <Avatar id={item.sender.id} name={item.sender.name} imageUrl={item.sender.avatarUrl} size="sm" />
-        <div className="min-w-0 flex-1">
-          <span className="flex items-baseline gap-2">
-            <span className="truncate text-sm font-semibold text-text">{item.sender.name}</span>
-            <time className="shrink-0 font-mono text-2xs text-text-muted">{item.timeLabel}</time>
+      {item.huddle ? (
+        // ハドルのメッセージ（ADR 0067 決定 6）。会話と同じく、アバターの代わりにヘッドフォンのアイコンを置く
+        <div className="flex gap-2.5">
+          <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-muted text-text-secondary">
+            <HeadphonesIcon className="size-4" />
           </span>
-          {item.body !== "" && (
-            <MessageBody
-              body={item.body}
-              mentionNames={item.mentionNames}
-              interactive={false}
-              className="line-clamp-2 text-base leading-relaxed break-words text-text"
-            />
-          )}
-          {item.attachmentCount > 0 && (
-            <span className="flex items-center gap-1 pt-0.5 text-2xs text-text-muted">
-              <PaperclipIcon className="size-3" />
-              {item.attachmentCount} 件の添付
+          <div className="min-w-0 flex-1">
+            <span className="flex items-baseline gap-2">
+              <span className="truncate text-sm font-semibold text-text">{item.huddle.title}</span>
+              <time className="shrink-0 font-mono text-2xs text-text-muted">{item.timeLabel}</time>
             </span>
-          )}
+            <p className="text-base leading-relaxed text-text-secondary">{item.huddle.detail}</p>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex gap-2.5">
+          <Avatar id={item.sender.id} name={item.sender.name} imageUrl={item.sender.avatarUrl} size="sm" />
+          <div className="min-w-0 flex-1">
+            <span className="flex items-baseline gap-2">
+              <span className="truncate text-sm font-semibold text-text">{item.sender.name}</span>
+              <time className="shrink-0 font-mono text-2xs text-text-muted">{item.timeLabel}</time>
+            </span>
+            {item.body !== "" && (
+              <MessageBody
+                body={item.body}
+                mentionNames={item.mentionNames}
+                interactive={false}
+                className="line-clamp-2 text-base leading-relaxed break-words text-text"
+              />
+            )}
+            {item.attachmentCount > 0 && (
+              <span className="flex items-center gap-1 pt-0.5 text-2xs text-text-muted">
+                <PaperclipIcon className="size-3" />
+                {item.attachmentCount} 件の添付
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ホバーの操作（Slack と同じく「完了」と「その他」。リマインダーは 6.14 の後。ADR 0054） */}
       <div

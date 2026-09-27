@@ -26,3 +26,21 @@ export function displayPresence(presence: "active" | "idle" | "offline", away: b
   if (presence === "offline") return "offline";
   return away || presence === "idle" ? "away" : "online";
 }
+
+/** ハドル中のステータスの絵文字と文言（ADR 0067 決定 4。Slack の「ハドルミーティング中」）。 */
+export const HUDDLE_STATUS_EMOJI = "🎧";
+export const HUDDLE_STATUS_TEXT = "ハドルミーティング中";
+
+/**
+ * 名前の横に出すステータスを決める（ADR 0067 決定 4）。
+ *
+ * 本人が選んだステータス（Postgres）があればそれ。なければ、ハドル中（Redis）の 🎧 を出す（Slack と同じく、上書きしない）。
+ * ステータスそのものは書き換えず、読む側のここで合わせる（ルール 5。presence と手動の離席と同じ形）。
+ */
+export function displayStatus<S extends { emoji: string; text?: string }>(
+  status: S | null | undefined,
+  inHuddle: boolean,
+): S | { emoji: string; text: string } | undefined {
+  if (status) return status;
+  return inHuddle ? { emoji: HUDDLE_STATUS_EMOJI, text: HUDDLE_STATUS_TEXT } : undefined;
+}

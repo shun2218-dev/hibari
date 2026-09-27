@@ -4,6 +4,7 @@ import { type ReactNode, useRef, useState } from "react";
 
 import { MessageBody } from "@/components/chat/message-body";
 import { LinkPreviewCard } from "@/components/chat/link-preview-card";
+import { HuddleLinkCard } from "@/components/chat/huddle-link-card";
 import { MessageLinkCard } from "@/components/chat/message-link-card";
 import { MessageReactions } from "@/components/chat/message-reactions";
 import { ProfileHoverPopup } from "@/components/chat/profile-card";
@@ -79,6 +80,10 @@ type MessageItemProps = {
   onRemoveLinkPreview?: (previewId: string) => void;
   /** プレビューの「x」を出した状態で描く（story で状態を再現するため）。 */
   forceLinkPreviewRemove?: boolean;
+  /** ハドルのリンクのカードの「開始する」「参加する」（ADR 0067 決定 2。リンクを開くのと同じ）。key はカードの key。 */
+  onOpenHuddleLink?: (cardKey: string) => void;
+  /** ハドルのリンクのカードの「参加中」。ハドルの画面を前に出す。 */
+  onShowHuddleScreen?: () => void;
   /** 「…」で出せる操作。どれも無ければ「…」自体を出さない。 */
   canEdit?: boolean;
   canDelete?: boolean;
@@ -164,6 +169,8 @@ export function MessageItem({
   openAttachmentMenuId,
   onToggleAttachmentMenu,
   onRemoveLinkPreview,
+  onOpenHuddleLink,
+  onShowHuddleScreen,
   forceLinkPreviewRemove = false,
   canEdit = false,
   canDelete = false,
@@ -377,6 +384,21 @@ export function MessageItem({
             {message.linkCards.map((card) => (
               <li key={card.key}>
                 <MessageLinkCard card={card} />
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* 本文に貼られたハドルのリンクのカード（ADR 0067 決定 2）。パーマリンクのカードのすぐ下 */}
+        {!deleted && !editing && message.huddleLinkCards && message.huddleLinkCards.length > 0 && (
+          <ul className="mt-2 flex flex-col gap-2">
+            {message.huddleLinkCards.map((card) => (
+              <li key={card.key}>
+                <HuddleLinkCard
+                  card={card}
+                  onOpen={onOpenHuddleLink && (() => onOpenHuddleLink(card.key))}
+                  onShowScreen={onShowHuddleScreen}
+                />
               </li>
             ))}
           </ul>

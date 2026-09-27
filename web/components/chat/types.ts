@@ -87,6 +87,8 @@ export type MessageView = {
   attachments: MessageAttachmentView[];
   /** 本文に貼られたパーマリンクのカード（ADR 0040）。最大 3 件。 */
   linkCards?: MessageLinkCardView[];
+  /** 本文に貼られたハドルのリンクのカード（ADR 0067 決定 2）。メッセージのリンクのカードと合わせて 3 枚まで。 */
+  huddleLinkCards?: HuddleLinkCardView[];
   /** 本文に貼られた外部のリンクのプレビュー（ADR 0065）。取れたものだけ。本人が消したものは含まない。 */
   linkPreviews?: LinkPreviewView[];
   /** 付いた絵文字のリアクション（ADR 0044）。1 件も無ければ持たない（行そのものを出さない）。 */
@@ -242,6 +244,11 @@ export type SavedItemView =
       body: string;
       mentionNames?: Readonly<Record<string, string>>;
       attachmentCount: number;
+      /**
+       * ハドルのメッセージ（ADR 0067 決定 6。ハドルの一覧の「ブックマークする」で保存したもの）。
+       * あれば送り主と本文の代わりに、会話と同じくヘッドフォンのアイコンと見出し・所要時間を出す。
+       */
+      huddle?: { title: string; detail: string };
     };
 
 /** 検索結果の 1 件（ADR 0061 決定 7）。押すと 6.11 の仕組みでそのメッセージへ飛ぶ。 */
@@ -340,6 +347,11 @@ export type ProfileView =
        */
       email: { state: "loading" } | { state: "none" } | { state: "ready"; value: string };
       isSelf: boolean;
+      /**
+       * ハドル中（ADR 0067 決定 4）。`user.status` は本人が選んだステータスのまま渡す。
+       * ステータスがなければ名前の横に 🎧 を出し、あってもカードに「ハドルミーティング中」の行を出す（いつでも分かる場所）。
+       */
+      inHuddle?: boolean;
       /** ロールの変更とキックの入口。操作できる相手のときだけ（ADR 0029 の写し。決定 3）。 */
       manage?: { grantableRoles: WorkspaceRole[]; canRemove: boolean };
     }
@@ -406,6 +418,12 @@ export type HuddlePreviewView = {
   speakers?: MediaDeviceView[];
   speakerId?: string;
   problem?: "mic-denied" | "no-mic";
+  /**
+   * ハドルのリンクから開いたが、そのままでは入れない（ADR 0067 決定 1）。
+   * - not-member: 参加していない public のチャンネル。「チャンネルに参加する」を出し、参加したらそのまま続ける
+   * - archived: アーカイブしたチャンネル。開始を押せなくする
+   */
+  blocked?: "not-member" | "archived";
 };
 
 /**
@@ -434,3 +452,70 @@ export type HuddleScreenView = {
  * - removed: 権限が変わって外された（決定 8）
  */
 export type HuddleProblem = "failed" | "full" | "disconnected" | "removed";
+
+// ---- ハドルの一覧・リンク（ADR 0067） ----
+
+/** 場所（チャンネルは名前、DM は相手の表示名）。 */
+export type HuddlePlaceView = { kind: RoomKind; name: string };
+
+/**
+ * 一覧の上の、進行中のハドルのカード（ADR 0067 決定 6）。ストアの生きた状態から作る。
+ * joined は自分が入っている（ボタンが「参加中」になり、押すとハドルの画面を前に出す）。
+ */
+export type HuddleOngoingCardView = {
+  key: string;
+  room: HuddlePlaceView;
+  /** 始まってからの時間（「数秒」「12 分」）。 */
+  elapsedLabel: string;
+  participants: UserRef[];
+  joined: boolean;
+};
+
+/** 提案のカード（ADR 0067 決定 7）。過去 7 日間にそこで自分が参加した回数。 */
+export type HuddleSuggestionView = {
+  key: string;
+  room: HuddlePlaceView;
+  count: number;
+  participants: UserRef[];
+};
+
+/** 「最近のハドルミーティング」の範囲（ADR 0067 決定 6）。 */
+export type HuddleListScope = "all" | "missed";
+
+/** 「最近のハドルミーティング」の 1 行（ADR 0067 決定 6）。終わったハドルだけ。 */
+export type HuddleListItemView = {
+  key: string;
+  /** 行を押したときの行き先（会話のハドルのメッセージ。スレッドの親）。 */
+  href: string;
+  /** 「N 件の返信」を押したときの行き先（ハドルのチャットのスレッドを開く）。 */
+  threadHref: string;
+  room: HuddlePlaceView;
+  /** 始めた時刻（「23 時間前」）。 */
+  timeLabel: string;
+  /** 所要時間（「2 分」）。 */
+  durationLabel: string;
+  /** ハドルのチャットの返信の数。0 なら出さない。 */
+  replyCount: number;
+  /** 参加した人（自分が参加していれば先頭）。 */
+  participants: UserRef[];
+  /** 「後で」に保存している（「…」の文言が変わる）。 */
+  saved: boolean;
+};
+
+/**
+ * 本文に貼られたハドルのリンクのカード（ADR 0067 決定 2）。中身は見る人の権限で取り直す。
+ * huddle は進行中のハドル（なければ null）。手元のストアにあるルームは生きた状態から、ないルームは取った時点のもの。
+ */
+export type HuddleLinkCardView =
+  | { key: string; state: "loading" }
+  | { key: string; state: "unavailable" }
+  | {
+      key: string;
+      state: "ok";
+      room: HuddlePlaceView;
+      /** 今いるワークスペースと違うときだけ入る。 */
+      workspaceName?: string;
+      huddle: { participants: UserRef[]; joined: boolean } | null;
+      /** ルームに投稿できる（`can_join`）。入れない人にはボタンを出さない。 */
+      canJoin: boolean;
+    };

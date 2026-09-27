@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { AccountMenu } from "./account-menu";
+import { AccountMenu, RailAccountButton } from "./account-menu";
 
 describe("AccountMenu", () => {
   it("leads to the workspace settings, the settings and logout", async () => {
@@ -65,5 +65,24 @@ describe("AccountMenu", () => {
     await userEvent.click(screen.getByRole("button", { name: "離席を解除する" }));
 
     expect(onToggleAway).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("RailAccountButton（ADR 0067 決定 4）", () => {
+  it("ステータスがあれば、アバターの上に絵文字を載せ、読み上げにも添える", async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+    render(<RailAccountButton user={{ id: "u1", name: "あなた" }} status={{ emoji: "🎧", text: "ハドルミーティング中" }} expanded={false} onClick={onClick} />);
+
+    const button = screen.getByRole("button", { name: "アカウントメニュー（ステータス: 🎧 ハドルミーティング中）" });
+    expect(button).toHaveTextContent("🎧");
+    await user.click(button);
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("ステータスがなければ、アバターだけにする", () => {
+    render(<RailAccountButton user={{ id: "u1", name: "あなた" }} expanded />);
+
+    expect(screen.getByRole("button", { name: "アカウントメニュー" })).toHaveAttribute("aria-expanded", "true");
   });
 });

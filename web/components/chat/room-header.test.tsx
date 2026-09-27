@@ -70,3 +70,32 @@ describe("RoomHeader のハドル（ADR 0066 決定 17）", () => {
     expect(screen.queryByRole("button", { name: /ハドル/ })).not.toBeInTheDocument();
   });
 });
+
+describe("RoomHeader のハドルのメニュー（ADR 0067 決定 1）", () => {
+  it("ボタンの横の「⌄」から、進行中でなくてもハドルのリンクをコピーできる", async () => {
+    const user = userEvent.setup();
+    const onToggle = vi.fn();
+    const onCopyLink = vi.fn();
+    const { rerender } = render(
+      <RoomHeader kind="public" name="雑談" memberCount={3} huddle={{ state: "idle", menu: { open: false, onToggle, onCopyLink } }} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "ハドルミーティングのその他の操作" }));
+    expect(onToggle).toHaveBeenCalledOnce();
+
+    rerender(<RoomHeader kind="public" name="雑談" memberCount={3} huddle={{ state: "idle", menu: { open: true, onToggle, onCopyLink } }} />);
+    await user.click(screen.getByRole("button", { name: "ハドルミーティングのリンクをコピー" }));
+    expect(onCopyLink).toHaveBeenCalledOnce();
+
+    rerender(
+      <RoomHeader kind="public" name="雑談" memberCount={3} huddle={{ state: "idle", menu: { open: true, onToggle, onCopyLink, copied: true } }} />,
+    );
+    expect(screen.getByRole("button", { name: "コピーしました" })).toBeInTheDocument();
+  });
+
+  it("メニューを渡さなければ「⌄」を出さない", () => {
+    render(<RoomHeader kind="public" name="雑談" memberCount={3} huddle={{ state: "idle" }} />);
+
+    expect(screen.queryByRole("button", { name: "ハドルミーティングのその他の操作" })).not.toBeInTheDocument();
+  });
+});

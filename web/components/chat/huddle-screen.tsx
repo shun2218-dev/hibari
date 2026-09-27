@@ -8,15 +8,20 @@ import {
   ClockIcon,
   HashIcon,
   HeadphonesIcon,
+  LinkIcon,
   LockIcon,
   MicIcon,
   MicOffIcon,
+  MoreIcon,
   PopOutIcon,
   ThreadIcon,
 } from "@/components/ui/icons";
+import { MenuItem } from "@/components/ui/menu-item";
+import { Popover } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cx } from "@/lib/cx";
 
+import type { HuddleHeaderMenu } from "./room-header";
 import type { HuddleParticipantView, HuddleProblem, HuddleScreenView, RoomKind } from "./types";
 
 /**
@@ -35,8 +40,11 @@ export function HuddleScreen({
   onToggleDeviceMenu,
   onToggleChat,
   onLeave,
+  menu,
 }: {
   huddle: HuddleScreenView;
+  /** 操作の列の「…」（ハドルミーティングのリンクをコピー。ADR 0067 決定 1）。Slack のハドルの窓の「…」と同じ。 */
+  menu?: HuddleHeaderMenu;
   /** ハドルのチャット（ハドルのメッセージのスレッド）。`ThreadPanel` を渡す。 */
   chat?: ReactNode;
   chatOpen?: boolean;
@@ -84,6 +92,7 @@ export function HuddleScreen({
                 onToggleMute={onToggleMute}
                 onToggleDeviceMenu={onToggleDeviceMenu}
                 onToggleChat={onToggleChat}
+                menu={menu}
               />
             </div>
             <Button variant="danger" onClick={onLeave} className="shrink-0">
@@ -111,8 +120,11 @@ export function HuddleBar({
   onToggleChat,
   onPopOut,
   onLeave,
+  menu,
 }: {
   huddle: HuddleScreenView;
+  /** 操作の列の「…」（ハドルミーティングのリンクをコピー。ADR 0067 決定 1）。 */
+  menu?: HuddleHeaderMenu;
   /** チャットのタブの右のパネルで、ハドルのチャット（スレッド）を開いている。 */
   chatOpen?: boolean;
   deviceMenu?: ReactNode;
@@ -156,6 +168,7 @@ export function HuddleBar({
         onToggleMute={onToggleMute}
         onToggleDeviceMenu={onToggleDeviceMenu}
         onToggleChat={onToggleChat}
+        menu={menu}
       />
       <div className="ml-auto flex items-center justify-end gap-2 md:ml-0 md:flex-1 md:basis-0">
         <button
@@ -175,7 +188,7 @@ export function HuddleBar({
   );
 }
 
-/** ハドルの画面と帯で共有する操作の列（マイクと機器の選択・ハドルのチャット）。 */
+/** ハドルの画面と帯で共有する操作の列（マイクと機器の選択・ハドルのチャット・「…」）。 */
 function HuddleControls({
   muted,
   chatOpen,
@@ -183,6 +196,7 @@ function HuddleControls({
   onToggleMute,
   onToggleDeviceMenu,
   onToggleChat,
+  menu,
 }: {
   muted: boolean;
   chatOpen: boolean;
@@ -190,6 +204,7 @@ function HuddleControls({
   onToggleMute?: () => void;
   onToggleDeviceMenu?: () => void;
   onToggleChat?: () => void;
+  menu?: HuddleHeaderMenu;
 }) {
   return (
     <div role="toolbar" aria-label="ハドルミーティングの操作" className="flex gap-2">
@@ -231,6 +246,31 @@ function HuddleControls({
       >
         <ThreadIcon className="size-5" />
       </button>
+      {menu && (
+        <div className="relative">
+          <button
+            type="button"
+            onClick={menu.onToggle}
+            aria-label="その他の操作"
+            aria-expanded={menu.open}
+            aria-haspopup="dialog"
+            className={cx(
+              "flex size-10 items-center justify-center rounded-md border border-border text-text hover:bg-surface-muted",
+              menu.open ? "bg-surface-muted" : "bg-surface",
+            )}
+          >
+            <MoreIcon className="size-5" />
+          </button>
+          {/* 列は画面の下の端にあるので、メニューは上に開く */}
+          {menu.open && (
+            <Popover label="ハドルミーティングの操作" className="bottom-12 left-1/2 w-80 -translate-x-1/2" onDismiss={menu.onToggle}>
+              <MenuItem icon={LinkIcon} onClick={menu.onCopyLink}>
+                {menu.copied ? "コピーしました" : "ハドルミーティングのリンクをコピー"}
+              </MenuItem>
+            </Popover>
+          )}
+        </div>
+      )}
     </div>
   );
 }
