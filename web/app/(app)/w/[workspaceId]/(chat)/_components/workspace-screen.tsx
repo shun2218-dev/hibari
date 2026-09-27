@@ -24,7 +24,7 @@ import { formatSearchQuery, parseSearchQuery, type SearchQuery } from "@/lib/cha
 import { formatTime } from "@/lib/chat/format/time";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
 import { countUnreadThreads } from "@/lib/chat/rules/threads";
-import { memberSettings, statusView } from "@/lib/chat/views/members";
+import { memberSettings, memberStatus, statusView } from "@/lib/chat/views/members";
 import { roomName, toRoomSummaryView } from "@/lib/chat/views/rooms";
 import { chatTitle } from "@/lib/document-title";
 
@@ -197,6 +197,9 @@ export function WorkspaceScreen() {
   );
   const myMember = useMemo(() => members?.list.find((m) => m.user.id === me?.id), [members, me]);
   const myStatus = useMemo(() => statusView(myMember?.status), [myMember]);
+  // レールの自分のアバターに載せるのは、名前の横と同じ規則のステータス（ハドル中でステータスがなければ 🎧。ADR 0067 決定 4）。
+  // アカウントのメニューとステータスのダイアログは、本人が選んだステータス（myStatus）だけを扱う
+  const myRailStatus = useMemo(() => (myMember ? memberStatus(myMember) : undefined), [myMember]);
 
   const roomViews = useMemo(() => {
     if (roomList?.status !== "ready") return [];
@@ -495,7 +498,7 @@ export function WorkspaceScreen() {
                 {/* Slack と同じく、ステータスがあればアバターの上に絵文字を載せる（ADR 0067 決定 4） */}
                 <RailAccountButton
                   user={currentUser}
-                  status={myStatus}
+                  status={myRailStatus}
                   expanded={accountMenuFrom === "rail"}
                   onClick={() => toggleAccountMenu("rail")}
                 />

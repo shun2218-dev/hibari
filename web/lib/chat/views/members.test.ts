@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { mentionAllRecipients, toDmCandidates, toMemberNames, toMentionCandidates, toRoomMemberRows, toRoomMemberView } from "@/lib/chat/views/members";
+import {
+  memberSettings,
+  mentionAllRecipients,
+  toDmCandidates,
+  toMemberNames,
+  toMentionCandidates,
+  toRoomMemberRows,
+  toRoomMemberView,
+} from "@/lib/chat/views/members";
 import { kei, member, miyuki, naoki, roomMember } from "@/test/chat-data";
 
 describe("toRoomMemberView", () => {
@@ -113,5 +121,21 @@ describe("mentionAllRecipients", () => {
 
   it("メンバーが取れていなければ 0", () => {
     expect(mentionAllRecipients(undefined, "channel", naoki.id)).toBe(0);
+  });
+});
+
+describe("ハドル中のステータス（ADR 0067 決定 4）", () => {
+  const custom = { emoji: "📅", text: "会議中", expires_at: null };
+
+  it("ステータスがなければ 🎧「ハドルミーティング中」、あればステータスのまま", () => {
+    const table = memberSettings([member(naoki, { in_huddle: true }), member(miyuki, { in_huddle: true, status: custom }), member(kei)]);
+
+    expect(table[naoki.id].status).toEqual({ emoji: "🎧", text: "ハドルミーティング中" });
+    expect(table[miyuki.id].status).toMatchObject({ emoji: "📅", text: "会議中" });
+    expect(table[kei.id].status).toBeUndefined();
+  });
+
+  it("ルームのメンバーパネルも同じ規則にする", () => {
+    expect(toRoomMemberView(roomMember(naoki, { in_huddle: true })).status).toEqual({ emoji: "🎧", text: "ハドルミーティング中" });
   });
 });

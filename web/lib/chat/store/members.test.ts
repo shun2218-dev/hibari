@@ -38,6 +38,31 @@ describe("ワークスペースのメンバー", () => {
       expect(state.roomMembers.r1?.members[1]).toBe(untouched);
     });
 
+    it("member.huddle_changed は、そのワークスペースの一覧と、そのワークスペースのルームの一覧にだけ当てる（ADR 0067 決定 3）", async () => {
+      const { store } = setup({
+        "GET /api/v1/workspaces/ws-1/rooms": () => json(200, { rooms: [room("r1", "雑談")] }),
+        "GET /api/v1/workspaces/ws-1/members?limit=200": () => json(200, { members: [member(miyuki), member(naoki)], next_cursor: null }),
+        "GET /api/v1/workspaces/ws-2/members?limit=200": () => json(200, { members: [member(miyuki)], next_cursor: null }),
+        "GET /api/v1/rooms/r1/members?limit=200": () => json(200, { members: [roomMember(miyuki)], next_cursor: null }),
+      });
+      await store.loadRooms("ws-1");
+      await store.loadMembers("ws-1");
+      await store.loadMembers("ws-2");
+      await store.loadRoomMembers("r1");
+      const other = store.getSnapshot().members["ws-2"];
+
+      store.applyEvent({ type: "member.huddle_changed", data: { workspace_id: "ws-1", user_id: miyuki.id, in_huddle: true } });
+
+      const state = store.getSnapshot();
+      expect(state.members["ws-1"]?.list.map((m) => m.in_huddle)).toEqual([true, false]);
+      expect(state.roomMembers.r1?.members[0].in_huddle).toBe(true);
+      // 別のワークスペースでは、その人はハドル中にならない
+      expect(state.members["ws-2"]).toBe(other);
+
+      store.applyEvent({ type: "member.huddle_changed", data: { workspace_id: "ws-1", user_id: miyuki.id, in_huddle: false } });
+      expect(store.getSnapshot().members["ws-1"]?.list[0].in_huddle).toBe(false);
+    });
+
     it("reloads a loaded member list and the member count when someone joins, and removes those who left", async () => {
       let members = [roomMember(miyuki)];
       const { store } = setup({
