@@ -11,6 +11,13 @@
 //	huddle_user:{userID}       STRING  "{huddleID} {participantID}"。1 人が入れるハドルは 1 つ（決定 6）
 //	huddle_deadlines           ZSET  "{huddleID}/{participantID}" → 心拍の期限（ミリ秒）
 //	huddle_ice:{userID}        ZSET  発行した TURN の認証情報のユーザー名 → 期限（ミリ秒）。外したときに取り消す（決定 8・14）
+//	huddle_members:{workspaceID}  SET  そのワークスペースでハドル中の userID（ADR 0067 決定 3。メンバー一覧の in_huddle）
+//	huddle_status:{userID}     HASH  ws（ハドル中の印を出しているワークスペース）・ch（配る宛先。空白区切り）・off（抜けたときに配る中身）
+//
+// **ハドル中の印（ADR 0067 決定 3）は、huddle_user を書き換える Lua の中で一緒に出し入れし、変わったときだけ同じ Lua の中で配る。**
+// presence と同じく、入る・抜けるが別のインスタンスで続けて起きても、集合の変化と配る順番が食い違わないようにするため（ADR 0016）。
+// 抜けるときの中身は入るときに Go から預かっておく。抜け方（抜けた・外された・期限切れ・ハドルが終わった）によらず、
+// 参加を外す Lua の中で配れる（外す側の Go は、どのワークスペースの印だったかを知らなくてよい）。
 //
 // **期限はハッシュの TTL ではなく、全体で 1 つのソート済みセットに持つ**（決定 5）。
 // Redis の期限切れはイベントにならない（presence と同じ）が、ハドルでは消えた人をほかの人の画面から消し、
@@ -90,9 +97,34 @@ func millis(t time.Time) string { return strconv.FormatInt(t.UnixMilli(), 10) }
 
 // removeLua は、Lua の中で参加を 1 つ外す関数。ほかのスクリプトの先頭に付けて使う。
 // 参加の JSON を返し、なければ false を返す。版を 1 増やす。
+//
+// moving が true なら、ハドル中の印は外さない（同じ人がすぐに別の参加に移るので、印の出し入れは joinScript が決める）。
 const removeLua = `
 local NS = table.remove(ARGV, 1)
-local function remove(huddle, participant)
+
+local function publish(channels, payload)
+  if payload == nil or payload == '' then
+    return
+  end
+  for ch in string.gmatch(channels or '', '%S+') do
+    redis.call('PUBLISH', ch, payload)
+  end
+end
+
+-- statusOff はハドル中の印を外し、外れたら入るときに預かった中身を配る（ADR 0067 決定 3）。
+local function statusOff(user)
+  local skey = NS .. 'huddle_status:' .. user
+  local ws = redis.call('HGET', skey, 'ws')
+  if not ws then
+    return
+  end
+  if redis.call('SREM', NS .. 'huddle_members:' .. ws, user) == 1 then
+    publish(redis.call('HGET', skey, 'ch'), redis.call('HGET', skey, 'off'))
+  end
+  redis.call('DEL', skey)
+end
+
+local function remove(huddle, participant, moving)
   local members = NS .. 'huddle:' .. huddle .. ':members'
   local json = redis.call('HGET', members, participant)
   if not json then
@@ -102,8 +134,12 @@ local function remove(huddle, participant)
   redis.call('ZREM', NS .. 'huddle_deadlines', huddle .. '/' .. participant)
   local user = cjson.decode(json)['user_id']
   local ukey = NS .. 'huddle_user:' .. user
+  -- 別の端末に移った後の古い参加なら、いまの参加の印は残す
   if redis.call('GET', ukey) == huddle .. ' ' .. participant then
     redis.call('DEL', ukey)
+    if not moving then
+      statusOff(user)
+    end
   end
   redis.call('INCR', NS .. 'huddle:' .. huddle .. ':version')
   return json
@@ -116,8 +152,14 @@ end
 // 外した参加は返し、呼び出し側が Cloudflare のトラックを閉じて、前の端末に huddle.left を送る。
 // 人数の上限は、同じ人の前の参加を除いて数える（別の端末から移るだけなら人数は増えない）。上限に達していれば何も変えずに -1 を返す。
 //
+// ハドル中の印は、別のワークスペースのハドルに移ったときだけ前のワークスペースで外し、入ったワークスペースで初めて付いたときだけ配る。
+// 同じワークスペースの中で別のハドルや端末に移っても配らない（ADR 0067 決定 3）。
+//
 // KEYS: なし（キーはすべて ARGV から組み立てる）
-// ARGV = huddleID, participantID, userID, 参加の JSON, 心拍の期限（ミリ秒）, 上限の人数
+// ARGV = huddleID, participantID, userID, 参加の JSON, 心拍の期限（ミリ秒）, 上限の人数,
+//
+//	workspaceID, 配る宛先（空白区切り）, 印が付いたときの中身, 外れたときの中身
+//
 // 返り値 = { 版, 外した参加の JSON か false, 外した参加のハドルの版 }
 var joinScript = goredis.NewScript(removeLua + `
 local huddle, participant, user = ARGV[1], ARGV[2], ARGV[3]
@@ -139,7 +181,7 @@ end
 local evicted = false
 local evictedVersion = 0
 if oldHuddle then
-  evicted = remove(oldHuddle, oldParticipant)
+  evicted = remove(oldHuddle, oldParticipant, true)
   if evicted then
     evictedVersion = tonumber(redis.call('GET', NS .. 'huddle:' .. oldHuddle .. ':version'))
   end
@@ -150,17 +192,31 @@ redis.call('ZADD', NS .. 'huddle_deadlines', ARGV[5], huddle .. '/' .. participa
 redis.call('SET', NS .. 'huddle_user:' .. user, huddle .. ' ' .. participant, 'PX', 86400000)
 redis.call('ZREM', NS .. 'huddle:' .. huddle .. ':soon', user)
 local version = redis.call('INCR', NS .. 'huddle:' .. huddle .. ':version')
+
+local ws, channels = ARGV[7], ARGV[8]
+local skey = NS .. 'huddle_status:' .. user
+local previous = redis.call('HGET', skey, 'ws')
+if previous and previous ~= ws then
+  statusOff(user)
+end
+redis.call('HSET', skey, 'ws', ws, 'ch', channels, 'off', ARGV[10])
+redis.call('PEXPIRE', skey, 86400000)
+if redis.call('SADD', NS .. 'huddle_members:' .. ws, user) == 1 then
+  publish(channels, ARGV[9])
+end
 return {version, evicted, evictedVersion}
 `)
 
 // Join は参加を書く。deadline は最初の心拍の期限、limit は人数の上限。上限に達していれば chat.ErrHuddleFull。
-func (s *Store) Join(ctx context.Context, p chat.HuddleParticipant, deadline time.Time, limit int) (chat.HuddleJoinResult, error) {
+// status はハドル中の印（ADR 0067 決定 3）。印が付いたら status.Joined を、後で外れたら status.Left を配る。
+func (s *Store) Join(ctx context.Context, p chat.HuddleParticipant, deadline time.Time, limit int, status chat.HuddleStatus) (chat.HuddleJoinResult, error) {
 	payload, err := json.Marshal(record(p))
 	if err != nil {
 		return chat.HuddleJoinResult{}, fmt.Errorf("huddle: encode participant: %w", err)
 	}
 	res, err := joinScript.Run(ctx, s.rdb, nil, s.ns,
-		p.HuddleID.String(), p.ID.String(), p.UserID.String(), payload, millis(deadline), limit).Slice()
+		p.HuddleID.String(), p.ID.String(), p.UserID.String(), payload, millis(deadline), limit,
+		status.WorkspaceID.String(), strings.Join(status.Channels, " "), status.Joined, status.Left).Slice()
 	if err != nil {
 		return chat.HuddleJoinResult{}, fmt.Errorf("huddle: join: %w", err)
 	}
@@ -185,6 +241,7 @@ func (s *Store) Join(ctx context.Context, p chat.HuddleParticipant, deadline tim
 }
 
 // heartbeatScript は心拍の期限を延ばす（決定 5）。参加がもうなければ（外れた・別の端末に移った）0 を返す。
+// ハドル中の印のキーの保険の TTL も一緒に延ばす（huddle_user と同じ）。
 // ARGV = userID, huddleID, participantID, 新しい期限（ミリ秒）
 var heartbeatScript = goredis.NewScript(`
 local NS = table.remove(ARGV, 1)
@@ -194,6 +251,7 @@ if redis.call('GET', ukey) ~= ARGV[2] .. ' ' .. ARGV[3] then
 end
 redis.call('ZADD', NS .. 'huddle_deadlines', 'XX', ARGV[4], ARGV[2] .. '/' .. ARGV[3])
 redis.call('PEXPIRE', ukey, 86400000)
+redis.call('PEXPIRE', NS .. 'huddle_status:' .. ARGV[1], 86400000)
 return 1
 `)
 
@@ -480,6 +538,28 @@ func (s *Store) TakeICEUsernames(ctx context.Context, userID ulid.ULID, now time
 		return nil, fmt.Errorf("huddle: take ice usernames: %w", err)
 	}
 	return names, nil
+}
+
+// InHuddle は、userIDs のうち workspaceID でハドル中の人を返す（ADR 0067 決定 3）。SMISMEMBER の 1 回で読む（N+1 にしない）。
+func (s *Store) InHuddle(ctx context.Context, workspaceID ulid.ULID, userIDs []ulid.ULID) (map[ulid.ULID]bool, error) {
+	out := make(map[ulid.ULID]bool, len(userIDs))
+	if len(userIDs) == 0 {
+		return out, nil
+	}
+	members := make([]any, len(userIDs))
+	for i, id := range userIDs {
+		members[i] = id.String()
+	}
+	in, err := s.rdb.SMIsMember(ctx, s.ns+"huddle_members:"+workspaceID.String(), members...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("huddle: in huddle: %w", err)
+	}
+	for i, id := range userIDs {
+		if in[i] {
+			out[id] = true
+		}
+	}
+	return out, nil
 }
 
 func (s *Store) count(ctx context.Context, huddleID ulid.ULID) (int, error) {

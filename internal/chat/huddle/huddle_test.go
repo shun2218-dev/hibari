@@ -20,6 +20,8 @@ import (
 var (
 	t0  = time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	ids = id.NewGenerator(clock.NewFake(t0), rand.Reader)
+	// quiet は、ハドル中の印を配らない参加（印そのものは付く。ADR 0067 決定 3）。印を確かめないテストで使う。
+	quiet = chat.HuddleStatus{WorkspaceID: ids.New()}
 )
 
 // newStore は実物の Redis に向けた Store を返す。テストごとに名前空間を分けるので、並行に動くテストと混ざらない
@@ -64,11 +66,11 @@ func TestJoinAndSnapshot(t *testing.T) {
 	a, b := participant(h, ids.New(), t0), participant(h, ids.New(), t0.Add(time.Second))
 
 	// 入った順に並ぶ（後から入った b を先に書いても）
-	r1, err := s.Join(t.Context(), b, t0.Add(30*time.Second), 20)
+	r1, err := s.Join(t.Context(), b, t0.Add(30*time.Second), 20, quiet)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r2, err := s.Join(t.Context(), a, t0.Add(30*time.Second), 20)
+	r2, err := s.Join(t.Context(), a, t0.Add(30*time.Second), 20, quiet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,16 +101,16 @@ func TestJoinLimit(t *testing.T) {
 	h := ids.New()
 	a, b := participant(h, ids.New(), t0), participant(h, ids.New(), t0)
 	for _, p := range []chat.HuddleParticipant{a, b} {
-		if _, err := s.Join(t.Context(), p, t0.Add(time.Minute), 2); err != nil {
+		if _, err := s.Join(t.Context(), p, t0.Add(time.Minute), 2, quiet); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	if _, err := s.Join(t.Context(), participant(h, ids.New(), t0), t0.Add(time.Minute), 2); !errors.Is(err, chat.ErrHuddleFull) {
+	if _, err := s.Join(t.Context(), participant(h, ids.New(), t0), t0.Add(time.Minute), 2, quiet); !errors.Is(err, chat.ErrHuddleFull) {
 		t.Errorf("third join err = %v", err)
 	}
 	moved := participant(h, a.UserID, t0.Add(time.Second))
-	res, err := s.Join(t.Context(), moved, t0.Add(time.Minute), 2)
+	res, err := s.Join(t.Context(), moved, t0.Add(time.Minute), 2, quiet)
 	if err != nil {
 		t.Fatalf("moving device was rejected: %v", err)
 	}
@@ -125,12 +127,12 @@ func TestJoinAnotherHuddleEvicts(t *testing.T) {
 	first := participant(h1, u, t0)
 	other := participant(h1, ids.New(), t0)
 	for _, p := range []chat.HuddleParticipant{first, other} {
-		if _, err := s.Join(t.Context(), p, t0.Add(time.Minute), 20); err != nil {
+		if _, err := s.Join(t.Context(), p, t0.Add(time.Minute), 20, quiet); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	res, err := s.Join(t.Context(), participant(h2, u, t0.Add(time.Second)), t0.Add(time.Minute), 20)
+	res, err := s.Join(t.Context(), participant(h2, u, t0.Add(time.Second)), t0.Add(time.Minute), 20, quiet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +151,7 @@ func TestHeartbeat(t *testing.T) {
 	s := newStore(t)
 	h := ids.New()
 	p := participant(h, ids.New(), t0)
-	if _, err := s.Join(t.Context(), p, t0.Add(30*time.Second), 20); err != nil {
+	if _, err := s.Join(t.Context(), p, t0.Add(30*time.Second), 20, quiet); err != nil {
 		t.Fatal(err)
 	}
 
@@ -175,10 +177,10 @@ func TestSweep(t *testing.T) {
 	h := ids.New()
 	base := t0
 	stale, fresh := participant(h, ids.New(), base), participant(h, ids.New(), base)
-	if _, err := s.Join(t.Context(), stale, base.Add(10*time.Second), 20); err != nil {
+	if _, err := s.Join(t.Context(), stale, base.Add(10*time.Second), 20, quiet); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Join(t.Context(), fresh, base.Add(10*time.Second), 20); err != nil {
+	if _, err := s.Join(t.Context(), fresh, base.Add(10*time.Second), 20, quiet); err != nil {
 		t.Fatal(err)
 	}
 	if ok, _ := s.Heartbeat(t.Context(), fresh.UserID, h, fresh.ID, base.Add(time.Hour)); !ok {
@@ -204,7 +206,7 @@ func TestRemoveIsIdempotent(t *testing.T) {
 	s := newStore(t)
 	h := ids.New()
 	p := participant(h, ids.New(), t0)
-	if _, err := s.Join(t.Context(), p, t0.Add(time.Minute), 20); err != nil {
+	if _, err := s.Join(t.Context(), p, t0.Add(time.Minute), 20, quiet); err != nil {
 		t.Fatal(err)
 	}
 
@@ -222,7 +224,7 @@ func TestSetMuted(t *testing.T) {
 	s := newStore(t)
 	h := ids.New()
 	p := participant(h, ids.New(), t0)
-	if _, err := s.Join(t.Context(), p, t0.Add(time.Minute), 20); err != nil {
+	if _, err := s.Join(t.Context(), p, t0.Add(time.Minute), 20, quiet); err != nil {
 		t.Fatal(err)
 	}
 
@@ -250,7 +252,7 @@ func TestJoiningSoon(t *testing.T) {
 	s := newStore(t)
 	h := ids.New()
 	caller, callee := participant(h, ids.New(), t0), ids.New()
-	if _, err := s.Join(t.Context(), caller, t0.Add(time.Minute), 20); err != nil {
+	if _, err := s.Join(t.Context(), caller, t0.Add(time.Minute), 20, quiet); err != nil {
 		t.Fatal(err)
 	}
 
@@ -265,7 +267,7 @@ func TestJoiningSoon(t *testing.T) {
 	if got := snapshot(t, s, h, t0.Add(6*time.Minute)).JoiningSoon; len(got) != 0 {
 		t.Errorf("expired joining soon = %v", got)
 	}
-	if _, err := s.Join(t.Context(), participant(h, callee, t0.Add(time.Minute)), t0.Add(2*time.Minute), 20); err != nil {
+	if _, err := s.Join(t.Context(), participant(h, callee, t0.Add(time.Minute)), t0.Add(2*time.Minute), 20, quiet); err != nil {
 		t.Fatal(err)
 	}
 	if got := snapshot(t, s, h, t0.Add(time.Minute)).JoiningSoon; len(got) != 0 {
@@ -278,7 +280,7 @@ func TestClear(t *testing.T) {
 	h := ids.New()
 	a, b := participant(h, ids.New(), t0), participant(h, ids.New(), t0)
 	for _, p := range []chat.HuddleParticipant{a, b} {
-		if _, err := s.Join(t.Context(), p, t0.Add(time.Minute), 20); err != nil {
+		if _, err := s.Join(t.Context(), p, t0.Add(time.Minute), 20, quiet); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -308,7 +310,7 @@ func TestConcurrentJoinsRespectLimit(t *testing.T) {
 	joined, full := 0, 0
 	for range tries {
 		wg.Go(func() {
-			_, err := s.Join(t.Context(), participant(h, ids.New(), t0), t0.Add(time.Minute), limit)
+			_, err := s.Join(t.Context(), participant(h, ids.New(), t0), t0.Add(time.Minute), limit, quiet)
 			mu.Lock()
 			defer mu.Unlock()
 			switch {

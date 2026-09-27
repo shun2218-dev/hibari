@@ -50,7 +50,34 @@ type Env struct {
 	// Huddles はハドルにいま入っている人（実物の Redis）、Media は偽の Cloudflare（ADR 0066）。
 	Huddles *huddle.Store
 	Media   *Media
+	// Encoder は、Redis の Lua の中で配るために作ったイベント（ハドル中の印。ADR 0067 決定 3）を記録する。
+	Encoder *Encoder
 	Service *chat.Service
+}
+
+// Encoder はイベントを publish する形にし、作ったイベントを記録する chat.EventEncoder。
+// 宛先はテストごとに名前を分けた、誰も購読していないチャンネルにする（本物の宛先に配らない）。
+type Encoder struct {
+	channel string
+	mu      sync.Mutex
+	events  []chat.Event
+}
+
+// Encode はイベントを記録し、イベントの種類を中身にして返す。
+func (e *Encoder) Encode(ev chat.Event) ([]string, []byte, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.events = append(e.events, ev)
+	return []string{e.channel}, []byte(ev.Type), nil
+}
+
+// Take は記録したイベントを返し、記録を空にする。
+func (e *Encoder) Take() []chat.Event {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := e.events
+	e.events = nil
+	return out
 }
 
 // Recorder は配信されたイベントを記録する chat.Delivery。
@@ -162,7 +189,8 @@ func New(t testing.TB, opts ...Option) *Env {
 	// テストごとに名前空間を分ける（掃除が並行に動くほかのテストの参加を外さないように）
 	huddles := huddle.NewNamespaced(rdb, "test:"+ids.New().String()+":")
 	media := &Media{}
-	huddleDeps := chat.HuddleDeps{States: huddles, Media: media, Limiter: ratelimit.New(rdb, clk)}
+	encoder := &Encoder{channel: "chattest:" + ids.New().String()}
+	huddleDeps := chat.HuddleDeps{States: huddles, Media: media, Limiter: ratelimit.New(rdb, clk), Encoder: encoder}
 	if o.withoutHuddles {
 		huddleDeps = chat.HuddleDeps{}
 	}
@@ -176,6 +204,7 @@ func New(t testing.TB, opts ...Option) *Env {
 		Fetcher:    fetcher,
 		Huddles:    huddles,
 		Media:      media,
+		Encoder:    encoder,
 		Service: chat.NewService(chat.Deps{
 			DB:               pool,
 			Clock:            clk,

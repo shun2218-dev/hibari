@@ -152,7 +152,8 @@ func startInstance(t *testing.T, env *authtest.Env, o apiOptions) *apiClient {
 	fetcher := &chattest.Fetcher{}
 	// ハドル（ADR 0066）。Cloudflare は偽物、いま入っている人は実物の Redis。
 	// httpx のテストは掃除を動かさないので、名前空間を分けなくてもほかのテストの参加を外さない（インスタンスの間では共有する）
-	huddleDeps := chat.HuddleDeps{States: huddle.New(rdb), Media: &chattest.Media{}, Limiter: ratelimit.New(rdb, env.Clock)}
+	// ハドル中の印（ADR 0067 決定 3）は実物の配信の形で Lua から配る
+	huddleDeps := chat.HuddleDeps{States: huddle.New(rdb), Media: &chattest.Media{}, Limiter: ratelimit.New(rdb, env.Clock), Encoder: delivery}
 	if o.withoutHuddles {
 		huddleDeps = chat.HuddleDeps{}
 	}

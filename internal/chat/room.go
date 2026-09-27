@@ -162,6 +162,8 @@ type RoomMember struct {
 	// Away は本人が手動で離席にしているか、Status はカスタムステータス（ADR 0049）。
 	Away   bool
 	Status *UserStatus
+	// InHuddle は、ルームのあるワークスペースのハドルにいま入っているか（ADR 0067 決定 3）。
+	InHuddle bool
 }
 
 // userProfile は 1 人の公開プロフィールを読む。

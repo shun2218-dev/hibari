@@ -9365,6 +9365,9 @@
               }
             ],
             "description": "status は設定していなければ null（期限切れも null）。"
+          },
+          "in_huddle": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -9373,7 +9376,8 @@
           "joined_at",
           "presence",
           "away",
-          "status"
+          "status",
+          "in_huddle"
         ]
       },
       "MemberList": {
@@ -9431,6 +9435,9 @@
             ],
             "description": "status は設定していなければ null（期限切れも null）。"
           },
+          "in_huddle": {
+            "type": "boolean"
+          },
           "email": {
             "anyOf": [
               {
@@ -9449,6 +9456,7 @@
           "presence",
           "away",
           "status",
+          "in_huddle",
           "email"
         ]
       },
@@ -10463,6 +10471,9 @@
               }
             ],
             "description": "status は設定していなければ null（期限切れも null）。"
+          },
+          "in_huddle": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -10471,7 +10482,8 @@
           "joined_at",
           "presence",
           "away",
-          "status"
+          "status",
+          "in_huddle"
         ]
       },
       "RoomMemberList": {

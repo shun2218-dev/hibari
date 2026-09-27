@@ -115,6 +115,8 @@ type Member struct {
 	Away bool
 	// Status はカスタムステータス。設定していなければ nil（期限切れも nil）。
 	Status *UserStatus
+	// InHuddle は、そのワークスペースのハドルにいま入っているか（ADR 0067 決定 3）。変化は member.huddle_changed で届く。
+	InHuddle bool
 }
 
 // MemberProfile はプロフィールのパネルの 1 人分（ADR 0050 決定 1）。

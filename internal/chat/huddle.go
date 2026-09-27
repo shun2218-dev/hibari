@@ -62,12 +62,21 @@ type HuddleDeps struct {
 	States  HuddleStates
 	Media   HuddleMedia
 	Limiter RateLimiter
+	// Encoder は member.huddle_changed を publish する形にする（ADR 0067 決定 3）。nil なら印は出し入れするが配らない。
+	Encoder EventEncoder
+}
+
+// EventEncoder はイベントを publish する形（宛先のチャンネルと中身）にする（*realtime.RedisDelivery が実装する）。
+// 状態の変化と同じ Redis の操作の中で配るイベントのために使う。
+type EventEncoder interface {
+	Encode(ev Event) (channels []string, payload []byte, err error)
 }
 
 type huddles struct {
 	states  HuddleStates
 	media   HuddleMedia
 	limiter RateLimiter
+	encoder EventEncoder
 }
 
 func (h huddles) enabled() bool { return h.media != nil && h.states != nil }
@@ -249,7 +258,7 @@ func (s *Service) JoinHuddle(ctx context.Context, actor, authSessionID, roomID u
 			}
 
 			p.HuddleID = h.ID
-			res, err := s.huddles.states.Join(ctx, p, now.Add(HuddleHeartbeatTTL), HuddleParticipantLimit)
+			res, err := s.huddles.states.Join(ctx, p, now.Add(HuddleHeartbeatTTL), HuddleParticipantLimit, s.huddleStatus(ctx, actor, a.room.WorkspaceID))
 			if err != nil {
 				return err
 			}
@@ -314,6 +323,47 @@ func (s *Service) JoinHuddle(ctx context.Context, actor, authSessionID, roomID u
 	}
 	s.deliver(ctx, events...)
 	return JoinedHuddle{Huddle: view, ParticipantID: p.ID, Answer: answer}, nil
+}
+
+// huddleStatus は、入った人のハドル中の印と、出入りのときに配る中身を作る（ADR 0067 決定 3）。
+// 中身を作れなければ、印の出し入れだけをする（配らなくても、メンバー一覧の in_huddle で読み直せる。ルール 4）。
+func (s *Service) huddleStatus(ctx context.Context, userID, workspaceID ulid.ULID) HuddleStatus {
+	status := HuddleStatus{WorkspaceID: workspaceID}
+	if s.huddles.encoder == nil {
+		return status
+	}
+	encode := func(inHuddle bool) ([]string, []byte, error) {
+		return s.huddles.encoder.Encode(Event{
+			Type: EventMemberHuddleChanged,
+			To:   Audience{Workspaces: []ulid.ULID{workspaceID}},
+			Data: MemberHuddleChanged{WorkspaceID: workspaceID, UserID: userID, InHuddle: inHuddle},
+		})
+	}
+	channels, joined, err := encode(true)
+	var left []byte
+	if err == nil {
+		_, left, err = encode(false)
+	}
+	if err != nil {
+		s.logger.ErrorContext(ctx, "encode huddle status failed", slog.String("user_id", userID.String()), slog.Any("error", err))
+		return status
+	}
+	status.Channels, status.Joined, status.Left = channels, joined, left
+	return status
+}
+
+// inHuddle は、userIDs のうち workspaceID でハドル中の人を返す（ADR 0067 決定 3）。
+// presence と同じく表示の補助なので、読めなければ全員をハドル中でないとして扱い、一覧そのものは失敗させない。
+func (s *Service) inHuddle(ctx context.Context, workspaceID ulid.ULID, userIDs []ulid.ULID) map[ulid.ULID]bool {
+	if !s.huddles.enabled() || len(userIDs) == 0 {
+		return map[ulid.ULID]bool{}
+	}
+	in, err := s.huddles.states.InHuddle(ctx, workspaceID, userIDs)
+	if err != nil {
+		s.logger.WarnContext(ctx, "read huddle status failed", slog.Any("error", err))
+		return map[ulid.ULID]bool{}
+	}
+	return in
 }
 
 // evictedReason は、同じ人の前の参加が外れた理由。同じハドルなら別の端末に移った、別のハドルなら抜けた。

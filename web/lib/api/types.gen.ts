@@ -229,6 +229,7 @@ export interface Member {
   away: boolean;
   /** status は設定していなければ null（期限切れも null）。 */
   status: UserStatus | null;
+  in_huddle: boolean;
 }
 
 export interface MemberList {
@@ -244,6 +245,7 @@ export interface MemberProfile {
   away: boolean;
   /** status は設定していなければ null（期限切れも null）。 */
   status: UserStatus | null;
+  in_huddle: boolean;
   email: string | null;
 }
 
@@ -403,6 +405,7 @@ export interface RoomMember {
   away: boolean;
   /** status は設定していなければ null（期限切れも null）。 */
   status: UserStatus | null;
+  in_huddle: boolean;
 }
 
 export interface RoomMemberList {
@@ -1014,6 +1017,12 @@ export interface MemberStatusChangedData {
   status: UserStatus | null;
 }
 
+export interface MemberHuddleChangedData {
+  workspace_id: string;
+  user_id: string;
+  in_huddle: boolean;
+}
+
 export interface TypingStartedData {
   workspace_id: string;
   room_id: string;
@@ -1101,6 +1110,7 @@ export type ServerEvent =
   | { type: "workspace.role_changed"; data: WorkspaceRoleChangedData }
   | { type: "presence.changed"; data: PresenceChangedData }
   | { type: "member.status_changed"; data: MemberStatusChangedData }
+  | { type: "member.huddle_changed"; data: MemberHuddleChangedData }
   | { type: "typing.started"; data: TypingStartedData }
   | { type: "thread.read"; data: ThreadReadData }
   | { type: "thread.followed"; data: ThreadFollowedData }

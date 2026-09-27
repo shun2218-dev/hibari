@@ -27,7 +27,7 @@ func (h *chatHandlers) listRoomMembers(w http.ResponseWriter, r *http.Request) {
 		resp.Members[i] = roomMemberResponse{
 			memberResponse{
 				User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt,
-				Presence: m.Presence, Away: m.Away, Status: newUserStatusResponse(m.Status),
+				Presence: m.Presence, Away: m.Away, Status: newUserStatusResponse(m.Status), InHuddle: m.InHuddle,
 			},
 		}
 	}
