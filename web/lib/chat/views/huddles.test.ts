@@ -6,8 +6,13 @@ import { kei, miyuki, naoki, room } from "@/test/chat-data";
 import {
   huddleDurationLabel,
   huddleHeaderState,
+  huddleLinkAction,
+  huddleLinkCardTable,
+  huddleLinkRoomsIn,
   huddleParticipantNames,
   roomHuddleBadge,
+  toBlockedHuddlePreviewView,
+  toHuddleLinkCardViews,
   toHuddleMessageView,
   toHuddlePreviewView,
   toHuddleScreenView,
@@ -181,5 +186,104 @@ describe("toHuddleScreenView（追記 C）", () => {
     expect(toHuddleScreenView(room("room-1", "雑談", { huddle: h }), call, { me, names }).joiningSoon).toEqual([
       { id: kei.id, name: kei.display_name, avatarUrl: undefined },
     ]);
+  });
+});
+
+describe("ハドルへのリンク（ADR 0067 決定 1・2）", () => {
+  const self = { id: "u-me", name: "あなた" };
+
+  it.each([
+    { name: "投稿できる", room: room("r1", "a"), canPost: true, want: "start" },
+    { name: "参加していない public", room: room("r1", "a", { is_member: false }), canPost: false, want: "not-member" },
+    { name: "アーカイブ", room: room("r1", "a", { archived_at: "2026-09-26T00:00:00Z" }), canPost: false, want: "archived" },
+    { name: "それ以外", room: room("r1", "a", { kind: "private" }), canPost: false, want: "ignore" },
+  ])("開いたときの振る舞い: $name", ({ room: r, canPost, want }) => {
+    expect(huddleLinkAction(r, canPost)).toBe(want);
+  });
+
+  it("入れないときのプレビューは、マイクを求めない", () => {
+    expect(toBlockedHuddlePreviewView(room("r1", "雑談"), self, "not-member")).toEqual({
+      room: { kind: "public", name: "雑談" },
+      action: "start",
+      self,
+      micOn: false,
+      mics: [],
+      blocked: "not-member",
+    });
+  });
+
+  const origin = "https://hibari.test";
+  const ws = "01J8ZH5K0000000000000000W1";
+  const r1 = "01J8ZH5K0000000000000000R1";
+  const r2 = "01J8ZH5K0000000000000000R2";
+  const r3 = "01J8ZH5K0000000000000000R3";
+  const href = (id: string) => `${origin}/w/${ws}/r/${id}?huddle=1`;
+
+  it("本文から、リンクの指すルームを集める（削除したメッセージは除く）", () => {
+    expect(
+      huddleLinkRoomsIn(
+        [
+          { body: `${href(r1)} ${href(r2)}`, deleted_at: null },
+          { body: href(r1), deleted_at: null },
+          { body: href(r3), deleted_at: "2026-09-26T00:00:00Z" },
+        ],
+        origin,
+      ),
+    ).toEqual([r1, r2]);
+  });
+
+  it("手元のルームは生きた状態から、ないルームは取った結果から作り、まだなら loading", () => {
+    const table = huddleLinkCardTable([r1, r2, r3], {
+      rooms: {
+        [r1]: room(r1, "設計", { workspace_id: "ws-1", huddle: roomHuddle(["u-me", naoki.id]) }),
+      },
+      fetched: {
+        [r2]: {
+          room_id: r2,
+          status: "ok",
+          workspace: { id: "ws-2", name: "別のチーム" },
+          room: { id: r2, kind: "public", name: "雑談", dm_peer: null },
+          huddle: null,
+          can_join: false,
+        },
+      },
+      meId: "u-me",
+      huddlesEnabled: true,
+      canJoin: () => true,
+      currentWorkspaceId: "ws-1",
+      names,
+    });
+
+    expect(table[r1]).toMatchObject({ state: "ok", room: { name: "設計" }, canJoin: true, huddle: { joined: true } });
+    expect(table[r1]).not.toHaveProperty("workspaceName");
+    expect(table[r2]).toEqual({
+      key: r2,
+      state: "ok",
+      room: { kind: "public", name: "雑談" },
+      workspaceName: "別のチーム",
+      huddle: null,
+      canJoin: false,
+    });
+    expect(table[r3]).toEqual({ key: r3, state: "loading" });
+  });
+
+  it("ハドルが使えなければ、入れる人にもボタンを出さない。読めないリンクは unavailable", () => {
+    const table = huddleLinkCardTable([r1, r2], {
+      rooms: { [r1]: room(r1, "設計") },
+      fetched: { [r2]: { room_id: r2, status: "unavailable", workspace: null, room: null, huddle: null, can_join: false } },
+      huddlesEnabled: false,
+      canJoin: () => true,
+      names,
+    });
+    expect(table[r1]).toMatchObject({ canJoin: false });
+    expect(table[r2]).toEqual({ key: r2, state: "unavailable" });
+  });
+
+  it("メッセージのカードは表から引き、表になければ loading", () => {
+    expect(toHuddleLinkCardViews(`${href(r1)} ${href(r2)}`, origin, { [r1]: { key: r1, state: "unavailable" } })).toEqual([
+      { key: r1, state: "unavailable" },
+      { key: r2, state: "loading" },
+    ]);
+    expect(toHuddleLinkCardViews("リンクなし", origin, {})).toBeUndefined();
   });
 });

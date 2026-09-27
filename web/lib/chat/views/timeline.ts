@@ -1,4 +1,4 @@
-import type { MessageView, RoomKind, TimelineItem, UserStatusView } from "@/components/chat/types";
+import type { HuddleLinkCardView, MessageView, RoomKind, TimelineItem, UserStatusView } from "@/components/chat/types";
 import type {
   LinkPreview,
   Mention,
@@ -15,7 +15,7 @@ import type { MediaState } from "@/lib/chat/media/media-store";
 import { inChannel } from "@/lib/chat/rules/messages";
 import type { OutgoingMessage } from "@/lib/chat/store/state";
 
-import { toHuddleMessageView } from "./huddles";
+import { toHuddleLinkCardViews, toHuddleMessageView } from "./huddles";
 import {
   mentionsUser,
   systemMessageText,
@@ -55,6 +55,8 @@ export type TimelineOptions = {
   linkPreviewUrls?: MediaState["linkPreviews"];
   /** 本文に貼られたパーマリンクのカードの中身（ADR 0040）。linkKey → 取得結果。 */
   linkCards?: Record<string, MessageLink | undefined>;
+  /** 本文に貼られたハドルのリンクのカード（ADR 0067 決定 2）。ルームの ID → カード（useHuddleLinkCardTable）。 */
+  huddleLinkCards?: Readonly<Record<string, HuddleLinkCardView | undefined>>;
   /** パーマリンクを見分けるためのこの画面のオリジン。省くとカードを出さない（サーバー側の描画では window がない）。 */
   origin?: string;
   /** 今いるワークスペース。カードのワークスペース名は、これと違うときだけ出す。 */
@@ -205,6 +207,7 @@ export function toTimelineItems(
     attachmentUrls = {},
     linkPreviewUrls = {},
     linkCards = {},
+    huddleLinkCards = {},
     origin,
     currentWorkspaceId,
     memberNames,
@@ -335,6 +338,7 @@ export function toTimelineItems(
         linkPreviews:
           entry.deleted || entry.linkPreviews.length === 0 ? undefined : toLinkPreviewViews(entry.linkPreviews, linkPreviewUrls),
         linkCards: origin === undefined ? undefined : toLinkCardViews(entry.body, { origin, linkCards, currentWorkspaceId, avatarUrls, timeZone, mentionNames: workspaceMemberNames }),
+        huddleLinkCards: origin === undefined || entry.deleted ? undefined : toHuddleLinkCardViews(entry.body, origin, huddleLinkCards),
         grouped,
       },
     });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useEffectEvent, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -9,10 +9,13 @@ import { HuddleRing } from "@/components/chat/huddle-ring";
 import { HuddleBar, HuddleProblemScreen, HuddleScreen } from "@/components/chat/huddle-screen";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { useHuddle, useHuddleSurface } from "@/hooks/chat/use-huddle";
+import { useHuddleLinkMenu } from "@/hooks/chat/use-huddle-link-menu";
 import { useHuddleView } from "@/hooks/chat/use-huddle-view";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
 import { createRingtone } from "@/lib/chat/huddle/ringtone";
 import { watchWindowInput } from "@/lib/chat/realtime/activity";
+import { HUDDLE_LINK_PARAM } from "@/lib/chat/format/links";
+import { huddleLinkAction, toBlockedHuddlePreviewView } from "@/lib/chat/views/huddles";
 import { canPost } from "@/lib/chat/views/permissions";
 
 import { RoomThread } from "./room-thread";
@@ -32,12 +35,17 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
   const store = useChatStore();
   const router = useRouter();
   const surface = useHuddleSurface();
-  const { call, room, preview, screen } = useHuddleView();
-  const enabled = useChatState((s) => s.features?.huddles ?? false);
+  const { call, room, self, preview, screen } = useHuddleView();
+  const features = useChatState((s) => s.features);
+  const enabled = features?.huddles ?? false;
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   const currentRoom = useChatState((s) => (roomId ? s.rooms[roomId] : undefined));
   const [chatOpen, setChatOpen] = useState(false);
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
   const [previewMenu, setPreviewMenu] = useState<"mic" | "speaker">();
+  // 操作の列の「…」（ハドルミーティングのリンクをコピー）。通話しているハドルのルームを指す
+  const linkMenu = useHuddleLinkMenu(room ? { workspaceId: room.workspace_id, roomId: room.id } : undefined);
 
   // WebRTC のないブラウザでは、サーバーに聞くまでもなく使えない
   useEffect(() => {
@@ -65,6 +73,36 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
   }
 
   const canStartHere = huddle !== null && enabled && currentRoom !== undefined && canPost(currentRoom);
+
+  // ハドルへのリンク（`?huddle=1`）で開いた（ADR 0067 決定 1）。押しただけでは入らず、必ずプレビューを通す。
+  // ボタンを押した操作の中ではないので、別のタブは開けず、同じタブの全画面に出る。
+  // 入れないとき（参加していない public・アーカイブ）はクエリを残したまま理由を出し、閉じたら消す。
+  // チャンネルに参加すればルームが変わって start になり、そのままプレビューに進む
+  const wantsHuddle = searchParams.get(HUDDLE_LINK_PARAM) === "1";
+  const linkAction =
+    wantsHuddle && huddle && currentRoom && features !== null
+      ? enabled
+        ? huddleLinkAction(currentRoom, canPost(currentRoom))
+        : "ignore"
+      : undefined;
+  const dropHuddleParam = () => {
+    const params = new URLSearchParams(searchParams);
+    params.delete(HUDDLE_LINK_PARAM);
+    router.replace(params.size > 0 ? `${pathname}?${params}` : pathname);
+  };
+  const dropHuddleParamOnce = useEffectEvent(dropHuddleParam);
+  useEffect(() => {
+    if (!huddle || !roomId || linkAction === undefined) return;
+    if (linkAction === "start") {
+      dropHuddleParamOnce();
+      huddle.surface.start(roomId);
+    } else if (linkAction === "ignore" || huddle.call.getSnapshot().phase !== "idle") {
+      dropHuddleParamOnce();
+    } else {
+      huddle.surface.show();
+    }
+  }, [huddle, roomId, linkAction]);
+  const blocked = linkAction === "not-member" || linkAction === "archived" ? linkAction : undefined;
   const onShortcut = useEffectEvent((event: KeyboardEvent) => {
     if (!huddle || !(event.metaKey || event.ctrlKey) || !event.shiftKey) return;
     if (event.code === "KeyH") {
@@ -96,7 +134,25 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
   const { call: controls } = huddle;
 
   let content: ReactNode = null;
-  if (preview) {
+  const closeBlocked = () => {
+    dropHuddleParam();
+    huddle.surface.hide();
+  };
+  if (blocked && currentRoom && self && call.phase === "idle") {
+    content = (
+      <HuddlePreview
+        preview={toBlockedHuddlePreviewView(currentRoom, self, blocked)}
+        onCancel={closeBlocked}
+        onJoinRoom={() =>
+          // 参加するとルームが変わって start になり、そのままプレビューに進む（ここでマイクを求める）
+          void store.joinRoom(currentRoom.id).catch((err: unknown) => {
+            console.error("failed to join the room from a huddle link", err);
+            closeBlocked();
+          })
+        }
+      />
+    );
+  } else if (preview) {
     content = (
       <HuddlePreview
         preview={preview}
@@ -160,6 +216,7 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
         onToggleDeviceMenu={() => setDeviceMenuOpen((open) => !open)}
         onToggleChat={() => setChatOpen((open) => !open)}
         onLeave={() => void controls.leave()}
+        menu={linkMenu}
       />
     );
   } else if (call.phase === "problem" && room) {
@@ -236,6 +293,7 @@ export function HuddleCallBar() {
   const surface = useHuddleSurface();
   const { call, room, screen } = useHuddleView();
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
+  const linkMenu = useHuddleLinkMenu(room ? { workspaceId: room.workspace_id, roomId: room.id } : undefined);
 
   if (!huddle || surface.kind !== "none" || call.phase !== "call" || !screen || !room) return null;
   const messageId = room.huddle?.id === call.huddleId ? room.huddle?.message_id : undefined;
@@ -277,6 +335,7 @@ export function HuddleCallBar() {
       }
       onPopOut={() => huddle.surface.show()}
       onLeave={() => void controls.leave()}
+      menu={linkMenu}
     />
   );
 }

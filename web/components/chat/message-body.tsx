@@ -8,7 +8,7 @@ import { type Block, type Inline, type ListBlock, parseBody } from "@/lib/chat/f
 import { type ChannelLinks } from "@/providers/channel-links-provider";
 import { UNRESOLVED_CHANNEL_NAME } from "@/lib/chat/format/channel-links";
 import { highlightParts } from "@/lib/chat/format/highlight";
-import { parsePermalink, permalinkPath } from "@/lib/chat/format/links";
+import { huddleLinkPath, parseHuddleLink, parsePermalink, permalinkPath } from "@/lib/chat/format/links";
 
 /**
  * メッセージの本文（ADR 0051）。`parseBody` の木を React の要素に写すだけで、HTML の文字列は作らない。
@@ -199,11 +199,13 @@ function InlineView({ node, ctx }: { node: Inline; ctx: RenderContext }) {
             {text}
           </span>
         );
-      // パーマリンクはアプリの中を移るので、同じタブで飛ぶ（ADR 0051 決定 4。飛ぶ仕組みは ADR 0042）
+      // パーマリンクとハドルへのリンクはアプリの中を移るので、同じタブで飛ぶ（ADR 0051 決定 4。飛ぶ仕組みは ADR 0042 / 0067）
       const permalink = ctx.origin === undefined ? null : parsePermalink(node.url, ctx.origin);
-      if (permalink)
+      const huddleLink = ctx.origin === undefined || permalink ? null : parseHuddleLink(node.url, ctx.origin);
+      const inApp = permalink ? permalinkPath(permalink) : huddleLink ? huddleLinkPath(huddleLink) : undefined;
+      if (inApp)
         return (
-          <Link href={permalinkPath(permalink)} title={title} className="text-primary hover:underline">
+          <Link href={inApp} title={title} className="text-primary hover:underline">
             {text}
           </Link>
         );

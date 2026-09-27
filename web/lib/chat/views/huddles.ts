@@ -1,5 +1,6 @@
 import type {
   HuddleHeaderState,
+  HuddleLinkCardView,
   HuddleMessageView,
   HuddlePreviewView,
   HuddleScreenView,
@@ -7,7 +8,8 @@ import type {
   UserRef,
 } from "@/components/chat/types";
 import type { HuddleCallState } from "@/lib/chat/huddle/call";
-import type { MessageHuddle, Room, RoomHuddle, UserProfile } from "@/lib/api/types.gen";
+import type { HuddleLink, MessageHuddle, Room, RoomHuddle, UserProfile } from "@/lib/api/types.gen";
+import { findHuddleLinks } from "@/lib/chat/format/links";
 
 import type { UrlTable } from "./message";
 
@@ -149,6 +151,35 @@ export function toHuddlePreviewView(room: Room, call: CallPhase<"preview">, self
 }
 
 /**
+ * ハドルへのリンクから開いたが、そのままでは入れないときのプレビュー（ADR 0067 決定 1）。
+ * マイクは求めない（入れないのに許可の確認を出さない）。参加していない public のチャンネルは「チャンネルに参加する」、
+ * アーカイブしたチャンネルは開始を押せなくする。
+ */
+export function toBlockedHuddlePreviewView(room: Room, self: UserRef, blocked: NonNullable<HuddlePreviewView["blocked"]>): HuddlePreviewView {
+  return {
+    room: screenRoom(room),
+    action: room.huddle !== null && room.huddle.participants.length > 0 ? "join" : "start",
+    self,
+    micOn: false,
+    mics: [],
+    blocked,
+  };
+}
+
+/**
+ * ハドルへのリンクを開いたとき、どうするか（ADR 0067 決定 1）。
+ * - start: 投稿できる（入れる）。参加前のプレビューを出す（通話中なら、いまのハドルの画面を出す。いまの振る舞いのまま）
+ * - not-member / archived: 入れない理由を出す
+ * - ignore: それ以外（DM・private は読めればメンバー。読めないルームはルームの画面が「表示できません」を出す）
+ */
+export function huddleLinkAction(room: Room, canPostHere: boolean): "start" | "not-member" | "archived" | "ignore" {
+  if (canPostHere) return "start";
+  if (room.archived_at !== null) return "archived";
+  if (room.kind === "public" && !room.is_member) return "not-member";
+  return "ignore";
+}
+
+/**
  * ハドルの画面と帯（追記 C）。いま入っている人は、ルームのハドル（huddle.updated の全体）から出す。
  * 自分は先頭にし、自分のミュートは通話の値を使う（サーバーの往復を待たずに印を変える）。
  * 自分がまだ並んでいない（入る途中・huddle.updated が届く前）ときも、自分のタイルは出す。
@@ -173,4 +204,102 @@ export function toHuddleScreenView(
     joiningSoon: (huddle?.joining_soon ?? []).filter((id) => id !== me.id).map(ref),
     muted: call.muted,
   };
+}
+
+// ---- ハドルへのリンクのカード（ADR 0067 決定 2） ----
+
+/**
+ * 画面に出すメッセージの本文から、ハドルへのリンクが指すルームを集める（重なりは 1 つに）。
+ * 削除したメッセージの本文は空なので、自然に対象から外れる。
+ */
+export function huddleLinkRoomsIn(messages: readonly { body: string; deleted_at: string | null }[], origin: string): string[] {
+  const found = new Set<string>();
+  for (const m of messages) {
+    if (m.deleted_at !== null) continue;
+    for (const link of findHuddleLinks(m.body, origin)) found.add(link.roomId);
+  }
+  return [...found];
+}
+
+/**
+ * ルームごとのカードの中身（キーはルームの ID）。
+ * **手元のストアにあるルームは、ストアの生きた状態から作る**（huddle.updated が届く）。ないルームは、取った時点の結果から作る（決定 2）。
+ * どちらもなければ、まだ取っていないので loading。
+ */
+export function huddleLinkCardTable(
+  roomIds: readonly string[],
+  {
+    rooms,
+    fetched,
+    meId,
+    huddlesEnabled,
+    canJoin,
+    currentWorkspaceId,
+    workspaceNames = {},
+    names,
+    avatarUrls = {},
+  }: {
+    rooms: Readonly<Record<string, Room | undefined>>;
+    fetched: Readonly<Record<string, HuddleLink | undefined>>;
+    meId?: string;
+    /** ハドルが使えない（サーバーに設定がない・WebRTC がない）ときは、ボタンを出さない。 */
+    huddlesEnabled: boolean;
+    /** ストアのルームに入れるか（投稿できるか。サーバーの authz と同じ条件の写し）。 */
+    canJoin: (room: Room) => boolean;
+    currentWorkspaceId?: string;
+    workspaceNames?: Readonly<Record<string, string | undefined>>;
+    names: Names;
+    avatarUrls?: UrlTable;
+  },
+): Record<string, HuddleLinkCardView> {
+  const ref = (id: string): UserRef => ({ id, name: names[id] ?? "メンバー", avatarUrl: avatarUrls[id] ?? undefined });
+  const live = (h: RoomHuddle | null) =>
+    h === null || h.participants.length === 0
+      ? null
+      : {
+          participants: h.participants.map((p) => ref(p.user_id)),
+          joined: meId !== undefined && h.participants.some((p) => p.user_id === meId),
+        };
+  const table: Record<string, HuddleLinkCardView> = {};
+  for (const roomId of roomIds) {
+    const room = rooms[roomId];
+    const link = fetched[roomId];
+    if (room) {
+      table[roomId] = {
+        key: roomId,
+        state: "ok",
+        room: screenRoom(room),
+        ...(room.workspace_id !== currentWorkspaceId && workspaceNames[room.workspace_id]
+          ? { workspaceName: workspaceNames[room.workspace_id] }
+          : {}),
+        huddle: live(room.huddle),
+        canJoin: huddlesEnabled && canJoin(room),
+      };
+    } else if (link === undefined) {
+      table[roomId] = { key: roomId, state: "loading" };
+    } else if (link.status !== "ok" || !link.room) {
+      table[roomId] = { key: roomId, state: "unavailable" };
+    } else {
+      table[roomId] = {
+        key: roomId,
+        state: "ok",
+        room: { kind: link.room.kind, name: link.room.kind === "dm" ? (link.room.dm_peer?.display_name ?? "") : link.room.name },
+        ...(link.workspace && link.workspace.id !== currentWorkspaceId ? { workspaceName: link.workspace.name } : {}),
+        huddle: live(link.huddle),
+        canJoin: huddlesEnabled && link.can_join,
+      };
+    }
+  }
+  return table;
+}
+
+/** 1 件のメッセージのハドルのリンクのカード。表からルームごとに引く（メッセージのリンクのカードと合わせて 3 枚まで）。 */
+export function toHuddleLinkCardViews(
+  body: string,
+  origin: string,
+  table: Readonly<Record<string, HuddleLinkCardView | undefined>>,
+): HuddleLinkCardView[] | undefined {
+  const links = findHuddleLinks(body, origin);
+  if (links.length === 0) return undefined;
+  return links.map((l) => table[l.roomId] ?? { key: l.roomId, state: "loading" });
 }

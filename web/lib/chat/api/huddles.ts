@@ -1,6 +1,7 @@
 import type {
   Features,
   HuddleICEServers,
+  HuddleLinks,
   JoinedHuddle,
   JoinHuddleRequest,
   SessionDescription,
@@ -16,6 +17,12 @@ export function createHuddleApi(request: Session["request"]) {
   const participant = (huddleId: string, participantId: string) =>
     `/api/v1/huddles/${encodeURIComponent(huddleId)}/participants/${encodeURIComponent(participantId)}`;
   return {
+    /**
+     * 本文に貼られたハドルのリンクを、見る人の権限でまとめて解決する（ADR 0067 決定 2）。20 件まで。
+     * 副作用はないが、ID の配列を渡すので POST（メッセージのリンクと同じ）。
+     */
+    resolveHuddleLinks: (roomIds: readonly string[]) => request<HuddleLinks>("POST", "/api/v1/huddles/links", { room_ids: roomIds }),
+
     /** サーバーの設定で使えるかが変わる機能（ハドルは Cloudflare の設定がなければ使えない。決定 15）。 */
     features: () => request<Features>("GET", "/api/v1/features"),
 

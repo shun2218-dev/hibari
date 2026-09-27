@@ -105,6 +105,67 @@ export function findPermalinks(body: string, origin: string): Permalink[] {
   return found;
 }
 
+// ---- ハドルへのリンク（ADR 0067 決定 1・2） ----
+
+/**
+ * ハドルへのリンクが指すルーム。形は `{オリジン}/w/{workspaceId}/r/{roomId}?huddle=1`（決定 1）。
+ * 1 回ごとのハドルではなくルームを指す（Slack と同じ。始まる前に共有でき、何度でも使える）。
+ */
+export type HuddleLink = { workspaceId: string; roomId: string };
+
+/** ハドルへのリンクのクエリ。ルームの URL にこれを足す。 */
+export const HUDDLE_LINK_PARAM = "huddle";
+
+/** ハドルへのリンクの URL を組み立てる（「ハドルミーティングのリンクをコピー」）。 */
+export function buildHuddleLink(origin: string, link: HuddleLink): string {
+  return new URL(huddleLinkPath(link), origin).toString();
+}
+
+/** 同じリンクの、アプリの中での行き先（`/w/…/r/…?huddle=1`）。 */
+export function huddleLinkPath(link: HuddleLink): string {
+  return `/w/${link.workspaceId}/r/${link.roomId}?${HUDDLE_LINK_PARAM}=1`;
+}
+
+/**
+ * URL 文字列がこのアプリのハドルへのリンクなら、指しているルームを返す。違えば null。
+ * `m` があればメッセージへのリンク（parsePermalink）として扱い、ここでは受けない。
+ */
+export function parseHuddleLink(href: string, origin: string): HuddleLink | null {
+  let url: URL;
+  let base: URL;
+  try {
+    base = new URL(origin);
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  if (url.origin !== base.origin) return null;
+  const parts = url.pathname.split("/").filter((p) => p !== "");
+  if (parts.length !== 4 || parts[0] !== "w" || parts[2] !== "r") return null;
+  const [, workspaceId, , roomId] = parts;
+  if (!isUlid(workspaceId) || !isUlid(roomId)) return null;
+  if (url.searchParams.get(HUDDLE_LINK_PARAM) !== "1" || url.searchParams.has("m")) return null;
+  return { workspaceId, roomId };
+}
+
+/**
+ * 本文に貼られたハドルへのリンクを、出てきた順に返す（決定 2）。同じルームは 1 つにまとめる。
+ * カードの枚数はメッセージへのリンクと合わせて MAX_LINK_CARDS 枚までなので、メッセージのカードの残りの分だけ返す。
+ */
+export function findHuddleLinks(body: string, origin: string): HuddleLink[] {
+  const limit = MAX_LINK_CARDS - findPermalinks(body, origin).length;
+  const found: HuddleLink[] = [];
+  const seen = new Set<string>();
+  for (const url of findUrls(body)) {
+    if (found.length >= limit) break;
+    const link = parseHuddleLink(url, origin);
+    if (!link || seen.has(link.roomId)) continue;
+    seen.add(link.roomId);
+    found.push(link);
+  }
+  return found;
+}
+
 /** カードの取得結果を覚えるときのキー。認可はルームの単位なので、ルームとメッセージの組で持つ。 */
 export function linkKey(link: LinkTarget): string {
   return `${link.roomId}/${link.messageId}`;
