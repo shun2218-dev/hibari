@@ -59,7 +59,8 @@ type HuddleJoinResult struct {
 // HuddleStates は、ハドルにいま入っている人の読み書き。時刻はすべて呼び出し側が Clock から渡す。
 type HuddleStates interface {
 	// Join は参加を書く。同じ人の前の参加は外して返す。上限に達していれば ErrHuddleFull。
-	Join(ctx context.Context, p HuddleParticipant, deadline time.Time, limit int) (HuddleJoinResult, error)
+	// status はハドル中の印（ADR 0067 決定 3）。そのワークスペースで初めてハドル中になったら、同じ操作の中で status.Joined を配る。
+	Join(ctx context.Context, p HuddleParticipant, deadline time.Time, limit int, status HuddleStatus) (HuddleJoinResult, error)
 	// Heartbeat は心拍の期限を延ばす。参加がもうなければ false。
 	Heartbeat(ctx context.Context, userID, huddleID, participantID ulid.ULID, deadline time.Time) (bool, error)
 	// Remove は参加を外す。もう外れていれば nil。
@@ -83,6 +84,22 @@ type HuddleStates interface {
 	RecordICEUsername(ctx context.Context, userID ulid.ULID, username string, expiresAt, now time.Time) error
 	// TakeICEUsernames は、その人に発行してまだ期限の切れていない TURN の認証情報を返して忘れる。
 	TakeICEUsernames(ctx context.Context, userID ulid.ULID, now time.Time) ([]string, error)
+	// InHuddle は、userIDs のうち workspaceID のハドルにいま入っている人を返す（ADR 0067 決定 3）。1 回の往復で読む。
+	InHuddle(ctx context.Context, workspaceID ulid.ULID, userIDs []ulid.ULID) (map[ulid.ULID]bool, error)
+}
+
+// HuddleStatus は、入った人の「ハドル中」の印の置き場所と、変わったときに配るもの（ADR 0067 決定 3）。
+//
+// 印の出入りを配るのは、状態の変化と同じ操作（Redis の Lua）の中で行う（presence と同じ。ADR 0016）。
+// 入る・抜けるが別のインスタンスで続けて起きても、状態の変化と配る順番が食い違わないようにするため。
+// そのため、配る形（宛先のチャンネルと中身）は Go が先に作って渡す。抜けるときの中身（Left）も入るときに渡しておき、
+// 抜け方（抜けた・外された・期限切れ・別のハドルへ移った）によらず、外した操作の中で配る。
+type HuddleStatus struct {
+	WorkspaceID ulid.ULID
+	// Channels は publish する宛先。空なら配らない（印の出し入れだけをする）。
+	Channels []string
+	// Joined / Left は member.huddle_changed の in_huddle が true / false の中身。
+	Joined, Left []byte
 }
 
 // ---- Cloudflare（SFU と TURN）----

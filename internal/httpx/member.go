@@ -15,6 +15,8 @@ import (
 // presence は自動で決まる状態の初期値で、変化は WebSocket の presence.changed で届く（ADR 0015 / 0049）。
 // away（本人が選んだ離席）と status（カスタムステータス）は member.status_changed で届く。
 // **画面に出す 3 つの状態は、presence と away をクライアントが合わせて決める**（ADR 0049 決定 1）。
+// in_huddle（そのワークスペースでハドル中か）は member.huddle_changed で届く。名前の横に出すステータスは、
+// status がなければハドル中の 🎧 にする。**合わせるのはクライアント**（ADR 0067 決定 4）。
 type memberResponse struct {
 	User     userProfileResponse `json:"user"`
 	Role     authz.Role          `json:"role"`
@@ -22,13 +24,14 @@ type memberResponse struct {
 	Presence chat.Presence       `json:"presence"`
 	Away     bool                `json:"away"`
 	// Status は設定していなければ null（期限切れも null）。
-	Status *userStatusResponse `json:"status"`
+	Status   *userStatusResponse `json:"status"`
+	InHuddle bool                `json:"in_huddle"`
 }
 
 func newMemberResponse(m chat.Member) memberResponse {
 	return memberResponse{
 		User: newUserProfileResponse(m.User), Role: m.Role, JoinedAt: m.JoinedAt,
-		Presence: m.Presence, Away: m.Away, Status: newUserStatusResponse(m.Status),
+		Presence: m.Presence, Away: m.Away, Status: newUserStatusResponse(m.Status), InHuddle: m.InHuddle,
 	}
 }
 

@@ -73,6 +73,7 @@ func TestWireRoundTrip(t *testing.T) {
 			Type: chat.EventMemberStatusChanged, To: chat.Audience{Workspaces: []ulid.ULID{u()}, Users: []ulid.ULID{user.ID}},
 			Data: chat.MemberStatusChanged{WorkspaceID: u(), UserID: user.ID, Away: true, Status: &chat.UserStatus{Emoji: "🍵", Text: "休憩中"}},
 		},
+		{Type: chat.EventMemberHuddleChanged, To: chat.Audience{Workspaces: []ulid.ULID{u()}}, Data: chat.MemberHuddleChanged{WorkspaceID: u(), UserID: user.ID, InHuddle: true}},
 		{Type: chat.EventTypingStarted, To: chat.Audience{Rooms: []ulid.ULID{u()}, ExceptUser: user.ID}, Data: chat.TypingStarted{WorkspaceID: u(), RoomID: u(), ThreadRootID: &threadRootID, User: user}},
 		{Type: chat.EventThreadRead, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ThreadRead{WorkspaceID: u(), RoomID: u(), ThreadRootID: u(), LastReadThreadSeq: 2, UnreadCount: 1}},
 		{Type: chat.EventThreadFollowed, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ThreadFollowed{WorkspaceID: u(), RoomID: u(), ThreadRootID: u(), LastReadThreadSeq: 3}},

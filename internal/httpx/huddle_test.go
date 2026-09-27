@@ -48,6 +48,7 @@ func participantUserIDs(h *huddleBody) []string {
 // huddleFixture は、owner と alice が参加しているチャンネルと、ワークスペースの外の人。
 type huddleFixture struct {
 	owner, alice, outsider apiUser
+	ws                     workspaceBody
 	room                   roomBody
 }
 
@@ -56,7 +57,8 @@ func newHuddleFixture(t *testing.T, c *apiClient) huddleFixture {
 	f := huddleFixture{owner: c.registerUser(), alice: c.registerUser(), outsider: c.registerUser()}
 	r := c.as(f.owner, http.MethodPost, "/api/v1/workspaces", map[string]string{"name": "ハドル"})
 	expectStatus(t, r, http.StatusCreated)
-	ws := decode[workspaceBody](t, r)
+	f.ws = decode[workspaceBody](t, r)
+	ws := f.ws
 	c.joinViaInvite(f.owner, ws.ID, f.alice)
 	r = c.as(f.owner, http.MethodPost, "/api/v1/workspaces/"+ws.ID+"/rooms", map[string]string{"kind": "public", "name": "設計"})
 	expectStatus(t, r, http.StatusCreated)
@@ -259,6 +261,70 @@ func TestHuddleWebSocket(t *testing.T) {
 		}
 		if err := json.Unmarshal(updated[0].Data, &data); err != nil || data.Huddle != nil {
 			t.Errorf("huddle.updated = %s", updated[0].Data)
+		}
+	})
+}
+
+// ハドル中の印（ADR 0067 決定 3）。入る・抜けるとワークスペースに member.huddle_changed が届き、メンバー一覧の in_huddle でも読める。
+func TestHuddleStatusAPI(t *testing.T) {
+	c := newAPI(t)
+	f := newHuddleFixture(t, c)
+	w := c.dialWS(f.alice)
+	w.subscribe("workspace_id", f.ws.ID)
+
+	type changed struct {
+		WorkspaceID string `json:"workspace_id"`
+		UserID      string `json:"user_id"`
+		InHuddle    bool   `json:"in_huddle"`
+	}
+	statusEvents := func(t *testing.T) []changed {
+		t.Helper()
+		var out []changed
+		for _, ev := range eventsOfType(w.sync(), "member.huddle_changed") {
+			var d changed
+			if err := json.Unmarshal(ev.Data, &d); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, d)
+		}
+		return out
+	}
+	inHuddle := func(t *testing.T) map[string]bool {
+		t.Helper()
+		r := c.as(f.alice, http.MethodGet, "/api/v1/workspaces/"+f.ws.ID+"/members", nil)
+		expectStatus(t, r, http.StatusOK)
+		out := map[string]bool{}
+		for _, m := range decode[struct {
+			Members []struct {
+				User struct {
+					ID string `json:"id"`
+				} `json:"user"`
+				InHuddle bool `json:"in_huddle"`
+			} `json:"members"`
+		}](t, r).Members {
+			if m.InHuddle {
+				out[m.User.ID] = true
+			}
+		}
+		return out
+	}
+
+	joined := c.joinHuddle(f.owner, f.room.ID)
+	t.Run("入るとワークスペースに届き、メンバー一覧でもハドル中", func(t *testing.T) {
+		if got := statusEvents(t); !slices.Equal(got, []changed{{f.ws.ID, f.owner.id, true}}) {
+			t.Errorf("member.huddle_changed = %+v", got)
+		}
+		if got := inHuddle(t); len(got) != 1 || !got[f.owner.id] {
+			t.Errorf("in_huddle = %v", got)
+		}
+	})
+	t.Run("抜けるとハドル中でなくなる", func(t *testing.T) {
+		expectStatus(t, c.as(f.owner, http.MethodDelete, "/api/v1/huddles/"+joined.Huddle.ID+"/participants/"+joined.ParticipantID, nil), http.StatusNoContent)
+		if got := statusEvents(t); !slices.Equal(got, []changed{{f.ws.ID, f.owner.id, false}}) {
+			t.Errorf("member.huddle_changed = %+v", got)
+		}
+		if got := inHuddle(t); len(got) != 0 {
+			t.Errorf("in_huddle = %v", got)
 		}
 	})
 }

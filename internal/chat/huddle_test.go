@@ -619,3 +619,109 @@ func TestRunHuddleSweeperStops(t *testing.T) {
 		t.Fatal("RunHuddleSweeper did not stop")
 	}
 }
+
+// ハドル中の印（ADR 0067 決定 3）。入った人は、そのハドルのあるワークスペースのメンバー一覧でだけハドル中になる。
+func TestHuddleStatus(t *testing.T) {
+	env := chattest.New(t)
+	r, room := huddleRoom(t, env)
+	// member は別のワークスペースにもいる（そちらではハドル中にならない）
+	other := env.CreateWorkspace(t, r.owner)
+	env.AddMember(t, other.ID, r.member, authz.RoleMember)
+	env.Encoder.Take()
+
+	joined := joinHuddle(t, env, r.member, room.ID)
+
+	inHuddle := func(t *testing.T, workspaceID ulid.ULID) map[ulid.ULID]bool {
+		t.Helper()
+		page, err := env.Service.ListMembers(t.Context(), r.owner, workspaceID, chat.PageRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[ulid.ULID]bool{}
+		for _, m := range page.Items {
+			if m.InHuddle {
+				out[m.User.ID] = true
+			}
+		}
+		return out
+	}
+
+	t.Run("入ったワークスペースのメンバー一覧とプロフィールとルームのメンバー一覧でだけハドル中", func(t *testing.T) {
+		if got := inHuddle(t, r.ws.ID); len(got) != 1 || !got[r.member] {
+			t.Errorf("ワークスペースのメンバー一覧 = %v", got)
+		}
+		if got := inHuddle(t, other.ID); len(got) != 0 {
+			t.Errorf("別のワークスペース = %v", got)
+		}
+		profile, err := env.Service.GetMemberProfile(t.Context(), r.admin, r.ws.ID, r.member)
+		if err != nil || !profile.InHuddle {
+			t.Errorf("プロフィール = %v, %v", profile.InHuddle, err)
+		}
+		page, err := env.Service.ListRoomMembers(t.Context(), r.admin, room.ID, chat.PageRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range page.Items {
+			if m.InHuddle != (m.User.ID == r.member) {
+				t.Errorf("ルームのメンバー一覧: %v の in_huddle = %v", m.User.ID, m.InHuddle)
+			}
+		}
+	})
+
+	t.Run("入ったワークスペースに宛てて、ハドル中になった・でなくなったの中身を作る", func(t *testing.T) {
+		evs := env.Encoder.Take()
+		if len(evs) != 2 {
+			t.Fatalf("encoded = %d", len(evs))
+		}
+		for i, want := range []bool{true, false} {
+			ev := evs[i]
+			d, ok := ev.Data.(chat.MemberHuddleChanged)
+			if ev.Type != chat.EventMemberHuddleChanged || !ok || !slices.Equal(ev.To.Workspaces, []ulid.ULID{r.ws.ID}) ||
+				d.WorkspaceID != r.ws.ID || d.UserID != r.member || d.InHuddle != want {
+				t.Errorf("event[%d] = %+v", i, ev)
+			}
+		}
+		// Go の側からは配らない（状態の変化と同じ Lua の中で配る。ADR 0016）
+		if n := len(eventsOfType(env.Deliveries.Take(), chat.EventMemberHuddleChanged)); n != 0 {
+			t.Errorf("delivered member.huddle_changed = %d", n)
+		}
+	})
+
+	t.Run("抜けるとハドル中でなくなる", func(t *testing.T) {
+		if err := env.Service.LeaveHuddle(t.Context(), r.member, joined.Huddle.ID, joined.ParticipantID); err != nil {
+			t.Fatal(err)
+		}
+		if got := inHuddle(t, r.ws.ID); len(got) != 0 {
+			t.Errorf("in_huddle = %v", got)
+		}
+	})
+
+	t.Run("ルームから抜けてハドルから外されても、ハドル中でなくなる（ルール 8）", func(t *testing.T) {
+		joinHuddle(t, env, r.member2, room.ID)
+		if got := inHuddle(t, r.ws.ID); !got[r.member2] {
+			t.Fatalf("in_huddle = %v", got)
+		}
+		if err := env.Service.RemoveRoomMember(t.Context(), r.member2, room.ID, r.member2); err != nil {
+			t.Fatal(err)
+		}
+		if got := inHuddle(t, r.ws.ID); len(got) != 0 {
+			t.Errorf("in_huddle = %v", got)
+		}
+	})
+}
+
+// ハドルが無効なら、メンバー一覧は Redis を読まずに、誰もハドル中でないとする。
+func TestHuddleStatusUnavailable(t *testing.T) {
+	env := chattest.New(t, chattest.WithoutHuddles())
+	r := setupRoles(t, env)
+
+	page, err := env.Service.ListMembers(t.Context(), r.owner, r.ws.ID, chat.PageRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range page.Items {
+		if m.InHuddle {
+			t.Errorf("%v の in_huddle = true", m.User.ID)
+		}
+	}
+}

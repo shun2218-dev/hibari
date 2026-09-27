@@ -73,7 +73,7 @@ func NewService(d Deps) *Service {
 		delivery:         d.Delivery,
 		presence:         d.Presence,
 		previews:         newLinkPreviews(d.LinkPreviews),
-		huddles:          huddles{states: d.Huddles.States, media: d.Huddles.Media, limiter: d.Huddles.Limiter},
+		huddles:          huddles{states: d.Huddles.States, media: d.Huddles.Media, limiter: d.Huddles.Limiter, encoder: d.Huddles.Encoder},
 	}
 }
 

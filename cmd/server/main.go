@@ -180,7 +180,7 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		return err
 	}
 
-	huddleDeps, err := newHuddleDeps(cfg.Realtime, rdb, clk, logger)
+	huddleDeps, err := newHuddleDeps(cfg.Realtime, rdb, clk, delivery, logger)
 	if err != nil {
 		return err
 	}
@@ -302,7 +302,8 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 }
 
 // newHuddleDeps はハドルの依存を組み立てる（ADR 0066 決定 15）。Cloudflare の設定がなければ空（ハドルは無効）を返す。
-func newHuddleDeps(c config.RealtimeConfig, rdb *goredis.Client, clk clock.Clock, logger *slog.Logger) (chat.HuddleDeps, error) {
+// encoder は、ハドル中の印の出入り（member.huddle_changed）を Redis の Lua の中で配るために使う（ADR 0067 決定 3）。
+func newHuddleDeps(c config.RealtimeConfig, rdb *goredis.Client, clk clock.Clock, encoder chat.EventEncoder, logger *slog.Logger) (chat.HuddleDeps, error) {
 	if !c.Enabled {
 		logger.Info("huddles: disabled (CLOUDFLARE_REALTIME_* is not set)")
 		return chat.HuddleDeps{}, nil
@@ -328,6 +329,7 @@ func newHuddleDeps(c config.RealtimeConfig, rdb *goredis.Client, clk clock.Clock
 		States:  huddle.New(rdb),
 		Media:   huddle.Media{SFU: sfuClient, TURN: turnClient, RelayOnly: c.RelayOnly},
 		Limiter: ratelimit.New(rdb, clk),
+		Encoder: encoder,
 	}, nil
 }
 

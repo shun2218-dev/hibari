@@ -162,7 +162,8 @@ func (s *Service) RemoveRoomMember(ctx context.Context, actor, roomID, target ul
 // ListRoomMembers はルームのメンバーを user_id の順に返す。ルームを読める人なら取得できる。
 func (s *Service) ListRoomMembers(ctx context.Context, actor, roomID ulid.ULID, page PageRequest) (Page[RoomMember], error) {
 	q := store.New(s.db)
-	if _, err := loadRoomAccess(ctx, q, noLock, roomID, actor); err != nil {
+	a, err := loadRoomAccess(ctx, q, noLock, roomID, actor)
+	if err != nil {
 		return Page[RoomMember]{}, err
 	}
 	limit := page.limit()
@@ -187,8 +188,10 @@ func (s *Service) ListRoomMembers(ctx context.Context, actor, roomID ulid.ULID, 
 	// presence はページに残した分だけを 1 回の MGET で読む。
 	pageIDs := ids[:len(result.Items)]
 	online := s.online(ctx, pageIDs)
+	inHuddle := s.inHuddle(ctx, a.room.WorkspaceID, pageIDs)
 	for i := range result.Items {
 		result.Items[i].Presence = presenceOf(online[result.Items[i].User.ID])
+		result.Items[i].InHuddle = inHuddle[result.Items[i].User.ID]
 	}
 	return result, nil
 }

@@ -47,8 +47,11 @@ func (s *Service) ListMembers(ctx context.Context, actor, workspaceID ulid.ULID,
 	result := newPage(members, limit, func(m Member) ulid.ULID { return m.User.ID })
 	// presence はページに残した分だけを 1 回の MGET で読む（ルームのメンバー一覧と同じ。ADR 0015）。
 	online := s.online(ctx, ids[:len(result.Items)])
+	// ハドル中も同じく、ページに残した分だけを 1 回で読む（ADR 0067 決定 3）
+	inHuddle := s.inHuddle(ctx, workspaceID, ids[:len(result.Items)])
 	for i := range result.Items {
 		result.Items[i].Presence = presenceOf(online[result.Items[i].User.ID])
+		result.Items[i].InHuddle = inHuddle[result.Items[i].User.ID]
 	}
 	return result, nil
 }
@@ -77,6 +80,7 @@ func (s *Service) GetMemberProfile(ctx context.Context, actor, workspaceID, targ
 		Presence: presenceOf(s.online(ctx, []ulid.ULID{r.UserID})[r.UserID]),
 		Away:     r.ManualAway,
 		Status:   statusOf(r.StatusEmoji, r.StatusText, r.StatusExpiresAt, s.clock.Now()),
+		InHuddle: s.inHuddle(ctx, workspaceID, []ulid.ULID{r.UserID})[r.UserID],
 	}}
 	// 未検証の email は返さない。誰でも他人のアドレスで登録できるので、出すとカードがそのアドレスを
 	// 本人のものとして保証しているように見える（決定 2）

@@ -41,10 +41,13 @@ const (
 	EventWorkspaceRoleChanged   EventType = "workspace.role_changed"
 	EventPresenceChanged        EventType = "presence.changed"
 	EventMemberStatusChanged    EventType = "member.status_changed"
-	EventTypingStarted          EventType = "typing.started"
-	EventThreadRead             EventType = "thread.read"
-	EventThreadFollowed         EventType = "thread.followed"
-	EventSavedUpdated           EventType = "saved.updated"
+	// ハドル中になった・でなくなった（ADR 0067 決定 3）。宛先はそのハドルのあるワークスペース。
+	// 状態の変化と同じ Lua の中で publish するので、Go の側から Deliver しない（presence.changed と同じ。ADR 0016）。
+	EventMemberHuddleChanged EventType = "member.huddle_changed"
+	EventTypingStarted       EventType = "typing.started"
+	EventThreadRead          EventType = "thread.read"
+	EventThreadFollowed      EventType = "thread.followed"
+	EventSavedUpdated        EventType = "saved.updated"
 	// 本人の通知の設定（ADR 0055 決定 5）。どちらも本人のすべての接続にだけ届く。
 	EventNotificationsUpdated     EventType = "notifications.updated"
 	EventRoomNotificationsUpdated EventType = "room.notifications_updated"
@@ -105,6 +108,7 @@ type Event struct {
 //	workspace.role_changed              → WorkspaceRoleChanged
 //	presence.changed                    → PresenceChanged
 //	member.status_changed               → MemberStatusChanged
+//	member.huddle_changed               → MemberHuddleChanged
 //	typing.started                      → TypingStarted
 //	thread.read                         → ThreadRead
 //	thread.followed                     → ThreadFollowed
@@ -205,6 +209,14 @@ type MemberStatusChanged struct {
 	UserID      ulid.ULID
 	Away        bool
 	Status      *UserStatus
+}
+
+// MemberHuddleChanged は、その人がそのワークスペースでハドル中になった・でなくなった（ADR 0067 決定 3）。
+// どのハドル（ルーム）かは載せない（private のルームや DM のハドルがあることを漏らさない）。
+type MemberHuddleChanged struct {
+	WorkspaceID ulid.ULID
+	UserID      ulid.ULID
+	InHuddle    bool
 }
 
 type TypingStarted struct {

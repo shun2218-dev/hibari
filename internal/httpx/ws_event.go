@@ -96,6 +96,13 @@ type memberStatusChangedData struct {
 	Status      *userStatusResponse `json:"status"`
 }
 
+// memberHuddleChangedData は、そのワークスペースでハドル中かどうか（ADR 0067 決定 3）。どのハドルかは載せない。
+type memberHuddleChangedData struct {
+	WorkspaceID string `json:"workspace_id"`
+	UserID      string `json:"user_id"`
+	InHuddle    bool   `json:"in_huddle"`
+}
+
 type typingStartedData struct {
 	WorkspaceID string `json:"workspace_id"`
 	RoomID      string `json:"room_id"`
@@ -177,6 +184,8 @@ func eventData(d any) (any, error) {
 		return presenceChangedData{d.UserID.String(), d.Presence}, nil
 	case chat.MemberStatusChanged:
 		return memberStatusChangedData{d.WorkspaceID.String(), d.UserID.String(), d.Away, newUserStatusResponse(d.Status)}, nil
+	case chat.MemberHuddleChanged:
+		return memberHuddleChangedData{d.WorkspaceID.String(), d.UserID.String(), d.InHuddle}, nil
 	case chat.TypingStarted:
 		var root *string
 		if d.ThreadRootID != nil {
