@@ -149,3 +149,69 @@ func idStrings(ids []ulid.ULID) []string {
 	}
 	return out
 }
+
+// 本文に貼られたハドルのリンクのカード（ADR 0067 決定 2）。
+
+type huddleLinksRequest struct {
+	// RoomIDs はリンクが指すルーム（ハドルのリンクはルームを指す。決定 1）。20 件まで。
+	RoomIDs []string `json:"room_ids"`
+}
+
+// huddleLinkResponse は 1 件のリンクの結果。status が ok のときだけ、workspace・room・huddle・can_join が意味を持つ。
+type huddleLinkResponse struct {
+	RoomID    string                   `json:"room_id"`
+	Status    chat.MessageLinkStatus   `json:"status"`
+	Workspace *linkedWorkspaceResponse `json:"workspace"`
+	Room      *linkedRoomResponse      `json:"room"`
+	// Huddle は進行中のハドル（ルームの応答と同じ形）。なければ null。
+	Huddle *roomHuddleResponse `json:"huddle"`
+	// CanJoin はそのルームのハドルに入れるか。入れない人にはボタンを出さない。
+	CanJoin bool `json:"can_join"`
+}
+
+type huddleLinksResponse struct {
+	Links []huddleLinkResponse `json:"links"`
+}
+
+// resolveHuddleLinks は、本文に貼られたハドルのリンクの中身を、見る人の権限でまとめて返す（決定 2）。
+// 副作用はないが、ID の配列を渡すので POST にする（メッセージのリンクと同じ）。
+func (h *chatHandlers) resolveHuddleLinks(w http.ResponseWriter, r *http.Request) {
+	var req huddleLinksRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	roomIDs := make([]ulid.ULID, len(req.RoomIDs))
+	for i, s := range req.RoomIDs {
+		// ULID として読めない ID はゼロ値のまま渡す。どのルームにも一致しないので unavailable になる
+		// （形式の違いで実在を当てられないようにする。メッセージのリンクと同じ）
+		roomIDs[i], _ = ulid.ParseStrict(s)
+	}
+	results, err := h.svc.ResolveHuddleLinks(r.Context(), actorOf(r), roomIDs)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	resp := huddleLinksResponse{Links: make([]huddleLinkResponse, len(results))}
+	for i, res := range results {
+		// ID は受け取った文字列のまま返す（クライアントが送った値で結果を引き当てられるように）
+		resp.Links[i] = huddleLinkResponse{RoomID: req.RoomIDs[i], Status: res.Status}
+		if res.Status != chat.MessageLinkOK {
+			continue
+		}
+		if ws := res.Workspace; ws != nil {
+			resp.Links[i].Workspace = &linkedWorkspaceResponse{ID: ws.ID.String(), Name: ws.Name}
+		}
+		if room := res.Room; room != nil {
+			rr := &linkedRoomResponse{ID: room.ID.String(), Kind: room.Kind, Name: room.Name}
+			if room.DMPeer != nil {
+				p := newUserProfileResponse(*room.DMPeer)
+				rr.DMPeer = &p
+			}
+			resp.Links[i].Room = rr
+		}
+		resp.Links[i].Huddle = newRoomHuddleResponse(res.Huddle)
+		resp.Links[i].CanJoin = res.CanJoin
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
