@@ -44,6 +44,7 @@ import type {
   AttachmentDraftView,
   ConnectionBannerStatus,
   HuddleHeaderState,
+  HuddleScreenView,
   RoomKind,
   TimelineItem,
 } from "@/components/chat/types";
@@ -371,6 +372,8 @@ export type ChatOptions = {
    * - profile: ステータスのない人のホバーのカード（名前の横が 🎧）
    */
   huddleStatus?: "members" | "profile-status" | "profile";
+  /** 下のハドルの帯の値の上書き（ADR 0068。モバイルで画面共有のボタンを出さない・自分が共有している）。`huddle: "joined"` と使う。 */
+  huddleBar?: Partial<HuddleScreenView>;
   /** 「後で」の一覧に、保存したハドルのメッセージを混ぜる（`side: "later"` と一緒に使う。決定 6）。 */
   savedHuddle?: boolean;
 };
@@ -505,6 +508,7 @@ export function chat({
   newHuddle,
   huddleStatus: huddleStatusView,
   savedHuddle: withSavedHuddle,
+  huddleBar: huddleBarOverride,
 }: ChatOptions = {}) {
   const dmHuddle = huddle === "dm-missed" || huddle === "dm-ring";
   // ハドルの一覧とリンクのカードの画面では、自分は #デザインレビュー のハドルに入っている（Slack の画面と同じく下に帯が出る）
@@ -737,7 +741,7 @@ export function chat({
           // ハドルのタブを閉じている間の帯（ADR 0066 追記 C）
           inHuddle ? (
             <HuddleBar
-              huddle={huddleScreen}
+              huddle={{ ...huddleScreen, ...huddleBarOverride }}
               chatOpen={huddle === "joined-chat"}
               onToggleMute={noop}
               onPopOut={noop}

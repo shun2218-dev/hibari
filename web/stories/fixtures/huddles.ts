@@ -1,3 +1,5 @@
+import { createElement } from "react";
+
 import type { HuddlePlaceOption } from "@/components/chat/huddle-list";
 import type { NewHuddleCandidate } from "@/components/chat/dialogs/new-huddle";
 import type {
@@ -8,6 +10,7 @@ import type {
   HuddleParticipantView,
   HuddlePreviewView,
   HuddleScreenView,
+  HuddleShareView,
   HuddleSuggestionView,
   ProfileView,
   RoomMemberView,
@@ -62,6 +65,42 @@ export const huddlePreview: HuddlePreviewView = {
   speakerId: "spk-default",
 };
 
+// ---- カメラと画面共有（ADR 0068） ----
+
+/**
+ * カメラと共有された画面の代わりの画像（public/dev/）。アプリは MediaStream を映す `<video>` を渡すところに、story は画像を渡す。
+ * 撮影を決定的にするため、動かない画像にする。
+ */
+function mockVideo(src: string) {
+  return createElement("img", { src, alt: "" });
+}
+
+const cameraVideo = (n: 1 | 2 | 3 | 4) => mockVideo(`/dev/camera-${n}.png`);
+
+const cameras = [
+  { id: "cam-default", label: "FaceTime HD カメラ" },
+  { id: "cam-usb", label: "USB カメラ" },
+];
+
+/** プレビューでカメラをオンにしたところ。 */
+export const huddlePreviewCamera: HuddlePreviewView = {
+  ...huddlePreview,
+  cameraOn: true,
+  cameras,
+  cameraId: "cam-default",
+  video: cameraVideo(1),
+};
+
+/** カメラを選べるが、まだオフ（既定）。 */
+export const huddlePreviewCameraOff: HuddlePreviewView = { ...huddlePreviewCamera, cameraOn: false, video: undefined };
+
+export const huddlePreviewCameraDenied: HuddlePreviewView = {
+  ...huddlePreviewCameraOff,
+  cameras: [],
+  cameraId: undefined,
+  cameraProblem: "camera-denied",
+};
+
 export const huddlePreviewJoin: HuddlePreviewView = { ...huddlePreview, action: "join", micOn: false };
 
 export const huddlePreviewMicDenied: HuddlePreviewView = { ...huddlePreview, micOn: false, mics: [], micId: undefined, problem: "mic-denied" };
@@ -74,7 +113,55 @@ export const huddleScreen: HuddleScreenView = {
   participants: [{ ...you, muted: false }, ...others],
   joiningSoon: [],
   muted: false,
+  camera: false,
+  canShareScreen: true,
 };
+
+/** モバイルのブラウザは画面を共有できない（ADR 0068 決定 9）。 */
+export const huddleScreenMobile: HuddleScreenView = { ...huddleScreen, canShareScreen: false };
+
+/** 自分・佐藤さん・田中さんがカメラを付けている。高橋さんは付けていない（アバターのまま）。 */
+const withCameras: HuddleScreenView["participants"] = [
+  { ...you, muted: false, camera: true, video: cameraVideo(1) },
+  { ...naoki, muted: false, speaking: true, camera: true, video: cameraVideo(2) },
+  { ...miyuki, muted: true },
+  { ...ryo, muted: false, camera: true, video: cameraVideo(3) },
+];
+
+export const huddleScreenVideo: HuddleScreenView = { ...huddleScreen, participants: withCameras, camera: true };
+
+/** 佐藤さんのタイルを押して大きくした。 */
+export const huddleScreenVideoPinned: HuddleScreenView = { ...huddleScreenVideo, pinnedId: naoki.id };
+
+const naokiShare: HuddleShareView = { id: `share-${naoki.id}`, owner: naoki, video: mockVideo("/dev/screen-1.png") };
+const ryoShare: HuddleShareView = { id: `share-${ryo.id}`, owner: ryo, video: mockVideo("/dev/screen-2.png") };
+
+/** 佐藤さんが画面を共有している。 */
+export const huddleScreenShare: HuddleScreenView = { ...huddleScreenVideo, screens: [naokiShare] };
+
+/** 2 人が同時に共有している（上限。決定 7）。 */
+export const huddleScreenShareTwo: HuddleScreenView = { ...huddleScreenVideo, screens: [naokiShare, ryoShare] };
+
+/** 2 つのうち、田中さんの画面を押して大きくした。 */
+export const huddleScreenShareTwoPinned: HuddleScreenView = { ...huddleScreenShareTwo, pinnedId: ryoShare.id };
+
+/** 3 人目として共有しようとした（409 huddle-screen-share-full）。 */
+export const huddleScreenShareFull: HuddleScreenView = { ...huddleScreenShareTwo, notice: "screen-share-full" };
+
+/** 自分が画面を共有している。 */
+export const huddleScreenSharing: HuddleScreenView = {
+  ...huddleScreenVideo,
+  sharing: true,
+  screens: [{ id: `share-${you.id}`, owner: you, video: mockVideo("/dev/screen-1.png") }],
+};
+
+/** カメラをオンにしようとしたが、ブラウザが許可していない。 */
+export const huddleScreenCameraDenied: HuddleScreenView = { ...huddleScreen, notice: "camera-denied" };
+
+export const huddleScreenMobileVideo: HuddleScreenView = { ...huddleScreenVideo, canShareScreen: false };
+export const huddleScreenMobileShare: HuddleScreenView = { ...huddleScreenShare, canShareScreen: false };
+
+export const huddleCameraMenu = { cameras, cameraId: "cam-default" };
 
 export const huddleScreenMuted: HuddleScreenView = {
   ...huddleScreen,
@@ -111,6 +198,18 @@ export const huddleScreenCrowded: HuddleScreenView = {
     ...(["misaki", "suzuki", "haru", "kei"] as const).map((k, i) => ({ ...users[k], muted: i % 2 === 0 })),
     ...Array.from({ length: 4 }, (_, i) => ({ id: `u-guest-${i}`, name: `メンバー ${i + 1}`, muted: i === 1 })),
   ],
+};
+
+/**
+ * 大人数でカメラを付けている人が多い（ADR 0068 決定 5）。ステージに載った 9 人だけ映像を受け、残りはアバターで出す。
+ * 10 人目（メンバー 3）もカメラを付けているが、ステージから外れているので映像はない。
+ */
+export const huddleScreenVideoCrowded: HuddleScreenView = {
+  ...huddleScreenCrowded,
+  camera: true,
+  participants: huddleScreenCrowded.participants.map((p, i) =>
+    i < 9 ? { ...p, camera: true, video: cameraVideo(((i % 4) + 1) as 1 | 2 | 3 | 4) } : { ...p, camera: i === 9 },
+  ),
 };
 
 export const huddleProblemRoom = channelRoom;

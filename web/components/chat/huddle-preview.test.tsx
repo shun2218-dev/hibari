@@ -121,3 +121,44 @@ describe("ハドルのリンクから開いたプレビュー（ADR 0067 決定 
     expect(screen.getByRole("button", { name: "ハドルミーティングを開始する" })).toBeDisabled();
   });
 });
+
+describe("HuddlePreview のカメラ（ADR 0068 決定 1）", () => {
+  const cameras = [
+    { id: "c1", label: "FaceTime HD カメラ" },
+    { id: "c2", label: "USB カメラ" },
+  ];
+
+  it("cameras がなければ（6.18a の画面）カメラの操作を出さない", () => {
+    render(<HuddlePreview preview={preview()} />);
+    expect(screen.queryByRole("button", { name: "カメラをオンにする" })).not.toBeInTheDocument();
+  });
+
+  it("既定はオフで、オンにすると自分の映像を映す", async () => {
+    const onToggleCamera = vi.fn();
+    const { rerender } = render(<HuddlePreview preview={preview({ cameras, cameraId: "c1" })} onToggleCamera={onToggleCamera} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "カメラをオンにする" }));
+    expect(onToggleCamera).toHaveBeenCalledOnce();
+
+    rerender(<HuddlePreview preview={preview({ cameras, cameraId: "c1", cameraOn: true, video: <span role="img" aria-label="自分の映像" /> })} />);
+    expect(screen.getByRole("button", { name: "カメラをオフにする" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("img", { name: "自分の映像" })).toBeInTheDocument();
+  });
+
+  it("カメラを選べる", async () => {
+    const onSelectCamera = vi.fn();
+    render(<HuddlePreview preview={preview({ cameras, cameraId: "c1" })} openMenu="camera" onSelectCamera={onSelectCamera} />);
+
+    const menu = screen.getByRole("menu", { name: "カメラ" });
+    await userEvent.click(within(menu).getByRole("menuitemradio", { name: "USB カメラ" }));
+    expect(onSelectCamera).toHaveBeenCalledWith("c2");
+  });
+
+  it("カメラを使えなくても、知らせるだけで音声だけで開始できる", () => {
+    render(<HuddlePreview preview={preview({ cameras: [], cameraProblem: "camera-denied" })} />);
+
+    expect(screen.getByText(/カメラの使用を許可していません/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "カメラをオンにする" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "ハドルミーティングを開始する" })).toBeEnabled();
+  });
+});
