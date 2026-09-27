@@ -1,26 +1,42 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 
-import { HuddleDeviceMenu, HuddlePreview } from "@/components/chat/huddle-preview";
+import { HuddleCameraMenu, HuddleDeviceMenu, HuddlePreview } from "@/components/chat/huddle-preview";
 import { HuddleProblemScreen, HuddleScreen } from "@/components/chat/huddle-screen";
 import {
+  huddleCameraMenu,
   huddlePreview,
+  huddlePreviewCamera,
+  huddlePreviewCameraDenied,
+  huddlePreviewCameraOff,
   huddlePreviewJoin,
   huddlePreviewArchived,
   huddlePreviewMicDenied,
   huddlePreviewNotMember,
   huddleProblemRoom,
   huddleScreen,
+  huddleScreenCameraDenied,
   huddleScreenConnecting,
   huddleScreenCrowded,
   huddleScreenJoiningSoon,
+  huddleScreenMobile,
+  huddleScreenMobileShare,
+  huddleScreenMobileVideo,
   huddleScreenMuted,
   huddleScreenReconnecting,
+  huddleScreenShare,
+  huddleScreenShareFull,
+  huddleScreenShareTwo,
+  huddleScreenShareTwoPinned,
+  huddleScreenSharing,
+  huddleScreenVideo,
+  huddleScreenVideoCrowded,
+  huddleScreenVideoPinned,
 } from "@/stories/fixtures/huddles";
 import { chat, huddleChatPanel } from "@/stories/screens/chat";
 import { noop } from "@/stories/screens/shared";
 
 /**
- * チャット / ハドル（ADR 0066。Phase 6.18a の音声のハドル。ADR 0067。6.18c の一覧・ハドル中の印・リンク）。
+ * チャット / ハドル（ADR 0066。Phase 6.18a の音声のハドル。ADR 0067。6.18c の一覧・ハドル中の印・リンク。ADR 0068。6.18b のカメラと画面共有）。
  *
  * チャットのタブの見え方は chat() で、ハドルのタブ（参加前のプレビューとハドルの画面。追記 B・C）は部品を直接描く。
  * ハドルのタブは about:blank に描く別の画面なので、チャットの枠（サイドバーなど）を持たない。
@@ -77,7 +93,13 @@ export const MobileJoined: Story = {
   name: "入っている（モバイル）",
   tags: ["since:6.18"],
   ...mobile,
-  render: () => chat({ huddle: "joined" }),
+  render: () => chat({ huddle: "joined", huddleBar: { canShareScreen: false } }),
+};
+
+export const JoinedSharing: Story = {
+  name: "入っている: 自分が画面を共有している（帯）",
+  tags: ["since:6.18"],
+  render: () => chat({ huddle: "joined", huddleBar: { camera: true, sharing: true } }),
 };
 
 export const JoinedChat: Story = {
@@ -231,13 +253,134 @@ export const MobileScreen: Story = {
   name: "ハドルの画面（モバイル）",
   tags: ["since:6.18"],
   ...mobile,
-  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreen} />,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenMobile} />,
 };
 
 export const ScreenMenu: Story = {
   name: "ハドルの画面: 「…」（リンクをコピー）",
   tags: ["since:6.18"],
   render: () => <HuddleScreen huddle={huddleScreen} menu={{ open: true }} />,
+};
+
+// ---- カメラと画面共有（ADR 0068） ----
+
+export const PreviewCamera: Story = {
+  name: "参加前のプレビュー: カメラをオン",
+  tags: ["since:6.18"],
+  render: () => <HuddlePreview preview={huddlePreviewCamera} onCancel={noop} onStart={noop} />,
+};
+
+export const PreviewCameraOff: Story = {
+  name: "参加前のプレビュー: カメラを選べる（オフ）",
+  tags: ["since:6.18"],
+  render: () => <HuddlePreview preview={huddlePreviewCameraOff} onCancel={noop} onStart={noop} />,
+};
+
+export const PreviewCameraMenu: Story = {
+  name: "参加前のプレビュー: カメラを選ぶ",
+  tags: ["since:6.18"],
+  render: () => <HuddlePreview preview={huddlePreviewCamera} openMenu="camera" />,
+};
+
+export const PreviewCameraDenied: Story = {
+  name: "参加前のプレビュー: カメラを使えない",
+  tags: ["since:6.18"],
+  render: () => <HuddlePreview preview={huddlePreviewCameraDenied} />,
+};
+
+export const MobilePreviewCamera: Story = {
+  name: "参加前のプレビュー: カメラをオン（モバイル）",
+  tags: ["since:6.18"],
+  ...mobile,
+  render: () => <HuddlePreview preview={huddlePreviewCamera} />,
+};
+
+export const ScreenVideo: Story = {
+  name: "ハドルの画面: カメラ",
+  tags: ["since:6.18"],
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenVideo} />,
+};
+
+export const ScreenVideoDark: Story = {
+  name: "ハドルの画面: カメラ（ダーク）",
+  tags: ["since:6.18"],
+  parameters: { theme: "dark" },
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenVideo} />,
+};
+
+export const ScreenVideoPinned: Story = {
+  name: "ハドルの画面: タイルを押して大きくした",
+  tags: ["since:6.18"],
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenVideoPinned} />,
+};
+
+export const ScreenVideoCrowded: Story = {
+  name: "ハドルの画面: 大人数でカメラ（ステージは 9）",
+  tags: ["since:6.18"],
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenVideoCrowded} />,
+};
+
+export const ScreenCameraMenu: Story = {
+  name: "ハドルの画面: カメラを選ぶ",
+  tags: ["since:6.18"],
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenVideo} cameraMenu={<HuddleCameraMenu {...huddleCameraMenu} />} />,
+};
+
+export const ScreenCameraDenied: Story = {
+  name: "ハドルの画面: カメラを使えない",
+  tags: ["since:6.18"],
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenCameraDenied} />,
+};
+
+export const ScreenShare: Story = {
+  name: "ハドルの画面: 画面共有",
+  tags: ["since:6.18"],
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenShare} />,
+};
+
+export const ScreenShareDark: Story = {
+  name: "ハドルの画面: 画面共有（ダーク）",
+  tags: ["since:6.18"],
+  parameters: { theme: "dark" },
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenShare} />,
+};
+
+export const ScreenShareTwo: Story = {
+  name: "ハドルの画面: 2 人が画面を共有",
+  tags: ["since:6.18"],
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenShareTwo} />,
+};
+
+export const ScreenShareTwoPinned: Story = {
+  name: "ハドルの画面: 2 つの共有のうち 1 つを大きくした",
+  tags: ["since:6.18"],
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenShareTwoPinned} />,
+};
+
+export const ScreenShareFull: Story = {
+  name: "ハドルの画面: 3 人目は共有できない",
+  tags: ["since:6.18"],
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenShareFull} />,
+};
+
+export const ScreenSharing: Story = {
+  name: "ハドルの画面: 自分が画面を共有している",
+  tags: ["since:6.18"],
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenSharing} />,
+};
+
+export const MobileScreenVideo: Story = {
+  name: "ハドルの画面: カメラ（モバイル）",
+  tags: ["since:6.18"],
+  ...mobile,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenMobileVideo} />,
+};
+
+export const MobileScreenShare: Story = {
+  name: "ハドルの画面: 画面共有を見る（モバイル）",
+  tags: ["since:6.18"],
+  ...mobile,
+  render: () => <HuddleScreen menu={closedMenu} huddle={huddleScreenMobileShare} />,
 };
 
 // ---- ハドルへのリンク（ADR 0067 決定 1・2） ----

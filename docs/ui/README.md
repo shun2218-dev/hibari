@@ -1151,3 +1151,43 @@ ADR 0067 のとおり足した。新しいトークンは足していない。
 - 提案のカードの枠を点線にした。Slack の提案のカードの見た目は確かめていない（背景に写っていた点線の枠に合わせた）。
 - 進行中のときのリンクのカードの形（下の段を琥珀の地にして顔と人数）。Slack の進行中のカードは見ていない。
 - レールの自分のアバターの枠の色（レールの地より明るい面の色）。
+
+### Phase 6.18b で足した画面（ハドルのカメラと画面共有）
+
+ADR 0068 のとおり足した。新しいトークンは足していない。カメラの映像と共有された画面は、撮影を決定的にするため `public/dev/camera-*.png` と `public/dev/screen-*.png` の画像で代える
+（アプリは MediaStream を映す `<video>` を、部品の `video` に渡す）。
+**操作の列にカメラと画面共有のボタンが増えたので、ハドルの画面と帯が写る app 由来の画面は撮り直した。**
+
+**ハドルのタブ**
+
+| 画面 | スクリーンショット | 関連する API・イベント |
+|---|---|---|
+| 参加前のプレビュー: カメラをオン / カメラを選べる（オフ） / カメラを選ぶ / カメラを使えない | `chat/huddle/preview-camera.png`、`chat/huddle/preview-camera-off.png`、`chat/huddle/preview-camera-menu.png`、`chat/huddle/preview-camera-denied.png`、`chat/huddle/mobile-preview-camera.png` | — |
+| カメラ（グリッド）・タイルを押して大きくした・大人数（ステージは 9） | `chat/huddle/screen-video.png`、`chat/huddle/screen-video-dark.png`、`chat/huddle/screen-video-pinned.png`、`chat/huddle/screen-video-crowded.png`、`chat/huddle/mobile-screen-video.png` | `POST …/participants/{id}/tracks`、`huddle.updated` の `camera`、`…/subscriptions` の `quality` |
+| カメラを選ぶ / カメラを使えない | `chat/huddle/screen-camera-menu.png`、`chat/huddle/screen-camera-denied.png` | — |
+| 画面共有 / 2 人が共有 / 2 つのうち 1 つを大きくした | `chat/huddle/screen-share.png`、`chat/huddle/screen-share-dark.png`、`chat/huddle/screen-share-two.png`、`chat/huddle/screen-share-two-pinned.png`、`chat/huddle/mobile-screen-share.png` | `huddle.updated` の `screen` |
+| 3 人目は共有できない | `chat/huddle/screen-share-full.png` | 409 `huddle-screen-share-full` |
+| 自分が画面を共有している | `chat/huddle/screen-sharing.png` | `DELETE …/tracks/screen` |
+
+**チャットのタブ**
+
+| 画面 | スクリーンショット | 関連する API・イベント |
+|---|---|---|
+| ハドルの帯: 自分が画面を共有している | `chat/huddle/joined-sharing.png` | — |
+
+- **操作の列**は、マイク（と「⌄」）の隣にカメラ（と「⌄」でカメラの選択）、画面共有を足した。付けている・共有しているあいだは、ほかの押した状態のボタンと同じく緑の枠と地。
+  モバイルは画面共有のボタンを出さない（ブラウザが画面を共有できない）。共有された画面を見るのはできる。
+- **タイル**は、映像があれば映像で埋め（切って収める）、なければ 6.18a のアバター。名前・ミュートの印・話している人の琥珀の枠は映像の上でも同じ。自分の映像は左右を反転する。
+  映像のあるグリッドは、少人数のタイルを高くして映像を大きく映す（4 人までは 1 行 256px）。
+- **押して大きくする**: タイル全体が押せる。大きくしたタイルを上に全幅で出し、ほかは下の列に並べる。大きくしている間は右上にピンの印。
+- **画面共有**は、共有された画面を大きく出し（切らずに収める）、参加者は下の列。2 つなら横に並べ、どちらかを押すとそれだけを大きくする。左下に「〇〇 さんの画面」。
+- **自分が共有している**あいだは、画面の上に琥珀の帯「画面を共有しています」と「共有をやめる」（ボタンは琥珀にしない）。ハドルの帯では 2 行目を琥珀の「画面を共有しています」にする（帯は映像を出さない）。
+- **知らせ**（カメラを使えない・画面を共有できない・3 人目）は操作の列の上に出し、「×」で閉じる。3 人目は権限の理由なので鍵の色、ほかは danger。
+- **参加前のプレビュー**は、カメラを使えるときだけ自分のタイルを横長にして、マイクの隣にカメラのオンとオフ、機器の選択にカメラを足した。カメラを使えなくても音声だけで入れるので、開始は押せる。
+
+#### デザインで決めた点（オーナーに確認する）
+
+- カメラを付けているときのボタンの色（緑の枠と地）。ミュートは「押した = 音が出ない」で緑だが、カメラは「押した = 映っている」で緑になり、意味の向きが逆になる。Slack はカメラのオンを緑で示す。
+- 大きくしたタイルの印（右上のピン）。Slack のピン留めの見た目は確かめていない。
+- 画面共有中のタイルの下の列（横 1 列にして、はみ出したら横にスクロール）。
+- 大人数でステージから外れた人は、カメラを付けていてもアバターのまま出す（ADR 0068 決定 5。映像を受けていないため）。

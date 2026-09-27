@@ -5,6 +5,8 @@
  * 表示する側の都合で決まるので、ここでは整形済みの文字列で受け取り、API からの変換はデータ層（Phase 6-2）で行う。
  */
 
+import type { ReactNode } from "react";
+
 import type { WorkspaceRole } from "@/components/workspace/types";
 import type { PresenceView } from "@/lib/chat/presence";
 
@@ -360,8 +362,23 @@ export type ProfileView =
 
 // ---- ハドル（ADR 0066） ----
 
-/** ハドルに入っている人。speaking は受けた音声の音量からクライアントが決める（決定 10）。 */
-export type HuddleParticipantView = UserRef & { muted: boolean; speaking?: boolean };
+/**
+ * ハドルに入っている人。speaking は受けた音声の音量からクライアントが決める（決定 10）。
+ * video はカメラの映像（ADR 0068）。ステージに載っていて映せるときだけデータ層が渡す（アプリは MediaStream を映す `<video>`、story は画像）。
+ * camera はカメラを付けているか。ステージに載っていない人は video がなく、アバターで出す。
+ */
+export type HuddleParticipantView = UserRef & { muted: boolean; speaking?: boolean; camera?: boolean; video?: ReactNode };
+
+/** 共有されている画面（ADR 0068 決定 7）。同時に 2 つまで。 */
+export type HuddleShareView = { id: string; owner: UserRef; video: ReactNode };
+
+/**
+ * ハドルの画面の知らせ（ADR 0068 決定 9）。操作の列の上に出し、閉じるまで残す。
+ * - camera-denied / no-camera: カメラを使えない
+ * - screen-denied: 画面の共有が許可されなかった（共有する画面を選ばずに閉じたときは出さない）
+ * - screen-share-full: 3 人目の共有（409 huddle-screen-share-full）
+ */
+export type HuddleNotice = "camera-denied" | "no-camera" | "screen-denied" | "screen-share-full";
 
 /**
  * 会話に残すハドルのメッセージ（ADR 0066 決定 12・追記 D）。見る人によって見え方が変わるので、state はデータ層が決める。
@@ -419,6 +436,15 @@ export type HuddlePreviewView = {
   speakerId?: string;
   problem?: "mic-denied" | "no-mic";
   /**
+   * カメラ（ADR 0068 決定 1）。既定はオフ。cameras がなければ（6.18a の画面）カメラの操作を出さない。
+   * video はオンのときの自分の映像（アプリは `<video>`、story は画像）。
+   */
+  cameraOn?: boolean;
+  cameras?: MediaDeviceView[];
+  cameraId?: string;
+  cameraProblem?: "camera-denied" | "no-camera";
+  video?: ReactNode;
+  /**
    * ハドルのリンクから開いたが、そのままでは入れない（ADR 0067 決定 1）。
    * - not-member: 参加していない public のチャンネル。「チャンネルに参加する」を出し、参加したらそのまま続ける
    * - archived: アーカイブしたチャンネル。開始を押せなくする
@@ -441,6 +467,17 @@ export type HuddleScreenView = {
   joiningSoon: UserRef[];
   /** 自分がミュートしている。 */
   muted: boolean;
+  /** 自分がカメラを付けている（ADR 0068）。undefined なら（6.18a の画面）カメラの操作を出さない。 */
+  camera?: boolean;
+  /** 自分が画面を共有している。 */
+  sharing?: boolean;
+  /** 画面を共有できる（モバイルのブラウザには getDisplayMedia がないので false。決定 9）。 */
+  canShareScreen?: boolean;
+  /** 共有されている画面（2 つまで。決定 7）。 */
+  screens?: HuddleShareView[];
+  /** 押して大きくした参加者（user id）か共有（HuddleShareView.id）。 */
+  pinnedId?: string;
+  notice?: HuddleNotice;
 };
 
 /**
