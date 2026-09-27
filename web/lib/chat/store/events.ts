@@ -42,7 +42,7 @@ export function createEvents(
 ) {
   const { patchMembers, patchRoom, patchThread, patchThreadList, patchWorkspaceMembers, update, userId } = core;
   const { removedFromWorkspace } = workspaces;
-  const { patchMemberSettings, reloadMembers } = members;
+  const { patchMemberSettings, patchMemberHuddle, reloadMembers } = members;
   const { patchActivityItems, receiveActivityChange, receiveActivityMessage, reloadActivity, roomReadAdvanced } = activity;
   const { receiveSaved } = saved;
   const { advanceThreadRead, receiveThreadTyping, reloadThreads } = threads;
@@ -211,6 +211,12 @@ export function createEvents(
         // away はユーザーごとなので、どのワークスペースの行にも同じ値を当てる。status はワークスペースごと
         const { workspace_id, user_id, away, status } = event.data;
         patchMemberSettings(workspace_id, user_id, away, status);
+        return;
+      }
+      case "member.huddle_changed": {
+        // そのワークスペースでハドル中になった・でなくなった（ADR 0067 決定 3）。どのハドルかは届かない
+        const { workspace_id, user_id, in_huddle } = event.data;
+        patchMemberHuddle(workspace_id, user_id, in_huddle);
         return;
       }
       case "typing.started":

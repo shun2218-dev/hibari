@@ -4,7 +4,7 @@ import type { RoleLabel, RoomKind, RoomMemberView, UserStatusView } from "@/comp
 import type { Member, Presence, Role, RoomMember, UserStatus } from "@/lib/api/types.gen";
 import type { MentionCandidate } from "@/lib/chat/format/mentions";
 import { formatStatusExpiry } from "@/lib/chat/format/time";
-import { displayPresence, type PresenceView } from "@/lib/chat/presence";
+import { displayPresence, displayStatus, type PresenceView } from "@/lib/chat/presence";
 
 import type { UrlTable } from "./message";
 import { roleRanks } from "./permissions";
@@ -36,6 +36,18 @@ export function statusView(
 }
 
 /**
+ * 名前の横に出すステータス（ADR 0067 決定 4）。本人のステータスがあればそれ、なければハドル中の 🎧。
+ * 合わせるのは `displayStatus` の 1 か所で、ここはメンバーの行をそれに渡すだけ。
+ */
+export function memberStatus(
+  member: { status: UserStatus | null; in_huddle?: boolean },
+  now: Date = new Date(),
+  timeZone?: string,
+): UserStatusView | undefined {
+  return displayStatus(statusView(member.status, now, timeZone), member.in_huddle ?? false);
+}
+
+/**
  * ワークスペースのメンバー一覧から、user_id 引きの表を作る（ADR 0049 決定 7 の追記）。
  * メッセージの送信者・DM の相手のステータスと presence は、この表から引く。
  */
@@ -46,7 +58,7 @@ export function memberSettings(
 ): Record<string, { presence: PresenceView; status?: UserStatusView }> {
   const table: Record<string, { presence: PresenceView; status?: UserStatusView }> = {};
   for (const m of members ?? []) {
-    table[m.user.id] = { presence: memberPresence(m), status: statusView(m.status, now, timeZone) };
+    table[m.user.id] = { presence: memberPresence(m), status: memberStatus(m, now, timeZone) };
   }
   return table;
 }
@@ -66,7 +78,7 @@ export function toRoomMemberView(
     avatarUrl: avatarUrls[member.user.id] ?? undefined,
     presence: memberPresence(member),
     // 「いつ消えるか」の文言は、見る人の時計とタイムゾーンで作る（サーバーは絶対の時刻だけを返す）
-    status: statusView(member.status, now, timeZone),
+    status: memberStatus(member, now, timeZone),
     roleLabel: roleLabels[member.role],
   };
 }
@@ -142,7 +154,7 @@ export function toDmCandidates(
       name: m.user.display_name,
       handle: m.user.handle,
       presence: memberPresence(m),
-      status: statusView(m.status),
+      status: memberStatus(m),
     }));
 }
 

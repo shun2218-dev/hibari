@@ -150,8 +150,14 @@ describe("toProfileView（ADR 0050）", () => {
       role: "owner",
       email: { state: "ready", value: "naoki@example.com" },
       isSelf: false,
+      inHuddle: false,
       manage: undefined,
     });
+  });
+
+  it("ハドル中は inHuddle を立て、ステータスは本人が選んだもののまま渡す（🎧 と行はカードが出す。ADR 0067 決定 4）", () => {
+    const view = toProfileView({ ...naokiMember, in_huddle: true }, { userId: miyuki.id, myRole: "member" });
+    expect(view).toMatchObject({ inHuddle: true, user: { status: { emoji: "📅", text: "会議中" } } });
   });
 
   it("管理の入口は、管理画面と同じ写しで操作できる相手のときだけ出す", () => {

@@ -81,8 +81,45 @@ export function createMembers(core: StoreCore, { workspaces }: { workspaces: Wor
     });
   }
 
+  /**
+   * 手元のメンバーの行に、ハドル中かを当てる（ADR 0067 決定 3。member.huddle_changed）。
+   * ハドル中はそのハドルのあるワークスペースだけのことなので、そのワークスペースと、そのワークスペースのルームの行にだけ当てる。
+   */
+  function patchMemberHuddle(workspaceId: string, userId: string, inHuddle: boolean) {
+    update((s) => {
+      const roomsOfWorkspace = new Set(
+        Object.values(s.rooms)
+          .filter((room) => room?.workspace_id === workspaceId)
+          .map((room) => room!.id),
+      );
+      const hit = (m: { user: { id: string }; in_huddle: boolean }) => m.user.id === userId && m.in_huddle !== inHuddle;
+
+      let members = s.members;
+      const entry = s.members[workspaceId];
+      if (entry?.list.some(hit)) {
+        members = {
+          ...s.members,
+          [workspaceId]: { ...entry, list: entry.list.map((m) => (m.user.id === userId ? { ...m, in_huddle: inHuddle } : m)) },
+        };
+      }
+
+      let roomMembers = s.roomMembers;
+      for (const [roomId, room] of Object.entries(s.roomMembers)) {
+        if (!roomsOfWorkspace.has(roomId) || !room?.members.some(hit)) continue;
+        if (roomMembers === s.roomMembers) roomMembers = { ...s.roomMembers };
+        roomMembers[roomId] = {
+          ...room,
+          members: room.members.map((m) => (m.user.id === userId ? { ...m, in_huddle: inHuddle } : m)),
+        };
+      }
+
+      return members === s.members && roomMembers === s.roomMembers ? s : { ...s, members, roomMembers };
+    });
+  }
+
   return {
     patchMemberSettings,
+    patchMemberHuddle,
     reloadMembers,
     actions: {
       loadMembers,

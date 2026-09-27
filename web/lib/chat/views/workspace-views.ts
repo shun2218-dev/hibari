@@ -100,9 +100,11 @@ export function toProfileView(
         name: member.user.display_name,
         handle: member.user.handle,
         avatarUrl: avatarUrls[member.user.id] ?? undefined,
+        // 名前の横の 🎧 はカードが inHuddle から出す（ステータスがあっても「ハドルミーティング中」の行を足すため。ADR 0067 決定 4）
         status: statusView(member.status, now, timeZone),
       },
       presence: memberPresence(member),
+      inHuddle: member.in_huddle,
       role: member.role,
       email,
       isSelf: member.user.id === userId,
