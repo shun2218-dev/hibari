@@ -567,6 +567,26 @@ export interface HuddleSuggestions {
   suggestions: HuddleSuggestion[];
 }
 
+export interface HuddleLinksRequest {
+  /** room_ids はリンクが指すルーム（ハドルのリンクはルームを指す。決定 1）。20 件まで。 */
+  room_ids: string[];
+}
+
+export interface HuddleLink {
+  room_id: string;
+  status: MessageLinkStatus;
+  workspace: LinkedWorkspace | null;
+  room: LinkedRoom | null;
+  /** huddle は進行中のハドル（ルームの応答と同じ形）。なければ null。 */
+  huddle: RoomHuddle | null;
+  /** can_join はそのルームのハドルに入れるか。入れない人にはボタンを出さない。 */
+  can_join: boolean;
+}
+
+export interface HuddleLinks {
+  links: HuddleLink[];
+}
+
 export interface Features {
   /** huddles は音声のハドル。Cloudflare の設定がなければ false。 */
   huddles: boolean;

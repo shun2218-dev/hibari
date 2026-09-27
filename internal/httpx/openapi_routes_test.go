@@ -955,6 +955,16 @@ var apiRoutes = []apiRoute{
 		errors: []int{http.StatusNotFound},
 	},
 	{
+		pattern:     "POST /api/v1/huddles/links",
+		tag:         "huddles",
+		summary:     "本文に貼られたハドルのリンクを解決する",
+		description: "ハドルのリンクはルームを指す（ADR 0067 決定 1）。見る人の権限で、ルームと進行中のハドル（いま入っている人つき）と入れるかを返す。読めない・ないルームは区別せず unavailable。20 件まで。",
+		auth:        authChatUser,
+		request:     body[huddleLinksRequest](),
+		status:      http.StatusOK, response: body[huddleLinksResponse](),
+		errors: []int{http.StatusBadRequest, http.StatusUnprocessableEntity},
+	},
+	{
 		pattern:     "DELETE /api/v1/huddles/{huddleID}/participants/{participantID}",
 		tag:         "huddles",
 		summary:     "ハドルから抜ける",

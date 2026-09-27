@@ -400,3 +400,51 @@ func TestHuddleListAPI(t *testing.T) {
 		expectProblem(t, c.as(f.outsider, http.MethodGet, base+"/suggestions", nil), http.StatusNotFound, "not-found")
 	})
 }
+
+// 本文に貼られたハドルのリンク（ADR 0067 決定 2）の API。
+func TestHuddleLinksAPI(t *testing.T) {
+	c := newAPI(t)
+	f := newHuddleFixture(t, c)
+	joined := c.joinHuddle(f.owner, f.room.ID)
+
+	r := c.as(f.alice, http.MethodPost, "/api/v1/huddles/links", map[string][]string{"room_ids": {f.room.ID, "x", f.room.ID}})
+	expectStatus(t, r, http.StatusOK)
+	body := decode[struct {
+		Links []struct {
+			RoomID    string `json:"room_id"`
+			Status    string `json:"status"`
+			Workspace *struct {
+				ID string `json:"id"`
+			} `json:"workspace"`
+			Room *struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"room"`
+			Huddle  *huddleBody `json:"huddle"`
+			CanJoin bool        `json:"can_join"`
+		} `json:"links"`
+	}](t, r)
+	if len(body.Links) != 3 {
+		t.Fatalf("body = %s", r.body)
+	}
+	ok := body.Links[0]
+	if ok.Status != "ok" || ok.Workspace == nil || ok.Workspace.ID != f.ws.ID || ok.Room == nil || ok.Room.ID != f.room.ID ||
+		ok.Huddle == nil || ok.Huddle.ID != joined.Huddle.ID || !ok.CanJoin {
+		t.Errorf("ok = %+v", ok)
+	}
+	// 読めない ID は送った形のまま unavailable で返す
+	if bad := body.Links[1]; bad.RoomID != "x" || bad.Status != "unavailable" || bad.Room != nil || bad.Huddle != nil {
+		t.Errorf("bad = %+v", bad)
+	}
+	if body.Links[2].Status != "ok" {
+		t.Errorf("dup = %+v", body.Links[2])
+	}
+
+	t.Run("外の人には unavailable", func(t *testing.T) {
+		r := c.as(f.outsider, http.MethodPost, "/api/v1/huddles/links", map[string][]string{"room_ids": {f.room.ID}})
+		expectStatus(t, r, http.StatusOK)
+		if !strings.Contains(string(r.body), `"status":"unavailable"`) {
+			t.Errorf("body = %s", r.body)
+		}
+	})
+}

@@ -122,7 +122,7 @@ func (s *Service) SaveMessage(ctx context.Context, actor, roomID, messageID ulid
 		if m.DeletedAt != nil {
 			return ErrNotFound
 		}
-		if MessageKind(m.Kind) == MessageKindSystem {
+		if !isSavable(m.Kind, m.SystemType) {
 			var fields fieldErrors
 			fields.add("message_id", ReasonInvalidValue)
 			return fields.err()
@@ -400,8 +400,8 @@ func (s *Service) hydrateSaved(ctx context.Context, q *store.Queries, actor ulid
 		}
 		mv := make([]messageView, 0, len(views))
 		for _, v := range views {
-			// 削除済みとログは、読めないのと区別しない（決定 8）。
-			if v.DeletedAt != nil || MessageKind(v.Kind) == MessageKindSystem {
+			// 削除済みとログは、読めないのと区別しない（決定 8）。ハドルのメッセージは保存できる（ADR 0067 決定 6）
+			if v.DeletedAt != nil || !isSavable(v.Kind, v.SystemType) {
 				continue
 			}
 			mv = append(mv, messageView(v))
@@ -473,4 +473,17 @@ func loadMessageSaved(ctx context.Context, q *store.Queries, viewer ulid.ULID, m
 // savedUpdatedEvent は本人のすべての接続に届ける（別のタブ・別の端末をそろえる。決定 7）。
 func savedUpdatedEvent(actor ulid.ULID, item SavedItem) Event {
 	return Event{Type: EventSavedUpdated, To: Audience{Users: []ulid.ULID{actor}}, Data: item}
+}
+
+// isSavable は「後で」に保存できるメッセージか。人の発言と、ハドルのメッセージ（ADR 0067 決定 6。ハドルの一覧の「ブックマークする」）。
+// ほかのシステムメッセージ（参加や名前の変更のログ。ADR 0033）は、中身がないので保存できない（ADR 0054）。
+// スレッドの親にできるメッセージ（isThreadRoot の例外。ADR 0066 追記 A）と同じ線引きにする。
+func isSavable(kind string, systemType *string) bool {
+	switch MessageKind(kind) {
+	case MessageKindUser:
+		return true
+	case MessageKindSystem:
+		return systemType != nil && SystemEventType(*systemType) == SystemHuddle
+	}
+	return false
 }

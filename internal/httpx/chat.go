@@ -84,6 +84,7 @@ type ChatService interface {
 	HuddleICEServers(ctx context.Context, actor, roomID ulid.ULID) (chat.ICECredentials, error)
 	ListHuddles(ctx context.Context, actor, workspaceID ulid.ULID, q chat.HuddleListQuery) (chat.Page[chat.PastHuddle], error)
 	HuddleSuggestions(ctx context.Context, actor, workspaceID ulid.ULID) ([]chat.HuddleSuggestion, error)
+	ResolveHuddleLinks(ctx context.Context, actor ulid.ULID, roomIDs []ulid.ULID) ([]chat.HuddleLinkResult, error)
 	JoinHuddle(ctx context.Context, actor, authSessionID, roomID ulid.ULID, in chat.JoinHuddleInput) (chat.JoinedHuddle, error)
 	SubscribeHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, userIDs []ulid.ULID) (chat.SubscribedHuddle, error)
 	RenegotiateHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, answer chat.SessionDescription) error
@@ -191,6 +192,7 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	// ハドルの一覧と提案のカード（ADR 0067 決定 6・7）
 	handle("GET /api/v1/workspaces/{workspaceID}/huddles", h.listHuddles)
 	handle("GET /api/v1/workspaces/{workspaceID}/huddles/suggestions", h.listHuddleSuggestions)
+	handle("POST /api/v1/huddles/links", h.resolveHuddleLinks)
 	handle("POST /api/v1/rooms/{roomID}/huddle/participants", h.joinHuddle)
 	handle("POST /api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions", h.subscribeHuddle)
 	handle("POST /api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions/close", h.unsubscribeHuddle)
