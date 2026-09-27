@@ -4,6 +4,7 @@ import (
 	"encoding/json/v2"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/oklog/ulid/v2"
@@ -326,5 +327,76 @@ func TestHuddleStatusAPI(t *testing.T) {
 		if got := inHuddle(t); len(got) != 0 {
 			t.Errorf("in_huddle = %v", got)
 		}
+	})
+}
+
+// ハドルの一覧と提案のカード（ADR 0067 決定 6・7）の API。
+func TestHuddleListAPI(t *testing.T) {
+	c := newAPI(t)
+	f := newHuddleFixture(t, c)
+	joined := c.joinHuddle(f.owner, f.room.ID)
+	expectStatus(t, c.as(f.owner, http.MethodDelete, "/api/v1/huddles/"+joined.Huddle.ID+"/participants/"+joined.ParticipantID, nil), http.StatusNoContent)
+	base := "/api/v1/workspaces/" + f.ws.ID + "/huddles"
+
+	type place struct {
+		ID   string  `json:"id"`
+		Kind string  `json:"kind"`
+		Name *string `json:"name"`
+	}
+	t.Run("終わったハドルを返す", func(t *testing.T) {
+		r := c.as(f.alice, http.MethodGet, base, nil)
+		expectStatus(t, r, http.StatusOK)
+		body := decode[struct {
+			Huddles []struct {
+				ID             string   `json:"id"`
+				MessageID      string   `json:"message_id"`
+				Room           place    `json:"room"`
+				EndedAt        string   `json:"ended_at"`
+				ParticipantIDs []string `json:"participant_ids"`
+				ReplyCount     int64    `json:"reply_count"`
+			} `json:"huddles"`
+			NextCursor *string `json:"next_cursor"`
+		}](t, r)
+		if len(body.Huddles) != 1 || body.NextCursor != nil {
+			t.Fatalf("body = %s", r.body)
+		}
+		h := body.Huddles[0]
+		if h.ID != joined.Huddle.ID || h.MessageID != joined.Huddle.MessageID || h.Room.ID != f.room.ID || h.Room.Name == nil ||
+			h.EndedAt == "" || !slices.Equal(h.ParticipantIDs, []string{f.owner.id}) {
+			t.Errorf("huddle = %+v", h)
+		}
+	})
+	t.Run("alice は入っていないので「参加しなかった」に入る", func(t *testing.T) {
+		r := c.as(f.alice, http.MethodGet, base+"?filter=missed&room_id="+f.room.ID+"&participant_id="+f.owner.id, nil)
+		expectStatus(t, r, http.StatusOK)
+		if n := len(decode[struct {
+			Huddles []struct{} `json:"huddles"`
+		}](t, r).Huddles); n != 1 {
+			t.Errorf("body = %s", r.body)
+		}
+	})
+	t.Run("提案のカードは入った人にだけ出る", func(t *testing.T) {
+		r := c.as(f.owner, http.MethodGet, base+"/suggestions", nil)
+		expectStatus(t, r, http.StatusOK)
+		body := decode[struct {
+			Suggestions []struct {
+				Room  place `json:"room"`
+				Count int64 `json:"count"`
+			} `json:"suggestions"`
+		}](t, r)
+		if len(body.Suggestions) != 1 || body.Suggestions[0].Room.ID != f.room.ID || body.Suggestions[0].Count != 1 {
+			t.Errorf("body = %s", r.body)
+		}
+		r = c.as(f.alice, http.MethodGet, base+"/suggestions", nil)
+		expectStatus(t, r, http.StatusOK)
+		if !strings.Contains(string(r.body), `"suggestions":[]`) {
+			t.Errorf("alice = %s", r.body)
+		}
+	})
+	t.Run("知らない範囲は 422、壊れた ID は 400、外の人は 404", func(t *testing.T) {
+		expectProblem(t, c.as(f.alice, http.MethodGet, base+"?filter=everything", nil), http.StatusUnprocessableEntity, "validation-error")
+		expectProblem(t, c.as(f.alice, http.MethodGet, base+"?room_id=x", nil), http.StatusBadRequest, "bad-request")
+		expectProblem(t, c.as(f.outsider, http.MethodGet, base, nil), http.StatusNotFound, "not-found")
+		expectProblem(t, c.as(f.outsider, http.MethodGet, base+"/suggestions", nil), http.StatusNotFound, "not-found")
 	})
 }

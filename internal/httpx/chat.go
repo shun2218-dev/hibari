@@ -82,6 +82,8 @@ type ChatService interface {
 	// 音声のハドル（ADR 0066）
 	HuddlesEnabled() bool
 	HuddleICEServers(ctx context.Context, actor, roomID ulid.ULID) (chat.ICECredentials, error)
+	ListHuddles(ctx context.Context, actor, workspaceID ulid.ULID, q chat.HuddleListQuery) (chat.Page[chat.PastHuddle], error)
+	HuddleSuggestions(ctx context.Context, actor, workspaceID ulid.ULID) ([]chat.HuddleSuggestion, error)
 	JoinHuddle(ctx context.Context, actor, authSessionID, roomID ulid.ULID, in chat.JoinHuddleInput) (chat.JoinedHuddle, error)
 	SubscribeHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, userIDs []ulid.ULID) (chat.SubscribedHuddle, error)
 	RenegotiateHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, answer chat.SessionDescription) error
@@ -186,6 +188,9 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("GET /api/v1/features", h.getFeatures)
 	// 音声のハドル（ADR 0066 決定 4）。入った後の操作は参加 ID（この端末のこの参加）のパスの下に置く
 	handle("POST /api/v1/rooms/{roomID}/huddle/ice-servers", h.getHuddleICEServers)
+	// ハドルの一覧と提案のカード（ADR 0067 決定 6・7）
+	handle("GET /api/v1/workspaces/{workspaceID}/huddles", h.listHuddles)
+	handle("GET /api/v1/workspaces/{workspaceID}/huddles/suggestions", h.listHuddleSuggestions)
 	handle("POST /api/v1/rooms/{roomID}/huddle/participants", h.joinHuddle)
 	handle("POST /api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions", h.subscribeHuddle)
 	handle("POST /api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions/close", h.unsubscribeHuddle)

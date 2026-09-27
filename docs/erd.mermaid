@@ -276,7 +276,7 @@ erDiagram
 
   huddles {
     uuid id PK "ハドル（ADR 0066）。いま入っている人は Redis に置く（ルール 5）"
-    uuid room_id FK "CASCADE。進行中は 1 ルームに 1 つ: UNIQUE(room_id) WHERE ended_at IS NULL"
+    uuid room_id FK "CASCADE。進行中は 1 ルームに 1 つ: UNIQUE(room_id) WHERE ended_at IS NULL。一覧: INDEX(room_id, id DESC)（ADR 0067）"
     uuid started_by FK "始めた人"
     uuid message_id FK "会話に残すシステムメッセージ（system_type = huddle）。(room_id, これ) → messages の複合 FK"
     timestamptz started_at
@@ -285,7 +285,7 @@ erDiagram
 
   huddle_participants {
     uuid huddle_id PK, FK "複合主キー。CASCADE"
-    uuid user_id PK, FK "複合主キー。一度でも入った人。人ごとに 1 回だけ書く"
+    uuid user_id PK, FK "複合主キー。一度でも入った人。人ごとに 1 回だけ書く。INDEX(user_id, huddle_id DESC)（一覧と提案。ADR 0067）"
     timestamptz joined_at "最初に入った時刻"
   }
 
