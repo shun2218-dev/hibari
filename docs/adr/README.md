@@ -73,6 +73,8 @@
 | [0064](0064-documentation-site.md) | ドキュメントサイト（`docs.hibari-chat.com`。`docs/` を正本のまま Fumadocs で配り、REST の API リファレンスは Go の型から OpenAPI を生成する） | 採用 |
 | [0065](0065-link-previews.md) | 外部のリンクのプレビュー（Phase 6.17。サーバーが取得してメッセージに固定し、画像とアイコンは自前のストレージに写す。入力欄でも出して消せる） | 採用 |
 | [0066](0066-huddles.md) | 音声のハドル（Phase 6.18a。音声は DM も含めて必ず Cloudflare Realtime の SFU を通し、合図と参加の状態は Go が持つ。いま入っている人は Redis と心拍） | 採用 |
+| [0067](0067-huddle-list-status-and-links.md) | ハドルの一覧・ハドル中の印・ハドルへのリンク（Phase 6.18c。リンクはルームを指し、印はワークスペースの中だけに出す） | 採用 |
+| [0068](0068-huddle-video-and-screen-share.md) | ハドルのカメラと画面共有（Phase 6.18b。音声と同じセッションにトラックを足し、受ける映像はステージに載せた分だけにする。カメラは simulcast） | 提案 |
 
 ## テンプレート
 
