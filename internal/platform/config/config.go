@@ -76,6 +76,9 @@ type RealtimeConfig struct {
 	// TURNKeyID / TURNKeyAPITokenFile は TURN のキーの ID と API トークンのファイル。
 	TURNKeyID           string
 	TURNKeyAPITokenFile string
+	// RelayOnly が true なら、ブラウザに TURN の中継だけを使わせる（HUDDLE_ICE_TRANSPORT_POLICY=relay）。
+	// 開発で、違うネットワークを用意しなくても TURN を通る経路を確かめるためにある。本番では使わない。
+	RelayOnly bool
 }
 
 // DefaultAttachmentMaxBytes は ATTACHMENT_MAX_BYTES の既定値（25 MiB）。
@@ -279,12 +282,22 @@ func realtimeVar(errs *[]error, optional func(string, string) string) RealtimeCo
 			strings.Join(missing, ", "), strings.Join(set, ", ")))
 		return RealtimeConfig{}
 	}
+	relayOnly := false
+	switch p := optional("HUDDLE_ICE_TRANSPORT_POLICY", "all"); p {
+	case "all":
+	case "relay":
+		relayOnly = true
+	default:
+		// 名前と値は RTCConfiguration の iceTransportPolicy に合わせた。読む人が WebRTC の資料をそのまま引けるように。
+		*errs = append(*errs, fmt.Errorf("HUDDLE_ICE_TRANSPORT_POLICY: must be all or relay, got %q", p))
+	}
 	return RealtimeConfig{
 		Enabled:             true,
 		AppID:               values[0],
 		AppSecretFile:       values[1],
 		TURNKeyID:           values[2],
 		TURNKeyAPITokenFile: values[3],
+		RelayOnly:           relayOnly,
 	}
 }
 

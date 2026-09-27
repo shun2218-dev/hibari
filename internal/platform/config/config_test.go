@@ -345,4 +345,38 @@ func TestLoadRealtime(t *testing.T) {
 			}
 		})
 	}
+
+	// relay だけにするのは、開発で TURN を通る経路を確かめるため。既定は all（直接つながるならそちらを使う）。
+	policies := []struct {
+		value   string
+		want    bool
+		wantErr bool
+	}{
+		{"", false, false},
+		{"all", false, false},
+		{"relay", true, false},
+		{"RELAY", false, true},
+		{"none", false, true},
+	}
+	for _, tt := range policies {
+		t.Run("ice transport policy "+tt.value, func(t *testing.T) {
+			extra := maps.Clone(all)
+			if tt.value != "" {
+				extra["HUDDLE_ICE_TRANSPORT_POLICY"] = tt.value
+			}
+			got, err := config.Load(env(merged(extra)))
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "HUDDLE_ICE_TRANSPORT_POLICY") {
+					t.Errorf("err = %v, want it to name HUDDLE_ICE_TRANSPORT_POLICY", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Realtime.RelayOnly != tt.want {
+				t.Errorf("RelayOnly = %v, want %v", got.Realtime.RelayOnly, tt.want)
+			}
+		})
+	}
 }

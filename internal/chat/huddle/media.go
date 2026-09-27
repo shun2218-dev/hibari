@@ -16,6 +16,8 @@ import (
 type Media struct {
 	SFU  *sfu.Client
 	TURN *turn.Client
+	// RelayOnly が true なら、発行した ICE サーバーを TURN の中継だけで使わせる（開発で TURN の経路を確かめるため）。
+	RelayOnly bool
 }
 
 var _ chat.HuddleMedia = Media{}
@@ -26,7 +28,7 @@ func (m Media) ICEServers(ctx context.Context, ttl time.Duration, now time.Time)
 	if err != nil {
 		return chat.ICECredentials{}, err
 	}
-	out := chat.ICECredentials{Username: creds.Username, ExpiresAt: creds.ExpiresAt}
+	out := chat.ICECredentials{Username: creds.Username, ExpiresAt: creds.ExpiresAt, RelayOnly: m.RelayOnly}
 	for _, s := range creds.ICEServers {
 		out.Servers = append(out.Servers, chat.ICEServer{URLs: s.URLs, Username: s.Username, Credential: s.Credential})
 	}

@@ -89,6 +89,7 @@ var tsEnums = []tsEnum{
 		problemRoomArchived, problemRoomNotArchived, problemRoomProtected,
 		problemAttachmentNotUploaded, problemAttachmentMismatch, problemWSTicketInvalid, problemEmailUnverified,
 		problemHuddlesUnavailable, problemHuddleFull, problemHuddleParticipantGone, problemHuddleNegotiationConflict),
+	enumOf("ICETransportPolicy", iceTransportAll, iceTransportRelay),
 	enumOf("ClientMessageType", clientSubscribe, clientUnsubscribe, clientTyping, clientActivity, clientPing, clientHuddleHeartbeat),
 	enumOf("AckError", ackInvalidMessage, ackNotFound, ackNotSubscribed, ackForbidden, ackTooManySubscriptions, ackInternal),
 }

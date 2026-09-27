@@ -105,6 +105,9 @@ type ICECredentials struct {
 	Servers   []ICEServer
 	Username  string
 	ExpiresAt time.Time
+	// RelayOnly が true なら、ブラウザは TURN の中継だけを使う（RTCConfiguration の iceTransportPolicy = "relay"）。
+	// 開発で TURN を通る経路を確かめるための切り替え。
+	RelayOnly bool
 }
 
 // RemoteTrack は受けに行く相手のトラック。

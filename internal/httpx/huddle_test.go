@@ -95,9 +95,11 @@ func TestHuddleAPI(t *testing.T) {
 				Username   string   `json:"username"`
 				Credential string   `json:"credential"`
 			} `json:"ice_servers"`
-			ExpiresAt string `json:"expires_at"`
+			ExpiresAt          string `json:"expires_at"`
+			ICETransportPolicy string `json:"ice_transport_policy"`
 		}](t, r)
-		if len(body.ICEServers) != 2 || body.ICEServers[1].Username == "" || body.ExpiresAt == "" {
+		// relay は開発で明示したときだけ。既定で直接の経路を捨てると、中継の転送量が無駄に増える
+		if len(body.ICEServers) != 2 || body.ICEServers[1].Username == "" || body.ExpiresAt == "" || body.ICETransportPolicy != "all" {
 			t.Errorf("body = %s", r.body)
 		}
 		expectProblem(t, c.as(f.outsider, http.MethodPost, roomPath+"/huddle/ice-servers", nil), http.StatusNotFound, "not-found")
