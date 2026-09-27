@@ -179,3 +179,113 @@ describe("音声のハドル（ADR 0066）", () => {
     expect(api.paths()).not.toContain("DELETE /api/v1/huddles/h-1/participants/p-1");
   });
 });
+
+describe("ハドルへのリンク（ADR 0067 決定 1・2）", () => {
+  beforeEach(() => {
+    nav.router.replace.mockReset();
+    nav.router.push.mockReset();
+    nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    nav.search = "";
+    window.localStorage.clear();
+  });
+
+  it("?huddle=1 で開くと、参加前のプレビューを出し、クエリを消す", async () => {
+    nav.search = "huddle=1";
+    await openDesign();
+
+    const overlay = await screen.findByRole("dialog", { name: "ハドルミーティング" });
+    expect(await within(overlay).findByRole("button", { name: "ハドルミーティングを開始する" })).toBeInTheDocument();
+    expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1/r/r-design");
+  });
+
+  it("参加していない public のチャンネルでは、マイクを求めずに「チャンネルに参加する」を出し、参加したらプレビューに進む", async () => {
+    nav.search = "huddle=1";
+    const user = userEvent.setup();
+    const outsider = { ...design, is_member: false, last_read_seq: null, last_read_user_seq: null };
+    // 参加していないルームは購読しないので、openDesign の購読を待たずに描く
+    const { api } = renderWithChat(
+      <WorkspaceScreen />,
+      routes(
+        { rooms: [dm] },
+        {
+          "GET /api/v1/rooms/r-design": () => json(200, { ...outsider, member_count: 3 }),
+          "POST /api/v1/rooms/r-design/join": () => json(200, { ...design, member_count: 4 }),
+        },
+      ),
+      { huddle: true },
+    );
+
+    const overlay = await screen.findByRole("dialog", { name: "ハドルミーティング" });
+    expect(await within(overlay).findByText("このチャンネルに参加すると、ハドルミーティングに参加できます。")).toBeInTheDocument();
+    expect(api.paths()).not.toContain("POST /api/v1/rooms/r-design/huddle/ice-servers");
+    expect(nav.router.replace).not.toHaveBeenCalled();
+
+    await user.click(within(overlay).getByRole("button", { name: "チャンネルに参加する" }));
+    await waitFor(() => expect(api.paths()).toContain("POST /api/v1/rooms/r-design/join"));
+    // 参加するとルームが変わり、同じ全画面のまま参加前のプレビューに進む（中身は描き直されるので取り直す）
+    const preview = await screen.findByRole("dialog", { name: "ハドルミーティング" });
+    expect(await within(preview).findByRole("button", { name: "ハドルミーティングを開始する" })).toBeEnabled();
+    expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1/r/r-design");
+  });
+
+  it("アーカイブしたチャンネルでは理由を出して開始を押せず、閉じたらクエリを消す", async () => {
+    nav.search = "huddle=1";
+    const user = userEvent.setup();
+    const archived = { ...design, archived_at: "2026-09-26T00:00:00Z" };
+    await openDesign({ rooms: [archived, dm] }, { "GET /api/v1/rooms/r-design": () => json(200, { ...archived, member_count: 3 }) });
+
+    const overlay = await screen.findByRole("dialog", { name: "ハドルミーティング" });
+    expect(await within(overlay).findByText("このチャンネルはアーカイブされているため、ハドルミーティングは開始できません。")).toBeInTheDocument();
+    expect(within(overlay).getByRole("button", { name: "ハドルミーティングを開始する" })).toBeDisabled();
+
+    await user.click(within(overlay).getByRole("button", { name: "キャンセル" }));
+    expect(screen.queryByRole("dialog", { name: "ハドルミーティング" })).not.toBeInTheDocument();
+    expect(nav.router.replace).toHaveBeenCalledWith("/w/ws-1/r/r-design");
+  });
+
+  it("ヘッダーの「⌄」から、ルームのハドルのリンクをコピーする", async () => {
+    const user = userEvent.setup();
+    await openDesign();
+
+    await user.click(await screen.findByRole("button", { name: "ハドルミーティングのその他の操作" }));
+    await user.click(screen.getByRole("button", { name: "ハドルミーティングのリンクをコピー" }));
+
+    expect(await navigator.clipboard.readText()).toBe(`${window.location.origin}/w/ws-1/r/r-design?huddle=1`);
+    expect(await screen.findByRole("button", { name: "コピーしました" })).toBeInTheDocument();
+  });
+
+  it("本文のリンクは、手元のルームならストアの状態でカードにし、ないルームだけを取りにいく", async () => {
+    const user = userEvent.setup();
+    const known = "01J8ZH5K0000000000000000R1";
+    const unknown = "01J8ZH5K0000000000000000R2";
+    const knownRoom = room(known, "設計");
+    // リンクの ID は ULID の形でなければカードにしない（テストのワークスペースの ID は ULID でないので、形だけの ID を使う）
+    const link = (id: string) => `${window.location.origin}/w/01J8ZH5K0000000000000000W1/r/${id}?huddle=1`;
+    const { api } = await openDesign(
+      { rooms: [design, dm, knownRoom] },
+      {
+        "GET /api/v1/rooms/r-design/messages?limit=50": () =>
+          json(200, {
+            messages: [message(1, { room_id: "r-design", body: `ここで ${link(known)} それと ${link(unknown)}` })],
+            has_more: false,
+            last_change_seq: 1,
+          }),
+        "POST /api/v1/huddles/links": () =>
+          json(200, {
+            links: [{ room_id: unknown, status: "unavailable", workspace: null, room: null, huddle: null, can_join: false }],
+          }),
+      },
+    );
+
+    const cards = await screen.findAllByRole("article", { name: "ハドルミーティングのリンク" });
+    expect(cards).toHaveLength(1);
+    expect(await screen.findByText("アクセスできないハドルミーティング")).toBeInTheDocument();
+    const call = api.calls.find((c) => c.path === "/api/v1/huddles/links");
+    expect(JSON.parse(call!.init.body as string)).toEqual({ room_ids: [unknown] });
+
+    // 押すと、そのルームの参加前のプレビューを出す
+    await user.click(within(cards[0]).getByRole("button", { name: "ハドルミーティングを開始する" }));
+    const overlay = await screen.findByRole("dialog", { name: "ハドルミーティング" });
+    expect(within(overlay).getByRole("heading")).toHaveTextContent("設計");
+  });
+});

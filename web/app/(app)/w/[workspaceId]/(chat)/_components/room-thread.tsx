@@ -28,6 +28,8 @@ import {
 import { useComposerToolbar } from "@/hooks/use-composer-toolbar";
 import { useDocumentVisible } from "@/hooks/use-document-visible";
 import { useComposerLinkPreviews } from "@/hooks/chat/use-composer-link-previews";
+import { useHuddle } from "@/hooks/chat/use-huddle";
+import { useHuddleLinkCardTable } from "@/hooks/chat/use-huddle-link-cards";
 import { useOrigin } from "@/hooks/use-origin";
 import { mentionAll } from "@/lib/chat/format/mentions";
 import { draftsReady } from "@/lib/chat/media/uploads";
@@ -169,6 +171,9 @@ export function RoomThread({
   const origin = useOrigin();
   const permalinks = useMemo(() => (origin ? permalinksIn(messages, origin) : []), [messages, origin]);
   const linkCards = useLinkCards(permalinks);
+  // ハドルのリンクのカード（ADR 0067 決定 2）。チャンネルと同じ作り方
+  const huddleLinkCards = useHuddleLinkCardTable(messages, workspaceId);
+  const huddle = useHuddle();
 
   const broadcastDoneLabel = room ? alsoInChannelDoneLabel(room.kind) : undefined;
   const memberNames = useMemo(() => toMemberNames(members), [members]);
@@ -190,6 +195,7 @@ export function RoomThread({
           linkPreviewUrls,
           broadcastDoneLabel,
           linkCards,
+          huddleLinkCards,
           origin,
           currentWorkspaceId: workspaceId,
           memberNames,
@@ -206,6 +212,7 @@ export function RoomThread({
       linkPreviewUrls,
       broadcastDoneLabel,
       linkCards,
+      huddleLinkCards,
       origin,
       workspaceId,
       memberNames,
@@ -322,6 +329,8 @@ export function RoomThread({
             label="スレッドのメッセージ"
             onReachStart={() => store.loadOlderThread(rootId)}
             onReachEnd={() => store.loadNewerThread(rootId)}
+            onOpenHuddleLink={huddle ? (_key, cardRoomId) => huddle.surface.start(cardRoomId) : undefined}
+            onShowHuddleScreen={huddle ? () => huddle.surface.show() : undefined}
             scrollToKey={highlightedKey}
 
             highlightedKey={highlightedKey}

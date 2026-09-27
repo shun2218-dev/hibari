@@ -167,6 +167,16 @@ describe("MessageBody の書式（ADR 0051）", () => {
     expect(link).not.toHaveAttribute("target");
   });
 
+  it("ハドルへのリンクも同じタブで、アプリの中のパスへ飛ぶ（ADR 0067 決定 1）", () => {
+    const ids = "01J9ZQZQZQZQZQZQZQZQZQZQZ";
+    const url = `${window.location.origin}/w/${ids}A/r/${ids}B?huddle=1`;
+    render(<MessageBody body={`ここで話しましょう ${url}`} />);
+
+    const link = screen.getByRole("link", { name: url });
+    expect(link).toHaveAttribute("href", `/w/${ids}A/r/${ids}B?huddle=1`);
+    expect(link).not.toHaveAttribute("target");
+  });
+
   it("interactive={false} では、リンクもチップも押せない要素で描く（行全体がリンクの所に置くため）", () => {
     render(
       <MessageBody body={`<@${ALICE}> https://example.com`} mentionNames={names} onOpenProfile={vi.fn()} interactive={false} />,

@@ -13,6 +13,7 @@ import { type HuddleSurfaceStore, createHuddleSurface } from "@/lib/chat/huddle/
 import { type HuddleWindow, openHuddleWindow } from "@/lib/chat/huddle/window";
 import { channelTable } from "@/lib/chat/format/channel-links";
 import { createSearchStore, type SearchStore } from "@/lib/chat/search/search-store";
+import { type HuddleLinkCardStore, createHuddleLinkCardStore } from "@/lib/chat/format/huddle-link-cards";
 import { type LinkCardStore, createLinkCardStore } from "@/lib/chat/format/link-cards";
 import { type MediaStore, createMediaStore } from "@/lib/chat/media/media-store";
 import { type AttachmentUploader, type UploaderOptions, createAttachmentUploader } from "@/lib/chat/media/uploads";
@@ -35,6 +36,8 @@ export type ChatContextValue = {
   desktop: { notifier: DesktopNotifier; setOpen: (open: (url: string) => void) => void } | null;
   media: MediaStore;
   linkCards: LinkCardStore;
+  /** 本文に貼られたハドルのリンクのカードのうち、手元のストアにないルームの中身（ADR 0067 決定 2）。 */
+  huddleLinkCards: HuddleLinkCardStore;
   /**
    * 検索の結果（ADR 0061）。チャットの本体のストアとは別に持つ。
    * 結果は要求した時点のもので、WebSocket でも再接続の同期でも触らない（決定 8）。
@@ -131,6 +134,7 @@ export function ChatProvider({
       : null;
     const media = createMediaStore(api);
     const linkCards = createLinkCardStore(api);
+    const huddleLinkCards = createHuddleLinkCardStore(api);
     const search = createSearchStore(api);
     return {
       store,
@@ -138,6 +142,7 @@ export function ChatProvider({
       desktop,
       media,
       linkCards,
+      huddleLinkCards,
       search,
       createUploader: (roomId) => createAttachmentUploader(api, roomId, upload),
       huddle,

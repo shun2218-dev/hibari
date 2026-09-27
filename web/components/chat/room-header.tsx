@@ -48,7 +48,7 @@ type RoomHeaderProps = {
  * ハドルのボタンの横の「⌄」のメニュー（ADR 0067 決定 1。Slack の矢印と同じ）。ハドルが進行中でなくても出す。
  * copied は直前にコピーした（項目の文言を「コピーしました」に変える。メッセージの「リンクをコピー」と同じ）。
  */
-export type HuddleHeaderMenu = { open: boolean; onToggle?: () => void; copied?: boolean; onCopyLink?: () => void };
+export type HuddleHeaderMenu = { open: boolean; onToggle?: () => void; copied?: boolean; onCopyLink?: () => void | Promise<void> };
 
 export function RoomHeader({
   kind,

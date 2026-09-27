@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPermalink, CARD_CLAMP_CHARS, CARD_CLAMP_LINES, clampCardBody, findPermalinks, linkKey, MAX_LINK_CARDS, parsePermalink, permalinkPath, withSide } from "./links";
+import {
+  buildHuddleLink,
+  buildPermalink,
+  CARD_CLAMP_CHARS,
+  CARD_CLAMP_LINES,
+  clampCardBody,
+  findHuddleLinks,
+  findPermalinks,
+  huddleLinkPath,
+  linkKey,
+  MAX_LINK_CARDS,
+  parseHuddleLink,
+  parsePermalink,
+  permalinkPath,
+  withSide,
+} from "./links";
 
 const ORIGIN = "https://hibari.example";
 const WS = "01J9ZQZQZQZQZQZQZQZQZQZQZA";
@@ -196,3 +211,37 @@ describe("withSide（ADR 0058 決定 1）", () => {
   });
 });
 
+
+describe("ハドルへのリンク（ADR 0067 決定 1・2）", () => {
+  const origin = "https://hibari.test";
+  const ws = "01J8ZH5K000000000000000001";
+  const room = "01J8ZH5K000000000000000002";
+  const msg = "01J8ZH5K000000000000000003";
+
+  it("ルームの URL に huddle=1 を足した形で組み立て、読み戻せる", () => {
+    const href = buildHuddleLink(origin, { workspaceId: ws, roomId: room });
+    expect(href).toBe(`${origin}/w/${ws}/r/${room}?huddle=1`);
+    expect(parseHuddleLink(href, origin)).toEqual({ workspaceId: ws, roomId: room });
+    expect(huddleLinkPath({ workspaceId: ws, roomId: room })).toBe(`/w/${ws}/r/${room}?huddle=1`);
+  });
+
+  it.each([
+    ["別のオリジン", `https://other.test/w/${ws}/r/${room}?huddle=1`],
+    ["huddle がない", `${origin}/w/${ws}/r/${room}`],
+    ["メッセージへのリンク", `${origin}/w/${ws}/r/${room}?huddle=1&m=${msg}`],
+    ["ID でない", `${origin}/w/x/r/${room}?huddle=1`],
+    ["後ろにパスが続く", `${origin}/w/${ws}/r/${room}/x?huddle=1`],
+  ])("%s は受けない", (_name, href) => {
+    expect(parseHuddleLink(href, origin)).toBeNull();
+  });
+
+  it("本文から出てきた順に集め、同じルームはまとめ、メッセージのカードと合わせて 3 枚まで", () => {
+    const room2 = "01J8ZH5K000000000000000004";
+    const room3 = "01J8ZH5K000000000000000005";
+    const h = (r: string) => `${origin}/w/${ws}/r/${r}?huddle=1`;
+    expect(findHuddleLinks(`${h(room)} ${h(room)} ${h(room2)}`, origin).map((l) => l.roomId)).toEqual([room, room2]);
+    // メッセージへのリンクが 2 つあれば、ハドルのカードは 1 枚だけ
+    const permalinks = `${origin}/w/${ws}/r/${room}?m=${msg} ${origin}/w/${ws}/r/${room2}?m=${msg}`;
+    expect(findHuddleLinks(`${permalinks} ${h(room)} ${h(room3)}`, origin).map((l) => l.roomId)).toEqual([room]);
+  });
+});

@@ -16,6 +16,8 @@ import { Composer } from "@/components/chat/composer";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { ConfirmMentionAllDialog } from "@/components/chat/dialogs/confirm-mention-all";
 import { useHuddle } from "@/hooks/chat/use-huddle";
+import { useHuddleLinkCardTable } from "@/hooks/chat/use-huddle-link-cards";
+import { useHuddleLinkMenu } from "@/hooks/chat/use-huddle-link-menu";
 import { useMessageActions } from "@/hooks/chat/use-message-actions";
 import { type ProfileSender, useSenders } from "@/hooks/chat/use-senders";
 import { useProfileHoverCard } from "@/hooks/chat/use-profile-hover-card";
@@ -119,6 +121,8 @@ export function RoomView({
   const removal = useChatState((s) => s.removedRooms[roomId]);
   const workspaceRemoval = useChatState((s) => s.removedWorkspaces[workspaceId]);
   const huddle = useHuddle();
+  // ハドルのボタンの横の「⌄」（ハドルミーティングのリンクをコピー。ADR 0067 決定 1）。ボタンを出すときだけヘッダーに渡す
+  const huddleLinkMenu = useHuddleLinkMenu({ workspaceId, roomId });
   const huddlesEnabled = useChatState((s) => s.features?.huddles ?? false);
   const [joining, setJoining] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -242,6 +246,8 @@ export function RoomView({
   const origin = useOrigin();
   const permalinks = useMemo(() => (origin ? permalinksIn(messages ?? [], origin) : []), [messages, origin]);
   const linkCards = useLinkCards(permalinks);
+  // 本文に貼られたハドルのリンクのカード（ADR 0067 決定 2）。手元にあるルームは生きた状態から描く
+  const huddleLinkCards = useHuddleLinkCardTable(messages, workspaceId);
 
   const memberNames = useMemo(() => toMemberNames(members), [members]);
   // リンクのカードは別のルームのメッセージのことが多いので、本文のメンションはワークスペースのメンバーから引く（ADR 0051）
@@ -282,6 +288,7 @@ export function RoomView({
         attachmentUrls,
         linkPreviewUrls,
         linkCards,
+        huddleLinkCards,
         origin,
         currentWorkspaceId: workspaceId,
         memberNames,
@@ -301,6 +308,7 @@ export function RoomView({
       attachmentUrls,
       linkPreviewUrls,
       linkCards,
+      huddleLinkCards,
       origin,
       workspaceId,
       memberNames,
@@ -415,7 +423,7 @@ export function RoomView({
       notifications={removedFromWorkspace ? undefined : notifications}
       huddle={
         startHuddle && me
-          ? { ...huddleHeaderState(room, me.id, workspaceMemberNames, avatarUrls), onClick: startHuddle }
+          ? { ...huddleHeaderState(room, me.id, workspaceMemberNames, avatarUrls), onClick: startHuddle, menu: huddleLinkMenu }
           : undefined
       }
       onBack={onBack}
@@ -481,6 +489,9 @@ export function RoomView({
             }}
             openThreadKey={openThreadId}
             onJoinHuddle={startHuddle}
+            // ハドルのリンクのカード（ADR 0067 決定 2）。押した操作の中でプレビューを出す（別のタブを開けるように）
+            onOpenHuddleLink={huddle ? (_key, cardRoomId) => huddle.surface.start(cardRoomId) : undefined}
+            onShowHuddleScreen={huddle ? () => huddle.surface.show() : undefined}
             onOpenProfile={(userId) => onOpenProfile(userId, senderOf(userId))}
             profileHoverCardFor={profileHoverCardFor}
           />
