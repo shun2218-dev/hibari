@@ -549,6 +549,8 @@ export interface PastHuddle {
   participant_ids: string[];
   /** reply_count はハドルのチャットの返信の数。 */
   reply_count: number;
+  /** saved は、自分がハドルのメッセージを「後で」に保存しているか。 */
+  saved: boolean;
 }
 
 export interface HuddleList {

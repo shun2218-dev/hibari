@@ -46,6 +46,8 @@ type pastHuddleResponse struct {
 	ParticipantIDs []string `json:"participant_ids"`
 	// ReplyCount はハドルのチャットの返信の数。
 	ReplyCount int64 `json:"reply_count"`
+	// Saved は、自分がハドルのメッセージを「後で」に保存しているか。
+	Saved bool `json:"saved"`
 }
 
 type huddleListResponse struct {
@@ -92,7 +94,7 @@ func (h *chatHandlers) listHuddles(w http.ResponseWriter, r *http.Request) {
 		resp.Huddles[i] = pastHuddleResponse{
 			ID: it.ID.String(), MessageID: it.MessageID.String(), StartedBy: it.StartedBy.String(),
 			Room: newHuddlePlaceResponse(it.Room), StartedAt: it.StartedAt, EndedAt: it.EndedAt,
-			ParticipantIDs: idStrings(it.ParticipantIDs), ReplyCount: it.ReplyCount,
+			ParticipantIDs: idStrings(it.ParticipantIDs), ReplyCount: it.ReplyCount, Saved: it.Saved,
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)

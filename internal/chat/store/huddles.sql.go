@@ -266,7 +266,7 @@ const listHuddles = `-- name: ListHuddles :many
 WITH readable_rooms AS (
     SELECT r.id, r.kind, r.name, r.dm_key, rm.joined_at AS member_since
       FROM rooms r
-      LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = $5
+      LEFT JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = $1
      WHERE r.workspace_id = $7
        AND (r.kind = 'public' OR rm.user_id IS NOT NULL)
 )
@@ -275,33 +275,36 @@ SELECT h.id, h.room_id, h.message_id, h.started_by, h.started_at, h.ended_at,
        m.thread_reply_count,
        COALESCE((SELECT array_agg(p.user_id ORDER BY p.joined_at, p.user_id)
                    FROM huddle_participants p
-                  WHERE p.huddle_id = h.id), '{}')::uuid[] AS participant_ids
+                  WHERE p.huddle_id = h.id), '{}')::uuid[] AS participant_ids,
+       -- 自分がハドルのメッセージを「後で」に保存しているか（行の「…」の文言。外したものは removed で残る。ADR 0054）
+       EXISTS (SELECT 1 FROM saved_messages s
+                WHERE s.user_id = $1 AND s.message_id = h.message_id AND s.state <> 'removed') AS saved
   FROM huddles h
   JOIN readable_rooms rr ON rr.id = h.room_id
   JOIN messages m ON m.room_id = h.room_id AND m.id = h.message_id
  WHERE h.ended_at IS NOT NULL
-   AND h.id < $1::uuid
-   AND ($2::uuid IS NULL OR h.room_id = $2::uuid)
-   AND ($3::uuid IS NULL OR EXISTS (
-         SELECT 1 FROM huddle_participants p WHERE p.huddle_id = h.id AND p.user_id = $3::uuid))
+   AND h.id < $2::uuid
+   AND ($3::uuid IS NULL OR h.room_id = $3::uuid)
+   AND ($4::uuid IS NULL OR EXISTS (
+         SELECT 1 FROM huddle_participants p WHERE p.huddle_id = h.id AND p.user_id = $4::uuid))
    AND CASE
-         WHEN $4::boolean THEN
+         WHEN $5::boolean THEN
            rr.member_since IS NOT NULL AND h.started_at >= rr.member_since
-           AND NOT EXISTS (SELECT 1 FROM huddle_participants me WHERE me.huddle_id = h.id AND me.user_id = $5)
+           AND NOT EXISTS (SELECT 1 FROM huddle_participants me WHERE me.huddle_id = h.id AND me.user_id = $1)
          ELSE
            (rr.member_since IS NOT NULL AND h.started_at >= rr.member_since)
-           OR EXISTS (SELECT 1 FROM huddle_participants me WHERE me.huddle_id = h.id AND me.user_id = $5)
+           OR EXISTS (SELECT 1 FROM huddle_participants me WHERE me.huddle_id = h.id AND me.user_id = $1)
        END
  ORDER BY h.id DESC
  LIMIT $6
 `
 
 type ListHuddlesParams struct {
+	UserID        ulid.ULID
 	BeforeID      ulid.ULID
 	RoomID        *ulid.ULID
 	ParticipantID *ulid.ULID
 	Missed        bool
-	UserID        ulid.ULID
 	MaxRows       int32
 	WorkspaceID   ulid.ULID
 }
@@ -318,6 +321,7 @@ type ListHuddlesRow struct {
 	RoomDmKey        *string
 	ThreadReplyCount int32
 	ParticipantIds   []ulid.ULID
+	Saved            bool
 }
 
 // ハドルの一覧の「最近のハドルミーティング」（ADR 0067 決定 6）。終わったハドルを新しい順に 1 ページ返す。
@@ -336,11 +340,11 @@ type ListHuddlesRow struct {
 // 並びはハドルの ID（始めたときの ULID）の降順。メッセージではないので、created_at で並べないルール 3 には当たらない。
 func (q *Queries) ListHuddles(ctx context.Context, arg ListHuddlesParams) ([]ListHuddlesRow, error) {
 	rows, err := q.db.Query(ctx, listHuddles,
+		arg.UserID,
 		arg.BeforeID,
 		arg.RoomID,
 		arg.ParticipantID,
 		arg.Missed,
-		arg.UserID,
 		arg.MaxRows,
 		arg.WorkspaceID,
 	)
@@ -363,6 +367,7 @@ func (q *Queries) ListHuddles(ctx context.Context, arg ListHuddlesParams) ([]Lis
 			&i.RoomDmKey,
 			&i.ThreadReplyCount,
 			&i.ParticipantIds,
+			&i.Saved,
 		); err != nil {
 			return nil, err
 		}

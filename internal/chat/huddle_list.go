@@ -57,6 +57,8 @@ type PastHuddle struct {
 	ParticipantIDs []ulid.ULID
 	// ReplyCount はハドルのチャット（ハドルのメッセージのスレッド）の返信の数。
 	ReplyCount int64
+	// Saved は、自分がハドルのメッセージを「後で」に保存しているか（行の「…」の文言。ADR 0067 決定 6）。
+	Saved bool
 }
 
 // HuddleListQuery は一覧の絞り込みとページ。
@@ -130,7 +132,7 @@ func (s *Service) ListHuddles(ctx context.Context, actor, workspaceID ulid.ULID,
 	for i, r := range rows {
 		items[i] = PastHuddle{
 			ID: r.ID, MessageID: r.MessageID, StartedBy: r.StartedBy, Room: resolved[i],
-			StartedAt: r.StartedAt, ParticipantIDs: r.ParticipantIds, ReplyCount: int64(r.ThreadReplyCount),
+			StartedAt: r.StartedAt, ParticipantIDs: r.ParticipantIds, ReplyCount: int64(r.ThreadReplyCount), Saved: r.Saved,
 		}
 		// 終わったハドルだけを返す（SQL の条件）。nil になることはない
 		if r.EndedAt != nil {

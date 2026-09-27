@@ -10524,6 +10524,10 @@
           "reply_count": {
             "type": "integer",
             "description": "reply_count はハドルのチャットの返信の数。"
+          },
+          "saved": {
+            "type": "boolean",
+            "description": "saved は、自分がハドルのメッセージを「後で」に保存しているか。"
           }
         },
         "required": [
@@ -10534,7 +10538,8 @@
           "started_at",
           "ended_at",
           "participant_ids",
-          "reply_count"
+          "reply_count",
+          "saved"
         ]
       },
       "PinList": {

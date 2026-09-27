@@ -25,3 +25,21 @@ describe("「後で」（ADR 0054）", () => {
     expect(view).toEqual({ key: "m-2", status: "unavailable" });
   });
 });
+
+describe("「後で」に保存したハドルのメッセージ（ADR 0067 決定 6）", () => {
+  it("送り主と本文の代わりに、会話と同じ見出しと所要時間を出す", () => {
+    const huddleMessage = message(3, {
+      kind: "system",
+      body: "",
+      sender: miyuki,
+      system: { type: "huddle", huddle_id: "h-1" },
+      huddle: { id: "h-1", started_at: "2026-09-26T02:00:00Z", ended_at: "2026-09-26T02:38:00Z", participant_ids: [miyuki.id] },
+    });
+    const view = toSavedItemView(savedItem(3, { message: huddleMessage }), { memberNames: { [miyuki.id]: miyuki.display_name } });
+
+    expect(view).toMatchObject({
+      status: "ok",
+      huddle: { title: "ハドルミーティングは終了しました", detail: `38 分 · ${miyuki.display_name}が 1 人で参加しました` },
+    });
+  });
+});

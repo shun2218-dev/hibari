@@ -253,6 +253,15 @@ export function createSaved(
         }
       },
 
+      /**
+       * メッセージを読み込んでいなくても「後で」に保存する（ハドルの一覧の「ブックマークする」。ADR 0067 決定 6）。
+       * 読み込んでいれば、そのメッセージの印も付ける。失敗したら ApiError を投げる。
+       */
+      async saveMessage(roomId: string, messageId: string): Promise<void> {
+        receiveSaved(await api.saveMessage(roomId, messageId));
+        markSaved(roomId, messageId, true);
+      },
+
       /** 「後で」から外す（一覧の「その他」と、読めない行の確認から）。 */
       removeSaved(workspaceId: string, messageId: string): Promise<void> {
         return removeSavedNow(workspaceId, messageId, findSavedItem(workspaceId, messageId)?.room_id);

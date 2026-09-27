@@ -1,8 +1,9 @@
 import type { SavedItemView } from "@/components/chat/types";
-import type { SavedItem } from "@/lib/api/types.gen";
+import type { SavedItem, UserProfile } from "@/lib/api/types.gen";
 import { permalinkPath, withSide } from "@/lib/chat/format/links";
 import { formatListTime } from "@/lib/chat/format/time";
 import type { UrlTable } from "@/lib/chat/views/message";
+import { huddleMessageTexts, toHuddleMessageView } from "@/lib/chat/views/huddles";
 import { fromMessage, mentionNamesFor } from "@/lib/chat/views/timeline";
 
 /**
@@ -16,6 +17,7 @@ export function toSavedItemView(
     avatarUrls = {},
     memberNames,
     side,
+    me,
   }: {
     now?: Date;
     timeZone?: string;
@@ -24,6 +26,8 @@ export function toSavedItemView(
     memberNames?: Readonly<Record<string, string>>;
     /** 行き先の URL に残す左のメニュー（ADR 0058 決定 1）。 */
     side?: string;
+    /** 自分（ハドルのメッセージの「あなた」と、不在着信・応答なしの見分けに使う）。 */
+    me?: UserProfile;
   } = {},
 ): SavedItemView {
   const { message, room } = item;
@@ -49,5 +53,16 @@ export function toSavedItemView(
     body: message.body,
     mentionNames: mentionNamesFor(fromMessage(message, undefined), memberNames),
     attachmentCount: message.attachments.length,
+    // ハドルのメッセージ（ハドルの一覧の「ブックマークする」で保存したもの。ADR 0067 決定 6）は、会話と同じ見出しと中身で出す
+    ...(message.kind === "system" && message.huddle
+      ? {
+          huddle: huddleMessageTexts(
+            toHuddleMessageView(
+              { id: message.id, sender: message.sender, huddle: message.huddle },
+              { me, roomKind: room.kind, names: memberNames ?? {}, timeLabel: "" },
+            ),
+          ),
+        }
+      : {}),
   };
 }
