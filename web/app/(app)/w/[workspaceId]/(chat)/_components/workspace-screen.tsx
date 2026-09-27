@@ -3,7 +3,7 @@
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { AccountMenu } from "@/components/chat/account-menu";
+import { AccountMenu, RailAccountButton } from "@/components/chat/account-menu";
 import { ChatLayout } from "@/components/chat/chat-layout";
 import { RemovedFromWorkspace, ServerUnavailable } from "@/components/chat/chat-states";
 import { SideNavBar, type SideNavItems, type SideNavKey, SideNavRail } from "@/components/chat/side-nav";
@@ -492,16 +492,13 @@ export function WorkspaceScreen() {
             }
             account={
               <>
-                <button
-                  type="button"
-                  aria-label="アカウントメニュー"
-                  aria-expanded={accountMenuFrom === "rail"}
-                  aria-haspopup="dialog"
+                {/* Slack と同じく、ステータスがあればアバターの上に絵文字を載せる（ADR 0067 決定 4） */}
+                <RailAccountButton
+                  user={currentUser}
+                  status={myStatus}
+                  expanded={accountMenuFrom === "rail"}
                   onClick={() => toggleAccountMenu("rail")}
-                  className="rounded-full"
-                >
-                  <Avatar id={currentUser.id} name={currentUser.name} imageUrl={currentUser.avatarUrl} size="sm" />
-                </button>
+                />
                 {accountMenuFrom === "rail" && accountMenu("rail")}
               </>
             }

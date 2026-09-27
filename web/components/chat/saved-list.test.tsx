@@ -109,3 +109,32 @@ describe("SavedList（ADR 0054）", () => {
     expect(screen.getByRole("link", { name: "佐藤 直樹 のメッセージへ移動" })).toBeInTheDocument();
   });
 });
+
+describe("SavedList のハドルのメッセージ（ADR 0067 決定 6）", () => {
+  it("送り主と本文の代わりに、見出しと所要時間を出し、押すとハドルのメッセージへ移る", () => {
+    render(
+      <SavedList
+        tab="in_progress"
+        inProgressCount={1}
+        items={[
+          {
+            key: "h1",
+            status: "ok",
+            href: "/w/w1/r/r1?m=h1",
+            room: { kind: "public", name: "デザインレビュー" },
+            sender: naoki,
+            timeLabel: "昨日 11:30",
+            body: "",
+            attachmentCount: 0,
+            huddle: { title: "ハドルミーティングは終了しました", detail: "38 分 · あなた、佐藤 直樹が参加しました" },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "デザインレビュー のハドルミーティングへ移動" })).toHaveAttribute("href", "/w/w1/r/r1?m=h1");
+    expect(screen.getByText("ハドルミーティングは終了しました")).toBeInTheDocument();
+    expect(screen.getByText("38 分 · あなた、佐藤 直樹が参加しました")).toBeInTheDocument();
+    expect(screen.queryByText("佐藤 直樹")).not.toBeInTheDocument();
+  });
+});

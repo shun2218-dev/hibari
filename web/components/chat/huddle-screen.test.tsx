@@ -143,3 +143,19 @@ describe("HuddleProblemScreen", () => {
     expect(screen.getByRole("button", { name: "閉じる" })).toBeInTheDocument();
   });
 });
+
+describe("ハドルの画面と帯の「…」（ADR 0067 決定 1）", () => {
+  it.each([
+    { name: "ハドルの画面", view: (open: boolean, onCopyLink: () => void) => <HuddleScreen huddle={huddle()} menu={{ open, onCopyLink }} /> },
+    { name: "ハドルの帯", view: (open: boolean, onCopyLink: () => void) => <HuddleBar huddle={huddle()} menu={{ open, onCopyLink }} /> },
+  ])("$name から、ハドルのリンクをコピーできる", async ({ view }) => {
+    const user = userEvent.setup();
+    const onCopyLink = vi.fn();
+    const { rerender } = render(view(false, onCopyLink));
+
+    expect(screen.getByRole("button", { name: "その他の操作" })).toHaveAttribute("aria-expanded", "false");
+    rerender(view(true, onCopyLink));
+    await user.click(screen.getByRole("button", { name: "ハドルミーティングのリンクをコピー" }));
+    expect(onCopyLink).toHaveBeenCalledOnce();
+  });
+});

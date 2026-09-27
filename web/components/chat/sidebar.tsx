@@ -34,6 +34,11 @@ type SidebarProps = {
    * 渡さなければ出さない。
    */
   threads?: { href: string; unreadCount: number; selected: boolean };
+  /**
+   * ハドルの一覧への入口（ADR 0067 決定 6）。participants は、いま進行中の（自分が入れる）ハドルに入っている人。
+   * 進行中のあいだだけ、行の右に顔を出す（Slack と同じ）。数は出さない（未読の概念がない）。渡さなければ出さない。
+   */
+  huddles?: { href: string; selected: boolean; participants: UserRef[] };
   /** 検索の下に置く帯（「デスクトップ通知を有効にする」。ADR 0057）。渡さなければ出さない。 */
   notice?: ReactNode;
   /**
@@ -60,6 +65,7 @@ export function Sidebar({
   onCreateRoom,
   onStartDm,
   threads,
+  huddles,
   notice,
   railed = false,
 }: SidebarProps) {
@@ -134,11 +140,23 @@ export function Sidebar({
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
           {/* 検索はチャンネルを探すためのものなので、検索している間は出さない */}
           {/* 「後で」は左のメニューに移った（ADR 0058 決定 1） */}
-          {threads && !searching && (
+          {(threads || huddles) && !searching && (
             <div className="pt-3">
-              <NavRow href={threads.href} selected={threads.selected} icon={ThreadIcon} unreadCount={threads.unreadCount}>
-                スレッド
-              </NavRow>
+              {threads && (
+                <NavRow href={threads.href} selected={threads.selected} icon={ThreadIcon} unreadCount={threads.unreadCount}>
+                  スレッド
+                </NavRow>
+              )}
+              {huddles && (
+                <NavRow
+                  href={huddles.href}
+                  selected={huddles.selected}
+                  icon={HeadphonesIcon}
+                  trailing={huddles.participants.length > 0 ? <NavFaces participants={huddles.participants} selected={huddles.selected} /> : undefined}
+                >
+                  ハドルミーティング
+                </NavRow>
+              )}
             </div>
           )}
           {/* 片方が 0 件でも見出しは出す。「+」がそのまま作成・DM の入口になっている */}
@@ -163,7 +181,7 @@ export function Sidebar({
 }
 
 /**
- * ルームの一覧の上に置く行（「スレッド」）。
+ * ルームの一覧の上に置く行（「スレッド」「ハドルミーティング」）。
  * スレッドの未読は、チャンネルと同じ琥珀のバッジで「未読のあるスレッドの数」を出す。
  * スレッドの返信はチャンネルの未読に数えないので（ADR 0036）、ここが返信に気づく唯一の場所になる。
  */
@@ -172,12 +190,15 @@ function NavRow({
   selected,
   icon: Icon,
   unreadCount = 0,
+  trailing,
   children,
 }: {
   href: string;
   selected: boolean;
   icon: ComponentType<{ className?: string }>;
   unreadCount?: number;
+  /** 右端に置くもの（ハドルの一覧の、進行中のハドルに入っている人の顔）。 */
+  trailing?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -190,8 +211,28 @@ function NavRow({
       <Icon className="size-4 shrink-0 text-text-secondary" />
       {/* ルームの行と同じく、未読があるときだけ太字にする */}
       <span className={cx("flex-1 text-base text-text", unreadCount > 0 ? "font-bold" : "font-normal")}>{children}</span>
+      {trailing}
       <UnreadBadge count={unreadCount} />
     </Link>
+  );
+}
+
+/** ハドルの一覧の行の右の顔（Slack と同じく顔だけ。2 人まで）。いま起きていることを知らせるだけで、押せる印ではない。 */
+function NavFaces({ participants, selected }: { participants: UserRef[]; selected: boolean }) {
+  return (
+    <span role="img" aria-label={`進行中のハドルミーティングに ${participants.length} 人`} className="flex shrink-0 -space-x-1">
+      {participants.slice(0, 2).map((p) => (
+        <Avatar
+          key={p.id}
+          id={p.id}
+          name={p.name}
+          imageUrl={p.avatarUrl}
+          size="xs"
+          // 重ねた顔の縁は、行の地の色に合わせる
+          className={cx("rounded-full ring-2", selected ? "ring-primary-subtle" : "ring-surface")}
+        />
+      ))}
+    </span>
   );
 }
 

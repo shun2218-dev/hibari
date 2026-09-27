@@ -1,8 +1,10 @@
+import { Avatar } from "@/components/ui/avatar";
 import { LogOutIcon, SettingsIcon, SmilePlusIcon, UsersIcon } from "@/components/ui/icons";
 import { MenuItem } from "@/components/ui/menu-item";
 import { Popover } from "@/components/ui/popover";
+import { cx } from "@/lib/cx";
 
-import type { UserRef } from "./types";
+import type { UserRef, UserStatusView } from "./types";
 
 type AccountMenuProps = {
   user: UserRef & { handle: string };
@@ -89,5 +91,46 @@ export function AccountMenu({
         ログアウト
       </MenuItem>
     </Popover>
+  );
+}
+
+/**
+ * 左のメニュー（レール）の下の、自分のアバターのボタン（ADR 0058）。アカウントのメニューを開く。
+ *
+ * ステータスがあれば、Slack と同じくアバターの上に絵文字を載せ、1 つの角丸の枠にまとめる（ADR 0067 決定 4）。
+ * 渡すのは名前の横と同じ規則で決めたステータス（本人のステータス、なければハドル中の 🎧。`displayStatus`）。
+ */
+export function RailAccountButton({
+  user,
+  status,
+  expanded,
+  onClick,
+}: {
+  user: UserRef;
+  status?: UserStatusView;
+  expanded: boolean;
+  onClick?: () => void;
+}) {
+  const hint = status ? [status.text, status.expiresLabel].filter(Boolean).join(" · ") : "";
+  return (
+    <button
+      type="button"
+      aria-label={status ? `アカウントメニュー（ステータス: ${status.emoji}${hint ? ` ${hint}` : ""}）` : "アカウントメニュー"}
+      aria-expanded={expanded}
+      aria-haspopup="dialog"
+      onClick={onClick}
+      title={hint || undefined}
+      className={cx(
+        "flex flex-col items-center",
+        status ? cx("gap-1 rounded-md p-1 hover:bg-border", expanded ? "bg-border" : "bg-surface") : "rounded-full",
+      )}
+    >
+      {status && (
+        <span aria-hidden className="text-lg leading-none">
+          {status.emoji}
+        </span>
+      )}
+      <Avatar id={user.id} name={user.name} imageUrl={user.avatarUrl} size="sm" shape={status ? "square" : "circle"} />
+    </button>
   );
 }

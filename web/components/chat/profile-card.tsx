@@ -7,7 +7,8 @@ import { Avatar, PresenceDot } from "@/components/ui/avatar";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { roleLabel, type WorkspaceRole } from "@/components/workspace/types";
-import { presenceLabel } from "@/lib/chat/presence";
+import { cx } from "@/lib/cx";
+import { HUDDLE_STATUS_EMOJI, presenceLabel } from "@/lib/chat/presence";
 
 import type { ProfileView } from "./types";
 
@@ -28,6 +29,9 @@ export function ProfileSummary({ profile, layout = "card" }: { profile: KnownPro
   const { user } = profile;
   const member = profile.kind === "member" ? profile : undefined;
   const status = member ? user.status : undefined;
+  const inHuddle = member?.inHuddle ?? false;
+  // 名前の横は、本人のステータスがあればそれ、なければハドル中の 🎧（ADR 0067 決定 4。Slack と同じ）
+  const nameEmoji = status?.emoji ?? (inHuddle ? HUDDLE_STATUS_EMOJI : undefined);
   const panel = layout === "panel";
 
   return (
@@ -51,9 +55,9 @@ export function ProfileSummary({ profile, layout = "card" }: { profile: KnownPro
         <div className="flex min-w-0 flex-col gap-1">
           <p className="flex items-center gap-1.5">
             <span className="truncate text-xl font-bold text-text">{user.name}</span>
-            {status && (
+            {nameEmoji && (
               <span role="img" aria-hidden className="shrink-0 text-lg leading-none">
-                {status.emoji}
+                {nameEmoji}
               </span>
             )}
           </p>
@@ -85,6 +89,15 @@ export function ProfileSummary({ profile, layout = "card" }: { profile: KnownPro
             {status.text && status.expiresLabel && " · "}
             {status.expiresLabel}
           </span>
+        </p>
+      )}
+      {/* ステータスを設定していても、ハドル中はここで分かるようにする（名前の横はステータスのまま。ADR 0067 決定 4） */}
+      {inHuddle && (
+        <p className={cx(status && (status.text || status.expiresLabel) ? "mt-1.5" : "mt-3", "flex gap-2 rounded-sm bg-surface-muted px-3 py-2 text-sm")}>
+          <span role="img" aria-hidden className="leading-relaxed">
+            {HUDDLE_STATUS_EMOJI}
+          </span>
+          <span className="leading-relaxed text-text">ハドルミーティング中</span>
         </p>
       )}
     </>

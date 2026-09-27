@@ -52,6 +52,10 @@ type TimelineProps = {
   hoveredLinkPreviewKey?: string;
   /** 会話のハドルのメッセージの「参加」（ADR 0066 決定 12）。key はハドルのメッセージの key。 */
   onJoinHuddle?: (key: string) => void;
+  /** 本文のハドルのリンクのカードの「開始する」「参加する」（ADR 0067 決定 2）。key はメッセージの key。 */
+  onOpenHuddleLink?: (key: string, cardKey: string) => void;
+  /** ハドルのリンクのカードの「参加中」。ハドルの画面を前に出す。 */
+  onShowHuddleScreen?: () => void;
   onMarkAllRead?: () => void;
   /** key ごとの操作の可否。渡さなければ「…」を出さない。 */
   actionsFor?: (key: string) => MessageActions;
@@ -166,6 +170,8 @@ export function Timeline({
   onRemoveLinkPreview,
   hoveredLinkPreviewKey,
   onJoinHuddle,
+  onOpenHuddleLink,
+  onShowHuddleScreen,
   openAttachmentMenu,
   onToggleAttachmentMenu,
   onMarkAllRead,
@@ -362,6 +368,8 @@ export function Timeline({
                         : (previewId) => onRemoveLinkPreview(key, previewId)
                     }
                     forceLinkPreviewRemove={hoveredLinkPreviewKey === key}
+                    onOpenHuddleLink={onOpenHuddleLink && ((cardKey) => onOpenHuddleLink(key, cardKey))}
+                    onShowHuddleScreen={onShowHuddleScreen}
                     canEdit={actions?.canEdit}
                     canDelete={actions?.canDelete}
                     copyLink={copyLinkFor?.(key)}

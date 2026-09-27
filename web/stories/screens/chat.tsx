@@ -18,6 +18,8 @@ import type { HoverAction } from "@/components/chat/message-item/hover-actions";
 import { ConnectionBanner } from "@/components/chat/connection-banner";
 import { RemoveSavedItemDialog } from "@/components/chat/dialogs/remove-saved-item";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
+import { NewHuddleDialog, newHuddleValue } from "@/components/chat/dialogs/new-huddle";
+import { HuddleList } from "@/components/chat/huddle-list";
 import { HuddleRing } from "@/components/chat/huddle-ring";
 import { HuddleBar } from "@/components/chat/huddle-screen";
 import { MembersPanel } from "@/components/chat/members-panel";
@@ -56,10 +58,27 @@ import {
   huddleChatItems,
   huddleMessageKey,
   huddleOthers,
+  huddleFilterPerson,
+  huddleListItems,
+  huddleListMenuKey,
+  huddleListMissed,
+  huddleListWithNaoki,
+  huddleOngoingCards,
+  huddlePersonOptions,
+  huddlePlaceOptions,
   huddleScreen,
+  huddleStatus,
+  huddleSuggestions,
+  newHuddleCandidates,
+  newHuddleTyped,
+  profileInHuddle,
+  profileInHuddleWithStatus,
+  roomMembersInHuddle,
+  savedHuddle,
   timelineWithHuddle,
   timelineWithHuddleEnded,
   timelineWithHuddleJoined,
+  timelineWithHuddleLinks,
 } from "@/stories/fixtures/huddles";
 import {
   composerLinkDraft,
@@ -126,7 +145,7 @@ import {
   timelineWithStatus,
   timelineWithSystemMessages,
 } from "@/stories/fixtures/timeline";
-import { currentUser, myStatus, users } from "@/stories/fixtures/users";
+import { currentUser, myStatus, profileKeys, users } from "@/stories/fixtures/users";
 import { workspaces } from "@/stories/fixtures/workspaces";
 
 import { sideNavItems, sidePane, sideRail } from "./chat-nav";
@@ -332,7 +351,28 @@ export type ChatOptions = {
    * - dm-missed: DM の不在着信と応答なし
    * - dm-ring: DM の呼び出しを受けているところ
    */
-  huddle?: "active" | "joined" | "joined-chat" | "ended" | "dm-missed" | "dm-ring";
+  huddle?: "active" | "joined" | "joined-chat" | "joined-menu" | "ended" | "dm-missed" | "dm-ring" | "header-menu" | "link-cards";
+  /**
+   * ハドルの一覧（ADR 0067 決定 6）。ルームの代わりにメインの領域に出す（スレッドの一覧と同じ）。
+   * 自分は #デザインレビュー のハドルに入っている（下の帯・レールの 🎧・サイドバーの行の顔）。
+   * - list: 進行中と提案のカード・最近
+   * - row-menu / participants: 行の「…」を開いたところ / 「参加者を表示する」
+   * - scope / person: 1 つ目の範囲 / 「相手」のプルダウンを開いたところ
+   * - missed / filtered: 「参加しなかった」に絞った / 相手で絞った
+   * - empty: まだ何もない / loading: 最近を取っている
+   */
+  huddles?: "list" | "row-menu" | "participants" | "scope" | "person" | "missed" | "filtered" | "empty" | "loading";
+  /** 「＋ 新規ハドルミーティング」のダイアログ（決定 8）。`huddles` と一緒に使う。 */
+  newHuddle?: "empty" | "typed" | "selected";
+  /**
+   * ハドル中の印（ADR 0067 決定 4）。
+   * - members: メンバーパネル（ステータスのある人はステータスのまま、ない人は 🎧）
+   * - profile-status: ステータスを設定している人のホバーのカード（「ハドルミーティング中」の行）
+   * - profile: ステータスのない人のホバーのカード（名前の横が 🎧）
+   */
+  huddleStatus?: "members" | "profile-status" | "profile";
+  /** 「後で」の一覧に、保存したハドルのメッセージを混ぜる（`side: "later"` と一緒に使う。決定 6）。 */
+  savedHuddle?: boolean;
 };
 
 /** スレッドの画面のタイムライン。親が削除されたスレッドは、その親（tombstone と「N 件の返信」）を先頭に足す。 */
@@ -461,21 +501,42 @@ export function chat({
   archivedSearch,
   messageSearch,
   huddle,
+  huddles,
+  newHuddle,
+  huddleStatus: huddleStatusView,
+  savedHuddle: withSavedHuddle,
 }: ChatOptions = {}) {
   const dmHuddle = huddle === "dm-missed" || huddle === "dm-ring";
-  const inHuddle = huddle === "joined" || huddle === "joined-chat";
+  // ハドルの一覧とリンクのカードの画面では、自分は #デザインレビュー のハドルに入っている（Slack の画面と同じく下に帯が出る）
+  const inHuddle =
+    huddle === "joined" ||
+    huddle === "joined-chat" ||
+    huddle === "joined-menu" ||
+    huddle === "link-cards" ||
+    (huddles !== undefined && huddles !== "empty");
+  // ルームの代わりにメインの領域に出す一覧（スレッド・ハドル）
+  const listView = Boolean(threads) || huddles !== undefined;
   // 非公開チャンネルから外されたら、一覧からもヘッダーからも名前を消す（ADR 0035）
   const roomRemoved = body === "removed-room";
   // アーカイブしたルーム（ADR 0059）。archived-readonly は復元できない人（参加していない member）が見たところ
   const archivedRoom = footer === "archived" || footer === "archived-readonly";
   const composerLinkPreview = composer === "link-preview" || composer === "link-preview-loading";
   const threadContent = thread ? threadPanelContent(thread) : undefined;
-  const hover = profile?.startsWith("hover-") ? profileHover(profile) : undefined;
+  const hover =
+    huddleStatusView === "profile-status"
+      ? { key: profileKeys.naoki, profile: profileInHuddleWithStatus }
+      : huddleStatusView === "profile"
+        ? { key: profileKeys.ryo, profile: profileInHuddle }
+        : profile?.startsWith("hover-")
+          ? profileHover(profile)
+          : undefined;
   const profilePanel = profile?.startsWith("panel-") ? profilePanelContent(profile) : undefined;
   // ステータスの出ている画面の上に出す（名前の横の絵文字とカードの中身をそろえて見せる）
   const withStatus = presence || profile !== undefined;
   const timelineItems =
-    huddle === "active"
+    huddle === "link-cards"
+      ? timelineWithHuddleLinks
+      : huddle === "active"
       ? timelineWithHuddle
       : inHuddle
       ? timelineWithHuddleJoined
@@ -535,7 +596,9 @@ export function chat({
   // 「後で」の一覧はスレッドの一覧と同じく、ルームの代わりにメインの領域に出す
   const savedTab = saved === "archived" || saved === "archived-menu" ? "archived" : saved === "completed" ? "completed" : "in_progress";
   const savedItems =
-    saved === "empty"
+    withSavedHuddle
+      ? [savedHuddle, ...savedInProgress]
+      : saved === "empty"
       ? []
       : savedTab === "archived"
         ? savedArchived
@@ -560,6 +623,8 @@ export function chat({
           : inHuddle
             ? { state: "joined" }
             : { state: "idle" };
+  // ハドルのボタンの横の「⌄」（ハドルミーティングのリンクをコピー。ADR 0067 決定 1）。実画面と同じく、ボタンがあればいつも付ける
+  const huddleMenu = { open: huddle === "header-menu", onToggle: noop, onCopyLink: noop };
   // サイドバーの画面では、開いているルームはミュートしない（薄いルームとそうでないルームを見比べるため）
   const roomMuted = notifications === "menu-muted" || notifications === "menu-temporary";
   // 参加していない public ルームは設定を持てないので、「通知」のアイコンを出さない（ADR 0055 決定 3）
@@ -626,7 +691,7 @@ export function chat({
                         ? rooms.map((r) => (r.id === room.id ? { ...r, huddle: { participants: huddleSidebarParticipants } } : r))
                         : rooms
             }
-            selectedRoomId={roomRemoved || threads ? undefined : room.id}
+            selectedRoomId={roomRemoved || listView ? undefined : room.id}
             threads={
               thread || threads || side
                 ? { href: noHref, unreadCount:
@@ -637,6 +702,12 @@ export function chat({
                         : unreadThreadCount, selected: Boolean(threads) }
                 : undefined
             }
+            // ハドルの一覧の入口（ADR 0067 決定 6）。進行中の（入れる）ハドルがあるあいだは顔を出す
+            huddles={{
+              href: noHref,
+              selected: huddles !== undefined,
+              participants: huddleRoomActive ? huddleSidebarParticipants : [],
+            }}
             railed
             roomHref={roomHref}
             notice={permissionBanner ? <NotificationPermissionBanner onEnable={noop} onDismiss={noop} /> : undefined}
@@ -665,18 +736,25 @@ export function chat({
         huddleBar={
           // ハドルのタブを閉じている間の帯（ADR 0066 追記 C）
           inHuddle ? (
-            <HuddleBar huddle={huddleScreen} chatOpen={huddle === "joined-chat"} onToggleMute={noop} onPopOut={noop} onLeave={noop} />
+            <HuddleBar
+              huddle={huddleScreen}
+              chatOpen={huddle === "joined-chat"}
+              onToggleMute={noop}
+              onPopOut={noop}
+              onLeave={noop}
+              menu={{ open: huddle === "joined-menu", onToggle: noop, onCopyLink: noop }}
+            />
           ) : undefined
         }
         sidebar={
           searchResultsView ? undefined : sidePane(side, home, { activity, dmsEmpty, dmsUnread, saved, savedTab, savedItems })
         }
-        rail={sideRail(side, { switcher, accountMenu, presence, preview })}
+        rail={sideRail(side, { switcher, accountMenu, presence, preview, railStatus: inHuddle && !presence ? huddleStatus : undefined })}
         tabBar={<SideNavBar items={sideNavItems} current={side} />}
         panel={
           members ? (
             <MembersPanel
-              members={withStatus ? roomMembersWithPresence : roomMembers}
+              members={huddleStatusView === "members" ? roomMembersInHuddle : withStatus ? roomMembersWithPresence : roomMembers}
               onOpenProfile={noop}
             />
           ) : profilePanel ? (
@@ -720,7 +798,32 @@ export function chat({
             openMenuKey={threads === "row-menu" ? "m-chat-0930" : undefined}
           />
         )}
-        {!searchResultsView && !roomRemoved && !threads && (
+        {!searchResultsView && huddles && (
+          <HuddleList
+            ongoing={huddles === "empty" ? [] : huddleOngoingCards}
+            suggestions={huddles === "empty" ? [] : huddleSuggestions}
+            scope={huddles === "missed" ? "missed" : "all"}
+            person={huddles === "filtered" ? huddleFilterPerson : undefined}
+            items={
+              huddles === "loading"
+                ? undefined
+                : huddles === "empty"
+                  ? []
+                  : huddles === "missed"
+                    ? huddleListMissed
+                    : huddles === "filtered"
+                      ? huddleListWithNaoki
+                      : huddleListItems
+            }
+            openFilter={huddles === "scope" ? "scope" : huddles === "person" ? "person" : undefined}
+            personOptions={huddlePersonOptions}
+            placeOptions={huddlePlaceOptions}
+            openMenuKey={huddles === "row-menu" ? huddleListMenuKey : undefined}
+            participantsKey={huddles === "participants" ? huddleListMenuKey : undefined}
+            onNew={noop}
+          />
+        )}
+        {!searchResultsView && !roomRemoved && !listView && (
           <RoomHeader
             archived={archivedRoom}
             kind={room.kind}
@@ -729,11 +832,11 @@ export function chat({
             membersOpen={members}
             onOpenSettings={room.kind === "dm" ? undefined : noop}
             notifications={roomNotifications}
-            huddle={huddleHeader && { ...huddleHeader, onClick: noop }}
+            huddle={huddleHeader && { ...huddleHeader, onClick: noop, menu: huddleMenu }}
           />
         )}
         {/* ルームのヘッダーの下には、いつも「メッセージ / ピン」のタブがある（ADR 0054） */}
-        {!searchResultsView && !roomRemoved && !threads && <RoomTabs value={pinsTab ? "pins" : "messages"} />}
+        {!searchResultsView && !roomRemoved && !listView && <RoomTabs value={pinsTab ? "pins" : "messages"} />}
         {!searchResultsView && pinsTab && (
           <PinsList
             roomKind={selectedRoom.kind}
@@ -745,7 +848,7 @@ export function chat({
         <ConnectionBanner status={banner ?? null} />
         {jump === "unread-bar" && <UnreadJumpBar count={12} onJump={noop} />}
         {jump === "not-found" && <MessageNotFoundNotice onClose={noop} />}
-        {body === "timeline" && !searchResultsView && !threads && !pinsTab && (
+        {body === "timeline" && !searchResultsView && !listView && !pinsTab && (
           <Timeline
             items={timelineItems}
             openThreadKey={
@@ -789,6 +892,8 @@ export function chat({
             onToggleAttachmentMenu={noop}
             onRemoveLinkPreview={noop}
             onJoinHuddle={noop}
+            onOpenHuddleLink={noop}
+            onShowHuddleScreen={noop}
             hoveredLinkPreviewKey={linkPreviews === "remove" ? myLinkPreviewKey : undefined}
             actionsFor={(key) => ({
               canEdit: actions.mine(key),
@@ -810,7 +915,7 @@ export function chat({
         {body === "empty" && <EmptyMessages kind={selectedRoom.kind} name={selectedRoom.name} />}
         {roomRemoved && <RoomUnavailable />}
         {body === "removed-workspace" && <RemovedFromWorkspace workspaceName={workspaces.dev.name} />}
-        {footer === "composer" && !searchResultsView && !threads && !pinsTab && (
+        {footer === "composer" && !searchResultsView && !listView && !pinsTab && (
           <Composer
             value={
               composer === "formatted" || composer === "link-dialog"
@@ -839,6 +944,14 @@ export function chat({
         {footer === "archived-readonly" && <ArchivedRoomBar />}
       </ChatLayout>
       {dialog}
+      {newHuddle && (
+        <NewHuddleDialog
+          open
+          search={newHuddle === "empty" ? "" : "さ"}
+          candidates={newHuddle === "empty" ? newHuddleCandidates : newHuddleTyped}
+          selected={newHuddle === "selected" ? newHuddleValue(newHuddleTyped[1]) : undefined}
+        />
+      )}
       {huddle === "dm-ring" && <HuddleRing caller={huddleCaller} onJoin={noop} onJoinSoon={noop} />}
       <RemoveSavedItemDialog open={saved === "confirm"} />
       <SearchFiltersDialog

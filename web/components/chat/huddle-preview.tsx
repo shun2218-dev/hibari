@@ -34,8 +34,11 @@ export function HuddlePreview({
   onSelectSpeaker,
   onCancel,
   onStart,
+  onJoinRoom,
 }: {
   preview: HuddlePreviewView;
+  /** 参加していない public のチャンネル（`blocked: "not-member"`）で、先にチャンネルに参加する（ADR 0067 決定 1）。 */
+  onJoinRoom?: () => void;
   /** 開いている機器の選択（story 用に外から開ける）。 */
   openMenu?: "mic" | "speaker";
   onToggleMenu?: (menu: "mic" | "speaker") => void;
@@ -49,6 +52,7 @@ export function HuddlePreview({
   // 「を開始する」と「に参加する」で助詞が変わるので、句ごと持つ
   const action = preview.action === "start" ? "ハドルミーティングを開始する" : "ハドルミーティングに参加する";
   const micUsable = problem === undefined;
+  const { blocked } = preview;
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-background px-4 py-8">
       <section
@@ -78,7 +82,18 @@ export function HuddlePreview({
             </button>
           </div>
 
-          {problem && (
+          {/* ハドルのリンクから開いたが、そのままでは入れない（ADR 0067 決定 1）。マイクの問題より先に知らせる */}
+          {blocked === "not-member" && (
+            <Alert tone="locked" className="w-full">
+              このチャンネルに参加すると、ハドルミーティングに参加できます。
+            </Alert>
+          )}
+          {blocked === "archived" && (
+            <Alert tone="locked" className="w-full">
+              このチャンネルはアーカイブされているため、ハドルミーティングは開始できません。
+            </Alert>
+          )}
+          {problem && !blocked && (
             <Alert tone="danger" className="w-full">
               {problem === "mic-denied"
                 ? "ブラウザがマイクの使用を許可していません。アドレスバーのサイトの設定でマイクを許可してから、もう一度開いてください。"
@@ -117,10 +132,14 @@ export function HuddlePreview({
           <CloseIcon className="size-4" />
           キャンセル
         </Button>
-        <Button onClick={onStart} disabled={!micUsable}>
-          <HeadphonesIcon className="size-4" />
-          {action}
-        </Button>
+        {blocked === "not-member" ? (
+          <Button onClick={onJoinRoom}>チャンネルに参加する</Button>
+        ) : (
+          <Button onClick={onStart} disabled={!micUsable || blocked === "archived"}>
+            <HeadphonesIcon className="size-4" />
+            {action}
+          </Button>
+        )}
       </div>
     </main>
   );

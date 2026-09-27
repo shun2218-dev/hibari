@@ -2,14 +2,14 @@
 
 import type { ComponentProps, ReactNode } from "react";
 
-import { AccountMenu } from "@/components/chat/account-menu";
+import { AccountMenu, RailAccountButton } from "@/components/chat/account-menu";
 import { ActivityList } from "@/components/chat/activity-list";
 import { DmList } from "@/components/chat/dm-list";
 import { RoomHeader } from "@/components/chat/room-header";
 import { SavedList } from "@/components/chat/saved-list";
 import { type SideNavItems, type SideNavKey, SideNavRail } from "@/components/chat/side-nav";
 import { Sidebar } from "@/components/chat/sidebar";
-import type { ActivityFilter } from "@/components/chat/types";
+import type { ActivityFilter, UserStatusView } from "@/components/chat/types";
 import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { Avatar } from "@/components/ui/avatar";
 import { activityItems } from "@/stories/fixtures/activity";
@@ -40,7 +40,15 @@ export function sideRail(
     accountMenu,
     presence,
     preview,
-  }: { switcher?: boolean; accountMenu?: boolean; presence?: boolean; preview?: ChatOptions["preview"] },
+    railStatus,
+  }: {
+    switcher?: boolean;
+    accountMenu?: boolean;
+    presence?: boolean;
+    preview?: ChatOptions["preview"];
+    /** レールの自分のアバターに載せるステータス（ハドル中の 🎧 など。ADR 0067 決定 4）。presence より優先する。 */
+    railStatus?: UserStatusView;
+  },
 ) {
   return (
     <SideNavRail
@@ -64,9 +72,7 @@ export function sideRail(
       }
       account={
         <>
-          <button type="button" aria-label="アカウントメニュー" aria-expanded={Boolean(accountMenu)} aria-haspopup="dialog" className="rounded-full">
-            <Avatar id={currentUser.id} name={currentUser.name} imageUrl={currentUser.avatarUrl} size="sm" />
-          </button>
+          <RailAccountButton user={currentUser} status={railStatus ?? (presence ? myStatus : undefined)} expanded={Boolean(accountMenu)} />
           {accountMenu && (
             <AccountMenu placement="rail" user={{ ...users.you, handle: users.you.handle, status: presence ? myStatus : undefined }} away={presence} />
           )}

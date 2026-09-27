@@ -3,7 +3,19 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
-import { BellIcon, BellOffIcon, ChevronLeftIcon, HeadphonesIcon, LockIcon, SettingsIcon, UsersIcon } from "@/components/ui/icons";
+import {
+  BellIcon,
+  BellOffIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  HeadphonesIcon,
+  LinkIcon,
+  LockIcon,
+  SettingsIcon,
+  UsersIcon,
+} from "@/components/ui/icons";
+import { MenuItem } from "@/components/ui/menu-item";
+import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
 
 import type { HuddleHeaderState, RoomKind } from "./types";
@@ -29,8 +41,14 @@ type RoomHeaderProps = {
    * ハドルのボタン（ADR 0066 決定 17）。始める・入る・抜けるを 1 つのボタンで切り替える（Slack の ⌘⇧H と同じ）。
    * 入れない人（参加していない public ルーム・アーカイブ済み）には渡さない（決定 7）。
    */
-  huddle?: HuddleHeaderState & { onClick?: () => void };
+  huddle?: HuddleHeaderState & { onClick?: () => void; menu?: HuddleHeaderMenu };
 };
+
+/**
+ * ハドルのボタンの横の「⌄」のメニュー（ADR 0067 決定 1。Slack の矢印と同じ）。ハドルが進行中でなくても出す。
+ * copied は直前にコピーした（項目の文言を「コピーしました」に変える。メッセージの「リンクをコピー」と同じ）。
+ */
+export type HuddleHeaderMenu = { open: boolean; onToggle?: () => void; copied?: boolean; onCopyLink?: () => void };
 
 export function RoomHeader({
   kind,
@@ -63,7 +81,36 @@ export function RoomHeader({
         </h1>
         <p className="text-2xs text-text-muted">メンバー{memberCount}人</p>
       </div>
-      {huddle && <HuddleButton huddle={huddle} />}
+      {huddle && (
+        <div className="relative mr-1 flex items-center">
+          <HuddleButton huddle={huddle} />
+          {/* モバイルは幅が足りないので出さない（コピーはハドルの画面の「…」からできる） */}
+          {huddle.menu && (
+            <>
+              <button
+                type="button"
+                onClick={huddle.menu.onToggle}
+                aria-label="ハドルミーティングのその他の操作"
+                aria-expanded={huddle.menu.open}
+                aria-haspopup="dialog"
+                className={cx(
+                  "hidden h-8 w-5 items-center justify-center rounded-sm text-text-secondary hover:bg-surface-muted md:inline-flex",
+                  huddle.menu.open && "bg-surface-muted",
+                )}
+              >
+                <ChevronDownIcon className="size-3.5" />
+              </button>
+              {huddle.menu.open && (
+                <Popover label="ハドルミーティングの操作" className="top-10 right-0 w-80" onDismiss={huddle.menu.onToggle}>
+                  <MenuItem icon={LinkIcon} onClick={huddle.menu.onCopyLink}>
+                    {huddle.menu.copied ? "コピーしました" : "ハドルミーティングのリンクをコピー"}
+                  </MenuItem>
+                </Popover>
+              )}
+            </>
+          )}
+        </div>
+      )}
       {notifications && (
         // モバイルはヘッダーの右端にそろえてメニューを出す（アイコンの位置に合わせると、画面の左にはみ出す）
         <div className="md:relative">
@@ -121,7 +168,7 @@ function HuddleButton({ huddle }: { huddle: HuddleHeaderState & { onClick?: () =
         type="button"
         onClick={huddle.onClick}
         aria-label="ハドルミーティングの画面を表示する"
-        className="mr-1 inline-flex size-8 items-center justify-center rounded-sm bg-primary text-on-primary hover:bg-primary-hover"
+        className="inline-flex size-8 items-center justify-center rounded-sm bg-primary text-on-primary hover:bg-primary-hover"
       >
         <HeadphonesIcon className="size-4" />
       </button>
@@ -133,7 +180,7 @@ function HuddleButton({ huddle }: { huddle: HuddleHeaderState & { onClick?: () =
       onClick={huddle.onClick}
       aria-label="ハドルミーティングに参加する"
       // モバイルは名前の幅が足りないので、アイコンだけの四角にする
-      className="mr-1 inline-flex h-8 items-center justify-center gap-1.5 rounded-sm border border-primary bg-primary-subtle text-sm font-medium text-primary hover:bg-surface-muted max-md:w-8 md:pr-3 md:pl-2"
+      className="inline-flex h-8 items-center justify-center gap-1.5 rounded-sm border border-primary bg-primary-subtle text-sm font-medium text-primary hover:bg-surface-muted max-md:w-8 md:pr-3 md:pl-2"
     >
       <HeadphonesIcon className="size-4 shrink-0" />
       <span aria-hidden className="hidden -space-x-1.5 md:flex">

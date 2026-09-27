@@ -730,3 +730,23 @@ describe("MessageItem のピッカーの置き場所", () => {
     expect(screen.queryByRole("dialog", { name: "リアクションを選ぶ" })).not.toBeInTheDocument();
   });
 });
+
+describe("MessageItem のハドルのリンクのカード（ADR 0067 決定 2）", () => {
+  const card = { key: "hl-1", state: "ok", room: { kind: "public", name: "雑談" }, huddle: null, canJoin: true } as const;
+
+  it("本文の下にカードを出し、「開始する」でカードの key を渡す", async () => {
+    const user = userEvent.setup();
+    const onOpenHuddleLink = vi.fn();
+    render(<MessageItem message={message({ body: "ここで話しましょう", huddleLinkCards: [card] })} onOpenHuddleLink={onOpenHuddleLink} />);
+
+    expect(screen.getByRole("article", { name: "ハドルミーティングのリンク" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "ハドルミーティングを開始する" }));
+    expect(onOpenHuddleLink).toHaveBeenCalledWith("hl-1");
+  });
+
+  it("削除済みのメッセージにはカードを出さない", () => {
+    render(<MessageItem message={message({ deleted: true, huddleLinkCards: [card] })} />);
+
+    expect(screen.queryByRole("article", { name: "ハドルミーティングのリンク" })).not.toBeInTheDocument();
+  });
+});
