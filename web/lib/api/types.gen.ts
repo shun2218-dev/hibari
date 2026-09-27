@@ -44,6 +44,8 @@ export type ProblemType = "bad-request" | "validation-error" | "unauthenticated"
 
 export type ICETransportPolicy = "all" | "relay";
 
+export type HuddleListFilter = "all" | "missed";
+
 export type ClientMessageType = "subscribe" | "unsubscribe" | "typing" | "activity" | "ping" | "huddle_heartbeat";
 
 export type AckError = "invalid_message" | "not_found" | "not_subscribed" | "forbidden" | "too_many_subscriptions" | "internal";
@@ -526,6 +528,43 @@ export interface HuddleICEServers {
   expires_at: string;
   /** ice_transport_policy は RTCConfiguration の iceTransportPolicy にそのまま渡す。 */
   ice_transport_policy: ICETransportPolicy;
+}
+
+export interface HuddlePlace {
+  id: string;
+  kind: RoomKind;
+  name: string | null;
+  dm_peer?: UserProfile;
+}
+
+export interface PastHuddle {
+  id: string;
+  /** message_id は会話のハドルのメッセージ（行を押したときの行き先。ハドルのチャットのスレッドの親）。 */
+  message_id: string;
+  started_by: string;
+  room: HuddlePlace;
+  started_at: string;
+  ended_at: string;
+  /** participant_ids は一度でも入った人（最初に入った順）。 */
+  participant_ids: string[];
+  /** reply_count はハドルのチャットの返信の数。 */
+  reply_count: number;
+}
+
+export interface HuddleList {
+  huddles: PastHuddle[];
+  next_cursor: string | null;
+}
+
+export interface HuddleSuggestion {
+  room: HuddlePlace;
+  count: number;
+  /** participant_ids は、そこの同じ期間のハドルに参加した人（自分を除く）。 */
+  participant_ids: string[];
+}
+
+export interface HuddleSuggestions {
+  suggestions: HuddleSuggestion[];
 }
 
 export interface Features {
