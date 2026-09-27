@@ -14,6 +14,7 @@ import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
 import { Avatar } from "@/components/ui/avatar";
 import { useSession, useSessionState } from "@/hooks/auth/use-session";
 import { useChatState, useChatStore, useRealtime } from "@/hooks/chat/use-chat-store";
+import { useHuddle } from "@/hooks/chat/use-huddle";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
 import { useActivityFavicon } from "@/hooks/use-activity-favicon";
 import { useDocumentTitle } from "@/hooks/use-document-title";
@@ -25,6 +26,8 @@ import { formatTime } from "@/lib/chat/format/time";
 import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
 import { countUnreadThreads } from "@/lib/chat/rules/threads";
 import { memberSettings, memberStatus, statusView } from "@/lib/chat/views/members";
+import { huddleNavFaces } from "@/lib/chat/views/huddles";
+import { canPost } from "@/lib/chat/views/permissions";
 import { roomName, toRoomSummaryView } from "@/lib/chat/views/rooms";
 import { chatTitle } from "@/lib/document-title";
 
@@ -42,6 +45,7 @@ import { RoomThread } from "./room-thread";
 import { RoomView } from "./room-view";
 import { ActivityPane, DmPane, LaterPane } from "./side-panes";
 import { WorkspaceSearch } from "./workspace-search";
+import { WorkspaceHuddles } from "./workspace-huddles";
 import { WorkspaceThreads } from "./workspace-threads";
 
 const SIDES: readonly SideNavKey[] = ["home", "dms", "activity", "later"];
@@ -64,7 +68,11 @@ export function WorkspaceScreen() {
   const side = parseSide(searchParams.get("side"));
   const pathname = usePathname();
   const threadsView = pathname === `/w/${workspaceId}/threads`;
+  // ハドルの一覧（ADR 0067 決定 6）。スレッドの一覧と同じく、ルームの代わりにメインの領域に出す
+  const huddlesView = pathname === `/w/${workspaceId}/huddles`;
   const router = useRouter();
+  // WebRTC のないブラウザでは null（ハドルを使えない）
+  const huddleAvailable = useHuddle() !== null;
   const notificationBanner = useDesktopNotifications();
   const session = useSession();
   const { state: sessionState } = useSessionState();
@@ -106,7 +114,7 @@ export function WorkspaceScreen() {
   const [profileOrigin, setProfileOrigin] = useState<{ userId: string; fromMembers: boolean; sender?: ProfileSender }>();
   // モバイルで「一覧に戻る」か下のメニューを押した。URL はルームのままにして、別のルーム（や別のメッセージ）を開いたら詳細に戻す
   const [listShownFor, setListShownFor] = useState<string>();
-  const mainKey = threadsView ? "threads" : roomId ? `${roomId}:${jumpMessageId ?? ""}` : undefined;
+  const mainKey = threadsView ? "threads" : huddlesView ? "huddles" : roomId ? `${roomId}:${jumpMessageId ?? ""}` : undefined;
 
   // キックされたワークスペースは一覧から消えるが、「削除されました」を出している間は名前とサイドバーを残す
   const removedFromWorkspace = removal?.reason === "removed";
@@ -118,7 +126,7 @@ export function WorkspaceScreen() {
   useDocumentTitle(
     workspace
       ? chatTitle({
-          main: threadsView ? "スレッド" : openRoom ? roomName(openRoom) : undefined,
+          main: threadsView ? "スレッド" : huddlesView ? "ハドルミーティング" : openRoom ? roomName(openRoom) : undefined,
           workspaceName: workspace.name,
           activity: unreadActivity,
         })
@@ -171,14 +179,14 @@ export function WorkspaceScreen() {
   // ルームを選んでいなければ、最後に開いたルーム → is_default のルーム → 一覧の先頭の順に開く。
   // 左のメニュー（?side=）は残す（「後で」の古い URL /saved からもここに来る）
   useEffect(() => {
-    if (roomId || threadsView || roomList?.status !== "ready" || roomList.ids.length === 0) return;
+    if (roomId || threadsView || huddlesView || roomList?.status !== "ready" || roomList.ids.length === 0) return;
     const remembered = lastRoomId(workspaceId);
     const target =
       roomList.ids.find((id) => id === remembered) ??
       roomList.ids.find((id) => rooms[id]?.is_default && rooms[id]?.is_member) ??
       roomList.ids[0];
     router.replace(withSide(`/w/${workspaceId}/r/${target}`, side));
-  }, [roomId, threadsView, roomList, rooms, workspaceId, router, side]);
+  }, [roomId, threadsView, huddlesView, roomList, rooms, workspaceId, router, side]);
 
   // サイドバーに出す人（自分と DM の相手）のアバター。自分の avatar_url もログインの応答にあるが、1 時間で切れるので同じ経路で取り直す
   const me = sessionState.status === "signed_in" ? sessionState.user : undefined;
@@ -189,6 +197,8 @@ export function WorkspaceScreen() {
     return [...new Set([...(me ? [me.id] : []), ...ids, ...inHuddles])];
   }, [roomList, rooms, me]);
   const avatarUrls = useAvatarUrls(sidebarUserIds);
+  // サイドバーの「ハドルミーティング」の行（ADR 0067 決定 6）。ハドルを使えるときだけ出し、入れる進行中のハドルがあれば顔を出す
+  const huddlesEnabled = useChatState((s) => s.features?.huddles ?? false) && huddleAvailable;
 
   const memberTable = useMemo(() => memberSettings(members?.list), [members]);
   const memberDisplayNames = useMemo(
@@ -312,7 +322,9 @@ export function WorkspaceScreen() {
     const params = new URLSearchParams(searchParams);
     params.delete("p");
     const query = params.toString();
-    router.replace(`/w/${workspaceId}/r/${roomId}${query === "" ? "" : `?${query}`}`);
+    // ハドルの一覧（参加者から開いた。ADR 0067 決定 6）なら一覧に、それ以外はルームに戻す
+    const base = huddlesView ? `/w/${workspaceId}/huddles` : `/w/${workspaceId}/r/${roomId}`;
+    router.replace(`${base}${query === "" ? "" : `?${query}`}`);
   }
 
   // 左のメニュー（ADR 0058 決定 1）。押すとサイドバーの中身が変わり、メインの領域（ルーム）はそのまま
@@ -423,6 +435,18 @@ export function WorkspaceScreen() {
         unreadCount: threadList?.status === "ready" ? countUnreadThreads(threadList.list) : (unreadThreadCount ?? 0),
         selected: threadsView,
       }}
+      huddles={
+        huddlesEnabled
+          ? {
+              href: `/w/${workspaceId}/huddles`,
+              selected: huddlesView,
+              participants: huddleNavFaces(
+                (roomList?.ids ?? []).flatMap((id) => (rooms[id] ? [rooms[id]] : [])),
+                { names: memberDisplayNames, avatarUrls, canJoin: canPost },
+              ),
+            }
+          : undefined
+      }
     />
   );
   const sidePane =
@@ -522,7 +546,7 @@ export function WorkspaceScreen() {
         // ハドルのタブを閉じている間の帯（ADR 0066 追記 C）
         huddleBar={<HuddleCallBar />}
         panel={
-          searching ? undefined : roomId && profileId && !roomRemoved ? (
+          searching ? undefined : (roomId || huddlesView) && profileId && !roomRemoved ? (
             <RoomProfile
               key={profileId}
               workspaceId={workspaceId}
@@ -582,6 +606,9 @@ export function WorkspaceScreen() {
         )}
         {!searching && threadsView && !removedFromWorkspace && (
           <WorkspaceThreads workspaceId={workspaceId} onBack={() => setListShownFor(mainKey)} />
+        )}
+        {!searching && huddlesView && !removedFromWorkspace && (
+          <WorkspaceHuddles workspaceId={workspaceId} onBack={() => setListShownFor(mainKey)} />
         )}
         {!searching && !roomId && removedFromWorkspace && (
           <RemovedFromWorkspace workspaceName={workspace.name} onMove={leaveRemovedWorkspace} />

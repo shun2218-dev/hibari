@@ -7,6 +7,7 @@ import { DmList } from "@/components/chat/dm-list";
 import { RemoveSavedItemDialog } from "@/components/chat/dialogs/remove-saved-item";
 import { SavedList } from "@/components/chat/saved-list";
 import type { SavedTab } from "@/components/chat/types";
+import { useSessionState } from "@/hooks/auth/use-session";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
 import type { ActivityFilter } from "@/lib/api/types.gen";
@@ -124,10 +125,13 @@ export function LaterPane({ workspaceId, variant, linkSide }: PaneProps) {
   const senderIds = useMemo(() => (items ?? []).flatMap((i) => (i.message ? [i.message.sender.id] : [])), [items]);
   const avatarUrls = useAvatarUrls(senderIds);
   const memberNames = useMemo(() => toMemberNames(workspaceMembers?.list), [workspaceMembers]);
+  // ハドルのメッセージの「あなた」と不在着信の見分けに使う（ADR 0067 決定 6）
+  const { state: sessionState } = useSessionState();
+  const me = sessionState.status === "signed_in" ? sessionState.user : undefined;
   const views = useMemo(() => {
     const now = new Date();
-    return (items ?? []).map((item) => toSavedItemView(item, { now, avatarUrls, memberNames, side: linkSide }));
-  }, [items, avatarUrls, memberNames, linkSide]);
+    return (items ?? []).map((item) => toSavedItemView(item, { now, avatarUrls, memberNames, side: linkSide, me }));
+  }, [items, avatarUrls, memberNames, linkSide, me]);
 
   function report(action: string) {
     return (err: unknown) => console.error(`failed to ${action} a saved message`, err);

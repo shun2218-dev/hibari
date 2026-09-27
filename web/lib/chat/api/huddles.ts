@@ -2,6 +2,9 @@ import type {
   Features,
   HuddleICEServers,
   HuddleLinks,
+  HuddleList,
+  HuddleListFilter,
+  HuddleSuggestions,
   JoinedHuddle,
   JoinHuddleRequest,
   SessionDescription,
@@ -22,6 +25,28 @@ export function createHuddleApi(request: Session["request"]) {
      * 副作用はないが、ID の配列を渡すので POST（メッセージのリンクと同じ）。
      */
     resolveHuddleLinks: (roomIds: readonly string[]) => request<HuddleLinks>("POST", "/api/v1/huddles/links", { room_ids: roomIds }),
+
+    /**
+     * 「最近のハドルミーティング」（ADR 0067 決定 6）。終わったハドルを新しい順に。before は前のページの next_cursor。
+     * 進行中のハドルは含まない（ストアのルームの状態から描く）。
+     */
+    listHuddles: (
+      workspaceId: string,
+      q: { filter?: HuddleListFilter; participantId?: string; roomId?: string; before?: string; limit?: number } = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (q.filter && q.filter !== "all") params.set("filter", q.filter);
+      if (q.participantId) params.set("participant_id", q.participantId);
+      if (q.roomId) params.set("room_id", q.roomId);
+      if (q.before) params.set("before", q.before);
+      if (q.limit) params.set("limit", String(q.limit));
+      const query = params.size > 0 ? `?${params}` : "";
+      return request<HuddleList>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/huddles${query}`);
+    },
+
+    /** 提案のカード（決定 7）。過去 7 日間に自分が参加した回数の多い、いま入れるルーム。 */
+    huddleSuggestions: (workspaceId: string) =>
+      request<HuddleSuggestions>("GET", `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/huddles/suggestions`),
 
     /** サーバーの設定で使えるかが変わる機能（ハドルは Cloudflare の設定がなければ使えない。決定 15）。 */
     features: () => request<Features>("GET", "/api/v1/features"),

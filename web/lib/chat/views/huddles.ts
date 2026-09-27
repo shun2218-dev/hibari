@@ -1,6 +1,11 @@
+import type { HuddlePlaceOption } from "@/components/chat/huddle-list";
 import type {
   HuddleHeaderState,
   HuddleLinkCardView,
+  HuddleListItemView,
+  HuddleOngoingCardView,
+  HuddlePlaceView,
+  HuddleSuggestionView,
   HuddleMessageView,
   HuddlePreviewView,
   HuddleScreenView,
@@ -8,7 +13,8 @@ import type {
   UserRef,
 } from "@/components/chat/types";
 import type { HuddleCallState } from "@/lib/chat/huddle/call";
-import type { HuddleLink, MessageHuddle, Room, RoomHuddle, UserProfile } from "@/lib/api/types.gen";
+import type { HuddleLink, HuddleSuggestion, MessageHuddle, PastHuddle, Room, RoomHuddle, UserProfile } from "@/lib/api/types.gen";
+import { formatAgo } from "@/lib/chat/format/time";
 import { findHuddleLinks } from "@/lib/chat/format/links";
 
 import type { UrlTable } from "./message";
@@ -106,6 +112,29 @@ export function toHuddleMessageView(
     participantsLabel: ids.length === 1 ? `${label}が 1 人で参加しました` : `${label}が参加しました`,
     durationLabel: huddleDurationLabel(huddle.started_at, huddle.ended_at),
   };
+}
+
+/**
+ * ハドルのメッセージの見出しと中身の文言（決定 12・追記 D）。会話の行（HuddleMessage）と「後で」の一覧の行（ADR 0067 決定 6）で同じものを使う。
+ * 自分が入っているときの「参加中 · 」は、ここで前に付ける。
+ */
+export function huddleMessageTexts(view: HuddleMessageView): { title: string; detail: string } {
+  switch (view.state) {
+    case "active":
+      return {
+        title: "ハドルミーティング",
+        detail: view.joined ? `参加中 · ${view.participantsLabel ?? ""}` : (view.participantsLabel ?? ""),
+      };
+    case "ended":
+      return {
+        title: "ハドルミーティングは終了しました",
+        detail: [view.durationLabel, view.participantsLabel].filter(Boolean).join(" · "),
+      };
+    case "missed":
+      return { title: "不在着信", detail: `${view.starter.name} さんからのハドルミーティング` };
+    case "unanswered":
+      return { title: "応答なし", detail: "相手は参加しませんでした" };
+  }
 }
 
 /** ヘッダーのハドルのボタンの状態（決定 17・追記 C）。自分が（どの端末からでも）入っていれば joined。 */
@@ -302,4 +331,108 @@ export function toHuddleLinkCardViews(
   const links = findHuddleLinks(body, origin);
   if (links.length === 0) return undefined;
   return links.map((l) => table[l.roomId] ?? { key: l.roomId, state: "loading" });
+}
+
+// ---- ハドルの一覧（ADR 0067 決定 6・7） ----
+
+/** 場所の見え方（チャンネルは名前、DM は相手の表示名）。 */
+export function placeView(room: { kind: RoomKind; name: string | null; dm_peer?: { display_name: string } | null }): HuddlePlaceView {
+  return { kind: room.kind, name: room.kind === "dm" ? (room.dm_peer?.display_name ?? "") : (room.name ?? "") };
+}
+
+/** 始まってからの時間（Slack の「数秒」「12 分」）。 */
+export function huddleElapsedLabel(startedAt: string, now: Date): string {
+  if (now.getTime() - new Date(startedAt).getTime() < 60_000) return "数秒";
+  return huddleDurationLabel(startedAt, now.toISOString());
+}
+
+/**
+ * 一覧の上の進行中のハドルのカード（決定 6）。自分が入れる（canJoin）ルームの、いま誰かいるハドルだけ。
+ * ストアのルームの状態（huddle.updated の全体）から作るので、サーバーに別の API はない。新しく始まった順。
+ */
+export function toHuddleOngoingCards(
+  rooms: readonly Room[],
+  { meId, names, avatarUrls = {}, now, canJoin }: { meId?: string; names: Names; avatarUrls?: UrlTable; now: Date; canJoin: (room: Room) => boolean },
+): HuddleOngoingCardView[] {
+  const ref = (id: string): UserRef => ({ id, name: names[id] ?? "メンバー", avatarUrl: avatarUrls[id] ?? undefined });
+  return rooms
+    .filter((r) => r.huddle !== null && r.huddle.participants.length > 0 && canJoin(r))
+    .sort((a, b) => b.huddle!.started_at.localeCompare(a.huddle!.started_at))
+    .map((r) => {
+      const h = r.huddle!;
+      return {
+        key: r.id,
+        room: placeView(r),
+        elapsedLabel: huddleElapsedLabel(h.started_at, now),
+        participants: h.participants.map((p) => ref(p.user_id)),
+        joined: meId !== undefined && h.participants.some((p) => p.user_id === meId),
+      };
+    });
+}
+
+/** サイドバーの「ハドルミーティング」の行の顔（決定 6）。入れる進行中のハドルに入っている人（重なりは 1 人に）。 */
+export function huddleNavFaces(
+  rooms: readonly Room[],
+  { names, avatarUrls = {}, canJoin }: { names: Names; avatarUrls?: UrlTable; canJoin: (room: Room) => boolean },
+): UserRef[] {
+  const seen = new Set<string>();
+  const out: UserRef[] = [];
+  for (const r of rooms) {
+    if (!r.huddle || !canJoin(r)) continue;
+    for (const p of r.huddle.participants) {
+      if (seen.has(p.user_id)) continue;
+      seen.add(p.user_id);
+      out.push({ id: p.user_id, name: names[p.user_id] ?? "メンバー", avatarUrl: avatarUrls[p.user_id] ?? undefined });
+    }
+  }
+  return out;
+}
+
+/** 「最近のハドルミーティング」の 1 行（決定 6）。参加した人は、自分がいれば先頭にする。 */
+export function toHuddleListItemView(
+  h: PastHuddle,
+  {
+    workspaceId,
+    meId,
+    names,
+    avatarUrls = {},
+    now,
+    timeZone,
+  }: { workspaceId: string; meId?: string; names: Names; avatarUrls?: UrlTable; now: Date; timeZone?: string },
+): HuddleListItemView {
+  const ids = meId !== undefined && h.participant_ids.includes(meId) ? [meId, ...h.participant_ids.filter((id) => id !== meId)] : h.participant_ids;
+  const base = `/w/${workspaceId}/r/${h.room.id}`;
+  return {
+    key: h.id,
+    // 行を押すと、会話のハドルのメッセージ（スレッドの親）へ飛ぶ（オーナーの確認。ADR 0042 の仕組み）
+    href: `${base}?m=${h.message_id}`,
+    threadHref: `${base}?t=${h.message_id}`,
+    room: placeView(h.room),
+    timeLabel: formatAgo(new Date(h.started_at), now, timeZone),
+    durationLabel: huddleDurationLabel(h.started_at, h.ended_at),
+    replyCount: h.reply_count,
+    participants: ids.map((id) => ({ id, name: id === meId ? ME : (names[id] ?? "メンバー"), avatarUrl: avatarUrls[id] ?? undefined })),
+    saved: h.saved,
+  };
+}
+
+/** 提案のカード（決定 7）。 */
+export function toHuddleSuggestionView(
+  s: HuddleSuggestion,
+  { names, avatarUrls = {} }: { names: Names; avatarUrls?: UrlTable },
+): HuddleSuggestionView {
+  return {
+    key: s.room.id,
+    room: placeView(s.room),
+    count: s.count,
+    participants: s.participant_ids.map((id) => ({ id, name: names[id] ?? "メンバー", avatarUrl: avatarUrls[id] ?? undefined })),
+  };
+}
+
+/** 「場所」の絞り込みの候補。サイドバーのルーム（チャンネルと DM）から、打った文字で絞る。 */
+export function toHuddlePlaceOptions(rooms: readonly Room[], query: string): HuddlePlaceOption[] {
+  const q = query.trim().toLowerCase();
+  return rooms
+    .map((r) => ({ id: r.id, room: placeView(r) }))
+    .filter((o) => q === "" || o.room.name.toLowerCase().includes(q));
 }

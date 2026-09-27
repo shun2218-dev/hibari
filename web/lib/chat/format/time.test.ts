@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dayKey, formatBytes, formatDate, formatDayLabel, formatListTime, formatTime } from "./time";
+import { dayKey, formatAgo, formatBytes, formatDate, formatDayLabel, formatListTime, formatTime } from "./time";
 
 const tz = "Asia/Tokyo";
 
@@ -74,3 +74,15 @@ describe("formatDayLabel（アクティビティの日付の区切り）", () =>
   });
 });
 
+
+describe("formatAgo（ADR 0067 決定 6）", () => {
+  const now = new Date("2026-09-27T12:00:00Z");
+  it.each([
+    ["30 秒前", "2026-09-27T11:59:30Z", "たった今"],
+    ["12 分前", "2026-09-27T11:48:00Z", "12 分前"],
+    ["23 時間前", "2026-09-26T13:00:00Z", "23 時間前"],
+    ["1 日より前は、サイドバーの時刻と同じ言い方", "2026-09-20T12:00:00Z", "9月20日"],
+  ])("%s", (_name, at, want) => {
+    expect(formatAgo(new Date(at), now, "Asia/Tokyo")).toBe(want);
+  });
+});

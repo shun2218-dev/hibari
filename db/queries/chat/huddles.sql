@@ -98,7 +98,10 @@ SELECT h.id, h.room_id, h.message_id, h.started_by, h.started_at, h.ended_at,
        m.thread_reply_count,
        COALESCE((SELECT array_agg(p.user_id ORDER BY p.joined_at, p.user_id)
                    FROM huddle_participants p
-                  WHERE p.huddle_id = h.id), '{}')::uuid[] AS participant_ids
+                  WHERE p.huddle_id = h.id), '{}')::uuid[] AS participant_ids,
+       -- 自分がハドルのメッセージを「後で」に保存しているか（行の「…」の文言。外したものは removed で残る。ADR 0054）
+       EXISTS (SELECT 1 FROM saved_messages s
+                WHERE s.user_id = sqlc.arg(user_id) AND s.message_id = h.message_id AND s.state <> 'removed') AS saved
   FROM huddles h
   JOIN readable_rooms rr ON rr.id = h.room_id
   JOIN messages m ON m.room_id = h.room_id AND m.id = h.message_id

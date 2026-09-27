@@ -6,13 +6,19 @@ import { kei, miyuki, naoki, room } from "@/test/chat-data";
 import {
   huddleDurationLabel,
   huddleHeaderState,
+  huddleElapsedLabel,
   huddleLinkAction,
   huddleLinkCardTable,
   huddleLinkRoomsIn,
+  huddleNavFaces,
   huddleParticipantNames,
   roomHuddleBadge,
   toBlockedHuddlePreviewView,
   toHuddleLinkCardViews,
+  toHuddleListItemView,
+  toHuddleOngoingCards,
+  toHuddlePlaceOptions,
+  toHuddleSuggestionView,
   toHuddleMessageView,
   toHuddlePreviewView,
   toHuddleScreenView,
@@ -285,5 +291,75 @@ describe("ハドルへのリンク（ADR 0067 決定 1・2）", () => {
       { key: r2, state: "loading" },
     ]);
     expect(toHuddleLinkCardViews("リンクなし", origin, {})).toBeUndefined();
+  });
+});
+
+describe("ハドルの一覧（ADR 0067 決定 6・7）", () => {
+  const now = new Date("2026-09-26T02:32:00Z");
+  const all = () => true;
+
+  it("経過時間は、1 分未満なら「数秒」", () => {
+    expect(huddleElapsedLabel("2026-09-26T02:31:30Z", now)).toBe("数秒");
+    expect(huddleElapsedLabel("2026-09-26T02:20:00Z", now)).toBe("12 分");
+  });
+
+  it("進行中のカードは、入れるルームの誰かいるハドルだけを新しい順に出す", () => {
+    const rooms = [
+      room("r-old", "古い", { huddle: roomHuddle([naoki.id], { started_at: "2026-09-26T02:00:00Z" }) }),
+      room("r-new", "新しい", { huddle: roomHuddle(["u-me"], { started_at: "2026-09-26T02:30:00Z" }) }),
+      room("r-none", "なし"),
+      room("r-closed", "入れない", { huddle: roomHuddle([kei.id]) }),
+    ];
+    const cards = toHuddleOngoingCards(rooms, { meId: "u-me", names, now, canJoin: (r) => r.id !== "r-closed" });
+    expect(cards.map((c) => [c.key, c.joined, c.elapsedLabel])).toEqual([
+      ["r-new", true, "2 分"],
+      ["r-old", false, "32 分"],
+    ]);
+  });
+
+  it("サイドバーの行の顔は、入れる進行中のハドルの人を重ねずに並べる", () => {
+    const faces = huddleNavFaces(
+      [room("a", "a", { huddle: roomHuddle([naoki.id, miyuki.id]) }), room("b", "b", { huddle: roomHuddle([naoki.id]) })],
+      { names, canJoin: all },
+    );
+    expect(faces.map((f) => f.id)).toEqual([naoki.id, miyuki.id]);
+  });
+
+  it("最近の行は、会話のハドルのメッセージへのリンクと、自分を先頭にした参加者", () => {
+    const view = toHuddleListItemView(
+      {
+        id: "h-1",
+        message_id: "m-h",
+        started_by: naoki.id,
+        room: { id: "r-1", kind: "dm", name: null, dm_peer: naoki },
+        started_at: "2026-09-25T03:00:00Z",
+        ended_at: "2026-09-25T03:02:00Z",
+        participant_ids: [naoki.id, "u-me"],
+        reply_count: 1,
+        saved: true,
+      },
+      { workspaceId: "ws-1", meId: "u-me", names, now, timeZone: "Asia/Tokyo" },
+    );
+    expect(view).toEqual({
+      key: "h-1",
+      href: "/w/ws-1/r/r-1?m=m-h",
+      threadHref: "/w/ws-1/r/r-1?t=m-h",
+      room: { kind: "dm", name: naoki.display_name },
+      timeLabel: "23 時間前",
+      durationLabel: "2 分",
+      replyCount: 1,
+      participants: [
+        { id: "u-me", name: "あなた", avatarUrl: undefined },
+        { id: naoki.id, name: naoki.display_name, avatarUrl: undefined },
+      ],
+      saved: true,
+    });
+  });
+
+  it("提案のカードと、場所の絞り込みの候補", () => {
+    expect(
+      toHuddleSuggestionView({ room: { id: "r-1", kind: "public", name: "設計" }, count: 3, participant_ids: [miyuki.id] }, { names }),
+    ).toEqual({ key: "r-1", room: { kind: "public", name: "設計" }, count: 3, participants: [{ id: miyuki.id, name: miyuki.display_name, avatarUrl: undefined }] });
+    expect(toHuddlePlaceOptions([room("a", "設計"), room("b", "雑談")], "設").map((o) => o.id)).toEqual(["a"]);
   });
 });

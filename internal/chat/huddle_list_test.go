@@ -136,6 +136,17 @@ func TestListHuddles(t *testing.T) {
 		}
 	})
 
+	t.Run("「後で」に保存したハドルのメッセージには印が付く", func(t *testing.T) {
+		if _, err := env.Service.SaveMessage(t.Context(), me, design.ID, h2.Huddle.MessageID); err != nil {
+			t.Fatal(err)
+		}
+		for _, h := range list(t, chat.HuddleListQuery{}).Items {
+			if h.Saved != (h.ID == h2.Huddle.ID) {
+				t.Errorf("%v の saved = %v", h.ID, h.Saved)
+			}
+		}
+	})
+
 	t.Run("カーソルで続きを読む", func(t *testing.T) {
 		first := list(t, chat.HuddleListQuery{Limit: 2})
 		if !slices.Equal(pastHuddleIDs(first), []ulid.ULID{h6.Huddle.ID, h5.Huddle.ID}) || first.NextCursor == nil {

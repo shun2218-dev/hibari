@@ -2,8 +2,10 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { HeadphonesIcon, PhoneMissedIcon } from "@/components/ui/icons";
 import { cx } from "@/lib/cx";
+import { huddleMessageTexts } from "@/lib/chat/views/huddles";
 
 import { ThreadSummary } from "./message-item/thread-summary";
+
 import type { HuddleMessageView } from "./types";
 
 /**
@@ -26,10 +28,11 @@ export function HuddleMessage({
   threadOpen?: boolean;
 }) {
   const live = huddle.state === "active";
+  const { title, detail } = huddleMessageTexts(huddle);
   const missed = huddle.state === "missed" || huddle.state === "unanswered";
   return (
     <article
-      aria-label={`${title(huddle)} ${huddle.timeLabel}`}
+      aria-label={`${title} ${huddle.timeLabel}`}
       className={cx(
         "flex gap-2.5 px-3 pt-3 pb-1 md:gap-3 md:px-4",
         // 開いているスレッドの緑を優先し、進行中は行ごと琥珀の地にする（Slack も進行中の行に地の色を付ける）
@@ -47,7 +50,7 @@ export function HuddleMessage({
       </span>
       <div className="min-w-0 flex-1">
         <header className="flex flex-wrap items-center gap-x-2">
-          <span className="text-sm font-semibold text-text">{title(huddle)}</span>
+          <span className="text-sm font-semibold text-text">{title}</span>
           {live && (
             <span className="rounded-sm bg-attention px-1.5 text-2xs font-semibold text-on-attention">ライブ</span>
           )}
@@ -71,7 +74,7 @@ export function HuddleMessage({
                 ))}
               </span>
             )}
-            <span className="min-w-0">{detail(huddle)}</span>
+            <span className="min-w-0">{detail}</span>
           </p>
           {/* 入る操作が渡されていなければ（入れない人・ハドルが無効）、ボタンを出さない */}
           {live && !huddle.joined && onJoin && (
@@ -85,30 +88,4 @@ export function HuddleMessage({
       </div>
     </article>
   );
-}
-
-function title(huddle: HuddleMessageView) {
-  switch (huddle.state) {
-    case "active":
-      return "ハドルミーティング";
-    case "ended":
-      return "ハドルミーティングは終了しました";
-    case "missed":
-      return "不在着信";
-    case "unanswered":
-      return "応答なし";
-  }
-}
-
-function detail(huddle: HuddleMessageView) {
-  switch (huddle.state) {
-    case "active":
-      return huddle.joined ? `参加中 · ${huddle.participantsLabel ?? ""}` : (huddle.participantsLabel ?? "");
-    case "ended":
-      return [huddle.durationLabel, huddle.participantsLabel].filter(Boolean).join(" · ");
-    case "missed":
-      return `${huddle.starter.name} さんからのハドルミーティング`;
-    case "unanswered":
-      return "相手は参加しませんでした";
-  }
 }

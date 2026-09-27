@@ -84,6 +84,18 @@ export function formatListTime(date: Date, now: Date, timeZone?: string): string
 }
 
 /**
+ * どれくらい前か（「たった今」「12 分前」「23 時間前」）。1 日より前は、サイドバーの時刻と同じ言い方（昨日・月日）にする。
+ * ハドルの一覧の「最近のハドルミーティング」の時刻（Slack の「23時間前」。ADR 0067 決定 6）。
+ */
+export function formatAgo(date: Date, now: Date, timeZone?: string): string {
+  const minutes = Math.floor((now.getTime() - date.getTime()) / 60_000);
+  if (minutes < 1) return "たった今";
+  if (minutes < 60) return `${minutes} 分前`;
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} 時間前`;
+  return formatListTime(date, now, timeZone);
+}
+
+/**
  * アクティビティの日付の区切り（ADR 0058）。今日・昨日は言葉にし、それ以外は月日（今年でなければ年も）。
  * 同じ日かどうかは dayKey で決める（見る人のタイムゾーンの暦）。
  */
