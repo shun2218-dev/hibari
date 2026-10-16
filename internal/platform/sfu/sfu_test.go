@@ -132,6 +132,52 @@ func TestPullTracks(t *testing.T) {
 	assertJSON(t, got.body, want)
 }
 
+// simulcast の層の選び方は、受けるトラックの simulcast に入れる（ADR 0068 決定 6）。指定しないトラックには付けない。
+func TestPullTracksSimulcast(t *testing.T) {
+	c, got := fakeCloudflare(t, http.StatusOK, `{"requiresImmediateRenegotiation": true, "tracks": [], "sessionDescription": {"type": "offer", "sdp": "v=0"}}`)
+
+	_, err := c.PullTracks(context.Background(), "s-1", []sfu.RemoteTrack{
+		{SessionID: "s-2", TrackName: "camera", Simulcast: &sfu.Simulcast{PreferredRID: "b", PriorityOrdering: "asciibetical", RIDNotAvailable: "asciibetical"}},
+		{SessionID: "s-2", TrackName: "audio"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertJSON(t, got.body, map[string]any{"tracks": []any{
+		map[string]any{
+			"location": "remote", "sessionId": "s-2", "trackName": "camera",
+			"simulcast": map[string]any{"preferredRid": "b", "priorityOrdering": "asciibetical", "ridNotAvailable": "asciibetical"},
+		},
+		map[string]any{"location": "remote", "sessionId": "s-2", "trackName": "audio"},
+	}})
+}
+
+// 層を替えるのは tracks/update。受けている mid と相手のトラックを送り、SDP は送らない（ADR 0068 決定 6）。
+func TestUpdateTracks(t *testing.T) {
+	c, got := fakeCloudflare(t, http.StatusOK, `{
+		"requiresImmediateRenegotiation": false,
+		"tracks": [{"trackName": "camera", "sessionId": "s-2", "mid": "3"}]
+	}`)
+
+	tracks, err := c.UpdateTracks(context.Background(), "s-1", []sfu.TrackUpdate{{
+		Mid:    "3",
+		Remote: sfu.RemoteTrack{SessionID: "s-2", TrackName: "camera", Simulcast: &sfu.Simulcast{PreferredRID: "c"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tracks) != 1 || tracks[0].Mid != "3" || tracks[0].Err != nil {
+		t.Errorf("tracks = %+v", tracks)
+	}
+	if got.method != http.MethodPut || got.path != "/apps/app-1/sessions/s-1/tracks/update" {
+		t.Errorf("request = %s %s", got.method, got.path)
+	}
+	assertJSON(t, got.body, map[string]any{"tracks": []any{map[string]any{
+		"location": "remote", "mid": "3", "sessionId": "s-2", "trackName": "camera",
+		"simulcast": map[string]any{"preferredRid": "c"},
+	}}})
+}
+
 func TestRenegotiate(t *testing.T) {
 	c, got := fakeCloudflare(t, http.StatusOK, `{}`)
 

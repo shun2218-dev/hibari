@@ -97,6 +97,27 @@ type LocalTrack struct {
 type RemoteTrack struct {
 	SessionID string
 	TrackName string
+	// Simulcast は、相手が simulcast で送っているトラックのどの層を受けるか（ADR 0068 決定 6）。nil なら指定しない。
+	Simulcast *Simulcast
+}
+
+// Simulcast は、受ける simulcast の層の選び方（Cloudflare の track object の simulcast）。
+//
+// 層の名前（rid）は送る側が sendEncodings で決めたもの。Cloudflare は rid の一覧を知らせないので、どの rid があるかはアプリが知っている。
+type Simulcast struct {
+	// PreferredRID は受けたい層。
+	PreferredRID string
+	// PriorityOrdering は帯域が足りないときの落とし方。"asciibetical" なら a に近い層ほど望ましいとして、低い層に落とす。
+	// 空なら Cloudflare の既定（"none"。落とさない）。
+	PriorityOrdering string
+	// RIDNotAvailable は、望んだ層が送られていないときの扱い。"asciibetical" なら次の層を送る。空なら既定（"none"）。
+	RIDNotAvailable string
+}
+
+// TrackUpdate は、受けているトラックの設定を替える（tracks/update）。Mid は受けている側の transceiver の mid。
+type TrackUpdate struct {
+	Mid    string
+	Remote RemoteTrack
 }
 
 // TrackResult はトラックごとの結果。Cloudflare は 200 の中にトラックごとの失敗を返すことがある。
@@ -153,7 +174,7 @@ type PullResult struct {
 func (c *Client) PullTracks(ctx context.Context, sessionID string, tracks []RemoteTrack) (PullResult, error) {
 	var req tracksRequest
 	for _, t := range tracks {
-		req.Tracks = append(req.Tracks, trackObject{Location: "remote", SessionID: t.SessionID, TrackName: t.TrackName})
+		req.Tracks = append(req.Tracks, remoteObject("", t))
 	}
 	var res tracksResponse
 	if err := c.do(ctx, http.MethodPost, c.sessionPath(sessionID, "/tracks/new"), req, &res); err != nil {
@@ -164,6 +185,34 @@ func (c *Client) PullTracks(ctx context.Context, sessionID string, tracks []Remo
 		RequiresImmediateRenegotiation: res.RequiresImmediateRenegotiation,
 		Tracks:                         res.results(),
 	}, nil
+}
+
+// UpdateTracks は、受けているトラックの設定（simulcast の層）を替える。SDP のやり取りは要らない（ADR 0068 決定 6）。
+//
+// 帯域やタイルの大きさに合わせて層を替えるたびに受け直す（閉じて受け直す）と、そのたびに SDP のやり取りが要り、映像も途切れる。
+// tracks/update なら、同じ transceiver のまま SFU が送る層だけを替える。
+func (c *Client) UpdateTracks(ctx context.Context, sessionID string, updates []TrackUpdate) ([]TrackResult, error) {
+	var req tracksRequest
+	for _, u := range updates {
+		req.Tracks = append(req.Tracks, remoteObject(u.Mid, u.Remote))
+	}
+	var res tracksResponse
+	if err := c.do(ctx, http.MethodPut, c.sessionPath(sessionID, "/tracks/update"), req, &res); err != nil {
+		return nil, fmt.Errorf("update tracks: %w", err)
+	}
+	return res.results(), nil
+}
+
+func remoteObject(mid string, t RemoteTrack) trackObject {
+	o := trackObject{Location: "remote", Mid: mid, SessionID: t.SessionID, TrackName: t.TrackName}
+	if t.Simulcast != nil {
+		o.Simulcast = &simulcastObject{
+			PreferredRID:     t.Simulcast.PreferredRID,
+			PriorityOrdering: t.Simulcast.PriorityOrdering,
+			RIDNotAvailable:  t.Simulcast.RIDNotAvailable,
+		}
+	}
+	return o
 }
 
 // Renegotiate は、PullTracks の offer に対するブラウザの answer を渡す。
@@ -282,10 +331,17 @@ type apiErrorBody struct {
 func (b *apiErrorBody) apiError() *apiErrorBody { return b }
 
 type trackObject struct {
-	Location  string `json:"location,omitzero"`
-	Mid       string `json:"mid,omitzero"`
-	SessionID string `json:"sessionId,omitzero"`
-	TrackName string `json:"trackName,omitzero"`
+	Location  string           `json:"location,omitzero"`
+	Mid       string           `json:"mid,omitzero"`
+	SessionID string           `json:"sessionId,omitzero"`
+	TrackName string           `json:"trackName,omitzero"`
+	Simulcast *simulcastObject `json:"simulcast,omitzero"`
+}
+
+type simulcastObject struct {
+	PreferredRID     string `json:"preferredRid,omitzero"`
+	PriorityOrdering string `json:"priorityOrdering,omitzero"`
+	RIDNotAvailable  string `json:"ridNotAvailable,omitzero"`
 }
 
 type tracksRequest struct {
