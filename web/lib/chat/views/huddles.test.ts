@@ -37,7 +37,7 @@ function roomHuddle(userIds: string[], overrides: Partial<RoomHuddle> = {}): Roo
     message_id: "m-1",
     started_at: "2026-09-26T02:20:00Z",
     version: 1,
-    participants: userIds.map((user_id) => ({ user_id, muted: false })),
+    participants: userIds.map((user_id) => ({ user_id, muted: false, camera: false, screen: false })),
     joining_soon: [],
     ...overrides,
   };
@@ -166,7 +166,7 @@ describe("toHuddleScreenView（追記 C）", () => {
 
   it("自分を先頭にし、自分のミュートは通話の値を使う。ミュートしている人は話している印を出さない", () => {
     const h = roomHuddle([miyuki.id, naoki.id, kei.id]);
-    h.participants[2] = { user_id: kei.id, muted: true };
+    h.participants[2] = { user_id: kei.id, muted: true, camera: false, screen: false };
     const view = toHuddleScreenView(room("room-1", "雑談", { huddle: h }), call, { me, names });
     expect(view.participants.map((p) => [p.name, p.muted, p.speaking])).toEqual([
       [naoki.display_name, true, false],

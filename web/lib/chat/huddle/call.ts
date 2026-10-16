@@ -349,7 +349,13 @@ export function createHuddleCall(env: CallEnv) {
 
     const added = [...others].filter((id) => !subscribed.has(id));
     if (added.length === 0) return;
-    const res = await withConflictRetry(() => env.api.subscribeHuddle(huddleId, participantId, added));
+    const res = await withConflictRetry(() =>
+      env.api.subscribeHuddle(
+        huddleId,
+        participantId,
+        added.map((userId) => ({ user_id: userId, kind: "audio" as const })),
+      ),
+    );
     if (gen !== generation || !pc) return;
     for (const t of res.tracks) {
       const remote: Remote = { userId: t.user_id, mid: t.mid };

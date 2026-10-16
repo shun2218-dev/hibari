@@ -40,9 +40,13 @@ export type ActivityItemType = "message" | "reaction";
 
 export type ActivityReason = "dm" | "mention" | "thread" | "channel" | "reaction";
 
-export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "room-archived" | "room-not-archived" | "room-protected" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified" | "huddles-unavailable" | "huddle-full" | "huddle-participant-gone" | "huddle-negotiation-conflict";
+export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "room-archived" | "room-not-archived" | "room-protected" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified" | "huddles-unavailable" | "huddle-full" | "huddle-participant-gone" | "huddle-negotiation-conflict" | "huddle-screen-share-full";
 
 export type ICETransportPolicy = "all" | "relay";
+
+export type HuddleTrackKind = "audio" | "camera" | "screen";
+
+export type HuddleQuality = "high" | "medium" | "low";
 
 export type HuddleListFilter = "all" | "missed";
 
@@ -509,6 +513,10 @@ export interface RoomHuddle {
 export interface HuddleParticipant {
   user_id: string;
   muted: boolean;
+  /** camera はカメラを送っているか（ADR 0068 決定 4）。 */
+  camera: boolean;
+  /** screen は画面を共有しているか。 */
+  screen: boolean;
 }
 
 export interface SessionDescription {
@@ -608,12 +616,37 @@ export interface JoinedHuddle {
 }
 
 export interface SubscribeHuddleRequest {
-  /** user_ids は音声を受けたい相手（同じハドルにいる人）。いない人と自分は黙って飛ばす。 */
-  user_ids: string[];
+  /** tracks は受けたい相手のトラック。音声は全員、映像はステージに載せた人の分だけを頼む（ADR 0068 決定 5）。 いない人・自分・その種類を送っていない人は黙って飛ばす。 */
+  tracks: HuddleTrackRequest[];
+}
+
+export interface HuddleTrackRequest {
+  user_id: string;
+  kind: HuddleTrackKind;
+  /** quality はカメラのときだけ要る（受ける層。ADR 0068 決定 6）。音声と画面では送らない。 */
+  quality?: HuddleQuality;
+}
+
+export interface UpdateHuddleSubscriptionRequest {
+  /** user_id はその mid で受けているカメラの持ち主（サーバーは受けているものを覚えていない）。 */
+  user_id: string;
+  quality: HuddleQuality;
+}
+
+export interface PublishHuddleTrackRequest {
+  kind: HuddleTrackKind;
+  offer: SessionDescription;
+  /** mid は offer の中の、足したカメラか画面の transceiver の mid。 */
+  mid: string;
+}
+
+export interface PublishedHuddleTrack {
+  answer: SessionDescription;
 }
 
 export interface HuddleSubscription {
   user_id: string;
+  kind: HuddleTrackKind;
   mid: string;
 }
 

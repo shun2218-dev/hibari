@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/error";
-import { type HuddleICEServers, PROBLEM_TYPE_PREFIX, type RoomHuddle } from "@/lib/api/types.gen";
+import { type HuddleICEServers, type HuddleTrackRequest, PROBLEM_TYPE_PREFIX, type RoomHuddle } from "@/lib/api/types.gen";
 
 import { type CallEnv, type HuddleCallState, HEARTBEAT_INTERVAL_MS, SPEAKING_POLL_MS, createHuddleCall } from "./call";
 
@@ -15,7 +15,7 @@ function huddle(participants: string[]): RoomHuddle {
     message_id: "m-1",
     started_at: "2026-09-26T00:00:00Z",
     version: 1,
-    participants: participants.map((user_id) => ({ user_id, muted: false })),
+    participants: participants.map((user_id) => ({ user_id, muted: false, camera: false, screen: false })),
     joining_soon: [],
   };
 }
@@ -96,9 +96,9 @@ function setup(overrides: Partial<CallEnv> = {}) {
       participant_id: "p-1",
       answer: { type: "answer", sdp: "remote-answer" },
     })),
-    subscribeHuddle: vi.fn(async (_h: string, _p: string, userIds: string[]) => ({
+    subscribeHuddle: vi.fn(async (_h: string, _p: string, tracks: HuddleTrackRequest[]) => ({
       offer: { type: "offer", sdp: "remote-offer" },
-      tracks: userIds.map((user_id, i) => ({ user_id, mid: `${i + 1}` })),
+      tracks: tracks.map((t, i) => ({ user_id: t.user_id, kind: t.kind, mid: `${i + 1}` })),
     })),
     renegotiateHuddle: vi.fn(async () => {}),
     unsubscribeHuddle: vi.fn(async () => {}),
@@ -301,7 +301,7 @@ describe("入る（決定 4）", () => {
     await t.call.openPreview(ROOM);
     await t.call.join();
     await flush();
-    expect(t.api.subscribeHuddle).toHaveBeenCalledWith("h-1", "p-1", ["u-a"]);
+    expect(t.api.subscribeHuddle).toHaveBeenCalledWith("h-1", "p-1", [{ user_id: "u-a", kind: "audio" }]);
   });
 
   it("つながったら connected にし、一時的に切れたら reconnecting にする", async () => {
@@ -365,7 +365,7 @@ describe("受ける音声（決定 9）", () => {
     const t = await joined();
     await t.call.sync([ME, "u-a"]);
     const pc = t.pcs[0];
-    expect(t.api.subscribeHuddle).toHaveBeenCalledWith("h-1", "p-1", ["u-a"]);
+    expect(t.api.subscribeHuddle).toHaveBeenCalledWith("h-1", "p-1", [{ user_id: "u-a", kind: "audio" }]);
     expect(pc.setRemoteDescription).toHaveBeenLastCalledWith({ type: "offer", sdp: "remote-offer" });
     expect(t.api.renegotiateHuddle).toHaveBeenCalledWith("h-1", "p-1", { type: "answer", sdp: "local-answer" });
     pc.track("1");
@@ -383,7 +383,7 @@ describe("受ける音声（決定 9）", () => {
   it("同じ人は 2 度受けない。続けて呼んでも 1 本の列に並ぶ", async () => {
     const t = await joined();
     await Promise.all([t.call.sync([ME, "u-a"]), t.call.sync([ME, "u-a"]), t.call.sync([ME, "u-a", "u-b"])]);
-    expect(t.api.subscribeHuddle.mock.calls.map((c) => c[2])).toEqual([["u-a"], ["u-b"]]);
+    expect(t.api.subscribeHuddle.mock.calls.map((c) => c[2].map((r) => r.user_id))).toEqual([["u-a"], ["u-b"]]);
   });
 
   it("抜けた人のトラックを閉じ、鳴らすのをやめる", async () => {

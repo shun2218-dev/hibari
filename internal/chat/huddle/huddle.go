@@ -59,6 +59,8 @@ type record struct {
 	AuthSessionID ulid.ULID `json:"auth_session_id"`
 	SFUSessionID  string    `json:"sfu_session_id"`
 	TrackName     string    `json:"track_name"`
+	CameraMid     string    `json:"camera_mid,omitzero"`
+	ScreenMid     string    `json:"screen_mid,omitzero"`
 	Muted         bool      `json:"muted"`
 	JoinedAt      time.Time `json:"joined_at"`
 }
@@ -358,6 +360,73 @@ func (s *Store) SetMuted(ctx context.Context, huddleID, participantID ulid.ULID,
 		return 0, false, fmt.Errorf("huddle: set muted: %w", err)
 	}
 	return v, v > 0, nil
+}
+
+// setTrackScript は、送っているカメラか画面の mid を書き換える（ADR 0068 決定 4・7）。
+//
+// 画面を新しく共有するときは、いま共有している人を数えてから書く。数えるのと書くのを同じ Lua の中でするので、
+// 2 人が同時に押しても上限（2 人）を超えない（人数の上限の joinScript と同じ考え方）。
+// mid が変わらなければ版を進めない（同じ要求のやり直しで huddle.updated を配り直さない）。
+//
+// ARGV = huddleID, participantID, 項目の名前（camera_mid / screen_mid）, mid（空なら外す）, 画面を共有できる人数
+// 返り値 = { 版, 前の mid }。参加がなければ { 0, '' }、共有の上限なら { -1, '' }
+var setTrackScript = goredis.NewScript(`
+local NS = table.remove(ARGV, 1)
+local members = NS .. 'huddle:' .. ARGV[1] .. ':members'
+local field, mid = ARGV[3], ARGV[4]
+local json = redis.call('HGET', members, ARGV[2])
+if not json then
+  return {0, ''}
+end
+local p = cjson.decode(json)
+local previous = p[field] or ''
+if previous == mid then
+  return {tonumber(redis.call('GET', NS .. 'huddle:' .. ARGV[1] .. ':version') or '0'), previous}
+end
+if field == 'screen_mid' and mid ~= '' and previous == '' then
+  local sharing = 0
+  for _, raw in ipairs(redis.call('HVALS', members)) do
+    local other = cjson.decode(raw)['screen_mid']
+    if other and other ~= '' then
+      sharing = sharing + 1
+    end
+  end
+  if sharing >= tonumber(ARGV[5]) then
+    return {-1, ''}
+  end
+end
+if mid == '' then
+  p[field] = nil
+else
+  p[field] = mid
+end
+redis.call('HSET', members, ARGV[2], cjson.encode(p))
+return {redis.call('INCR', NS .. 'huddle:' .. ARGV[1] .. ':version'), previous}
+`)
+
+// trackFields は、トラックの種類を参加の JSON の項目に引く。音声は入る・抜けるがそのまま送る・やめるなので、ここにはない。
+var trackFields = map[chat.HuddleTrackKind]string{chat.HuddleTrackCamera: "camera_mid", chat.HuddleTrackScreen: "screen_mid"}
+
+// SetTrack は、送っているカメラか画面の mid を書き換え、新しい版と前の mid を返す（ADR 0068 決定 4）。
+// 画面を新しく共有するとき、ほかに screenLimit 人が共有していれば chat.ErrHuddleScreenShareFull。参加がなければ chat.ErrHuddleParticipantGone。
+func (s *Store) SetTrack(ctx context.Context, huddleID, participantID ulid.ULID, kind chat.HuddleTrackKind, mid string, screenLimit int) (chat.HuddleTrackResult, error) {
+	field, ok := trackFields[kind]
+	if !ok {
+		return chat.HuddleTrackResult{}, fmt.Errorf("huddle: set track: unknown kind %q", kind)
+	}
+	res, err := setTrackScript.Run(ctx, s.rdb, nil, s.ns, huddleID.String(), participantID.String(), field, mid, screenLimit).Slice()
+	if err != nil {
+		return chat.HuddleTrackResult{}, fmt.Errorf("huddle: set track: %w", err)
+	}
+	version, _ := res[0].(int64)
+	previous, _ := res[1].(string)
+	switch {
+	case version < 0:
+		return chat.HuddleTrackResult{}, chat.ErrHuddleScreenShareFull
+	case version == 0:
+		return chat.HuddleTrackResult{}, chat.ErrHuddleParticipantGone
+	}
+	return chat.HuddleTrackResult{Version: version, Previous: previous}, nil
 }
 
 // joiningSoonScript は「もうすぐ参加する」を書く（決定 11）。期限の過ぎたものは消す（読むときも期限で絞る）。

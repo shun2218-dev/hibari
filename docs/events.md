@@ -99,7 +99,7 @@ WebSocket のプロトコルとイベントのスキーマの正本。設計の�
 | `thread.notifications_updated` | 本人 | スレッドの返信の通知が変わった（別の端末を含む。ADR 0056） |
 | `activity.reaction_added` | 本人（メッセージの送信者） | 自分のメッセージに、ほかの人がリアクションを付けた（ADR 0058） |
 | `activity.reaction_removed` | 本人（メッセージの送信者） | そのリアクションが外された（ADR 0058） |
-| `huddle.updated` | room | ハドルが始まった・誰かが入った・抜けた・外れた・ミュートが変わった・「もうすぐ参加する」が押された・終わった（ADR 0066） |
+| `huddle.updated` | room | ハドルが始まった・誰かが入った・抜けた・外れた・ミュートが変わった・カメラや画面共有を始めた・やめた・「もうすぐ参加する」が押された・終わった（ADR 0066・0068） |
 | `huddle.ringing` | 本人（DM の相手） | DM でハドルが始まった（ADR 0066 決定 11） |
 | `huddle.left` | 本人 | 自分の参加が外れた（別の端末で抜けた・移った場合も届く。ADR 0066） |
 
@@ -459,7 +459,10 @@ idle または away       → 離席（色なしのアウトライン）
   "room_id": "01J8...",
   "huddle": {
     "id": "01J9...", "room_id": "01J8...", "message_id": "01J9...", "started_at": "2026-09-26T11:20:00Z", "version": 7,
-    "participants": [{ "user_id": "01J8...", "muted": false }, { "user_id": "01J8...", "muted": true }],
+    "participants": [
+      { "user_id": "01J8...", "muted": false, "camera": true, "screen": false },
+      { "user_id": "01J8...", "muted": true, "camera": false, "screen": true }
+    ],
     "joining_soon": ["01J8..."]
   }
 }
@@ -469,6 +472,8 @@ idle または away       → 離席（色なしのアウトライン）
 - `huddle` が `null` ならハドルが終わった。
 - `participants` は入った順。同じ人は 1 回しか並ばない（1 人が入れるハドルは 1 つで、別の端末から入ると移る。決定 6）。
 - `joining_soon` は DM の呼び出しで「もうすぐ参加する」を押した人（5 分で消える。決定 11）。
+- `camera` / `screen` はカメラを付けているか・画面を共有しているか（ADR 0068 決定 4）。付けた・やめたときにも版を進めて全体を配る。
+  クライアントはこれを見て、映像を受ける（`POST …/subscriptions` の `kind`）・閉じる。画面を共有できるのは同時に 2 人まで（決定 7）。
 - 再接続したら、ルームの一覧・1 件の取得の `huddle` から読み直す（Redis の状態は `change_seq` に乗らない。presence と同じ）。
 
 #### `huddle.ringing`

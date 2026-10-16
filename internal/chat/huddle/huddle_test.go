@@ -332,6 +332,103 @@ func TestConcurrentJoinsRespectLimit(t *testing.T) {
 	}
 }
 
+// カメラと画面の mid を書き、外す（ADR 0068 決定 4）。変わらなければ版を進めない。
+func TestSetTrack(t *testing.T) {
+	s := newStore(t)
+	h := ids.New()
+	p := participant(h, ids.New(), t0)
+	if _, err := s.Join(t.Context(), p, t0.Add(time.Minute), 20, quiet); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.SetTrack(t.Context(), h, p.ID, chat.HuddleTrackCamera, "1", 2)
+	if err != nil || res.Previous != "" {
+		t.Fatalf("SetTrack = %+v, %v", res, err)
+	}
+	snap := snapshot(t, s, h, t0)
+	// ほかの項目はそのまま（Lua で JSON を書き直しても崩れない）
+	want := p
+	want.CameraMid = "1"
+	if snap.Participants[0] != want || snap.Version != res.Version {
+		t.Errorf("snapshot = %+v (version %d), want %+v (version %d)", snap.Participants[0], snap.Version, want, res.Version)
+	}
+
+	again, err := s.SetTrack(t.Context(), h, p.ID, chat.HuddleTrackCamera, "1", 2)
+	if err != nil || again.Version != res.Version || again.Previous != "1" {
+		t.Errorf("same mid = %+v, %v (want version %d unchanged)", again, err, res.Version)
+	}
+
+	off, err := s.SetTrack(t.Context(), h, p.ID, chat.HuddleTrackCamera, "", 2)
+	if err != nil || off.Previous != "1" || off.Version <= res.Version {
+		t.Errorf("clear = %+v, %v", off, err)
+	}
+	if got := snapshot(t, s, h, t0).Participants[0]; got != p {
+		t.Errorf("participant after clear = %+v, want %+v", got, p)
+	}
+
+	if _, err := s.SetTrack(t.Context(), h, ids.New(), chat.HuddleTrackCamera, "1", 2); !errors.Is(err, chat.ErrHuddleParticipantGone) {
+		t.Errorf("unknown participant: err = %v", err)
+	}
+}
+
+// 画面を同時に共有できるのは 2 人まで。多数が同時に押しても 2 人を超えない（ADR 0068 決定 7。並行テスト）。
+// すでに共有している人が mid を替えるのは数えない。
+func TestConcurrentScreenSharesRespectLimit(t *testing.T) {
+	s := newStore(t)
+	h := ids.New()
+	const limit, tries = 2, 10
+	ps := make([]chat.HuddleParticipant, tries)
+	for i := range ps {
+		ps[i] = participant(h, ids.New(), t0)
+		if _, err := s.Join(t.Context(), ps[i], t0.Add(time.Minute), 20, quiet); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var sharing []chat.HuddleParticipant
+	full := 0
+	for _, p := range ps {
+		wg.Go(func() {
+			_, err := s.SetTrack(t.Context(), h, p.ID, chat.HuddleTrackScreen, "2", limit)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				sharing = append(sharing, p)
+			case errors.Is(err, chat.ErrHuddleScreenShareFull):
+				full++
+			default:
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if len(sharing) != limit || full != tries-limit {
+		t.Fatalf("sharing %d, full %d", len(sharing), full)
+	}
+	if _, err := s.SetTrack(t.Context(), h, sharing[0].ID, chat.HuddleTrackScreen, "3", limit); err != nil {
+		t.Errorf("changing mid of a sharer: %v", err)
+	}
+	// カメラは数えない
+	if _, err := s.SetTrack(t.Context(), h, ps[len(ps)-1].ID, chat.HuddleTrackCamera, "1", limit); err != nil {
+		t.Errorf("camera while screens are full: %v", err)
+	}
+	// 1 人がやめれば、次の人が共有できる
+	if _, err := s.SetTrack(t.Context(), h, sharing[0].ID, chat.HuddleTrackScreen, "", limit); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range ps {
+		if p.ID == sharing[0].ID || p.ID == sharing[1].ID {
+			continue
+		}
+		if _, err := s.SetTrack(t.Context(), h, p.ID, chat.HuddleTrackScreen, "2", limit); err != nil {
+			t.Errorf("after one stopped: %v", err)
+		}
+		break
+	}
+}
+
 // 発行した TURN の認証情報を覚え、外すときに期限の切れていないものだけを返して忘れる（決定 8・14）。
 func TestICEUsernames(t *testing.T) {
 	s := newStore(t)

@@ -15,7 +15,7 @@ function huddle(version: number, userIds: string[], id = "h-1"): RoomHuddle {
     message_id: "m-1",
     started_at: "2026-09-26T02:20:00Z",
     version,
-    participants: userIds.map((user_id) => ({ user_id, muted: false })),
+    participants: userIds.map((user_id) => ({ user_id, muted: false, camera: false, screen: false })),
     joining_soon: [],
   };
 }

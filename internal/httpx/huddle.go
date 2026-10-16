@@ -29,6 +29,10 @@ type roomHuddleResponse struct {
 type huddleParticipantResponse struct {
 	UserID string `json:"user_id"`
 	Muted  bool   `json:"muted"`
+	// Camera はカメラを送っているか（ADR 0068 決定 4）。
+	Camera bool `json:"camera"`
+	// Screen は画面を共有しているか。
+	Screen bool `json:"screen"`
 }
 
 func newRoomHuddleResponse(h *chat.RoomHuddle) *roomHuddleResponse {
@@ -40,7 +44,7 @@ func newRoomHuddleResponse(h *chat.RoomHuddle) *roomHuddleResponse {
 		Version: h.Version, Participants: []huddleParticipantResponse{}, JoiningSoon: []string{},
 	}
 	for _, p := range h.Participants {
-		resp.Participants = append(resp.Participants, huddleParticipantResponse{UserID: p.UserID.String(), Muted: p.Muted})
+		resp.Participants = append(resp.Participants, huddleParticipantResponse{UserID: p.UserID.String(), Muted: p.Muted, Camera: p.Camera, Screen: p.Screen})
 	}
 	for _, u := range h.JoiningSoon {
 		resp.JoiningSoon = append(resp.JoiningSoon, u.String())
@@ -201,13 +205,22 @@ func huddleParticipantPath(r *http.Request) (huddleID, participantID ulid.ULID, 
 }
 
 type subscribeHuddleRequest struct {
-	// UserIDs は音声を受けたい相手（同じハドルにいる人）。いない人と自分は黙って飛ばす。
-	UserIDs []string `json:"user_ids"`
+	// Tracks は受けたい相手のトラック。音声は全員、映像はステージに載せた人の分だけを頼む（ADR 0068 決定 5）。
+	// いない人・自分・その種類を送っていない人は黙って飛ばす。
+	Tracks []huddleTrackRequestBody `json:"tracks"`
+}
+
+type huddleTrackRequestBody struct {
+	UserID string               `json:"user_id"`
+	Kind   chat.HuddleTrackKind `json:"kind"`
+	// Quality はカメラのときだけ要る（受ける層。ADR 0068 決定 6）。音声と画面では送らない。
+	Quality chat.HuddleQuality `json:"quality,omitzero"`
 }
 
 type huddleSubscriptionResponse struct {
-	UserID string `json:"user_id"`
-	Mid    string `json:"mid"`
+	UserID string               `json:"user_id"`
+	Kind   chat.HuddleTrackKind `json:"kind"`
+	Mid    string               `json:"mid"`
 }
 
 type subscribeHuddleResponse struct {
@@ -216,7 +229,7 @@ type subscribeHuddleResponse struct {
 	Tracks []huddleSubscriptionResponse `json:"tracks"`
 }
 
-// subscribeHuddle は、同じハドルにいる人の音声を受ける（決定 9）。
+// subscribeHuddle は、同じハドルにいる人のトラックを受ける（決定 9・ADR 0068 決定 5）。
 func (h *chatHandlers) subscribeHuddle(w http.ResponseWriter, r *http.Request) {
 	huddleID, participantID, err := huddleParticipantPath(r)
 	if err != nil {
@@ -228,16 +241,16 @@ func (h *chatHandlers) subscribeHuddle(w http.ResponseWriter, r *http.Request) {
 		writeError(h.logger, w, r, err)
 		return
 	}
-	userIDs := make([]ulid.ULID, 0, len(req.UserIDs))
-	for _, raw := range req.UserIDs {
-		id, err := ulid.ParseStrict(raw)
+	reqs := make([]chat.HuddleTrackRequest, 0, len(req.Tracks))
+	for _, t := range req.Tracks {
+		id, err := ulid.ParseStrict(t.UserID)
 		if err != nil {
-			writeError(h.logger, w, r, &chat.ValidationError{Fields: []chat.FieldError{{Field: "user_ids", Reason: chat.ReasonInvalidValue}}})
+			writeError(h.logger, w, r, &chat.ValidationError{Fields: []chat.FieldError{{Field: "tracks.user_id", Reason: chat.ReasonInvalidValue}}})
 			return
 		}
-		userIDs = append(userIDs, id)
+		reqs = append(reqs, chat.HuddleTrackRequest{UserID: id, Kind: t.Kind, Quality: t.Quality})
 	}
-	res, err := h.svc.SubscribeHuddle(r.Context(), actorOf(r), huddleID, participantID, userIDs)
+	res, err := h.svc.SubscribeHuddle(r.Context(), actorOf(r), huddleID, participantID, reqs)
 	if err != nil {
 		writeError(h.logger, w, r, err)
 		return
@@ -248,9 +261,84 @@ func (h *chatHandlers) subscribeHuddle(w http.ResponseWriter, r *http.Request) {
 		resp.Offer = &o
 	}
 	for _, t := range res.Tracks {
-		resp.Tracks = append(resp.Tracks, huddleSubscriptionResponse{UserID: t.UserID.String(), Mid: t.Mid})
+		resp.Tracks = append(resp.Tracks, huddleSubscriptionResponse{UserID: t.UserID.String(), Kind: t.Kind, Mid: t.Mid})
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+type updateHuddleSubscriptionRequest struct {
+	// UserID はその mid で受けているカメラの持ち主（サーバーは受けているものを覚えていない）。
+	UserID  string             `json:"user_id"`
+	Quality chat.HuddleQuality `json:"quality"`
+}
+
+// updateHuddleSubscription は、受けているカメラの層を替える（ADR 0068 決定 6）。SDP のやり取りは要らない。
+func (h *chatHandlers) updateHuddleSubscription(w http.ResponseWriter, r *http.Request) {
+	huddleID, participantID, err := huddleParticipantPath(r)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	var req updateHuddleSubscriptionRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	userID, err := ulid.ParseStrict(req.UserID)
+	if err != nil {
+		writeError(h.logger, w, r, &chat.ValidationError{Fields: []chat.FieldError{{Field: "user_id", Reason: chat.ReasonInvalidValue}}})
+		return
+	}
+	if err := h.svc.SetHuddleSubscriptionQuality(r.Context(), actorOf(r), huddleID, participantID, r.PathValue("mid"), userID, req.Quality); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type publishHuddleTrackRequest struct {
+	Kind  chat.HuddleTrackKind   `json:"kind"`
+	Offer sessionDescriptionBody `json:"offer"`
+	// Mid は offer の中の、足したカメラか画面の transceiver の mid。
+	Mid string `json:"mid"`
+}
+
+type publishHuddleTrackResponse struct {
+	Answer sessionDescriptionBody `json:"answer"`
+}
+
+// publishHuddleTrack は、カメラか画面を送り始める（ADR 0068 決定 3）。
+func (h *chatHandlers) publishHuddleTrack(w http.ResponseWriter, r *http.Request) {
+	huddleID, participantID, err := huddleParticipantPath(r)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	var req publishHuddleTrackRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	answer, err := h.svc.PublishHuddleTrack(r.Context(), actorOf(r), huddleID, participantID, req.Kind, req.Offer.toChat(), req.Mid)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, publishHuddleTrackResponse{Answer: newSessionDescriptionBody(answer)})
+}
+
+// unpublishHuddleTrack は、カメラか画面を送るのをやめる（ADR 0068 決定 2・3）。もうやめていても 204。
+func (h *chatHandlers) unpublishHuddleTrack(w http.ResponseWriter, r *http.Request) {
+	huddleID, participantID, err := huddleParticipantPath(r)
+	if err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	if err := h.svc.UnpublishHuddleTrack(r.Context(), actorOf(r), huddleID, participantID, chat.HuddleTrackKind(r.PathValue("kind"))); err != nil {
+		writeError(h.logger, w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type renegotiateHuddleRequest struct {

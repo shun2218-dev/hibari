@@ -28,7 +28,7 @@ function liveHuddle(roomId: string, userIds: string[]): RoomHuddle {
     message_id: `m-live-${roomId}`,
     started_at: new Date(Date.now() - 12 * 60_000).toISOString(),
     version: 1,
-    participants: userIds.map((user_id) => ({ user_id, muted: false })),
+    participants: userIds.map((user_id) => ({ user_id, muted: false, camera: false, screen: false })),
     joining_soon: [],
   };
 }

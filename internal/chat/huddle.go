@@ -38,8 +38,10 @@ const (
 	// HuddleICETTL は TURN の認証情報の有効期間（決定 14）。長いハドルでは、クライアントが切れる前に取り直す。
 	HuddleICETTL = 12 * time.Hour
 
+	// HuddleScreenShareLimit は、同時に画面を共有できる人数（ADR 0068 決定 7。Slack と同じ）。
+	HuddleScreenShareLimit = 2
 	// huddleTrackName は送る音声のトラックの名前。セッションは参加ごとに分かれるので、名前は同じでよい。
-	huddleTrackName = "audio"
+	huddleTrackName = string(HuddleTrackAudio)
 	// huddleSweepBatch は 1 回の掃除で外す参加の上限。多ければ続けて掃除する。
 	huddleSweepBatch = 100
 	// maxSDPBytes は受け付ける SDP の大きさの上限。音声 1 本の SDP は数 KB に収まる。
@@ -98,6 +100,9 @@ type RoomHuddle struct {
 type RoomHuddleParticipant struct {
 	UserID ulid.ULID
 	Muted  bool
+	// Camera / Screen はカメラと画面を送っているか（ADR 0068 決定 4）。トラックの名前と mid はクライアントに見せない。
+	Camera bool
+	Screen bool
 }
 
 // MessageHuddle は、ハドルのメッセージに載せるハドル（決定 12）。見る人によらない値だけを持つ。
@@ -487,9 +492,18 @@ func (s *Service) ownParticipant(ctx context.Context, actor, huddleID, participa
 	return *p, nil
 }
 
+// HuddleTrackRequest は、受けたい相手のトラック（決定 9・ADR 0068 決定 5）。
+// Quality はカメラのときだけ要る（受ける simulcast の層。ADR 0068 決定 6）。音声と画面では空。
+type HuddleTrackRequest struct {
+	UserID  ulid.ULID
+	Kind    HuddleTrackKind
+	Quality HuddleQuality
+}
+
 // HuddleSubscription は、受け始めた相手のトラック（決定 9）。
 type HuddleSubscription struct {
 	UserID ulid.ULID
+	Kind   HuddleTrackKind
 	Mid    string
 }
 
@@ -499,12 +513,13 @@ type SubscribedHuddle struct {
 	Tracks []HuddleSubscription
 }
 
-// SubscribeHuddle は、同じハドルにいる userIDs の音声を受ける（決定 9）。
-// Go がユーザー ID を相手の Cloudflare のセッションに引き直すので、同じハドルにいない人の音声は受けられない（決定 2）。
-// いない人・自分は黙って飛ばす（抜けた直後の要求はよくある）。
-func (s *Service) SubscribeHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, userIDs []ulid.ULID) (SubscribedHuddle, error) {
-	if len(userIDs) > HuddleParticipantLimit {
-		return SubscribedHuddle{}, &ValidationError{Fields: []FieldError{{Field: "user_ids", Reason: ReasonInvalidValue}}}
+// SubscribeHuddle は、同じハドルにいる人のトラックを受ける（決定 9）。
+// 音声は全員の分を受け、映像はクライアントがステージに載せた人の分だけを頼む（ADR 0068 決定 5）。
+// Go がユーザー ID を相手の Cloudflare のセッションとトラックに引き直すので、同じハドルにいない人のトラックは受けられない（決定 2）。
+// いない人・自分・その種類を送っていない人は黙って飛ばす（抜けた直後やカメラを止めた直後の要求はよくある）。
+func (s *Service) SubscribeHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, reqs []HuddleTrackRequest) (SubscribedHuddle, error) {
+	if err := validateTrackRequests(reqs); err != nil {
+		return SubscribedHuddle{}, err
 	}
 	p, err := s.ownParticipant(ctx, actor, huddleID, participantID)
 	if err != nil {
@@ -514,29 +529,214 @@ func (s *Service) SubscribeHuddle(ctx context.Context, actor, huddleID, particip
 	if err != nil {
 		return SubscribedHuddle{}, err
 	}
-	bySession := map[string]ulid.ULID{}
-	var remotes []RemoteTrack
+	byUser := map[ulid.ULID]HuddleParticipant{}
 	for _, other := range snaps[huddleID].Participants {
-		if other.UserID == actor || !slices.Contains(userIDs, other.UserID) {
+		if other.UserID != actor {
+			byUser[other.UserID] = other
+		}
+	}
+	type key struct{ session, track string }
+	asked := map[key]HuddleTrackRequest{}
+	var remotes []RemoteTrack
+	for _, r := range reqs {
+		other, ok := byUser[r.UserID]
+		if !ok || !publishing(other, r.Kind) {
 			continue
 		}
-		bySession[other.SFUSessionID] = other.UserID
-		remotes = append(remotes, RemoteTrack{SessionID: other.SFUSessionID, TrackName: other.TrackName})
+		k := key{other.SFUSessionID, trackName(other, r.Kind)}
+		if _, dup := asked[k]; dup {
+			continue
+		}
+		asked[k] = r
+		remotes = append(remotes, RemoteTrack{SessionID: k.session, TrackName: k.track, Quality: r.Quality})
 	}
 	if len(remotes) == 0 {
 		return SubscribedHuddle{}, nil
 	}
 	res, err := s.huddles.media.Subscribe(ctx, p.SFUSessionID, remotes)
 	if err != nil {
-		return SubscribedHuddle{}, fmt.Errorf("subscribe huddle audio: %w", err)
+		return SubscribedHuddle{}, fmt.Errorf("subscribe huddle tracks: %w", err)
 	}
 	out := SubscribedHuddle{Offer: res.Offer}
 	for _, t := range res.Tracks {
-		if userID, ok := bySession[t.SessionID]; ok && t.OK {
-			out.Tracks = append(out.Tracks, HuddleSubscription{UserID: userID, Mid: t.Mid})
+		if r, ok := asked[key{t.SessionID, t.TrackName}]; ok && t.OK {
+			out.Tracks = append(out.Tracks, HuddleSubscription{UserID: r.UserID, Kind: r.Kind, Mid: t.Mid})
 		}
 	}
 	return out, nil
+}
+
+// validateTrackRequests は受ける要求の形を確かめる。1 人が送るのは 3 本までなので、上限は人数の 3 倍。
+func validateTrackRequests(reqs []HuddleTrackRequest) error {
+	if len(reqs) > HuddleParticipantLimit*3 {
+		return &ValidationError{Fields: []FieldError{{Field: "tracks", Reason: ReasonInvalidValue}}}
+	}
+	for _, r := range reqs {
+		switch r.Kind {
+		case HuddleTrackCamera:
+			// カメラは simulcast なので、どの層を受けるかが要る（ADR 0068 決定 6）
+			if !r.Quality.valid() {
+				return &ValidationError{Fields: []FieldError{{Field: "tracks.quality", Reason: ReasonInvalidValue}}}
+			}
+		case HuddleTrackAudio, HuddleTrackScreen:
+			if r.Quality != "" {
+				return &ValidationError{Fields: []FieldError{{Field: "tracks.quality", Reason: ReasonInvalidValue}}}
+			}
+		default:
+			return &ValidationError{Fields: []FieldError{{Field: "tracks.kind", Reason: ReasonInvalidValue}}}
+		}
+	}
+	return nil
+}
+
+// publishing は、参加者がその種類のトラックを送っているか。
+func publishing(p HuddleParticipant, kind HuddleTrackKind) bool {
+	switch kind {
+	case HuddleTrackAudio:
+		return p.TrackName != ""
+	case HuddleTrackCamera:
+		return p.CameraMid != ""
+	case HuddleTrackScreen:
+		return p.ScreenMid != ""
+	}
+	return false
+}
+
+// trackName は参加者が送っているトラックの名前。音声は入ったときの名前、カメラと画面は種類の名前（セッションは参加ごとなので重ならない）。
+func trackName(p HuddleParticipant, kind HuddleTrackKind) string {
+	if kind == HuddleTrackAudio {
+		return p.TrackName
+	}
+	return string(kind)
+}
+
+// SetHuddleSubscriptionQuality は、mid で受けている userID のカメラの層を替える（ADR 0068 決定 6）。SDP のやり取りは要らない。
+// Cloudflare に相手のトラックを渡す必要があるので、クライアントは誰のカメラかも送る（サーバーは受けているものを覚えていない）。
+// 相手が同じハドルにいない・カメラを止めた後なら ErrNotFound（クライアントは受けていたトラックを閉じる）。
+func (s *Service) SetHuddleSubscriptionQuality(ctx context.Context, actor, huddleID, participantID ulid.ULID, mid string, userID ulid.ULID, quality HuddleQuality) error {
+	var fields []FieldError
+	if mid == "" || len(mid) > 32 {
+		fields = append(fields, FieldError{Field: "mid", Reason: ReasonInvalidValue})
+	}
+	if !quality.valid() {
+		fields = append(fields, FieldError{Field: "quality", Reason: ReasonInvalidValue})
+	}
+	if len(fields) > 0 {
+		return &ValidationError{Fields: fields}
+	}
+	p, err := s.ownParticipant(ctx, actor, huddleID, participantID)
+	if err != nil {
+		return err
+	}
+	snaps, err := s.huddles.states.Snapshots(ctx, []ulid.ULID{huddleID}, s.clock.Now())
+	if err != nil {
+		return err
+	}
+	for _, other := range snaps[huddleID].Participants {
+		if other.UserID == userID && other.UserID != actor && other.CameraMid != "" {
+			remote := RemoteTrack{SessionID: other.SFUSessionID, TrackName: trackName(other, HuddleTrackCamera), Quality: quality}
+			if err := s.huddles.media.SetQuality(ctx, p.SFUSessionID, mid, remote); err != nil {
+				return fmt.Errorf("set huddle quality: %w", err)
+			}
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+// ---- カメラと画面共有（ADR 0068 決定 2・3・7）----
+
+// PublishHuddleTrack は、カメラか画面を送り始める（ADR 0068 決定 3）。音声と同じ Cloudflare のセッションに足す（決定 1）。
+//
+// Cloudflare に送る設定が成功してから参加の状態に書いて配る（音声の「入る」と同じ。ADR 0066 決定 4）。
+// 画面は同時に 2 人まで（決定 7）。数えるのと書くのは Redis の中で一緒にするので、Cloudflare の後で上限に当たったら、送り始めたトラックを閉じる。
+func (s *Service) PublishHuddleTrack(ctx context.Context, actor, huddleID, participantID ulid.ULID, kind HuddleTrackKind, offer SessionDescription, mid string) (SessionDescription, error) {
+	if kind != HuddleTrackCamera && kind != HuddleTrackScreen {
+		return SessionDescription{}, &ValidationError{Fields: []FieldError{{Field: "kind", Reason: ReasonInvalidValue}}}
+	}
+	if err := validateOffer(offer, mid); err != nil {
+		return SessionDescription{}, err
+	}
+	p, err := s.ownParticipant(ctx, actor, huddleID, participantID)
+	if err != nil {
+		return SessionDescription{}, err
+	}
+	// 上限に達していれば、Cloudflare を呼ぶ前に断る（ほとんどの 3 人目はここで止まる。最後の判定は SetTrack）
+	if kind == HuddleTrackScreen && p.ScreenMid == "" {
+		full, err := s.screenShareFull(ctx, huddleID)
+		if err != nil {
+			return SessionDescription{}, err
+		}
+		if full {
+			return SessionDescription{}, ErrHuddleScreenShareFull
+		}
+	}
+	answer, err := s.huddles.media.Push(ctx, p.SFUSessionID, offer, mid, trackName(p, kind))
+	if err != nil {
+		return SessionDescription{}, fmt.Errorf("push huddle %s: %w", kind, err)
+	}
+	res, err := s.huddles.states.SetTrack(ctx, huddleID, p.ID, kind, mid, HuddleScreenShareLimit)
+	if err != nil {
+		// 書けなかった（上限・その間に外れた）。送り始めたトラックを閉じる
+		s.closeHuddleTracks(ctx, p, mid)
+		return SessionDescription{}, err
+	}
+	if res.Previous != "" && res.Previous != mid {
+		// 同じ種類をもう一度送り始めた（クライアントが前の分を閉じ忘れた）。前のトラックは閉じる
+		s.closeHuddleTracks(ctx, p, res.Previous)
+	}
+	s.deliverHuddleUpdated(ctx, huddleID)
+	return answer, nil
+}
+
+// screenShareFull は、いま画面を共有している人が上限に達しているか。
+func (s *Service) screenShareFull(ctx context.Context, huddleID ulid.ULID) (bool, error) {
+	snaps, err := s.huddles.states.Snapshots(ctx, []ulid.ULID{huddleID}, s.clock.Now())
+	if err != nil {
+		return false, err
+	}
+	sharing := 0
+	for _, other := range snaps[huddleID].Participants {
+		if other.ScreenMid != "" {
+			sharing++
+		}
+	}
+	return sharing >= HuddleScreenShareLimit, nil
+}
+
+// UnpublishHuddleTrack は、カメラか画面を送るのをやめる（ADR 0068 決定 2・3）。トラックは Cloudflare で閉じる（止めたまま送り続けない）。
+// もうやめている・参加がもうないときも成功にする（ブラウザの「共有を停止」と画面のボタンが重なってもよい）。
+func (s *Service) UnpublishHuddleTrack(ctx context.Context, actor, huddleID, participantID ulid.ULID, kind HuddleTrackKind) error {
+	if kind != HuddleTrackCamera && kind != HuddleTrackScreen {
+		return &ValidationError{Fields: []FieldError{{Field: "kind", Reason: ReasonInvalidValue}}}
+	}
+	p, err := s.ownParticipant(ctx, actor, huddleID, participantID)
+	if errors.Is(err, ErrHuddleParticipantGone) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	res, err := s.huddles.states.SetTrack(ctx, huddleID, p.ID, kind, "", HuddleScreenShareLimit)
+	if errors.Is(err, ErrHuddleParticipantGone) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if res.Previous == "" {
+		return nil
+	}
+	s.closeHuddleTracks(ctx, p, res.Previous)
+	s.deliverHuddleUpdated(ctx, huddleID)
+	return nil
+}
+
+// closeHuddleTracks は参加のトラックを mid で閉じる。失敗しても、ブラウザが送るのをやめれば Cloudflare が 30 秒で片付ける。
+func (s *Service) closeHuddleTracks(ctx context.Context, p HuddleParticipant, mids ...string) {
+	if err := s.huddles.media.Close(ctx, p.SFUSessionID, mids); err != nil {
+		s.logger.WarnContext(ctx, "close huddle tracks failed", slog.String("participant_id", p.ID.String()), slog.Any("error", err))
+	}
 }
 
 // RenegotiateHuddle は SubscribeHuddle の offer に対するブラウザの answer を渡す。
@@ -554,9 +754,10 @@ func (s *Service) RenegotiateHuddle(ctx context.Context, actor, huddleID, partic
 	return nil
 }
 
-// UnsubscribeHuddle は、抜けた人の分の受けるトラックを閉じる（決定 9）。
+// UnsubscribeHuddle は、抜けた人・カメラや画面を止めた人・ステージから外れた人の分の受けるトラックを閉じる（決定 9・ADR 0068 決定 5）。
+// 1 人から受けるのは 3 本までなので、上限は人数の 3 倍。
 func (s *Service) UnsubscribeHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, mids []string) error {
-	if len(mids) == 0 || len(mids) > HuddleParticipantLimit || slices.Contains(mids, "") {
+	if len(mids) == 0 || len(mids) > HuddleParticipantLimit*3 || slices.Contains(mids, "") {
 		return &ValidationError{Fields: []FieldError{{Field: "mids", Reason: ReasonInvalidValue}}}
 	}
 	p, err := s.ownParticipant(ctx, actor, huddleID, participantID)
@@ -926,7 +1127,7 @@ func roomHuddle(id, roomID, messageID ulid.ULID, startedAt time.Time, snap Huddl
 			continue
 		}
 		seen[p.UserID] = true
-		v.Participants = append(v.Participants, RoomHuddleParticipant{UserID: p.UserID, Muted: p.Muted})
+		v.Participants = append(v.Participants, RoomHuddleParticipant{UserID: p.UserID, Muted: p.Muted, Camera: p.CameraMid != "", Screen: p.ScreenMid != ""})
 	}
 	return v
 }
