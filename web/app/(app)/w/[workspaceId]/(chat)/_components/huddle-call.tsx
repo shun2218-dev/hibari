@@ -43,7 +43,7 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
   const currentRoom = useChatState((s) => (roomId ? s.rooms[roomId] : undefined));
   const [chatOpen, setChatOpen] = useState(false);
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
-  const [previewMenu, setPreviewMenu] = useState<"mic" | "speaker">();
+  const [previewMenu, setPreviewMenu] = useState<"mic" | "speaker" | "camera">();
   // 操作の列の「…」（ハドルミーティングのリンクをコピー）。通話しているハドルのルームを指す
   const linkMenu = useHuddleLinkMenu(room ? { workspaceId: room.workspace_id, roomId: room.id } : undefined);
 

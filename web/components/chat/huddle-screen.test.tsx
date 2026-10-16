@@ -159,3 +159,124 @@ describe("ハドルの画面と帯の「…」（ADR 0067 決定 1）", () => {
     expect(onCopyLink).toHaveBeenCalledOnce();
   });
 });
+
+describe("カメラと画面共有（ADR 0068）", () => {
+  // 映像の代わり（アプリは <video>、story は画像）。部品は渡されたものを置くだけ
+  const video = (label: string) => <span role="img" aria-label={label} />;
+
+  it("camera がなければ（6.18a の画面）カメラの操作を出さず、画面を共有できなければ共有のボタンを出さない", () => {
+    const { rerender } = render(<HuddleScreen huddle={huddle()} />);
+    expect(screen.queryByRole("button", { name: "カメラをオンにする" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "画面を共有する" })).not.toBeInTheDocument();
+
+    rerender(<HuddleScreen huddle={huddle({ camera: false, canShareScreen: false })} />);
+    expect(screen.getByRole("button", { name: "カメラをオンにする" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("button", { name: "画面を共有する" })).not.toBeInTheDocument();
+  });
+
+  it("カメラと画面共有のボタンは、押したときの操作を名前にし、押した状態を持つ", async () => {
+    const onToggleCamera = vi.fn();
+    const onToggleShare = vi.fn();
+    const { rerender } = render(
+      <HuddleScreen huddle={huddle({ camera: false, canShareScreen: true })} onToggleCamera={onToggleCamera} onToggleShare={onToggleShare} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "カメラをオンにする" }));
+    await userEvent.click(screen.getByRole("button", { name: "画面を共有する" }));
+    expect(onToggleCamera).toHaveBeenCalledOnce();
+    expect(onToggleShare).toHaveBeenCalledOnce();
+
+    rerender(<HuddleScreen huddle={huddle({ camera: true, canShareScreen: true, sharing: true })} />);
+    expect(screen.getByRole("button", { name: "カメラをオフにする" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "画面の共有をやめる" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("映像があるタイルは映像を、ない人はアバターを出す", () => {
+    render(
+      <HuddleScreen
+        huddle={huddle({
+          camera: true,
+          participants: [
+            { ...you, muted: false, camera: true, video: video("あなたの映像") },
+            { ...naoki, muted: false, camera: true, video: video("佐藤さんの映像") },
+            { ...miyuki, muted: true },
+          ],
+        })}
+      />,
+    );
+
+    const list = screen.getByRole("list", { name: "参加者" });
+    expect(within(within(list).getByRole("figure", { name: "佐藤 直樹" })).getByRole("img", { name: "佐藤さんの映像" })).toBeInTheDocument();
+    expect(within(within(list).getByRole("figure", { name: "高橋 みゆき（ミュート中）" })).queryByRole("img", { name: /映像/ })).not.toBeInTheDocument();
+  });
+
+  it("タイルを押すと大きくし、大きくしたタイルは押した状態を持つ", async () => {
+    const onPin = vi.fn();
+    const { rerender } = render(<HuddleScreen huddle={huddle()} onPin={onPin} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "佐藤 直樹を大きく表示" }));
+    expect(onPin).toHaveBeenCalledWith(naoki.id);
+
+    rerender(<HuddleScreen huddle={huddle({ pinnedId: naoki.id })} onPin={onPin} />);
+    expect(screen.getByRole("button", { name: "佐藤 直樹を元の大きさに戻す" })).toHaveAttribute("aria-pressed", "true");
+    // 大きくした人は下の列に出さない
+    expect(within(screen.getByRole("list", { name: "参加者" })).queryByRole("figure", { name: /佐藤 直樹/ })).not.toBeInTheDocument();
+  });
+
+  it("共有された画面を大きく出し、参加者は下の列に並べる。2 つなら両方を大きく出す", () => {
+    const share = (id: string, owner: typeof naoki) => ({ id, owner, video: video(`${owner.name}の画面の映像`) });
+    const { rerender } = render(<HuddleScreen huddle={huddle({ screens: [share("s-naoki", naoki)] })} />);
+
+    expect(screen.getByRole("figure", { name: "佐藤 直樹 さんの画面" })).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "参加者" })).getAllByRole("figure")).toHaveLength(3);
+
+    rerender(<HuddleScreen huddle={huddle({ screens: [share("s-naoki", naoki), share("s-you", you)] })} />);
+    expect(screen.getByRole("figure", { name: "あなたの画面" })).toBeInTheDocument();
+    // 大きく出している 2 つは下の列に入らない
+    expect(within(screen.getByRole("list", { name: "参加者" })).queryByRole("figure", { name: /の画面/ })).not.toBeInTheDocument();
+
+    rerender(<HuddleScreen huddle={huddle({ screens: [share("s-naoki", naoki), share("s-you", you)], pinnedId: "s-you" })} />);
+    // 押した方だけを大きくし、もう一方は下の列に回す
+    expect(within(screen.getByRole("list", { name: "参加者" })).getByRole("figure", { name: "佐藤 直樹 さんの画面" })).toBeInTheDocument();
+  });
+
+  it("自分が共有している間は、琥珀の知らせと「共有をやめる」を出す", async () => {
+    const onToggleShare = vi.fn();
+    render(<HuddleScreen huddle={huddle({ sharing: true })} onToggleShare={onToggleShare} />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("画面を共有しています");
+    await userEvent.click(screen.getByRole("button", { name: "共有をやめる" }));
+    expect(onToggleShare).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { notice: "camera-denied", text: "カメラの使用を許可していません" },
+    { notice: "no-camera", text: "カメラが見つかりません" },
+    { notice: "screen-denied", text: "画面の共有を許可していません" },
+    { notice: "screen-share-full", text: "同時に画面を共有できるのは 2 人まで" },
+  ] as const)("知らせ（$notice）を出し、閉じられる", async ({ notice, text }) => {
+    const onDismissNotice = vi.fn();
+    render(<HuddleScreen huddle={huddle({ notice })} onDismissNotice={onDismissNotice} />);
+
+    expect(screen.getByText(new RegExp(text))).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "知らせを閉じる" }));
+    expect(onDismissNotice).toHaveBeenCalledOnce();
+  });
+
+  it("帯は映像を出さず、自分が共有していることを知らせる", () => {
+    render(
+      <HuddleBar
+        huddle={huddle({
+          camera: true,
+          sharing: true,
+          canShareScreen: true,
+          participants: [{ ...you, muted: false, camera: true, video: video("あなたの映像") }, { ...naoki, muted: false }],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("画面を共有しています")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "あなたの映像" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "画面の共有をやめる" })).toBeInTheDocument();
+  });
+});

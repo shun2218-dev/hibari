@@ -75,6 +75,10 @@ import {
   Eye,
   ExternalLink,
   EyeOff,
+  ScreenShare,
+  ScreenShareOff,
+  Video,
+  VideoOff,
 } from "lucide-react";
 
 function withDefaults(Icon: LucideIcon) {
@@ -179,3 +183,12 @@ export const PhoneMissedIcon = withDefaults(PhoneMissed);
 export const PopOutIcon = withDefaults(ExternalLink);
 /** スピーカーの選択（参加前のプレビューと、ハドルの画面の機器の選択）。 */
 export const SpeakerIcon = withDefaults(Volume2);
+// ---- ハドルのカメラと画面共有（ADR 0068） ----
+/** カメラ（操作の列のボタン・プレビュー・カメラの選択）。 */
+export const VideoIcon = withDefaults(Video);
+/** カメラがオフ。 */
+export const VideoOffIcon = withDefaults(VideoOff);
+/** 画面共有を始める。 */
+export const ScreenShareIcon = withDefaults(ScreenShare);
+/** 画面共有をやめる。 */
+export const ScreenShareOffIcon = withDefaults(ScreenShareOff);

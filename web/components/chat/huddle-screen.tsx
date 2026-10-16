@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 
+import { Alert } from "@/components/ui/alert";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   AlertIcon,
   ChevronDownIcon,
   ClockIcon,
+  CloseIcon,
   HashIcon,
   HeadphonesIcon,
   LinkIcon,
@@ -13,8 +15,13 @@ import {
   MicIcon,
   MicOffIcon,
   MoreIcon,
+  PinIcon,
   PopOutIcon,
+  ScreenShareIcon,
+  ScreenShareOffIcon,
   ThreadIcon,
+  VideoIcon,
+  VideoOffIcon,
 } from "@/components/ui/icons";
 import { MenuItem } from "@/components/ui/menu-item";
 import { Popover } from "@/components/ui/popover";
@@ -22,22 +29,31 @@ import { Spinner } from "@/components/ui/spinner";
 import { cx } from "@/lib/cx";
 
 import type { HuddleHeaderMenu } from "./room-header";
-import type { HuddleParticipantView, HuddleProblem, HuddleScreenView, RoomKind } from "./types";
+import type { HuddleNotice, HuddleParticipantView, HuddleProblem, HuddleScreenView, HuddleShareView, RoomKind } from "./types";
 
 /**
  * ハドルの画面（ADR 0066 追記 C）。チャットのタブが開いた別のタブ（about:blank）に、チャットのタブから描く。
  * モバイルと、タブを開けなかったときは、同じタブの全画面に出す。
  *
  * 上に「#ルーム でハドルミーティングを行う」と人数、中央に参加者のタイル、下に操作の列、右にハドルのチャット（追記 A）。
- * 色の約束: 押せるもの（マイク・チャット）は緑、話している人と再接続中は「いま起きていること」の琥珀、「退出する」は danger。
+ * 色の約束: 押せるもの（マイク・カメラ・画面共有・チャット）は緑、話している人・再接続中・自分が共有中は「いま起きていること」の琥珀、「退出する」は danger。
+ *
+ * 並べ方（ADR 0068 決定 9）: 共有された画面も押して大きくした人もなければグリッド。
+ * どちらかがあれば、それを大きく出してほかを下の列に並べる。共有が 2 つで何も大きくしていなければ、2 つを並べる。
  */
 export function HuddleScreen({
   huddle,
   chat,
   chatOpen = false,
   deviceMenu,
+  cameraMenu,
   onToggleMute,
   onToggleDeviceMenu,
+  onToggleCamera,
+  onToggleCameraMenu,
+  onToggleShare,
+  onPin,
+  onDismissNotice,
   onToggleChat,
   onLeave,
   menu,
@@ -50,12 +66,19 @@ export function HuddleScreen({
   chatOpen?: boolean;
   /** マイクとスピーカーの選択（下の列のマイクの横の「⌄」で開く）。開いているときだけ渡す。 */
   deviceMenu?: ReactNode;
+  /** カメラの選択（カメラの横の「⌄」で開く。ADR 0068）。開いているときだけ渡す。 */
+  cameraMenu?: ReactNode;
   onToggleMute?: () => void;
   onToggleDeviceMenu?: () => void;
+  onToggleCamera?: () => void;
+  onToggleCameraMenu?: () => void;
+  onToggleShare?: () => void;
+  /** タイルを押して大きくする・戻す（参加者は user id、共有は共有の id）。 */
+  onPin?: (id: string) => void;
+  onDismissNotice?: () => void;
   onToggleChat?: () => void;
   onLeave?: () => void;
 }) {
-  const tiles = layout(huddle.participants.length);
   return (
     <div className="flex h-dvh flex-col bg-background">
       <ScreenHeader room={huddle.room}>
@@ -64,13 +87,18 @@ export function HuddleScreen({
 
       <div className="flex min-h-0 flex-1">
         <main className="flex min-w-0 flex-1 flex-col">
-          <ul aria-label="参加者" className={cx("grid min-h-0 flex-1 content-center gap-3 overflow-y-auto p-4 md:p-6", tiles.grid)}>
-            {huddle.participants.map((p) => (
-              <li key={p.id}>
-                <ParticipantTile participant={p} className={tiles.tile} />
-              </li>
-            ))}
-          </ul>
+          {huddle.sharing && (
+            // 自分が共有していることは「いま起きていること」なので琥珀。やめるボタンは琥珀にしない（押せるものは緑の側）
+            <div role="status" className="flex shrink-0 items-center justify-center gap-3 bg-attention-subtle px-4 py-2 text-sm text-attention-text">
+              <ScreenShareIcon className="size-4 shrink-0" />
+              <span>画面を共有しています</span>
+              <Button variant="secondary" size="sm" onClick={onToggleShare}>
+                共有をやめる
+              </Button>
+            </div>
+          )}
+
+          <Stage huddle={huddle} onPin={onPin} />
 
           {huddle.joiningSoon.length > 0 && (
             <ul className="flex flex-wrap justify-center gap-2 px-4 pb-3">
@@ -83,14 +111,20 @@ export function HuddleScreen({
             </ul>
           )}
 
+          {huddle.notice && <NoticeRow notice={huddle.notice} onDismiss={onDismissNotice} />}
+
           <div className="flex h-16 shrink-0 items-center gap-2 border-t border-border bg-surface px-3 md:px-4">
             <div className="flex flex-1 justify-center">
               <HuddleControls
-                muted={huddle.muted}
+                huddle={huddle}
                 chatOpen={chatOpen}
                 deviceMenu={deviceMenu}
+                cameraMenu={cameraMenu}
                 onToggleMute={onToggleMute}
                 onToggleDeviceMenu={onToggleDeviceMenu}
+                onToggleCamera={onToggleCamera}
+                onToggleCameraMenu={onToggleCameraMenu}
+                onToggleShare={onToggleShare}
                 onToggleChat={onToggleChat}
                 menu={menu}
               />
@@ -106,6 +140,93 @@ export function HuddleScreen({
   );
 }
 
+/** 参加者と共有された画面を並べる（ADR 0068 決定 5・9）。 */
+function Stage({ huddle, onPin }: { huddle: HuddleScreenView; onPin?: (id: string) => void }) {
+  const screens = huddle.screens ?? [];
+  const self = huddle.participants[0]?.id;
+  const pinned = huddle.pinnedId;
+  const pinnedScreen = screens.find((s) => s.id === pinned);
+  const pinnedPerson = huddle.participants.find((p) => p.id === pinned);
+
+  // 大きく出すもの。押して大きくしたものが先、なければ共有された画面
+  const main: Array<{ kind: "screen"; share: HuddleShareView } | { kind: "person"; participant: HuddleParticipantView }> = pinnedScreen
+    ? [{ kind: "screen", share: pinnedScreen }]
+    : pinnedPerson
+      ? [{ kind: "person", participant: pinnedPerson }]
+      : screens.map((share) => ({ kind: "screen" as const, share }));
+
+  if (main.length === 0) {
+    const tiles = layout(huddle.participants.length, huddle.participants.some((p) => p.video));
+    return (
+      <ul aria-label="参加者" className={cx("grid min-h-0 flex-1 content-center gap-3 overflow-y-auto p-4 md:p-6", tiles.grid)}>
+        {huddle.participants.map((p) => (
+          <li key={p.id}>
+            <ParticipantTile participant={p} self={p.id === self} className={tiles.tile} onPin={onPin} />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  const shown = new Set(main.map((m) => (m.kind === "screen" ? m.share.id : m.participant.id)));
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:p-4">
+      <div className={cx("grid min-h-0 flex-1 gap-3", main.length > 1 && "md:grid-cols-2")}>
+        {main.map((m) =>
+          m.kind === "screen" ? (
+            <ShareTile key={m.share.id} share={m.share} self={m.share.owner.id === self} pinned={m.share.id === pinned} onPin={onPin} className="h-full" />
+          ) : (
+            <ParticipantTile key={m.participant.id} participant={m.participant} self={m.participant.id === self} pinned className="h-full" onPin={onPin} />
+          ),
+        )}
+      </div>
+      <ul aria-label="参加者" className="flex shrink-0 justify-center-safe gap-2 overflow-x-auto pb-1">
+        {screens
+          .filter((s) => !shown.has(s.id))
+          .map((s) => (
+            <li key={s.id} className="w-40 shrink-0 md:w-48">
+              <ShareTile share={s} self={s.owner.id === self} onPin={onPin} className="h-24 md:h-28" />
+            </li>
+          ))}
+        {huddle.participants
+          .filter((p) => !shown.has(p.id))
+          .map((p) => (
+            <li key={p.id} className="w-40 shrink-0 md:w-48">
+              <ParticipantTile participant={p} self={p.id === self} compact className="h-24 md:h-28" onPin={onPin} />
+            </li>
+          ))}
+      </ul>
+    </div>
+  );
+}
+
+const noticeText: Record<HuddleNotice, string> = {
+  "camera-denied": "ブラウザがカメラの使用を許可していません。アドレスバーのサイトの設定でカメラを許可してください。",
+  "no-camera": "カメラが見つかりません。カメラをつないでから、もう一度オンにしてください。",
+  "screen-denied": "ブラウザが画面の共有を許可していません。システムの設定で、ブラウザに画面の収録を許可してください。",
+  "screen-share-full": "同時に画面を共有できるのは 2 人までです。ほかの人が共有をやめてから、もう一度共有してください。",
+};
+
+function NoticeRow({ notice, onDismiss }: { notice: HuddleNotice; onDismiss?: () => void }) {
+  return (
+    <div className="flex justify-center px-4 pb-3">
+      <div className="flex w-full max-w-160 items-start gap-2">
+        <Alert tone={notice === "screen-share-full" ? "locked" : "danger"} className="flex-1">
+          {noticeText[notice]}
+        </Alert>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="知らせを閉じる"
+          className="flex size-8 shrink-0 items-center justify-center rounded-sm text-text-secondary hover:bg-surface-muted"
+        >
+          <CloseIcon className="size-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * ハドルの帯（ADR 0066 追記 C）。ハドルのタブを開いていない間、チャットのタブの下の端に全幅で出す（Slack と同じ）。
  * ハドルの画面と同じ操作の列に、「新しいウィンドウで開く」（タブを開き直す）と「退出する」を添える。
@@ -115,8 +236,12 @@ export function HuddleBar({
   huddle,
   chatOpen = false,
   deviceMenu,
+  cameraMenu,
   onToggleMute,
   onToggleDeviceMenu,
+  onToggleCamera,
+  onToggleCameraMenu,
+  onToggleShare,
   onToggleChat,
   onPopOut,
   onLeave,
@@ -128,8 +253,12 @@ export function HuddleBar({
   /** チャットのタブの右のパネルで、ハドルのチャット（スレッド）を開いている。 */
   chatOpen?: boolean;
   deviceMenu?: ReactNode;
+  cameraMenu?: ReactNode;
   onToggleMute?: () => void;
   onToggleDeviceMenu?: () => void;
+  onToggleCamera?: () => void;
+  onToggleCameraMenu?: () => void;
+  onToggleShare?: () => void;
   onToggleChat?: () => void;
   onPopOut?: () => void;
   onLeave?: () => void;
@@ -153,7 +282,10 @@ export function HuddleBar({
             <span className="shrink-0 text-text-secondary">でのハドルミーティング</span>
           </p>
           <p className="truncate text-xs text-text-muted">
-            {huddle.connection === "connected" ? (
+            {huddle.sharing && huddle.connection === "connected" ? (
+              // 帯では映像を出さない（ADR 0068 決定 5）ので、共有していることだけを琥珀で知らせる
+              <span className="text-attention-text">画面を共有しています</span>
+            ) : huddle.connection === "connected" ? (
               others.length === 0 ? "ほかの参加者はいません" : `${huddle.participants.length} 人が参加中`
             ) : (
               <ConnectionLabel huddle={huddle} />
@@ -162,11 +294,15 @@ export function HuddleBar({
         </div>
       </div>
       <HuddleControls
-        muted={huddle.muted}
+        huddle={huddle}
         chatOpen={chatOpen}
         deviceMenu={deviceMenu}
+        cameraMenu={cameraMenu}
         onToggleMute={onToggleMute}
         onToggleDeviceMenu={onToggleDeviceMenu}
+        onToggleCamera={onToggleCamera}
+        onToggleCameraMenu={onToggleCameraMenu}
+        onToggleShare={onToggleShare}
         onToggleChat={onToggleChat}
         menu={menu}
       />
@@ -188,24 +324,35 @@ export function HuddleBar({
   );
 }
 
-/** ハドルの画面と帯で共有する操作の列（マイクと機器の選択・ハドルのチャット・「…」）。 */
+/** ハドルの画面と帯で共有する操作の列（マイクと機器の選択・カメラ・画面共有・ハドルのチャット・「…」）。 */
 function HuddleControls({
-  muted,
+  huddle,
   chatOpen,
   deviceMenu,
+  cameraMenu,
   onToggleMute,
   onToggleDeviceMenu,
+  onToggleCamera,
+  onToggleCameraMenu,
+  onToggleShare,
   onToggleChat,
   menu,
 }: {
-  muted: boolean;
+  huddle: HuddleScreenView;
   chatOpen: boolean;
   deviceMenu?: ReactNode;
+  cameraMenu?: ReactNode;
   onToggleMute?: () => void;
   onToggleDeviceMenu?: () => void;
+  onToggleCamera?: () => void;
+  onToggleCameraMenu?: () => void;
+  onToggleShare?: () => void;
   onToggleChat?: () => void;
   menu?: HuddleHeaderMenu;
 }) {
+  const { muted } = huddle;
+  const camera = huddle.camera === true;
+  const sharing = huddle.sharing ?? false;
   return (
     <div role="toolbar" aria-label="ハドルミーティングの操作" className="flex gap-2">
       <div className="relative flex">
@@ -234,6 +381,49 @@ function HuddleControls({
         </button>
         {deviceMenu}
       </div>
+      {/* camera がなければ（6.18a の画面）カメラの操作を出さない */}
+      {huddle.camera !== undefined && (
+      <div className="relative flex">
+        <button
+          type="button"
+          onClick={onToggleCamera}
+          aria-pressed={camera}
+          aria-label={camera ? "カメラをオフにする" : "カメラをオンにする"}
+          className={cx(
+            "flex h-10 w-11 items-center justify-center rounded-l-md border",
+            camera ? "border-primary bg-primary-subtle text-primary" : "border-border bg-surface text-text hover:bg-surface-muted",
+          )}
+        >
+          {camera ? <VideoIcon className="size-5" /> : <VideoOffIcon className="size-5" />}
+        </button>
+        <button
+          type="button"
+          onClick={onToggleCameraMenu}
+          aria-label="カメラを選ぶ"
+          aria-expanded={cameraMenu !== undefined}
+          aria-haspopup="menu"
+          className="flex h-10 w-7 items-center justify-center rounded-r-md border border-l-0 border-border bg-surface text-text-secondary hover:bg-surface-muted"
+        >
+          <ChevronDownIcon className="size-4" />
+        </button>
+        {cameraMenu}
+      </div>
+      )}
+      {/* モバイルのブラウザは画面を共有できない（ADR 0068 決定 9）。見るのはできる */}
+      {huddle.canShareScreen && (
+        <button
+          type="button"
+          onClick={onToggleShare}
+          aria-pressed={sharing}
+          aria-label={sharing ? "画面の共有をやめる" : "画面を共有する"}
+          className={cx(
+            "flex size-10 items-center justify-center rounded-md border",
+            sharing ? "border-primary bg-primary-subtle text-primary" : "border-border bg-surface text-text hover:bg-surface-muted",
+          )}
+        >
+          {sharing ? <ScreenShareOffIcon className="size-5" /> : <ScreenShareIcon className="size-5" />}
+        </button>
+      )}
       <button
         type="button"
         onClick={onToggleChat}
@@ -334,9 +524,10 @@ const problemText: Record<HuddleProblem, { title: string; detail: string; retry:
  * 人数に合わせて、タイルが画面に収まる列の数と高さにする（20 人まで。決定 7）。
  * 縦横比のユーティリティ（`aspect-video`）は既定のテーマを捨てているので使えず（CLAUDE.md のトークンの決まり）、高さで決める。
  */
-function layout(count: number): { grid: string; tile: string } {
-  if (count <= 1) return { grid: "mx-auto w-full max-w-160 grid-cols-1", tile: "h-72" };
-  if (count <= 4) return { grid: "mx-auto w-full max-w-240 grid-cols-2", tile: "h-40 md:h-52" };
+function layout(count: number, video: boolean): { grid: string; tile: string } {
+  // 映像は横長なので、少人数のタイルは高くして映像を大きく映す（ADR 0068）
+  if (count <= 1) return { grid: "mx-auto w-full max-w-160 grid-cols-1", tile: video ? "h-72 md:h-90" : "h-72" };
+  if (count <= 4) return { grid: "mx-auto w-full max-w-240 grid-cols-2", tile: video ? "h-40 md:h-64" : "h-40 md:h-52" };
   if (count <= 9) return { grid: "grid-cols-2 md:grid-cols-3", tile: "h-36 md:h-40" };
   return { grid: "grid-cols-3 md:grid-cols-5", tile: "h-28 md:h-32" };
 }
@@ -384,30 +575,103 @@ function ConnectionLabel({ huddle }: { huddle: HuddleScreenView }) {
 }
 
 /**
- * 参加者のタイル。音声だけなのでアバターを大きく出し、左下に名前、右下にミュートの印。
- * 話している人はタイルの枠を琥珀にする（Slack もタイルの枠で示す）。
+ * 参加者のタイル。カメラの映像があれば映像を、なければアバターを大きく出し、左下に名前、右下にミュートの印。
+ * 話している人はタイルの枠を琥珀にする（Slack もタイルの枠で示す）。押すと大きくする（ADR 0068 決定 9）。
+ * 自分の映像は鏡と同じく左右を反転して映す（送る映像は反転しない）。
  */
-function ParticipantTile({ participant: p, className }: { participant: HuddleParticipantView; className?: string }) {
+function ParticipantTile({
+  participant: p,
+  self,
+  pinned = false,
+  compact = false,
+  className,
+  onPin,
+}: {
+  participant: HuddleParticipantView;
+  self: boolean;
+  pinned?: boolean;
+  /** 下の列の小さなタイル。アバターを小さくする。 */
+  compact?: boolean;
+  className?: string;
+  onPin?: (id: string) => void;
+}) {
   const state = [p.speaking ? "話しています" : undefined, p.muted ? "ミュート中" : undefined].filter(Boolean).join("・");
   return (
     <figure
       aria-label={state ? `${p.name}（${state}）` : p.name}
       className={cx(
-        "relative flex items-center justify-center rounded-lg bg-surface ring-2",
+        "relative flex items-center justify-center overflow-hidden rounded-lg bg-surface ring-2",
         className,
         p.speaking ? "ring-attention" : "ring-transparent",
       )}
     >
-      <Avatar id={p.id} name={p.name} imageUrl={p.avatarUrl} size="xl" />
+      {p.video ? (
+        <div className={cx("absolute inset-0 *:size-full *:object-cover", self && "-scale-x-100")}>{p.video}</div>
+      ) : (
+        <Avatar id={p.id} name={p.name} imageUrl={p.avatarUrl} size={compact ? "lg" : "xl"} />
+      )}
+      <PinButton label={p.name} pinned={pinned} onClick={onPin && (() => onPin(p.id))} />
       {/* 右はミュートの印の場所を空けておく */}
-      <figcaption className="absolute right-10 bottom-2 left-2 flex">
+      <figcaption className="pointer-events-none absolute right-10 bottom-2 left-2 flex">
         <span className="truncate rounded-sm bg-surface-muted px-2 py-0.5 text-xs font-medium text-text">{p.name}</span>
       </figcaption>
       {p.muted && (
-        <span className="absolute right-2 bottom-2 flex size-6 items-center justify-center rounded-full bg-surface-muted text-text-secondary">
+        <span className="pointer-events-none absolute right-2 bottom-2 flex size-6 items-center justify-center rounded-full bg-surface-muted text-text-secondary">
           <MicOffIcon className="size-3.5" />
         </span>
       )}
     </figure>
+  );
+}
+
+/** 共有された画面のタイル（ADR 0068 決定 7）。文字が読めるよう、切らずに収める。 */
+function ShareTile({
+  share,
+  self,
+  pinned = false,
+  className,
+  onPin,
+}: {
+  share: HuddleShareView;
+  self: boolean;
+  pinned?: boolean;
+  className?: string;
+  onPin?: (id: string) => void;
+}) {
+  const label = self ? "あなたの画面" : `${share.owner.name} さんの画面`;
+  return (
+    <figure aria-label={label} className={cx("relative flex items-center justify-center overflow-hidden rounded-lg bg-surface-muted", className)}>
+      <div className="absolute inset-0 *:size-full *:object-contain">{share.video}</div>
+      <PinButton label={label} pinned={pinned} onClick={onPin && (() => onPin(share.id))} />
+      <figcaption className="pointer-events-none absolute right-2 bottom-2 left-2 flex">
+        <span className="flex min-w-0 items-center gap-1.5 rounded-sm bg-surface px-2 py-0.5 text-xs font-medium text-text">
+          <ScreenShareIcon className="size-3.5 shrink-0 text-text-secondary" />
+          <span className="truncate">{label}</span>
+        </span>
+      </figcaption>
+    </figure>
+  );
+}
+
+/**
+ * タイルを大きくする・戻すボタン。タイル全体を覆う透明なボタンにして、どこを押しても効くようにする。
+ * 大きくしている間だけ、右上にピンの印を出す。
+ */
+function PinButton({ label, pinned, onClick }: { label: string; pinned: boolean; onClick?: () => void }) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={pinned}
+        aria-label={pinned ? `${label}を元の大きさに戻す` : `${label}を大きく表示`}
+        className="absolute inset-0 rounded-lg focus-visible:outline-2 focus-visible:outline-primary"
+      />
+      {pinned && (
+        <span aria-hidden className="pointer-events-none absolute top-2 right-2 flex size-7 items-center justify-center rounded-full bg-surface text-text-secondary">
+          <PinIcon className="size-3.5" />
+        </span>
+      )}
+    </>
   );
 }

@@ -13,6 +13,8 @@ import {
   MicIcon,
   MicOffIcon,
   SpeakerIcon,
+  VideoIcon,
+  VideoOffIcon,
 } from "@/components/ui/icons";
 import { Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
@@ -24,14 +26,19 @@ import type { HuddlePreviewView, MediaDeviceView } from "./types";
  *
  * Slack と同じく、自分のタイル・マイクのオンとオフ・マイクとスピーカーの選択・「キャンセル」「開始（参加）」を並べる。
  * マイクの許可はこの画面で求めるので、許可されない・マイクがないときもここで知らせ、開始を押せなくする。
+ *
+ * カメラ（ADR 0068 決定 1）: マイクの横にオンとオフ、機器の選択を足す。既定はオフで、オンにしたときにカメラの許可を求める。
+ * カメラを使えなくても、音声だけで入れるので開始は押せる。
  */
 export function HuddlePreview({
   preview,
   openMenu,
   onToggleMenu,
   onToggleMic,
+  onToggleCamera,
   onSelectMic,
   onSelectSpeaker,
+  onSelectCamera,
   onCancel,
   onStart,
   onJoinRoom,
@@ -40,11 +47,13 @@ export function HuddlePreview({
   /** 参加していない public のチャンネル（`blocked: "not-member"`）で、先にチャンネルに参加する（ADR 0067 決定 1）。 */
   onJoinRoom?: () => void;
   /** 開いている機器の選択（story 用に外から開ける）。 */
-  openMenu?: "mic" | "speaker";
-  onToggleMenu?: (menu: "mic" | "speaker") => void;
+  openMenu?: "mic" | "speaker" | "camera";
+  onToggleMenu?: (menu: "mic" | "speaker" | "camera") => void;
   onToggleMic?: () => void;
+  onToggleCamera?: () => void;
   onSelectMic?: (id: string) => void;
   onSelectSpeaker?: (id: string) => void;
+  onSelectCamera?: (id: string) => void;
   onCancel?: () => void;
   onStart?: () => void;
 }) {
@@ -52,7 +61,8 @@ export function HuddlePreview({
   // 「を開始する」と「に参加する」で助詞が変わるので、句ごと持つ
   const action = preview.action === "start" ? "ハドルミーティングを開始する" : "ハドルミーティングに参加する";
   const micUsable = problem === undefined;
-  const { blocked } = preview;
+  const { blocked, cameras, cameraProblem } = preview;
+  const cameraOn = (preview.cameraOn ?? false) && cameraProblem === undefined;
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-background px-4 py-8">
       <section
@@ -65,21 +75,49 @@ export function HuddlePreview({
         </h1>
 
         <div className="flex flex-col items-center gap-5 px-6 pt-6 pb-6">
-          <div className="relative flex aspect-square w-full max-w-60 items-center justify-center rounded-lg bg-surface-muted">
-            <Avatar id={self.id} name={self.name} imageUrl={self.avatarUrl} size="xl" />
-            <button
-              type="button"
-              onClick={onToggleMic}
-              disabled={!micUsable}
-              aria-pressed={!preview.micOn}
-              aria-label={preview.micOn ? "マイクをオフにする" : "マイクをオンにする"}
-              className={cx(
-                "absolute bottom-3 flex size-10 items-center justify-center rounded-full border disabled:border-border disabled:bg-surface-muted disabled:text-text-muted",
-                preview.micOn ? "border-border bg-surface text-text-secondary hover:bg-surface-muted" : "border-primary bg-primary-subtle text-primary",
+          <div
+            className={cx(
+              "relative flex w-full items-center justify-center overflow-hidden rounded-lg bg-surface-muted",
+              // カメラを使えるプレビューは映像に合わせて横長にする（6.18a の音声だけの画面は正方形のまま）
+              cameras ? "h-60 max-w-100" : "aspect-square max-w-60",
+            )}
+          >
+            {cameraOn && preview.video ? (
+              // 自分の映像は鏡と同じく左右を反転して映す（送る映像は反転しない）
+              <div className="absolute inset-0 -scale-x-100 *:size-full *:object-cover">{preview.video}</div>
+            ) : (
+              <Avatar id={self.id} name={self.name} imageUrl={self.avatarUrl} size="xl" />
+            )}
+            <div className="absolute bottom-3 flex gap-2">
+              <button
+                type="button"
+                onClick={onToggleMic}
+                disabled={!micUsable}
+                aria-pressed={!preview.micOn}
+                aria-label={preview.micOn ? "マイクをオフにする" : "マイクをオンにする"}
+                className={cx(
+                  "flex size-10 items-center justify-center rounded-full border disabled:border-border disabled:bg-surface-muted disabled:text-text-muted",
+                  preview.micOn ? "border-border bg-surface text-text-secondary hover:bg-surface-muted" : "border-primary bg-primary-subtle text-primary",
+                )}
+              >
+                {preview.micOn && micUsable ? <MicIcon className="size-4" /> : <MicOffIcon className="size-4" />}
+              </button>
+              {cameras && (
+                <button
+                  type="button"
+                  onClick={onToggleCamera}
+                  disabled={cameraProblem !== undefined}
+                  aria-pressed={cameraOn}
+                  aria-label={cameraOn ? "カメラをオフにする" : "カメラをオンにする"}
+                  className={cx(
+                    "flex size-10 items-center justify-center rounded-full border disabled:border-border disabled:bg-surface-muted disabled:text-text-muted",
+                    cameraOn ? "border-primary bg-primary-subtle text-primary" : "border-border bg-surface text-text-secondary hover:bg-surface-muted",
+                  )}
+                >
+                  {cameraOn ? <VideoIcon className="size-4" /> : <VideoOffIcon className="size-4" />}
+                </button>
               )}
-            >
-              {preview.micOn && micUsable ? <MicIcon className="size-4" /> : <MicOffIcon className="size-4" />}
-            </button>
+            </div>
           </div>
 
           {/* ハドルのリンクから開いたが、そのままでは入れない（ADR 0067 決定 1）。マイクの問題より先に知らせる */}
@@ -98,6 +136,14 @@ export function HuddlePreview({
               {problem === "mic-denied"
                 ? "ブラウザがマイクの使用を許可していません。アドレスバーのサイトの設定でマイクを許可してから、もう一度開いてください。"
                 : "マイクが見つかりません。マイクをつないでから、もう一度開いてください。"}
+            </Alert>
+          )}
+          {cameraProblem && !blocked && (
+            // カメラを使えなくても音声だけで入れるので、止めずに知らせるだけ
+            <Alert tone="locked" className="w-full">
+              {cameraProblem === "camera-denied"
+                ? "ブラウザがカメラの使用を許可していません。カメラを使うには、アドレスバーのサイトの設定でカメラを許可してください。"
+                : "カメラが見つかりません。音声だけで参加できます。"}
             </Alert>
           )}
 
@@ -121,6 +167,18 @@ export function HuddlePreview({
                 open={openMenu === "speaker"}
                 onToggle={() => onToggleMenu?.("speaker")}
                 onSelect={onSelectSpeaker}
+              />
+            )}
+            {cameras && (
+              <DeviceSelect
+                icon={VideoIcon}
+                label="カメラ"
+                devices={cameras}
+                selectedId={preview.cameraId}
+                disabled={cameraProblem !== undefined}
+                open={openMenu === "camera"}
+                onToggle={() => onToggleMenu?.("camera")}
+                onSelect={onSelectCamera}
               />
             )}
           </div>
@@ -236,6 +294,25 @@ export function HuddleDeviceMenu({
           <DeviceOptions label="スピーカー" devices={speakers} selectedId={speakerId ?? speakers[0]?.id} onSelect={onSelectSpeaker} />
         </div>
       )}
+    </Popover>
+  );
+}
+
+/** ハドルの画面の下の列のカメラの横の「⌄」で開く、カメラの選択（ADR 0068）。マイクの選択と同じ形。 */
+export function HuddleCameraMenu({
+  cameras,
+  cameraId,
+  onSelectCamera,
+  onDismiss,
+}: {
+  cameras: MediaDeviceView[];
+  cameraId?: string;
+  onSelectCamera?: (id: string) => void;
+  onDismiss?: () => void;
+}) {
+  return (
+    <Popover label="カメラを選ぶ" onDismiss={onDismiss} className="bottom-full left-0 mb-2 w-72">
+      <DeviceOptions label="カメラ" devices={cameras} selectedId={cameraId ?? cameras[0]?.id} onSelect={onSelectCamera} />
     </Popover>
   );
 }
