@@ -5,6 +5,7 @@ import type {
   HuddleList,
   HuddleListFilter,
   HuddleSuggestions,
+  HuddleTrackRequest,
   JoinedHuddle,
   JoinHuddleRequest,
   SessionDescription,
@@ -59,9 +60,12 @@ export function createHuddleApi(request: Session["request"]) {
     joinHuddle: (roomId: string, body: JoinHuddleRequest) =>
       request<JoinedHuddle>("POST", `/api/v1/rooms/${encodeURIComponent(roomId)}/huddle/participants`, body),
 
-    /** 同じハドルにいる人の音声を受ける（決定 9）。offer が返ったら answer を renegotiateHuddle で返す。 */
-    subscribeHuddle: (huddleId: string, participantId: string, userIds: string[]) =>
-      request<SubscribedHuddle>("POST", `${participant(huddleId, participantId)}/subscriptions`, { user_ids: userIds }),
+    /**
+     * 同じハドルにいる人のトラックを受ける（決定 9・ADR 0068 決定 5）。offer が返ったら answer を renegotiateHuddle で返す。
+     * カメラは受ける層（quality）を付ける。
+     */
+    subscribeHuddle: (huddleId: string, participantId: string, tracks: HuddleTrackRequest[]) =>
+      request<SubscribedHuddle>("POST", `${participant(huddleId, participantId)}/subscriptions`, { tracks }),
 
     renegotiateHuddle: (huddleId: string, participantId: string, answer: SessionDescription) =>
       request<void>("PUT", `${participant(huddleId, participantId)}/renegotiate`, { answer }),

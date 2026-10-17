@@ -86,7 +86,10 @@ type ChatService interface {
 	HuddleSuggestions(ctx context.Context, actor, workspaceID ulid.ULID) ([]chat.HuddleSuggestion, error)
 	ResolveHuddleLinks(ctx context.Context, actor ulid.ULID, roomIDs []ulid.ULID) ([]chat.HuddleLinkResult, error)
 	JoinHuddle(ctx context.Context, actor, authSessionID, roomID ulid.ULID, in chat.JoinHuddleInput) (chat.JoinedHuddle, error)
-	SubscribeHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, userIDs []ulid.ULID) (chat.SubscribedHuddle, error)
+	SubscribeHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, reqs []chat.HuddleTrackRequest) (chat.SubscribedHuddle, error)
+	SetHuddleSubscriptionQuality(ctx context.Context, actor, huddleID, participantID ulid.ULID, mid string, userID ulid.ULID, quality chat.HuddleQuality) error
+	PublishHuddleTrack(ctx context.Context, actor, huddleID, participantID ulid.ULID, kind chat.HuddleTrackKind, offer chat.SessionDescription, mid string) (chat.SessionDescription, error)
+	UnpublishHuddleTrack(ctx context.Context, actor, huddleID, participantID ulid.ULID, kind chat.HuddleTrackKind) error
 	RenegotiateHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, answer chat.SessionDescription) error
 	UnsubscribeHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID, mids []string) error
 	SetHuddleMuted(ctx context.Context, actor, huddleID, participantID ulid.ULID, muted bool) error
@@ -196,6 +199,10 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("POST /api/v1/rooms/{roomID}/huddle/participants", h.joinHuddle)
 	handle("POST /api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions", h.subscribeHuddle)
 	handle("POST /api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions/close", h.unsubscribeHuddle)
+	handle("PATCH /api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions/{mid}", h.updateHuddleSubscription)
+	// カメラと画面共有（ADR 0068 決定 3）
+	handle("POST /api/v1/huddles/{huddleID}/participants/{participantID}/tracks", h.publishHuddleTrack)
+	handle("DELETE /api/v1/huddles/{huddleID}/participants/{participantID}/tracks/{kind}", h.unpublishHuddleTrack)
 	handle("PUT /api/v1/huddles/{huddleID}/participants/{participantID}/renegotiate", h.renegotiateHuddle)
 	handle("PATCH /api/v1/huddles/{huddleID}/participants/{participantID}", h.updateHuddleParticipant)
 	handle("DELETE /api/v1/huddles/{huddleID}/participants/{participantID}", h.leaveHuddle)

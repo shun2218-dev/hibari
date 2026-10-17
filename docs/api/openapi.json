@@ -7234,8 +7234,8 @@
         "tags": [
           "huddles"
         ],
-        "summary": "ほかの参加者の音声を受ける",
-        "description": "同じハドルにいる人の音声を受ける。自分といない人は黙って飛ばす。offer が返ったら、ブラウザの answer を renegotiate で返す。参加がもうなければ 409 huddle-participant-gone。",
+        "summary": "ほかの参加者のトラックを受ける",
+        "description": "同じハドルにいる人の音声・カメラ・画面を受ける（音声は全員、映像はステージに載せた人の分だけ。ADR 0068 決定 5）。カメラは受ける層（quality）を付ける。自分・いない人・その種類を送っていない人は黙って飛ばす。offer が返ったら、ブラウザの answer を renegotiate で返す。参加がもうなければ 409 huddle-participant-gone。",
         "parameters": [
           {
             "name": "huddleID",
@@ -7361,8 +7361,8 @@
         "tags": [
           "huddles"
         ],
-        "summary": "受けている音声を閉じる",
-        "description": "抜けた人の分の受けるトラックを閉じる。",
+        "summary": "受けているトラックを閉じる",
+        "description": "抜けた人・カメラや画面を止めた人・ステージから外れた人の分の受けるトラックを閉じる。",
         "parameters": [
           {
             "name": "huddleID",
@@ -7439,6 +7439,361 @@
           },
           "415": {
             "description": "Content-Type が application/json ではない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "値が不正（errors に項目ごとの理由が入る）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依存するサービスに接続できない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/huddles/{huddleID}/participants/{participantID}/subscriptions/{mid}": {
+      "patch": {
+        "operationId": "updateHuddleSubscription",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "受けているカメラの層を替える",
+        "description": "タイルの大きさに合わせて、mid で受けている user_id のカメラの層（high / medium / low）を替える。SDP のやり取りは要らない（ADR 0068 決定 6）。相手がカメラを止めた後・同じハドルにいなければ 404。",
+        "parameters": [
+          {
+            "name": "huddleID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "participantID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mid",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHuddleSubscriptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "成功（本文なし）"
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "見つからない（存在しないことと、読めないことを区別しない）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "いまの状態と競合する",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "本文が大きすぎる",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type が application/json ではない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "値が不正（errors に項目ごとの理由が入る）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依存するサービスに接続できない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/huddles/{huddleID}/participants/{participantID}/tracks": {
+      "post": {
+        "operationId": "publishHuddleTrack",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "カメラか画面を送り始める",
+        "description": "ブラウザの offer で、足したカメラか画面の transceiver（mid）を送り始め、answer を返す。音声と同じセッションに載せる（ADR 0068 決定 1・3）。画面を同時に共有できるのは 2 人まで（3 人目は 409 huddle-screen-share-full）。",
+        "parameters": [
+          {
+            "name": "huddleID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "participantID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishHuddleTrackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedHuddleTrack"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "いまの状態と競合する",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "本文が大きすぎる",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type が application/json ではない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "値が不正（errors に項目ごとの理由が入る）",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依存するサービスに接続できない",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/huddles/{huddleID}/participants/{participantID}/tracks/{kind}": {
+      "delete": {
+        "operationId": "unpublishHuddleTrack",
+        "tags": [
+          "huddles"
+        ],
+        "summary": "カメラか画面を送るのをやめる",
+        "description": "kind は camera か screen。トラックを閉じる（止めたまま送り続けない。ADR 0068 決定 2）。もうやめている・参加がもうなくても 204。",
+        "parameters": [
+          {
+            "name": "huddleID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "participantID",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "description": "ID（ULID）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "成功（本文なし）"
+          },
+          "401": {
+            "description": "認証されていない、または認証に失敗した",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "権限がない。email を確認していない利用者もここで止める（email-unverified。ADR 0053）",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9191,11 +9546,21 @@
           },
           "muted": {
             "type": "boolean"
+          },
+          "camera": {
+            "type": "boolean",
+            "description": "camera はカメラを送っているか（ADR 0068 決定 4）。"
+          },
+          "screen": {
+            "type": "boolean",
+            "description": "screen は画面を共有しているか。"
           }
         },
         "required": [
           "user_id",
-          "muted"
+          "muted",
+          "camera",
+          "screen"
         ]
       },
       "HuddlePlace": {
@@ -9227,11 +9592,22 @@
           "name"
         ]
       },
+      "HuddleQuality": {
+        "type": "string",
+        "enum": [
+          "high",
+          "medium",
+          "low"
+        ]
+      },
       "HuddleSubscription": {
         "type": "object",
         "properties": {
           "user_id": {
             "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HuddleTrackKind"
           },
           "mid": {
             "type": "string"
@@ -9239,6 +9615,7 @@
         },
         "required": [
           "user_id",
+          "kind",
           "mid"
         ]
       },
@@ -9277,6 +9654,33 @@
         },
         "required": [
           "suggestions"
+        ]
+      },
+      "HuddleTrackKind": {
+        "type": "string",
+        "enum": [
+          "audio",
+          "camera",
+          "screen"
+        ]
+      },
+      "HuddleTrackRequest": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HuddleTrackKind"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/HuddleQuality",
+            "description": "quality はカメラのときだけ要る（受ける層。ADR 0068 決定 6）。音声と画面では送らない。"
+          }
+        },
+        "required": [
+          "user_id",
+          "kind"
         ]
       },
       "ICEServer": {
@@ -10643,6 +11047,37 @@
           "reason"
         ]
       },
+      "PublishHuddleTrackRequest": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/HuddleTrackKind"
+          },
+          "offer": {
+            "$ref": "#/components/schemas/SessionDescription"
+          },
+          "mid": {
+            "type": "string",
+            "description": "mid は offer の中の、足したカメラか画面の transceiver の mid。"
+          }
+        },
+        "required": [
+          "kind",
+          "offer",
+          "mid"
+        ]
+      },
+      "PublishedHuddleTrack": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/SessionDescription"
+          }
+        },
+        "required": [
+          "answer"
+        ]
+      },
       "ReadState": {
         "type": "object",
         "properties": {
@@ -11412,16 +11847,16 @@
       "SubscribeHuddleRequest": {
         "type": "object",
         "properties": {
-          "user_ids": {
+          "tracks": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/HuddleTrackRequest"
             },
-            "description": "user_ids は音声を受けたい相手（同じハドルにいる人）。いない人と自分は黙って飛ばす。"
+            "description": "tracks は受けたい相手のトラック。音声は全員、映像はステージに載せた人の分だけを頼む（ADR 0068 決定 5）。 いない人・自分・その種類を送っていない人は黙って飛ばす。"
           }
         },
         "required": [
-          "user_ids"
+          "tracks"
         ]
       },
       "SubscribedHuddle": {
@@ -11758,6 +12193,22 @@
         },
         "required": [
           "muted"
+        ]
+      },
+      "UpdateHuddleSubscriptionRequest": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "user_id はその mid で受けているカメラの持ち主（サーバーは受けているものを覚えていない）。"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/HuddleQuality"
+          }
+        },
+        "required": [
+          "user_id",
+          "quality"
         ]
       },
       "UpdateProfileRequest": {

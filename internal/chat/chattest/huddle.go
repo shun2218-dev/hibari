@@ -20,8 +20,18 @@ type Media struct {
 	closed []string
 	// Revoked は取り消した TURN の認証情報のユーザー名。
 	revoked []string
+	// closedMids は Close で mid を指定して閉じたもの（"セッション/mid"）。
+	closedMids []string
+	// pushed は Push で送り始めたもの（"セッション/トラックの名前/mid"）。
+	pushed []string
+	// subscribed は Subscribe で頼まれた相手のトラック。
+	subscribed []chat.RemoteTrack
+	// qualities は SetQuality で替えた層（"セッション/mid/相手のトラックの名前/層"）。
+	qualities []string
 	// FailPublish が true なら Publish が失敗する（Cloudflare につながらない）。
 	FailPublish bool
+	// FailPush が true なら Push が失敗する。
+	FailPush bool
 }
 
 // ICEServers は決まった形の認証情報を返す。ユーザー名は呼ぶたびに変える。
@@ -60,11 +70,33 @@ func (m *Media) Publish(_ context.Context, _ chat.SessionDescription, mid, _ str
 	return id, chat.SessionDescription{Type: "answer", SDP: "v=0 answer for " + id + " mid " + mid}, nil
 }
 
+// Push は、すでにあるセッションでトラックを送り始めたことにする（ADR 0068）。
+func (m *Media) Push(_ context.Context, sessionID string, _ chat.SessionDescription, mid, trackName string) (chat.SessionDescription, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.FailPush {
+		return chat.SessionDescription{}, fmt.Errorf("cloudflare is unreachable")
+	}
+	m.pushed = append(m.pushed, sessionID+"/"+trackName+"/"+mid)
+	return chat.SessionDescription{Type: "answer", SDP: "v=0 answer for " + sessionID + " mid " + mid}, nil
+}
+
+// SetQuality は替えた層を記録する。
+func (m *Media) SetQuality(_ context.Context, sessionID, mid string, remote chat.RemoteTrack) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.qualities = append(m.qualities, sessionID+"/"+mid+"/"+remote.TrackName+"/"+string(remote.Quality))
+	return nil
+}
+
 // Subscribe は、頼まれたトラックを順に mid "1", "2", ... で受けたことにする。
 func (m *Media) Subscribe(_ context.Context, sessionID string, remotes []chat.RemoteTrack) (chat.SubscribeResult, error) {
+	m.mu.Lock()
+	m.subscribed = append(m.subscribed, remotes...)
+	m.mu.Unlock()
 	res := chat.SubscribeResult{Offer: &chat.SessionDescription{Type: "offer", SDP: "v=0 pull for " + sessionID}}
 	for i, r := range remotes {
-		res.Tracks = append(res.Tracks, chat.SubscribedTrack{SessionID: r.SessionID, Mid: fmt.Sprint(i + 1), OK: true})
+		res.Tracks = append(res.Tracks, chat.SubscribedTrack{SessionID: r.SessionID, TrackName: r.TrackName, Mid: fmt.Sprint(i + 1), OK: true})
 	}
 	return res, nil
 }
@@ -72,12 +104,43 @@ func (m *Media) Subscribe(_ context.Context, sessionID string, remotes []chat.Re
 // Renegotiate は何もしない。
 func (m *Media) Renegotiate(context.Context, string, chat.SessionDescription) error { return nil }
 
-// Close は閉じたセッションを記録する。
-func (m *Media) Close(_ context.Context, sessionID string, _ []string) error {
+// Close は閉じたセッションを記録する。mid を指定したときは、閉じた mid も記録する。
+func (m *Media) Close(_ context.Context, sessionID string, mids []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.closed = append(m.closed, sessionID)
+	for _, mid := range mids {
+		m.closedMids = append(m.closedMids, sessionID+"/"+mid)
+	}
 	return nil
+}
+
+// ClosedMids は mid を指定して閉じたもの（"セッション/mid"）。
+func (m *Media) ClosedMids() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.closedMids)
+}
+
+// Pushed は Push で送り始めたもの（"セッション/トラックの名前/mid"）。
+func (m *Media) Pushed() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.pushed)
+}
+
+// Subscribed は Subscribe で頼まれた相手のトラック。
+func (m *Media) Subscribed() []chat.RemoteTrack {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.subscribed)
+}
+
+// Qualities は SetQuality で替えた層（"セッション/mid/相手のトラックの名前/層"）。
+func (m *Media) Qualities() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.qualities)
 }
 
 // Closed は Close を呼ばれたセッション。

@@ -16,6 +16,9 @@ import (
 // ErrHuddleFull は、ハドルが上限の人数に達していることを表す（決定 7）。
 var ErrHuddleFull = errors.New("chat: huddle is full")
 
+// ErrHuddleScreenShareFull は、同時に画面を共有できる人数（2 人）に達していることを表す（ADR 0068 決定 7）。
+var ErrHuddleScreenShareFull = errors.New("chat: huddle screen share is full")
+
 // HuddleParticipant は「この端末のこの参加」（決定 4）。同じ人が別の端末から入り直すと、別の参加になる。
 type HuddleParticipant struct {
 	ID       ulid.ULID
@@ -27,8 +30,41 @@ type HuddleParticipant struct {
 	SFUSessionID string
 	// TrackName は送っている音声のトラックの名前。ほかの人が受けるときに使う（決定 9）。
 	TrackName string
+	// CameraMid / ScreenMid は、送っているカメラと画面のトラックの mid（ADR 0068 決定 4）。送っていなければ空。
+	// トラックの名前は種類で決まる（huddleTrackName）ので、閉じるときに要る mid だけを持つ。
+	CameraMid string
+	ScreenMid string
 	Muted     bool
 	JoinedAt  time.Time
+}
+
+// HuddleTrackKind は参加者が送るトラックの種類（ADR 0068 決定 1）。1 人が送るのは種類ごとに 1 本まで。
+type HuddleTrackKind string
+
+const (
+	HuddleTrackAudio  HuddleTrackKind = "audio"
+	HuddleTrackCamera HuddleTrackKind = "camera"
+	HuddleTrackScreen HuddleTrackKind = "screen"
+)
+
+// HuddleQuality は、受けるカメラの映像の層（ADR 0068 決定 6）。
+// Cloudflare の rid は API に出さず、platform の実装が引き直す（決定 6。Cloudflare の語彙を漏らさない）。
+type HuddleQuality string
+
+const (
+	HuddleQualityHigh   HuddleQuality = "high"
+	HuddleQualityMedium HuddleQuality = "medium"
+	HuddleQualityLow    HuddleQuality = "low"
+)
+
+func (q HuddleQuality) valid() bool {
+	return q == HuddleQualityHigh || q == HuddleQualityMedium || q == HuddleQualityLow
+}
+
+// HuddleTrackResult は HuddleStates.SetTrack の結果。Previous は書き換える前の mid（送っていなければ空）。
+type HuddleTrackResult struct {
+	Version  int64
+	Previous string
 }
 
 // HuddleSnapshot は、あるハドルのいまの状態。
@@ -69,6 +105,10 @@ type HuddleStates interface {
 	Sweep(ctx context.Context, now time.Time, max int) ([]RemovedParticipant, error)
 	// SetMuted はミュートを書き換えて新しい版を返す。参加がなければ ok は false。
 	SetMuted(ctx context.Context, huddleID, participantID ulid.ULID, muted bool) (version int64, ok bool, err error)
+	// SetTrack は、送っているカメラか画面のトラックの mid を書き換える（空なら送っていない。ADR 0068 決定 4）。
+	// 画面を新しく送るとき、ほかに screenLimit 人が共有していれば ErrHuddleScreenShareFull（数えるのと書くのを 1 つの操作でする。決定 7）。
+	// 参加がなければ ErrHuddleParticipantGone。mid が変わらなければ版を進めない。
+	SetTrack(ctx context.Context, huddleID, participantID ulid.ULID, kind HuddleTrackKind, mid string, screenLimit int) (HuddleTrackResult, error)
 	// JoiningSoon は「もうすぐ参加する」を until まで残し、新しい版を返す。
 	JoiningSoon(ctx context.Context, huddleID, userID ulid.ULID, until, now time.Time) (int64, error)
 	// Clear はハドルの全員を外し、ハドルの状態を消す。外した参加を返す。
@@ -131,11 +171,15 @@ type ICECredentials struct {
 type RemoteTrack struct {
 	SessionID string
 	TrackName string
+	// Quality は、simulcast で送られているカメラのどの層を受けるか（ADR 0068 決定 6）。音声と画面は空。
+	Quality HuddleQuality
 }
 
 // SubscribedTrack は受けた結果。OK が false なら、そのトラックだけ受けられなかった（相手が抜けた直後など）。
+// 同じ相手のセッションから音声とカメラを受けることがあるので、どれかはトラックの名前で見分ける。
 type SubscribedTrack struct {
 	SessionID string
+	TrackName string
 	Mid       string
 	OK        bool
 }
@@ -158,6 +202,10 @@ type HuddleMedia interface {
 	RevokeICE(ctx context.Context, username string) error
 	// Publish はセッションを作り、ブラウザの offer で mid の音声を trackName として送る設定をし、answer を返す。
 	Publish(ctx context.Context, offer SessionDescription, mid, trackName string) (sessionID string, answer SessionDescription, err error)
+	// Push は、すでにあるセッションで mid のトラックを trackName として送り始め、answer を返す（カメラと画面。ADR 0068 決定 1・3）。
+	Push(ctx context.Context, sessionID string, offer SessionDescription, mid, trackName string) (SessionDescription, error)
+	// SetQuality は、sessionID のセッションが mid で受けている remote の層を remote.Quality に替える（SDP のやり取りなし。ADR 0068 決定 6）。
+	SetQuality(ctx context.Context, sessionID, mid string, remote RemoteTrack) error
 	// Subscribe は sessionID のセッションで、ほかのセッションのトラックを受ける。
 	Subscribe(ctx context.Context, sessionID string, remotes []RemoteTrack) (SubscribeResult, error)
 	// Renegotiate は Subscribe の offer に対するブラウザの answer を渡す。

@@ -22,6 +22,8 @@ type huddleBody struct {
 	Participants []struct {
 		UserID string `json:"user_id"`
 		Muted  bool   `json:"muted"`
+		Camera bool   `json:"camera"`
+		Screen bool   `json:"screen"`
 	} `json:"participants"`
 	JoiningSoon []string `json:"joining_soon"`
 }
@@ -132,7 +134,7 @@ func TestHuddleAPI(t *testing.T) {
 	alice := c.joinHuddle(f.alice, f.room.ID)
 
 	t.Run("同じハドルの人の音声を受ける", func(t *testing.T) {
-		r := c.as(f.owner, http.MethodPost, participantPath+"/subscriptions", map[string]any{"user_ids": []string{f.alice.id}})
+		r := c.as(f.owner, http.MethodPost, participantPath+"/subscriptions", map[string]any{"tracks": []map[string]any{{"user_id": f.alice.id, "kind": "audio"}}})
 		expectStatus(t, r, http.StatusOK)
 		body := decode[struct {
 			Offer *struct {
@@ -163,6 +165,90 @@ func TestHuddleAPI(t *testing.T) {
 		alicePath := "/api/v1/huddles/" + alice.Huddle.ID + "/participants/" + alice.ParticipantID
 		expectStatus(t, c.as(f.alice, http.MethodDelete, alicePath, nil), http.StatusNoContent)
 		expectStatus(t, c.as(f.alice, http.MethodDelete, alicePath, nil), http.StatusNoContent)
+	})
+}
+
+// カメラと画面共有（ADR 0068）の HTTP の API。
+func TestHuddleVideoAPI(t *testing.T) {
+	c := newAPI(t)
+	f := newHuddleFixture(t, c)
+	bob := c.registerUser()
+	c.joinViaInvite(f.owner, f.ws.ID, bob)
+	expectStatus(t, c.as(bob, http.MethodPost, "/api/v1/rooms/"+f.room.ID+"/join", nil), http.StatusOK)
+
+	owner := c.joinHuddle(f.owner, f.room.ID)
+	alice := c.joinHuddle(f.alice, f.room.ID)
+	b := c.joinHuddle(bob, f.room.ID)
+	path := func(j joinedHuddleBody) string {
+		return "/api/v1/huddles/" + j.Huddle.ID + "/participants/" + j.ParticipantID
+	}
+
+	t.Run("カメラを送り始めると answer を返し、ルームの応答の参加者に camera が載る", func(t *testing.T) {
+		r := c.as(f.alice, http.MethodPost, path(alice)+"/tracks", map[string]any{"kind": "camera", "offer": testOffer, "mid": "1"})
+		expectStatus(t, r, http.StatusCreated)
+		if body := decode[struct {
+			Answer struct {
+				Type string `json:"type"`
+			} `json:"answer"`
+		}](t, r); body.Answer.Type != "answer" {
+			t.Errorf("body = %s", r.body)
+		}
+		r = c.as(f.owner, http.MethodGet, "/api/v1/rooms/"+f.room.ID, nil)
+		expectStatus(t, r, http.StatusOK)
+		room := decode[struct {
+			Huddle *huddleBody `json:"huddle"`
+		}](t, r)
+		for _, p := range room.Huddle.Participants {
+			if want := p.UserID == f.alice.id; p.Camera != want || p.Screen {
+				t.Errorf("participant = %+v", p)
+			}
+		}
+	})
+	t.Run("カメラを受けて層を替える", func(t *testing.T) {
+		r := c.as(f.owner, http.MethodPost, path(owner)+"/subscriptions", map[string]any{"tracks": []map[string]any{
+			{"user_id": f.alice.id, "kind": "camera", "quality": "medium"},
+		}})
+		expectStatus(t, r, http.StatusOK)
+		body := decode[struct {
+			Tracks []struct {
+				UserID string `json:"user_id"`
+				Kind   string `json:"kind"`
+				Mid    string `json:"mid"`
+			} `json:"tracks"`
+		}](t, r)
+		if len(body.Tracks) != 1 || body.Tracks[0].Kind != "camera" {
+			t.Fatalf("body = %s", r.body)
+		}
+		r = c.as(f.owner, http.MethodPatch, path(owner)+"/subscriptions/"+body.Tracks[0].Mid, map[string]any{"user_id": f.alice.id, "quality": "low"})
+		expectStatus(t, r, http.StatusNoContent)
+		// カメラを付けていない人の層は替えられない
+		r = c.as(f.owner, http.MethodPatch, path(owner)+"/subscriptions/1", map[string]any{"user_id": bob.id, "quality": "low"})
+		expectProblem(t, r, http.StatusNotFound, "not-found")
+	})
+	t.Run("カメラに層がなければ 422", func(t *testing.T) {
+		r := c.as(f.owner, http.MethodPost, path(owner)+"/subscriptions", map[string]any{"tracks": []map[string]any{{"user_id": f.alice.id, "kind": "camera"}}})
+		expectProblem(t, r, http.StatusUnprocessableEntity, "validation-error")
+	})
+	t.Run("画面の共有は 2 人まで。3 人目は 409 huddle-screen-share-full", func(t *testing.T) {
+		for _, j := range []struct {
+			u apiUser
+			p joinedHuddleBody
+		}{{f.owner, owner}, {f.alice, alice}} {
+			expectStatus(t, c.as(j.u, http.MethodPost, path(j.p)+"/tracks", map[string]any{"kind": "screen", "offer": testOffer, "mid": "2"}), http.StatusCreated)
+		}
+		r := c.as(bob, http.MethodPost, path(b)+"/tracks", map[string]any{"kind": "screen", "offer": testOffer, "mid": "2"})
+		expectProblem(t, r, http.StatusConflict, "huddle-screen-share-full")
+	})
+	t.Run("やめる（何度でも 204）。種類が違えば 422", func(t *testing.T) {
+		expectStatus(t, c.as(f.alice, http.MethodDelete, path(alice)+"/tracks/screen", nil), http.StatusNoContent)
+		expectStatus(t, c.as(f.alice, http.MethodDelete, path(alice)+"/tracks/screen", nil), http.StatusNoContent)
+		expectProblem(t, c.as(f.alice, http.MethodDelete, path(alice)+"/tracks/audio", nil), http.StatusUnprocessableEntity, "validation-error")
+		// 1 人がやめたので、3 人目が共有できる
+		expectStatus(t, c.as(bob, http.MethodPost, path(b)+"/tracks", map[string]any{"kind": "screen", "offer": testOffer, "mid": "2"}), http.StatusCreated)
+	})
+	t.Run("他人の参加 ID では送れない", func(t *testing.T) {
+		r := c.as(f.alice, http.MethodPost, path(owner)+"/tracks", map[string]any{"kind": "camera", "offer": testOffer, "mid": "1"})
+		expectProblem(t, r, http.StatusConflict, "huddle-participant-gone")
 	})
 }
 

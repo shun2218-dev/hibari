@@ -26,6 +26,15 @@ func joinHuddle(t *testing.T, env *chattest.Env, actor, roomID ulid.ULID) chat.J
 	return joined
 }
 
+// audioOf は、userIDs の音声を受ける要求。
+func audioOf(userIDs ...ulid.ULID) []chat.HuddleTrackRequest {
+	out := make([]chat.HuddleTrackRequest, len(userIDs))
+	for i, u := range userIDs {
+		out[i] = chat.HuddleTrackRequest{UserID: u, Kind: chat.HuddleTrackAudio}
+	}
+	return out
+}
+
 func eventsOfType(evs []chat.Event, typ chat.EventType) []chat.Event {
 	return slices.DeleteFunc(slices.Clone(evs), func(ev chat.Event) bool { return ev.Type != typ })
 }
@@ -587,7 +596,7 @@ func TestSubscribeHuddle(t *testing.T) {
 	other := createRoom(t, env, r.admin, r.ws.ID, "public", "other")
 	joinHuddle(t, env, r.admin, other.ID)
 
-	got, err := env.Service.SubscribeHuddle(t.Context(), r.member, a.Huddle.ID, a.ParticipantID, []ulid.ULID{r.member, r.member2, r.admin})
+	got, err := env.Service.SubscribeHuddle(t.Context(), r.member, a.Huddle.ID, a.ParticipantID, audioOf(r.member, r.member2, r.admin))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -598,7 +607,7 @@ func TestSubscribeHuddle(t *testing.T) {
 	if err := env.Service.RenegotiateHuddle(t.Context(), r.member, a.Huddle.ID, a.ParticipantID, chattest.Answer); err != nil {
 		t.Errorf("RenegotiateHuddle = %v", err)
 	}
-	if _, err := env.Service.SubscribeHuddle(t.Context(), r.member2, a.Huddle.ID, a.ParticipantID, []ulid.ULID{r.member}); !errors.Is(err, chat.ErrHuddleParticipantGone) {
+	if _, err := env.Service.SubscribeHuddle(t.Context(), r.member2, a.Huddle.ID, a.ParticipantID, audioOf(r.member)); !errors.Is(err, chat.ErrHuddleParticipantGone) {
 		t.Errorf("subscribe with someone else's participant = %v", err)
 	}
 }

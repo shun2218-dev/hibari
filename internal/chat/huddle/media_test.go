@@ -139,9 +139,67 @@ func TestMediaSubscribe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []chat.SubscribedTrack{{SessionID: "s-2", Mid: "1", OK: true}, {SessionID: "s-3", OK: false}}
+	want := []chat.SubscribedTrack{{SessionID: "s-2", TrackName: "audio", Mid: "1", OK: true}, {SessionID: "s-3", TrackName: "audio", OK: false}}
 	if res.Offer == nil || res.Offer.SDP != "v=0 pull" || !slices.Equal(res.Tracks, want) {
 		t.Errorf("Subscribe = %+v", res)
+	}
+}
+
+// カメラの層（quality）は Cloudflare の rid に引き直し、帯域に合わせて落とせるよう asciibetical を付ける（ADR 0068 決定 6）。
+// 音声と画面には simulcast を付けない。
+func TestMediaSubscribeSimulcast(t *testing.T) {
+	m, f := newMedia(t, map[string]response{
+		"POST /apps/app/sessions/s-1/tracks/new": {http.StatusOK, `{"requiresImmediateRenegotiation": true, "tracks": [], "sessionDescription": {"type":"offer","sdp":"v=0"}}`},
+	})
+
+	_, err := m.Subscribe(context.Background(), "s-1", []chat.RemoteTrack{
+		{SessionID: "s-2", TrackName: "camera", Quality: chat.HuddleQualityMedium},
+		{SessionID: "s-2", TrackName: "screen"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks := f.bodies["POST /apps/app/sessions/s-1/tracks/new"]["tracks"].([]any)
+	camera := tracks[0].(map[string]any)["simulcast"].(map[string]any)
+	if camera["preferredRid"] != "b" || camera["priorityOrdering"] != "asciibetical" || camera["ridNotAvailable"] != "asciibetical" {
+		t.Errorf("camera simulcast = %v", camera)
+	}
+	if _, ok := tracks[1].(map[string]any)["simulcast"]; ok {
+		t.Errorf("screen has simulcast: %v", tracks[1])
+	}
+}
+
+// 層を替えるのは tracks/update（SDP のやり取りなし。ADR 0068 決定 6）。
+func TestMediaSetQuality(t *testing.T) {
+	m, f := newMedia(t, map[string]response{
+		"PUT /apps/app/sessions/s-1/tracks/update": {http.StatusOK, `{"tracks":[{"trackName":"camera","sessionId":"s-2","mid":"3"}]}`},
+	})
+
+	if err := m.SetQuality(context.Background(), "s-1", "3", chat.RemoteTrack{SessionID: "s-2", TrackName: "camera", Quality: chat.HuddleQualityLow}); err != nil {
+		t.Fatal(err)
+	}
+	track := f.bodies["PUT /apps/app/sessions/s-1/tracks/update"]["tracks"].([]any)[0].(map[string]any)
+	if track["mid"] != "3" || track["sessionId"] != "s-2" || track["simulcast"].(map[string]any)["preferredRid"] != "c" {
+		t.Errorf("track = %v", track)
+	}
+}
+
+// カメラと画面は、音声と同じセッションに送る（新しいセッションを作らない。ADR 0068 決定 1）。
+func TestMediaPush(t *testing.T) {
+	m, f := newMedia(t, map[string]response{
+		"POST /apps/app/sessions/s-1/tracks/new": {http.StatusOK, `{"tracks":[{"trackName":"camera","mid":"1"}],"sessionDescription":{"type":"answer","sdp":"v=0 a"}}`},
+	})
+
+	answer, err := m.Push(context.Background(), "s-1", chat.SessionDescription{Type: "offer", SDP: "v=0 o"}, "1", "camera")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.SDP != "v=0 a" || !slices.Equal(f.requests, []string{"POST /apps/app/sessions/s-1/tracks/new"}) {
+		t.Errorf("Push = %+v, requests = %v", answer, f.requests)
+	}
+	track := f.bodies["POST /apps/app/sessions/s-1/tracks/new"]["tracks"].([]any)[0].(map[string]any)
+	if track["location"] != "local" || track["mid"] != "1" || track["trackName"] != "camera" {
+		t.Errorf("track = %v", track)
 	}
 }
 
