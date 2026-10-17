@@ -1,17 +1,21 @@
 "use client";
 
-import { useMemo } from "react";
+import { createElement, useMemo } from "react";
 
+import { StreamVideo } from "@/components/chat/stream-video";
 import type { HuddlePreviewView, HuddleScreenView, UserRef } from "@/components/chat/types";
 import { useSessionState } from "@/hooks/auth/use-session";
 import type { Room } from "@/lib/api/types.gen";
 import type { HuddleCallState } from "@/lib/chat/huddle/call";
-import { toHuddlePreviewView, toHuddleScreenView } from "@/lib/chat/views/huddles";
+import { type RenderVideo, toHuddlePreviewView, toHuddleScreenView } from "@/lib/chat/views/huddles";
 import { toMemberNames } from "@/lib/chat/views/members";
 
 import { useChatState } from "./use-chat-store";
 import { useHuddleCall } from "./use-huddle";
 import { useAvatarUrls } from "./use-media";
+
+/** カメラと共有された画面を `<video>` で映す（ADR 0068）。同じ映像は key で同じ要素に描き続ける（切り替わるたびに暗転しない）。 */
+const renderVideo: RenderVideo = (stream, key) => createElement(StreamVideo, { key, stream });
 
 /**
  * 通話しているハドルの、画面と帯に出すもの（ADR 0066 追記 B・C）。
@@ -49,11 +53,11 @@ export function useHuddleView(): {
   );
 
   const preview = useMemo(
-    () => (call.phase === "preview" && room && self ? toHuddlePreviewView(room, call, self) : undefined),
+    () => (call.phase === "preview" && room && self ? toHuddlePreviewView(room, call, self, renderVideo) : undefined),
     [call, room, self],
   );
   const screen = useMemo(
-    () => (call.phase === "call" && room && self ? toHuddleScreenView(room, call, { me: self, names, avatarUrls }) : undefined),
+    () => (call.phase === "call" && room && self ? toHuddleScreenView(room, call, { me: self, names, avatarUrls, renderVideo }) : undefined),
     [call, room, self, names, avatarUrls],
   );
   return { call, room, self, names, preview, screen };

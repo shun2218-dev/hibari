@@ -4,7 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useEffectEvent, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { HuddleDeviceMenu, HuddlePreview } from "@/components/chat/huddle-preview";
+import { HuddleCameraMenu, HuddleDeviceMenu, HuddlePreview } from "@/components/chat/huddle-preview";
 import { HuddleRing } from "@/components/chat/huddle-ring";
 import { HuddleBar, HuddleProblemScreen, HuddleScreen } from "@/components/chat/huddle-screen";
 import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
@@ -21,9 +21,10 @@ import { canPost } from "@/lib/chat/views/permissions";
 import { RoomThread } from "./room-thread";
 
 /**
- * 音声のハドル（ADR 0066）の、チャットのタブ側の係。
+ * ハドル（ADR 0066・0068）の、チャットのタブ側の係。
  *
  * - 通話しているルームのハドルの状態（huddle.updated）に合わせて、受ける音声を増やし・減らす（決定 9）
+ * - カメラと画面共有の操作を通話につなぐ（ADR 0068）
  * - 画面（参加前のプレビュー・ハドルの画面・知らせ）を、別のタブ（about:blank）に portal で描く。モバイルとタブを開けないときは全画面（追記 C）
  * - DM の呼び出しを出し、呼び出し音を鳴らす（決定 11）
  * - ショートカット（⌘⇧H で開始・参加・退出、⌘⇧Space でミュート）
@@ -43,6 +44,7 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
   const currentRoom = useChatState((s) => (roomId ? s.rooms[roomId] : undefined));
   const [chatOpen, setChatOpen] = useState(false);
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
+  const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
   const [previewMenu, setPreviewMenu] = useState<"mic" | "speaker" | "camera">();
   // 操作の列の「…」（ハドルミーティングのリンクをコピー）。通話しているハドルのルームを指す
   const linkMenu = useHuddleLinkMenu(room ? { workspaceId: room.workspace_id, roomId: room.id } : undefined);
@@ -68,6 +70,7 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
     if (!shown) {
       setChatOpen(false);
       setDeviceMenuOpen(false);
+      setCameraMenuOpen(false);
       setPreviewMenu(undefined);
     }
   }
@@ -159,9 +162,14 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
         openMenu={previewMenu}
         onToggleMenu={(menu) => setPreviewMenu((open) => (open === menu ? undefined : menu))}
         onToggleMic={() => controls.toggleMic()}
+        onToggleCamera={() => void controls.toggleCamera()}
         onSelectMic={(id) => {
           setPreviewMenu(undefined);
           void controls.selectMic(id);
+        }}
+        onSelectCamera={(id) => {
+          setPreviewMenu(undefined);
+          void controls.selectCamera(id);
         }}
         onSelectSpeaker={(id) => {
           setPreviewMenu(undefined);
@@ -212,8 +220,26 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
             />
           )
         }
+        cameraMenu={
+          cameraMenuOpen && (
+            <HuddleCameraMenu
+              cameras={call.cameras}
+              cameraId={call.cameraId}
+              onSelectCamera={(id) => {
+                setCameraMenuOpen(false);
+                void controls.selectCamera(id);
+              }}
+              onDismiss={() => setCameraMenuOpen(false)}
+            />
+          )
+        }
         onToggleMute={() => controls.toggleMic()}
         onToggleDeviceMenu={() => setDeviceMenuOpen((open) => !open)}
+        onToggleCamera={() => void controls.toggleCamera()}
+        onToggleCameraMenu={() => setCameraMenuOpen((open) => !open)}
+        // ボタンはハドルのタブで押される。チャットのタブで画面の共有を断られたとき、そちらで求め直す（lib/chat/huddle/browser.ts）
+        onToggleShare={() => void controls.toggleShare(popup?.container.ownerDocument.defaultView ?? undefined)}
+        onDismissNotice={() => controls.dismissNotice()}
         onToggleChat={() => setChatOpen((open) => !open)}
         onLeave={() => void controls.leave()}
         menu={linkMenu}
@@ -293,6 +319,7 @@ export function HuddleCallBar() {
   const surface = useHuddleSurface();
   const { call, room, screen } = useHuddleView();
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
+  const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
   const linkMenu = useHuddleLinkMenu(room ? { workspaceId: room.workspace_id, roomId: room.id } : undefined);
 
   if (!huddle || surface.kind !== "none" || call.phase !== "call" || !screen || !room) return null;
@@ -322,8 +349,24 @@ export function HuddleCallBar() {
           />
         )
       }
+      cameraMenu={
+        cameraMenuOpen && (
+          <HuddleCameraMenu
+            cameras={call.cameras}
+            cameraId={call.cameraId}
+            onSelectCamera={(id) => {
+              setCameraMenuOpen(false);
+              void controls.selectCamera(id);
+            }}
+            onDismiss={() => setCameraMenuOpen(false)}
+          />
+        )
+      }
       onToggleMute={() => controls.toggleMic()}
       onToggleDeviceMenu={() => setDeviceMenuOpen((open) => !open)}
+      onToggleCamera={() => void controls.toggleCamera()}
+      onToggleCameraMenu={() => setCameraMenuOpen((open) => !open)}
+      onToggleShare={() => void controls.toggleShare()}
       onToggleChat={
         messageId
           ? () => {

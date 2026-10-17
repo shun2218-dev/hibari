@@ -5,9 +5,13 @@ import type {
   HuddleList,
   HuddleListFilter,
   HuddleSuggestions,
+  HuddleQuality,
+  HuddleTrackKind,
   HuddleTrackRequest,
   JoinedHuddle,
   JoinHuddleRequest,
+  PublishedHuddleTrack,
+  PublishHuddleTrackRequest,
   SessionDescription,
   SubscribedHuddle,
 } from "@/lib/api/types.gen";
@@ -69,6 +73,21 @@ export function createHuddleApi(request: Session["request"]) {
 
     renegotiateHuddle: (huddleId: string, participantId: string, answer: SessionDescription) =>
       request<void>("PUT", `${participant(huddleId, participantId)}/renegotiate`, { answer }),
+
+    /** 受けているカメラの層を替える（ADR 0068 決定 6）。SDP のやり取りは要らない。誰のカメラかも送る（サーバーは受けているものを覚えていない）。 */
+    setHuddleSubscriptionQuality: (huddleId: string, participantId: string, mid: string, userId: string, quality: HuddleQuality) =>
+      request<void>("PATCH", `${participant(huddleId, participantId)}/subscriptions/${encodeURIComponent(mid)}`, {
+        user_id: userId,
+        quality,
+      }),
+
+    /** カメラか画面を送り始める（ADR 0068 決定 3）。音声と同じセッションに足し、answer が返る。 */
+    publishHuddleTrack: (huddleId: string, participantId: string, body: PublishHuddleTrackRequest) =>
+      request<PublishedHuddleTrack>("POST", `${participant(huddleId, participantId)}/tracks`, body),
+
+    /** カメラか画面を送るのをやめる（ADR 0068 決定 2）。もうやめていても成功する。 */
+    unpublishHuddleTrack: (huddleId: string, participantId: string, kind: Exclude<HuddleTrackKind, "audio">) =>
+      request<void>("DELETE", `${participant(huddleId, participantId)}/tracks/${kind}`),
 
     /** 抜けた人の分の受けるトラックを閉じる。 */
     unsubscribeHuddle: (huddleId: string, participantId: string, mids: string[]) =>

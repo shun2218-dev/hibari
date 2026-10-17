@@ -180,6 +180,45 @@ describe("音声のハドル（ADR 0066）", () => {
   });
 });
 
+describe("カメラ（ADR 0068）", () => {
+  beforeEach(() => {
+    nav.router.replace.mockReset();
+    nav.router.push.mockReset();
+    nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    nav.search = "";
+    window.localStorage.clear();
+    // jsdom は動画を再生できないので、StreamVideo の play を空にする
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+  });
+
+  it("プレビューでカメラを付けて入ると送り始め、ハドルの画面のボタンで消すとやめる", async () => {
+    const user = userEvent.setup();
+    const { api } = await openDesign(
+      {},
+      {
+        "POST /api/v1/huddles/h-1/participants/p-1/tracks": () => json(201, { answer: { type: "answer", sdp: "track-answer" } }),
+        "DELETE /api/v1/huddles/h-1/participants/p-1/tracks/camera": () => new Response(null, { status: 204 }),
+      },
+    );
+
+    await user.click(await screen.findByRole("button", { name: "ハドルミーティングを開始する" }));
+    const overlay = await screen.findByRole("dialog", { name: "ハドルミーティング" });
+    // カメラは既定でオフ（決定 1）
+    await user.click(await within(overlay).findByRole("button", { name: "カメラをオンにする" }));
+    expect(await within(overlay).findByRole("button", { name: "カメラをオフにする" })).toHaveAttribute("aria-pressed", "true");
+    expect(overlay.querySelector("video")).not.toBeNull();
+    await user.click(within(overlay).getByRole("button", { name: "ハドルミーティングを開始する" }));
+
+    await waitFor(() => expect(api.paths()).toContain("POST /api/v1/huddles/h-1/participants/p-1/tracks"));
+    const body = JSON.parse(api.calls.find((c) => c.path.endsWith("/tracks"))!.init.body as string);
+    expect(body).toMatchObject({ kind: "camera", offer: { type: "offer" } });
+
+    await user.click(await within(overlay).findByRole("button", { name: "カメラをオフにする" }));
+    await waitFor(() => expect(api.paths()).toContain("DELETE /api/v1/huddles/h-1/participants/p-1/tracks/camera"));
+    expect(await within(overlay).findByRole("button", { name: "カメラをオンにする" })).toBeInTheDocument();
+  });
+});
+
 describe("ハドルへのリンク（ADR 0067 決定 1・2）", () => {
   beforeEach(() => {
     nav.router.replace.mockReset();

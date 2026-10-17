@@ -4,6 +4,7 @@ import type {
   HuddleLinkCardView,
   HuddleListItemView,
   HuddleOngoingCardView,
+  HuddleParticipantView,
   HuddlePlaceView,
   HuddleSuggestionView,
   HuddleMessageView,
@@ -159,13 +160,22 @@ export function roomHuddleBadge(room: Room, names: Names, avatarUrls: UrlTable =
 
 type CallPhase<P extends HuddleCallState["phase"]> = Extract<HuddleCallState, { phase: P }>;
 
+/**
+ * 映像（MediaStream）を画面に置くものにする（ADR 0068）。部品は渡されたものを置くだけで、アプリは `<video>` を返す。
+ * views は React を知らないので、作り方は外から受け取る。key は同じ映像を同じ要素で描き続けるため。
+ */
+export type RenderVideo = (stream: MediaStream, key: string) => HuddleParticipantView["video"];
+
 /** ハドルの画面のルームの表示（「#general」「佐藤 直樹」）。 */
 function screenRoom(room: Room): HuddleScreenView["room"] {
   return { kind: room.kind, name: room.kind === "dm" ? (room.dm_peer?.display_name ?? "") : (room.name ?? "") };
 }
 
-/** 参加する前のプレビュー（追記 B）。進行中のハドルに誰かいれば「参加する」、いなければ「開始する」。 */
-export function toHuddlePreviewView(room: Room, call: CallPhase<"preview">, self: UserRef): HuddlePreviewView {
+/**
+ * 参加する前のプレビュー（追記 B）。進行中のハドルに誰かいれば「参加する」、いなければ「開始する」。
+ * カメラ（ADR 0068 決定 1）は、オンのときだけ自分の映像を映す。
+ */
+export function toHuddlePreviewView(room: Room, call: CallPhase<"preview">, self: UserRef, renderVideo?: RenderVideo): HuddlePreviewView {
   return {
     room: screenRoom(room),
     action: room.huddle !== null && room.huddle.participants.length > 0 ? "join" : "start",
@@ -176,6 +186,11 @@ export function toHuddlePreviewView(room: Room, call: CallPhase<"preview">, self
     speakers: call.speakers,
     speakerId: call.speakerId,
     problem: call.problem,
+    cameraOn: call.cameraOn,
+    cameras: call.cameras,
+    cameraId: call.cameraId,
+    cameraProblem: call.cameraProblem,
+    video: call.cameraOn && call.video && renderVideo ? renderVideo(call.video, `camera-${self.id}`) : undefined,
   };
 }
 
@@ -216,7 +231,7 @@ export function huddleLinkAction(room: Room, canPostHere: boolean): "start" | "n
 export function toHuddleScreenView(
   room: Room,
   call: CallPhase<"call">,
-  { me, names, avatarUrls = {} }: { me: UserRef; names: Names; avatarUrls?: UrlTable },
+  { me, names, avatarUrls = {}, renderVideo }: { me: UserRef; names: Names; avatarUrls?: UrlTable; renderVideo?: RenderVideo },
 ): HuddleScreenView {
   const huddle = room.huddle !== null && (call.huddleId === undefined || room.huddle.id === call.huddleId) ? room.huddle : null;
   const ref = (id: string): UserRef =>
@@ -227,11 +242,31 @@ export function toHuddleScreenView(
     room: screenRoom(room),
     connection: call.connection,
     participants: [
-      { ...me, muted: call.muted, speaking: speaking.has(me.id) },
-      ...others.map((p) => ({ ...ref(p.user_id), muted: p.muted, speaking: !p.muted && speaking.has(p.user_id) })),
+      {
+        ...me,
+        muted: call.muted,
+        speaking: speaking.has(me.id),
+        camera: call.camera,
+        // 自分の映像は手元のカメラを映す（受ける本数に数えない。ADR 0068 決定 5）
+        video: call.camera && call.video && renderVideo ? renderVideo(call.video, `camera-${me.id}`) : undefined,
+      },
+      ...others.map((p) => ({
+        ...ref(p.user_id),
+        muted: p.muted,
+        speaking: !p.muted && speaking.has(p.user_id),
+        camera: p.camera,
+      })),
     ],
     joiningSoon: (huddle?.joining_soon ?? []).filter((id) => id !== me.id).map(ref),
     muted: call.muted,
+    camera: call.camera,
+    sharing: call.sharing,
+    canShareScreen: call.canShareScreen,
+    screens:
+      call.sharing && call.screen && renderVideo
+        ? [{ id: `screen-${me.id}`, owner: me, video: renderVideo(call.screen, `screen-${me.id}`) }]
+        : [],
+    notice: call.notice,
   };
 }
 
