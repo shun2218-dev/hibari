@@ -25,11 +25,34 @@ function fakeTrack(deviceId = "mic-1") {
 }
 
 function fakeStream(track = fakeTrack()) {
-  return { getAudioTracks: () => [track], getTracks: () => [track] } as unknown as MediaStream;
+  return { getAudioTracks: () => [track], getVideoTracks: () => [], getTracks: () => [track] } as unknown as MediaStream;
 }
+
+/** カメラか画面の映像のトラック。ブラウザの「共有を停止」（ended）を起こせる。 */
+function fakeVideoTrack(deviceId = "cam-1") {
+  const listeners = new Map<string, () => void>();
+  return {
+    kind: "video",
+    enabled: true,
+    contentHint: "",
+    stop: vi.fn(),
+    getSettings: () => ({ deviceId }),
+    addEventListener: (type: string, fn: () => void) => void listeners.set(type, fn),
+    fire: (type: string) => listeners.get(type)?.(),
+  };
+}
+
+function fakeVideoStream(track = fakeVideoTrack()) {
+  return Object.assign({ getAudioTracks: () => [], getVideoTracks: () => [track], getTracks: () => [track] } as unknown as MediaStream, {
+    track,
+  });
+}
+
+type FakeTransceiver = { mid: string | null; sender: { replaceTrack: ReturnType<typeof vi.fn> }; stop: ReturnType<typeof vi.fn> };
 
 type FakePc = RTCPeerConnection & {
   sender: { replaceTrack: ReturnType<typeof vi.fn> };
+  transceivers: { track: unknown; init: RTCRtpTransceiverInit; transceiver: FakeTransceiver }[];
   fire(state: RTCPeerConnectionState): void;
   track(mid: string): void;
 };
@@ -37,27 +60,40 @@ type FakePc = RTCPeerConnection & {
 function fakePc(): FakePc {
   const sender = { replaceTrack: vi.fn(async () => {}) };
   let config: RTCConfiguration = {};
+  let nextMid = 0;
+  const applyLocal = (d: RTCSessionDescriptionInit) => {
+    if (d.type === "rollback") {
+      pc.signalingState = "stable";
+      return;
+    }
+    pc.localDescription = d;
+    pc.signalingState = d.type === "offer" ? "have-local-offer" : "stable";
+  };
   const pc = {
     iceGatheringState: "complete",
     connectionState: "new",
+    signalingState: "stable" as RTCSignalingState,
     localDescription: null as RTCSessionDescriptionInit | null,
     onconnectionstatechange: null as (() => void) | null,
     ontrack: null as ((e: RTCTrackEvent) => void) | null,
-    // 本物と同じく、mid は setLocalDescription の後に決まる
-    addTransceiver: vi.fn(() => {
-      const t = { mid: null as string | null, sender };
+    transceivers: [] as FakePc["transceivers"],
+    // 本物と同じく、mid は setLocalDescription の後に決まる。足した順に "0"・"1"…
+    addTransceiver: vi.fn((track: unknown, init: RTCRtpTransceiverInit) => {
+      const mid = String(nextMid++);
+      const t: FakeTransceiver = { mid: null, sender, stop: vi.fn() };
+      pc.transceivers.push({ track, init, transceiver: t });
       pc.setLocalDescription.mockImplementationOnce(async (d: RTCSessionDescriptionInit) => {
-        pc.localDescription = d;
-        t.mid = "0";
+        applyLocal(d);
+        t.mid = mid;
       });
       return t;
     }),
     createOffer: vi.fn(async () => ({ type: "offer", sdp: "local-offer" })),
     createAnswer: vi.fn(async () => ({ type: "answer", sdp: "local-answer" })),
-    setLocalDescription: vi.fn(async (d: RTCSessionDescriptionInit) => {
-      pc.localDescription = d;
+    setLocalDescription: vi.fn(async (d: RTCSessionDescriptionInit) => applyLocal(d)),
+    setRemoteDescription: vi.fn(async (d: RTCSessionDescriptionInit) => {
+      pc.signalingState = d.type === "offer" ? "have-remote-offer" : "stable";
     }),
-    setRemoteDescription: vi.fn(async () => {}),
     setConfiguration: vi.fn((c: RTCConfiguration) => {
       config = c;
     }),
@@ -104,6 +140,8 @@ function setup(overrides: Partial<CallEnv> = {}) {
     unsubscribeHuddle: vi.fn(async () => {}),
     setHuddleMuted: vi.fn(async () => {}),
     leaveHuddle: vi.fn(async () => {}),
+    publishHuddleTrack: vi.fn(async () => ({ answer: { type: "answer", sdp: "track-answer" } })),
+    unpublishHuddleTrack: vi.fn(async () => {}),
   };
   const heartbeat = vi.fn(async (): Promise<"ok" | "gone" | "unsent"> => "ok");
   const setCallRoom = vi.fn();
@@ -134,6 +172,8 @@ function setup(overrides: Partial<CallEnv> = {}) {
       setMic: (id) => void (prefs.mic = id),
       speaker: () => prefs.speaker,
       setSpeaker: (id) => void (prefs.speaker = id),
+      camera: () => prefs.camera,
+      setCamera: (id) => void (prefs.camera = id),
     },
     setCallRoom,
     now: () => Date.parse("2026-09-26T00:00:00Z"),
@@ -517,5 +557,233 @@ describe("抜ける・外れる", () => {
     await t.call.openPreview(ROOM);
     t.call.dismissProblem();
     expect(t.call.getSnapshot().phase).toBe("preview");
+  });
+});
+
+describe("カメラ（ADR 0068 決定 1〜3・6）", () => {
+  /** 音声は既定の偽物、カメラ（video の制約）は映像のトラックを返す。 */
+  function withCamera(overrides: Partial<CallEnv> = {}) {
+    const cameras: ReturnType<typeof fakeVideoStream>[] = [];
+    const t = setup({
+      getUserMedia: vi.fn(async (c: MediaStreamConstraints) => {
+        if (!c.video) return fakeStream();
+        const asked = typeof c.video === "object" ? (c.video.deviceId as ConstrainDOMStringParameters | undefined)?.exact : undefined;
+        const s = fakeVideoStream(fakeVideoTrack(typeof asked === "string" ? asked : "cam-1"));
+        cameras.push(s);
+        return s;
+      }),
+      enumerateDevices: vi.fn(async () => [
+        { kind: "audioinput", deviceId: "mic-1", label: "内蔵マイク" },
+        { kind: "videoinput", deviceId: "cam-1", label: "内蔵カメラ" },
+        { kind: "videoinput", deviceId: "cam-2", label: "" },
+      ] as MediaDeviceInfo[]),
+      ...overrides,
+    });
+    return { ...t, cameras };
+  }
+
+  it("プレビューでは既定でオフ。オンにすると許可を求めて自分の映像を映し、オフで止める", async () => {
+    const t = withCamera();
+    await t.call.openPreview(ROOM);
+    const before = phase(t.call.getSnapshot(), "preview");
+    expect(before.cameraOn).toBe(false);
+    expect(before.cameras).toEqual([
+      { id: "cam-1", label: "内蔵カメラ" },
+      { id: "cam-2", label: "カメラ 2" },
+    ]);
+
+    await t.call.toggleCamera();
+    const on = phase(t.call.getSnapshot(), "preview");
+    expect(on.cameraOn).toBe(true);
+    expect(on.video).toBe(t.cameras[0]);
+    expect(on.cameraId).toBe("cam-1");
+
+    await t.call.toggleCamera();
+    expect(phase(t.call.getSnapshot(), "preview").cameraOn).toBe(false);
+    expect(t.cameras[0].track.stop).toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "NotAllowedError", want: "camera-denied" },
+    { name: "NotFoundError", want: "no-camera" },
+  ])("カメラを使えない（$name）ときはプレビューで知らせ、音声だけで入れる", async ({ name, want }) => {
+    const t = setup({
+      getUserMedia: vi.fn(async (c: MediaStreamConstraints) => {
+        if (c.video) throw new DOMException("", name);
+        return fakeStream();
+      }),
+    });
+    await t.call.openPreview(ROOM);
+    await t.call.toggleCamera();
+    const p = phase(t.call.getSnapshot(), "preview");
+    expect(p.cameraProblem).toBe(want);
+    expect(p.cameraOn).toBe(false);
+
+    await t.call.join();
+    await flush();
+    expect(phase(t.call.getSnapshot(), "call").camera).toBe(false);
+    expect(t.api.publishHuddleTrack).not.toHaveBeenCalled();
+  });
+
+  it("プレビューで付けていたら、入った後に simulcast の 3 つの層で送り始める", async () => {
+    const t = withCamera();
+    await t.call.openPreview(ROOM);
+    await t.call.toggleCamera();
+    await t.call.join();
+    await flush();
+
+    expect(t.api.publishHuddleTrack).toHaveBeenCalledWith("h-1", "p-1", {
+      kind: "camera",
+      offer: { type: "offer", sdp: "local-offer" },
+      mid: "1",
+    });
+    const pc = t.pcs[0];
+    const camera = pc.transceivers[1];
+    expect(camera.track).toBe(t.cameras[0].track);
+    expect(camera.init.direction).toBe("sendonly");
+    expect(camera.init.sendEncodings?.map((e) => e.rid)).toEqual(["a", "b", "c"]);
+    expect(pc.setRemoteDescription).toHaveBeenLastCalledWith({ type: "answer", sdp: "track-answer" });
+    const s = phase(t.call.getSnapshot(), "call");
+    expect(s.camera).toBe(true);
+    expect(s.video).toBe(t.cameras[0]);
+  });
+
+  it("入った後に付け・消す。消したらトラックを閉じる（止めたまま送り続けない。決定 2）", async () => {
+    const t = withCamera();
+    await t.call.openPreview(ROOM);
+    await t.call.join();
+    await flush();
+
+    await t.call.toggleCamera();
+    await flush();
+    expect(t.api.publishHuddleTrack).toHaveBeenCalledOnce();
+    const camera = t.pcs[0].transceivers[1].transceiver;
+
+    await t.call.toggleCamera();
+    await flush();
+    expect(phase(t.call.getSnapshot(), "call").camera).toBe(false);
+    expect(t.cameras[0].track.stop).toHaveBeenCalled();
+    expect(camera.stop).toHaveBeenCalled();
+    expect(t.api.unpublishHuddleTrack).toHaveBeenCalledWith("h-1", "p-1", "camera");
+  });
+
+  it("送り始めに失敗したら、出した offer を取り消して元に戻す", async () => {
+    const t = withCamera();
+    t.api.publishHuddleTrack.mockRejectedValueOnce(new Error("network"));
+    await t.call.openPreview(ROOM);
+    await t.call.join();
+    await flush();
+
+    await t.call.toggleCamera();
+    await flush();
+    const pc = t.pcs[0];
+    expect(pc.setLocalDescription).toHaveBeenLastCalledWith({ type: "rollback" });
+    expect(pc.signalingState).toBe("stable");
+    expect(pc.transceivers[1].transceiver.stop).toHaveBeenCalled();
+    expect(phase(t.call.getSnapshot(), "call").camera).toBe(false);
+  });
+
+  it("カメラを替えると、送っているトラックを差し替える（SDP のやり取りなし）。選んだものを覚える", async () => {
+    const t = withCamera();
+    await t.call.openPreview(ROOM);
+    await t.call.join();
+    await flush();
+    await t.call.toggleCamera();
+    await flush();
+    const offers = vi.mocked(t.pcs[0].createOffer).mock.calls.length;
+
+    await t.call.selectCamera("cam-2");
+    const pc = t.pcs[0];
+    expect(pc.transceivers[1].transceiver.sender.replaceTrack).toHaveBeenLastCalledWith(t.cameras[1].track);
+    expect(t.cameras[0].track.stop).toHaveBeenCalled();
+    expect(vi.mocked(pc.createOffer).mock.calls.length).toBe(offers);
+    expect(t.prefs.camera).toBe("cam-2");
+    expect(phase(t.call.getSnapshot(), "call").cameraId).toBe("cam-2");
+  });
+
+  it("抜けたらカメラも止める", async () => {
+    const t = withCamera();
+    await t.call.openPreview(ROOM);
+    await t.call.toggleCamera();
+    await t.call.join();
+    await flush();
+    await t.call.leave();
+    expect(t.cameras[0].track.stop).toHaveBeenCalled();
+  });
+});
+
+describe("画面共有（ADR 0068 決定 7）", () => {
+  function withScreen(getDisplayMedia: CallEnv["getDisplayMedia"]) {
+    return setup({ getDisplayMedia });
+  }
+
+  async function joinedWith(getDisplayMedia: CallEnv["getDisplayMedia"]) {
+    const t = withScreen(getDisplayMedia);
+    await t.call.openPreview(ROOM);
+    await t.call.join();
+    await flush();
+    return t;
+  }
+
+  it("画面を選ぶと、1 つの層で送り始める。自分のタブは候補から外す", async () => {
+    const screen = fakeVideoStream(fakeVideoTrack("screen"));
+    const getDisplayMedia = vi.fn(async () => screen);
+    const t = await joinedWith(getDisplayMedia);
+    expect(phase(t.call.getSnapshot(), "call").canShareScreen).toBe(true);
+
+    await t.call.toggleShare();
+    await flush();
+    expect(getDisplayMedia).toHaveBeenCalledWith(expect.objectContaining({ audio: false, selfBrowserSurface: "exclude" }), undefined);
+    expect(screen.track.contentHint).toBe("detail");
+    expect(t.api.publishHuddleTrack).toHaveBeenCalledWith("h-1", "p-1", expect.objectContaining({ kind: "screen", mid: "1" }));
+    expect(t.pcs[0].transceivers[1].init.sendEncodings).toHaveLength(1);
+    const s = phase(t.call.getSnapshot(), "call");
+    expect(s.sharing).toBe(true);
+    expect(s.screen).toBe(screen);
+  });
+
+  it("ブラウザの「共有を停止」で終わったら、こちらでもやめる", async () => {
+    const screen = fakeVideoStream(fakeVideoTrack("screen"));
+    const t = await joinedWith(vi.fn(async () => screen));
+    await t.call.toggleShare();
+    await flush();
+
+    screen.track.fire("ended");
+    await flush();
+    expect(phase(t.call.getSnapshot(), "call").sharing).toBe(false);
+    expect(t.api.unpublishHuddleTrack).toHaveBeenCalledWith("h-1", "p-1", "screen");
+    expect(t.pcs[0].transceivers[1].transceiver.stop).toHaveBeenCalled();
+  });
+
+  it("3 人目（409 huddle-screen-share-full）は知らせて、取った画面を止める", async () => {
+    const screen = fakeVideoStream(fakeVideoTrack("screen"));
+    const t = await joinedWith(vi.fn(async () => screen));
+    t.api.publishHuddleTrack.mockRejectedValueOnce(problem("huddle-screen-share-full"));
+
+    await t.call.toggleShare();
+    await flush();
+    const s = phase(t.call.getSnapshot(), "call");
+    expect(s.sharing).toBe(false);
+    expect(s.notice).toBe("screen-share-full");
+    expect(screen.track.stop).toHaveBeenCalled();
+
+    t.call.dismissNotice();
+    expect(phase(t.call.getSnapshot(), "call").notice).toBeUndefined();
+  });
+
+  it.each([
+    { message: "Permission denied", notice: undefined },
+    { message: "Permission denied by system", notice: "screen-denied" },
+  ])("断られた（$message）: 画面を選ばずに閉じたときは知らせず、OS が許可していないときだけ知らせる", async ({ message, notice }) => {
+    const t = await joinedWith(vi.fn(async () => Promise.reject(new DOMException(message, "NotAllowedError"))));
+    await t.call.toggleShare();
+    await flush();
+    expect(phase(t.call.getSnapshot(), "call").notice).toBe(notice);
+    expect(t.api.publishHuddleTrack).not.toHaveBeenCalled();
+  });
+
+  it("画面を共有できないブラウザ（getDisplayMedia がない）では canShareScreen が false", async () => {
+    const t = await joinedWith(undefined);
+    expect(phase(t.call.getSnapshot(), "call").canShareScreen).toBe(false);
   });
 });

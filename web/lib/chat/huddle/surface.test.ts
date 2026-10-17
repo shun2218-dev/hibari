@@ -14,7 +14,7 @@ function fakeCall(initial: HuddleCallState = { phase: "idle" }) {
       return () => listeners.delete(l);
     },
     openPreview: vi.fn(async (roomId: string) => {
-      call.set({ phase: "preview", roomId, micOn: true, mics: [] });
+      call.set({ phase: "preview", cameraOn: false, cameras: [], roomId, micOn: true, mics: [] });
     }),
     cancelPreview: vi.fn(() => call.set({ phase: "idle" })),
     dismissProblem: vi.fn(() => call.set({ phase: "idle" })),
@@ -49,7 +49,7 @@ function setup({ blocked = false, mobile = false, call = fakeCall() } = {}) {
 }
 
 const IN_CALL: HuddleCallState = {
-  phase: "call",
+  phase: "call", camera: false, cameras: [], sharing: false, canShareScreen: true,
   roomId: "r-1",
   huddleId: "h-1",
   participantId: "p-1",

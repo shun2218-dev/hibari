@@ -138,7 +138,7 @@ describe("ヘッダーとサイドバー", () => {
 
 describe("toHuddlePreviewView（追記 B）", () => {
   const self = { id: naoki.id, name: naoki.display_name };
-  const preview = { phase: "preview" as const, roomId: "room-1", micOn: true, mics: [{ id: "m", label: "マイク" }], micId: "m" };
+  const preview = { phase: "preview" as const, roomId: "room-1", micOn: true, mics: [{ id: "m", label: "マイク" }], micId: "m", cameraOn: false, cameras: [] };
 
   it("進行中のハドルに誰かいれば「参加する」、いなければ「開始する」", () => {
     expect(toHuddlePreviewView(room("room-1", "雑談", { huddle: null }), preview, self).action).toBe("start");
@@ -155,6 +155,10 @@ describe("toHuddleScreenView（追記 C）", () => {
   const me = { id: naoki.id, name: naoki.display_name };
   const call = {
     phase: "call" as const,
+    camera: false,
+    cameras: [],
+    sharing: false,
+    canShareScreen: true,
     roomId: "room-1",
     huddleId: "h-1",
     participantId: "p-1",

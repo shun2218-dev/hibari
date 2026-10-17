@@ -1,14 +1,15 @@
-import type { HuddleLeftData, HuddleICEServers } from "@/lib/api/types.gen";
+import type { HuddleLeftData, HuddleICEServers, HuddleTrackKind } from "@/lib/api/types.gen";
 import { ApiError } from "@/lib/api/error";
 import type { ChatApi } from "@/lib/chat/api/chat-api";
 
 /**
- * ハドルの通話（ADR 0066）。マイク・RTCPeerConnection・心拍・話している人の判定を持つ。
+ * ハドルの通話（ADR 0066・0068）。マイク・カメラ・画面共有・RTCPeerConnection・心拍・話している人の判定を持つ。
  *
  * 通話はチャットのタブが持つ（追記 C）。ハドルのタブ（about:blank）は画面を映すだけで、この状態を読んで描く。
- * 音声はブラウザと Cloudflare の間を直接流れ、Go のサーバーが受け持つのは SDP の中継だけ（決定 2）。
+ * 音声と映像はブラウザと Cloudflare の間を直接流れ、Go のサーバーが受け持つのは SDP の中継だけ（決定 2）。
+ * カメラと画面は、音声と同じ RTCPeerConnection に別のトラックとして足す（ADR 0068 決定 1）。
  *
- * ブラウザの API（getUserMedia・RTCPeerConnection・音の出力・音量の測定）は外から渡す。テストで偽物に差し替えるため。
+ * ブラウザの API（getUserMedia・getDisplayMedia・RTCPeerConnection・音の出力・音量の測定）は外から渡す。テストで偽物に差し替えるため。
  */
 
 /** 心拍の間隔（決定 5）。サーバーの期限（30 秒）の間に 2 回は届くようにする。 */
@@ -22,6 +23,20 @@ export const SPEAKING_POLL_MS = 200;
 /** この音量（0〜1 の RMS）を超えたら話していることにする。 */
 export const SPEAKING_THRESHOLD = 0.03;
 
+/**
+ * カメラを送る simulcast の層（ADR 0068 決定 6）。rid はサーバーの `SimulcastRIDs`（internal/chat/huddle）と同じ名前にする。
+ * a・b・c の順が「高い層から低い層」で、Cloudflare の asciibetical（a に近いほど望ましい）と同じ向き。
+ * ビットレートは ADR の見積もりの目安。実物で直してよい。
+ */
+export const CAMERA_ENCODINGS: RTCRtpEncodingParameters[] = [
+  { rid: "a", maxBitrate: 1_200_000, maxFramerate: 30 },
+  { rid: "b", scaleResolutionDownBy: 2, maxBitrate: 400_000, maxFramerate: 24 },
+  { rid: "c", scaleResolutionDownBy: 4, maxBitrate: 150_000, maxFramerate: 15 },
+];
+
+/** 画面共有は 1 つの層（決定 7）。文字が読めることを優先して、フレームレートを抑える。 */
+export const SCREEN_ENCODING: RTCRtpEncodingParameters = { maxBitrate: 1_500_000, maxFramerate: 15 };
+
 /** 送る音声の制約。ノイズの抑制・エコーの除去・音量の自動調整を有効にする（決定 10。Slack のノイズの抑制に当たる）。 */
 export function audioConstraints(deviceId?: string): MediaTrackConstraints {
   return {
@@ -32,10 +47,39 @@ export function audioConstraints(deviceId?: string): MediaTrackConstraints {
   };
 }
 
+/** 送るカメラの制約。いちばん上の層（a）を 1280×720 までにする（ADR 0068 決定 6）。 */
+export function videoConstraints(deviceId?: string): MediaTrackConstraints {
+  return {
+    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    width: { ideal: 1280, max: 1280 },
+    height: { ideal: 720, max: 720 },
+    frameRate: { ideal: 30, max: 30 },
+  };
+}
+
+/**
+ * 画面共有の求め方（ADR 0068 決定 7）。自分のハドルのタブを共有の候補から外す（合わせ鏡になるのを避ける）。
+ * 画面の音声は取らない（オーナーの確認 1）。selfBrowserSurface は型の定義にまだないので、型を付け直す。
+ */
+export const DISPLAY_MEDIA_OPTIONS = {
+  video: { frameRate: { ideal: 15, max: 15 } },
+  audio: false,
+  selfBrowserSurface: "exclude",
+} as DisplayMediaStreamOptions;
+
 export type MediaDevice = { id: string; label: string };
 
 /** 入れなかった・外れた理由（HuddlePreviewView.problem と HuddleProblem を合わせたもの）。 */
 export type CallProblem = "mic-denied" | "no-mic" | "failed" | "full" | "disconnected" | "removed";
+
+/** カメラを使えない理由。 */
+export type CameraProblem = "camera-denied" | "no-camera";
+
+/** 入った後の知らせ（ADR 0068 決定 9）。閉じるまで残す。 */
+export type CallNotice = CameraProblem | "screen-denied" | "screen-share-full";
+
+/** 送るトラックのうち、入った後に始め・やめるもの（音声は入る・抜けるで送る）。 */
+export type OutgoingKind = Exclude<HuddleTrackKind, "audio">;
 
 export type HuddleCallState =
   | { phase: "idle" }
@@ -50,6 +94,13 @@ export type HuddleCallState =
       speakers?: MediaDevice[];
       speakerId?: string;
       problem?: "mic-denied" | "no-mic";
+      /** カメラ（ADR 0068 決定 1）。既定はオフ。オンにしたときに許可を求める。 */
+      cameraOn: boolean;
+      cameras: MediaDevice[];
+      cameraId?: string;
+      cameraProblem?: CameraProblem;
+      /** オンのときの自分のカメラの映像。 */
+      video?: MediaStream;
     }
   | {
       phase: "call";
@@ -64,6 +115,17 @@ export type HuddleCallState =
       micId?: string;
       speakers?: MediaDevice[];
       speakerId?: string;
+      /** カメラを付けている（ADR 0068）。付けている間の自分の映像は video。 */
+      camera: boolean;
+      video?: MediaStream;
+      cameras: MediaDevice[];
+      cameraId?: string;
+      /** 画面を共有している。共有している画面は screen。 */
+      sharing: boolean;
+      screen?: MediaStream;
+      /** 画面を共有できるブラウザか（モバイルのブラウザには getDisplayMedia がない。決定 9）。 */
+      canShareScreen: boolean;
+      notice?: CallNotice;
     }
   | { phase: "problem"; roomId: string; problem: Exclude<CallProblem, "mic-denied" | "no-mic"> };
 
@@ -83,10 +145,18 @@ export type CallEnv = {
     | "unsubscribeHuddle"
     | "setHuddleMuted"
     | "leaveHuddle"
+    | "publishHuddleTrack"
+    | "unpublishHuddleTrack"
   >;
   /** 自分の user_id。 */
   userId: string;
   getUserMedia(constraints: MediaStreamConstraints): Promise<MediaStream>;
+  /**
+   * 画面の共有を求める。ないブラウザ（モバイル）では undefined。
+   * 押した操作の中で、待たずに呼ぶこと（操作をきっかけにしない getDisplayMedia は断られる）。
+   * from はボタンを押したタブ（ハドルのタブ）。チャットのタブで断られたとき、そちらで求め直すために使う。
+   */
+  getDisplayMedia?(options: DisplayMediaStreamOptions, from?: Window): Promise<MediaStream>;
   enumerateDevices(): Promise<MediaDeviceInfo[]>;
   createPeerConnection(config: RTCConfiguration): RTCPeerConnection;
   /** 受けた音声を鳴らす。スピーカーを選べないブラウザでは setSpeaker は何もしない。 */
@@ -96,7 +166,14 @@ export type CallEnv = {
   meter(stream: MediaStream): LevelMeter;
   heartbeat(huddleId: string, participantId: string): Promise<"ok" | "gone" | "unsent">;
   /** 選んだ機器を端末ごとに覚える（追記 B）。 */
-  prefs: { mic(): string | undefined; setMic(id: string): void; speaker(): string | undefined; setSpeaker(id: string): void };
+  prefs: {
+    mic(): string | undefined;
+    setMic(id: string): void;
+    speaker(): string | undefined;
+    setSpeaker(id: string): void;
+    camera(): string | undefined;
+    setCamera(id: string): void;
+  };
   /** 通話しているルームをストアに知らせる（別のワークスペースを開いても、そのルームの購読を残すため）。 */
   setCallRoom(roomId: string | null): void;
   now(): number;
@@ -107,6 +184,9 @@ export type CallEnv = {
 };
 
 type Remote = { userId: string; mid: string; sink?: AudioSink; meter?: LevelMeter };
+
+/** 送っている（送ろうとしている）カメラか画面（ADR 0068 決定 1）。止めたら transceiver ごと止める（決定 2）。 */
+type Outgoing = { stream: MediaStream; transceiver?: RTCRtpTransceiver };
 
 export function createHuddleCall(env: CallEnv) {
   let state: HuddleCallState = { phase: "idle" };
@@ -123,6 +203,8 @@ export function createHuddleCall(env: CallEnv) {
   const remotes = new Map<string, Remote>();
   /** mid → user_id。ontrack が subscribe の応答より先に来ることがあるので、流れてきたトラックも覚えておく。 */
   const pendingTracks = new Map<string, MediaStream>();
+  /** 送っているカメラと画面。 */
+  const outgoing: Partial<Record<OutgoingKind, Outgoing>> = {};
   /** SDP のやり取りは 1 本の列に並べる（同じ Cloudflare のセッションへの変更は直列にしなければならない。決定 4）。 */
   let queue: Promise<void> = Promise.resolve();
   /** 通話を始め直すたびに進める。古い通話の非同期の続きが、新しい通話の状態を書き換えないようにする。 */
@@ -139,11 +221,17 @@ export function createHuddleCall(env: CallEnv) {
     if (next !== state) set(next);
   }
 
-  async function devices(): Promise<{ mics: MediaDevice[]; speakers?: MediaDevice[] }> {
+  function enqueue(work: () => Promise<void>) {
+    queue = queue.then(work).catch(() => {});
+    return queue;
+  }
+
+  async function devices(): Promise<{ mics: MediaDevice[]; speakers?: MediaDevice[]; cameras: MediaDevice[] }> {
     const list = await env.enumerateDevices().catch(() => [] as MediaDeviceInfo[]);
+    const fallback: Record<MediaDeviceKind, string> = { audioinput: "マイク", audiooutput: "スピーカー", videoinput: "カメラ" };
     const of = (kind: MediaDeviceKind) =>
-      list.filter((d) => d.kind === kind).map((d, i) => ({ id: d.deviceId, label: d.label || `${kind === "audioinput" ? "マイク" : "スピーカー"} ${i + 1}` }));
-    return { mics: of("audioinput"), speakers: env.canSelectSpeaker ? of("audiooutput") : undefined };
+      list.filter((d) => d.kind === kind).map((d, i) => ({ id: d.deviceId, label: d.label || `${fallback[kind]} ${i + 1}` }));
+    return { mics: of("audioinput"), speakers: env.canSelectSpeaker ? of("audiooutput") : undefined, cameras: of("videoinput") };
   }
 
   function stopStream() {
@@ -151,18 +239,42 @@ export function createHuddleCall(env: CallEnv) {
     stream = undefined;
   }
 
-  /** 参加する前のプレビューを開く（追記 B）。マイクの許可を求め、機器の一覧を出す。 */
+  function stopTracks(s: MediaStream | undefined) {
+    for (const t of s?.getTracks() ?? []) t.stop();
+  }
+
+  function stopOutgoing(kind: OutgoingKind) {
+    const o = outgoing[kind];
+    if (!o) return;
+    stopTracks(o.stream);
+    o.transceiver?.stop();
+    delete outgoing[kind];
+  }
+
+  /** カメラを求める。使えなければ理由を返す。 */
+  async function openCamera(deviceId: string | undefined): Promise<MediaStream | CameraProblem> {
+    try {
+      return await env.getUserMedia({ video: videoConstraints(deviceId) });
+    } catch (err) {
+      return err instanceof DOMException && (err.name === "NotFoundError" || err.name === "OverconstrainedError")
+        ? "no-camera"
+        : "camera-denied";
+    }
+  }
+
+  /** 参加する前のプレビューを開く（追記 B）。マイクの許可を求め、機器の一覧を出す。カメラは既定でオフ（ADR 0068 決定 1）。 */
   async function openPreview(roomId: string) {
     if (state.phase === "call") return;
     const gen = ++generation;
     stopStream();
-    set({ phase: "preview", roomId, micOn: true, mics: [], speakerId: env.prefs.speaker() });
+    stopOutgoing("camera");
+    set({ phase: "preview", roomId, micOn: true, mics: [], speakerId: env.prefs.speaker(), cameraOn: false, cameras: [] });
     try {
       stream = await env.getUserMedia({ audio: audioConstraints(env.prefs.mic()) });
     } catch (err) {
       if (gen !== generation) return;
       const problem = err instanceof DOMException && err.name === "NotFoundError" ? "no-mic" : "mic-denied";
-      set({ phase: "preview", roomId, micOn: false, mics: [], problem });
+      set({ phase: "preview", roomId, micOn: false, mics: [], problem, cameraOn: false, cameras: [] });
       return;
     }
     if (gen !== generation) {
@@ -173,13 +285,25 @@ export function createHuddleCall(env: CallEnv) {
     if (gen !== generation) return;
     const micId = stream.getAudioTracks()[0]?.getSettings().deviceId ?? d.mics[0]?.id;
     const speakerId = env.prefs.speaker() ?? d.speakers?.[0]?.id;
-    set({ phase: "preview", roomId, micOn: true, mics: d.mics, micId, speakers: d.speakers, speakerId });
+    set({
+      phase: "preview",
+      roomId,
+      micOn: true,
+      mics: d.mics,
+      micId,
+      speakers: d.speakers,
+      speakerId,
+      cameraOn: false,
+      cameras: d.cameras,
+      cameraId: env.prefs.camera() ?? d.cameras[0]?.id,
+    });
   }
 
   function cancelPreview() {
     if (state.phase !== "preview") return;
     generation++;
     stopStream();
+    stopOutgoing("camera");
     set({ phase: "idle" });
   }
 
@@ -217,12 +341,192 @@ export function createHuddleCall(env: CallEnv) {
     set({ ...state, speakerId: id });
   }
 
-  /** 入る（決定 4）。プレビューの状態（マイクのオンとオフ・選んだ機器）のまま入る。 */
+  /**
+   * カメラのオンとオフ（ADR 0068 決定 1・2）。
+   * プレビューでは自分の映像を映すだけ。通話中は、付けたら送り始め、消したらトラックを閉じる（止めたまま送り続けない）。
+   */
+  async function toggleCamera() {
+    if (state.phase !== "preview" && state.phase !== "call") return;
+    const on = state.phase === "preview" ? state.cameraOn : state.camera;
+    if (on) {
+      if (state.phase === "call") return unpublish("camera");
+      stopOutgoing("camera");
+      set({ ...state, cameraOn: false, video: undefined });
+      return;
+    }
+    const gen = generation;
+    const got = await openCamera(state.cameraId);
+    if (gen !== generation || (state.phase !== "preview" && state.phase !== "call")) {
+      if (typeof got !== "string") stopTracks(got);
+      return;
+    }
+    if (typeof got === "string") {
+      if (state.phase === "preview") set({ ...state, cameraOn: false, cameraProblem: got });
+      else patchCall((s) => ({ ...s, notice: got }));
+      return;
+    }
+    stopOutgoing("camera");
+    outgoing.camera = { stream: got };
+    // 許可が出た後は、機器の名前が読めるようになるので、一覧を取り直す
+    const d = await devices();
+    if (gen !== generation || outgoing.camera?.stream !== got) return;
+    const cameraId = got.getVideoTracks()[0]?.getSettings().deviceId ?? state.cameraId;
+    if (state.phase === "preview") {
+      set({ ...state, cameraOn: true, video: got, cameras: d.cameras, cameraId, cameraProblem: undefined });
+      return;
+    }
+    patchCall((s) => ({
+      ...s,
+      camera: true,
+      video: got,
+      cameras: d.cameras,
+      cameraId,
+      notice: s.notice === "camera-denied" || s.notice === "no-camera" ? undefined : s.notice,
+    }));
+    await publish(gen, "camera");
+  }
+
+  /** カメラを替える。送っている間は replaceTrack で差し替える（SDP のやり取りは要らない。音声の機器の選択と同じ）。 */
+  async function selectCamera(id: string) {
+    if (state.phase !== "preview" && state.phase !== "call") return;
+    env.prefs.setCamera(id);
+    const o = outgoing.camera;
+    if (!o) {
+      set({ ...state, cameraId: id });
+      return;
+    }
+    const got = await openCamera(id);
+    if (typeof got === "string" || outgoing.camera !== o || (state.phase !== "preview" && state.phase !== "call")) {
+      if (typeof got !== "string") stopTracks(got);
+      return;
+    }
+    const track = got.getVideoTracks()[0];
+    if (o.transceiver && track) await o.transceiver.sender.replaceTrack(track);
+    stopTracks(o.stream);
+    o.stream = got;
+    set({ ...state, cameraId: id, video: got });
+  }
+
+  /**
+   * 画面共有を始める・やめる（ADR 0068 決定 7）。
+   * 始めるときは、押した操作の中で getDisplayMedia を呼ぶ（await の前に呼ぶ）。from はボタンを押したタブ。
+   */
+  function toggleShare(from?: Window): Promise<void> {
+    if (state.phase !== "call") return Promise.resolve();
+    if (state.sharing) return unpublish("screen");
+    if (!env.getDisplayMedia) return Promise.resolve();
+    const gen = generation;
+    return env.getDisplayMedia(DISPLAY_MEDIA_OPTIONS, from).then(
+      async (got) => {
+        if (gen !== generation || state.phase !== "call" || state.sharing) {
+          stopTracks(got);
+          return;
+        }
+        const track = got.getVideoTracks()[0];
+        if (track) {
+          // 文字が読めることを優先する（解像度を保って、フレームレートを落とす）
+          track.contentHint = "detail";
+          // ブラウザの「共有を停止」（共有を求めたタブが閉じた場合も）で終わったら、こちらでもやめる
+          track.addEventListener("ended", () => {
+            if (outgoing.screen?.stream === got) void unpublish("screen");
+          });
+        }
+        outgoing.screen = { stream: got };
+        patchCall((s) => ({ ...s, sharing: true, screen: got, notice: s.notice === "screen-denied" ? undefined : s.notice }));
+        await publish(gen, "screen");
+      },
+      (err: unknown) => {
+        // 共有する画面を選ばずに閉じたときは知らせない。OS が画面の収録を許可していないときだけ知らせる
+        if (gen !== generation) return;
+        if (err instanceof DOMException && err.name === "NotAllowedError" && /system/i.test(err.message)) {
+          patchCall((s) => ({ ...s, notice: "screen-denied" }));
+        }
+      },
+    );
+  }
+
+  /** 送り始める（ADR 0068 決定 3）。transceiver を足した offer を送り、answer を当てる。失敗したら元に戻す。 */
+  function publish(gen: number, kind: OutgoingKind) {
+    return enqueue(async () => {
+      const o = outgoing[kind];
+      if (gen !== generation || state.phase !== "call" || !state.huddleId || !state.participantId || !pc || !o) return;
+      const { huddleId, participantId } = state;
+      const conn = pc;
+      const track = o.stream.getVideoTracks()[0];
+      if (!track) return;
+      const transceiver = conn.addTransceiver(track, {
+        direction: "sendonly",
+        sendEncodings: kind === "camera" ? CAMERA_ENCODINGS : [SCREEN_ENCODING],
+      });
+      o.transceiver = transceiver;
+      try {
+        const offer = await conn.createOffer();
+        await conn.setLocalDescription(offer);
+        const res = await withConflictRetry(() =>
+          env.api.publishHuddleTrack(huddleId, participantId, {
+            kind,
+            offer: { type: "offer", sdp: conn.localDescription?.sdp ?? offer.sdp ?? "" },
+            mid: transceiver.mid ?? "",
+          }),
+        );
+        if (gen !== generation) return;
+        await conn.setRemoteDescription({ type: "answer", sdp: res.answer.sdp });
+      } catch (err) {
+        if (gen !== generation) return;
+        // 出した offer を取り消して、足した transceiver を止める（次の SDP のやり取りに残さない）
+        if (conn.signalingState === "have-local-offer") await conn.setLocalDescription({ type: "rollback" }).catch(() => {});
+        if (outgoing[kind] === o) stopOutgoing(kind);
+        const full = err instanceof ApiError && err.type === "huddle-screen-share-full";
+        patchCall((s) =>
+          kind === "camera"
+            ? { ...s, camera: false, video: undefined }
+            : { ...s, sharing: false, screen: undefined, notice: full ? "screen-share-full" : s.notice },
+        );
+      }
+    });
+  }
+
+  /** 送るのをやめる（ADR 0068 決定 2・3）。画面からはすぐに消し、サーバーへの知らせと transceiver の片付けは列に並べる。 */
+  function unpublish(kind: OutgoingKind) {
+    if (state.phase !== "call") return Promise.resolve();
+    const { huddleId, participantId } = state;
+    const o = outgoing[kind];
+    patchCall((s) => (kind === "camera" ? { ...s, camera: false, video: undefined } : { ...s, sharing: false, screen: undefined }));
+    // 映像は先に止める（カメラの使用中の印をすぐに消す）
+    stopTracks(o?.stream);
+    return enqueue(async () => {
+      if (o && outgoing[kind] === o) stopOutgoing(kind);
+      if (huddleId && participantId) await env.api.unpublishHuddleTrack(huddleId, participantId, kind).catch(() => {});
+    });
+  }
+
+  function dismissNotice() {
+    patchCall((s) => (s.notice === undefined ? s : { ...s, notice: undefined }));
+  }
+
+  /** 入る（決定 4）。プレビューの状態（マイクのオンとオフ・選んだ機器・カメラ）のまま入る。 */
   async function join() {
     if (state.phase !== "preview" || state.problem !== undefined || !stream) return;
     const gen = ++generation;
-    const { roomId, micOn, mics, micId, speakers, speakerId } = state;
-    set({ phase: "call", roomId, connection: "connecting", muted: !micOn, speaking: [], mics, micId, speakers, speakerId });
+    const { roomId, micOn, mics, micId, speakers, speakerId, cameraOn, cameras, cameraId } = state;
+    const camera = cameraOn && outgoing.camera !== undefined;
+    set({
+      phase: "call",
+      roomId,
+      connection: "connecting",
+      muted: !micOn,
+      speaking: [],
+      mics,
+      micId,
+      speakers,
+      speakerId,
+      camera,
+      video: camera ? outgoing.camera?.stream : undefined,
+      cameras,
+      cameraId,
+      sharing: false,
+      canShareScreen: env.getDisplayMedia !== undefined,
+    });
     env.setCallRoom(roomId);
     try {
       const ice = await env.api.huddleIceServers(roomId);
@@ -253,6 +557,8 @@ export function createHuddleCall(env: CallEnv) {
       localMeter = env.meter(stream);
       heartbeatTimer = env.setInterval(() => void beat(gen), HEARTBEAT_INTERVAL_MS);
       speakingTimer = env.setInterval(measureSpeaking, SPEAKING_POLL_MS);
+      // プレビューでカメラを付けていたら、入った後で送り始める（音声の「入る」とは別の SDP のやり取り）
+      if (camera) void publish(gen, "camera");
       // 先に入っている人の音声を受ける。この後の出入りは huddle.updated から sync で追う
       void sync(joined.huddle.participants.map((p) => p.user_id));
     } catch (err) {
@@ -326,8 +632,7 @@ export function createHuddleCall(env: CallEnv) {
    */
   function sync(participantIds: readonly string[]) {
     const gen = generation;
-    queue = queue.then(() => syncNow(gen, participantIds)).catch(() => {});
-    return queue;
+    return enqueue(() => syncNow(gen, participantIds));
   }
 
   async function syncNow(gen: number, participantIds: readonly string[]) {
@@ -452,6 +757,11 @@ export function createHuddleCall(env: CallEnv) {
     }
     remotes.clear();
     pendingTracks.clear();
+    // カメラと画面も止める（ブラウザの使用中の印を消す）。pc を閉じるので transceiver は止めなくてよい
+    for (const kind of ["camera", "screen"] as const) {
+      stopTracks(outgoing[kind]?.stream);
+      delete outgoing[kind];
+    }
     pc?.close();
     pc = undefined;
     sender = undefined;
@@ -470,6 +780,10 @@ export function createHuddleCall(env: CallEnv) {
     toggleMic,
     selectMic,
     selectSpeaker,
+    toggleCamera,
+    selectCamera,
+    toggleShare,
+    dismissNotice,
     join,
     sync,
     setMuted,

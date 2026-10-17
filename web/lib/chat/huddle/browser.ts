@@ -6,6 +6,7 @@ import type { AudioSink, CallEnv, LevelMeter } from "./call";
 
 export const MIC_KEY = "hibari:huddle-mic";
 export const SPEAKER_KEY = "hibari:huddle-speaker";
+export const CAMERA_KEY = "hibari:huddle-camera";
 
 /** WebRTC が使えるブラウザか。使えなければハドルのボタンを出さない。 */
 export function callSupported(): boolean {
@@ -30,9 +31,13 @@ export function browserCallEnv(
     return audioContext;
   }
 
+  // 画面を共有できるのは getDisplayMedia のあるブラウザだけ（モバイルのブラウザにはない。ADR 0068 決定 9）
+  const canShareScreen = typeof navigator.mediaDevices?.getDisplayMedia === "function";
+
   return {
     ...base,
     getUserMedia: (constraints) => navigator.mediaDevices.getUserMedia(constraints),
+    getDisplayMedia: canShareScreen ? displayMedia : undefined,
     enumerateDevices: () => navigator.mediaDevices.enumerateDevices(),
     createPeerConnection: (config) => new RTCPeerConnection({ ...config, bundlePolicy: "max-bundle" }),
     canSelectSpeaker,
@@ -77,6 +82,8 @@ export function browserCallEnv(
       setMic: (id) => write(MIC_KEY, id),
       speaker: () => read(SPEAKER_KEY),
       setSpeaker: (id) => write(SPEAKER_KEY, id),
+      camera: () => read(CAMERA_KEY),
+      setCamera: (id) => write(CAMERA_KEY, id),
     },
     setInterval: (fn, ms) => window.setInterval(fn, ms),
     clearInterval: (id) => window.clearInterval(id as number | undefined),
@@ -84,6 +91,23 @@ export function browserCallEnv(
     clearTimeout: (id) => window.clearTimeout(id as number | undefined),
     now: Date.now,
   };
+}
+
+/**
+ * 画面の共有を求める（ADR 0068 決定 7）。
+ *
+ * まずチャットのタブ（通話を持つタブ）で求める。そこで取ったトラックは、ハドルのタブを閉じても続く（追記 C）。
+ * ボタンはハドルのタブで押されるので、ブラウザによっては「チャットのタブには操作がない」として断られる（InvalidStateError）。
+ * そのときはハドルのタブで求め直す。その場合、ハドルのタブを閉じると共有も終わる（トラックが ended になり、call.ts がやめる）。
+ */
+async function displayMedia(options: DisplayMediaStreamOptions, from?: Window): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getDisplayMedia(options);
+  } catch (err) {
+    const fallback = from && from !== window ? from.navigator.mediaDevices : undefined;
+    if (!(err instanceof DOMException && err.name === "InvalidStateError") || !fallback) throw err;
+    return fallback.getDisplayMedia(options);
+  }
 }
 
 // 選んだ機器は端末ごとに覚える（追記 B）。読み書きに失敗したら「覚えていない」と同じに扱う
