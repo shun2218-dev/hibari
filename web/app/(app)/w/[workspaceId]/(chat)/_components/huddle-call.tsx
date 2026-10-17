@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useEffectEvent, useState } from "react";
+import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { HuddleCameraMenu, HuddleDeviceMenu, HuddlePreview } from "@/components/chat/huddle-preview";
@@ -12,7 +12,9 @@ import { useHuddle, useHuddleSurface } from "@/hooks/chat/use-huddle";
 import { useHuddleLinkMenu } from "@/hooks/chat/use-huddle-link-menu";
 import { useHuddleView } from "@/hooks/chat/use-huddle-view";
 import { useAvatarUrls } from "@/hooks/chat/use-media";
+import { DESKTOP_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { createRingtone } from "@/lib/chat/huddle/ringtone";
+import { chooseStage, EMPTY_STAGE, STAGE_HOLD_MS, type StageMemory } from "@/lib/chat/huddle/stage";
 import { watchWindowInput } from "@/lib/chat/realtime/activity";
 import { HUDDLE_LINK_PARAM } from "@/lib/chat/format/links";
 import { huddleLinkAction, toBlockedHuddlePreviewView } from "@/lib/chat/views/huddles";
@@ -36,7 +38,9 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
   const store = useChatStore();
   const router = useRouter();
   const surface = useHuddleSurface();
-  const { call, room, self, preview, screen } = useHuddleView();
+  // 押して大きくしたタイル（ADR 0068 決定 9）。参加者は user id、共有は `screen:<user id>`
+  const [pinned, setPinned] = useState<string>();
+  const { call, room, self, preview, screen } = useHuddleView({ pinnedId: pinned });
   const features = useChatState((s) => s.features);
   const enabled = features?.huddles ?? false;
   const searchParams = useSearchParams();
@@ -62,6 +66,51 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
     void huddle.call.sync(roomHuddle.participants.map((p) => p.user_id));
   }, [huddle, huddleId, roomHuddle]);
 
+  // 受ける映像をステージに合わせる（ADR 0068 決定 5・6）。帯だけのときは受けない。
+  // 話した順による入れ替えは間をあけて行うので、話していない間も STAGE_HOLD_MS ごとに選び直す
+  const desktop = useMediaQuery(DESKTOP_QUERY);
+  const visible = surface.kind !== "none";
+  const mobile = surface.kind === "overlay" && !desktop;
+  const stageMemory = useRef<StageMemory>(EMPTY_STAGE);
+  const [stageTick, setStageTick] = useState(0);
+  const inCall = call.phase === "call";
+  useEffect(() => {
+    if (!inCall || !visible) return;
+    const id = window.setInterval(() => setStageTick((n) => n + 1), STAGE_HOLD_MS);
+    return () => window.clearInterval(id);
+  }, [inCall, visible]);
+  const selfId = self?.id;
+  const selfCamera = call.phase === "call" && call.camera;
+  const speaking = call.phase === "call" ? call.speaking : undefined;
+  useEffect(() => {
+    if (!huddle || !huddleId || !roomHuddle || roomHuddle.id !== huddleId || !selfId) return;
+    const result = chooseStage(
+      {
+        selfId,
+        selfCamera,
+        others: roomHuddle.participants
+          .filter((p) => p.user_id !== selfId)
+          .map((p) => ({ userId: p.user_id, camera: p.camera, screen: p.screen })),
+        pinnedId: pinned,
+        speaking: speaking ?? [],
+        visible,
+        mobile,
+        now: Date.now(),
+      },
+      stageMemory.current,
+    );
+    stageMemory.current = result.memory;
+    void huddle.call.syncVideo(result.tracks);
+  }, [huddle, huddleId, roomHuddle, selfId, selfCamera, pinned, speaking, visible, mobile, stageTick]);
+
+  // 大きくしていた人が抜けた・共有をやめたら、元の並びに戻す
+  const pinnedGone =
+    pinned !== undefined &&
+    !(roomHuddle?.participants.some((p) => p.user_id === pinned || (p.screen && `screen:${p.user_id}` === pinned)) ||
+      (call.phase === "call" && call.sharing && pinned === `screen:${selfId}`) ||
+      pinned === selfId);
+  if (pinnedGone) setPinned(undefined);
+
   // ハドルの画面を閉じたら、開いていたメニューとチャットも閉じる（次に開いたときは閉じた状態から）
   const shown = surface.kind !== "none";
   const [wasShown, setWasShown] = useState(shown);
@@ -72,6 +121,7 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
       setDeviceMenuOpen(false);
       setCameraMenuOpen(false);
       setPreviewMenu(undefined);
+      setPinned(undefined);
     }
   }
 
@@ -240,6 +290,7 @@ export function HuddleCall({ roomId }: { roomId?: string }) {
         // ボタンはハドルのタブで押される。チャットのタブで画面の共有を断られたとき、そちらで求め直す（lib/chat/huddle/browser.ts）
         onToggleShare={() => void controls.toggleShare(popup?.container.ownerDocument.defaultView ?? undefined)}
         onDismissNotice={() => controls.dismissNotice()}
+        onPin={(id) => setPinned((current) => (current === id ? undefined : id))}
         onToggleChat={() => setChatOpen((open) => !open)}
         onLeave={() => void controls.leave()}
         menu={linkMenu}

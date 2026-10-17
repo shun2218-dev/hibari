@@ -1,6 +1,8 @@
-import type { HuddleLeftData, HuddleICEServers, HuddleTrackKind } from "@/lib/api/types.gen";
+import type { HuddleLeftData, HuddleICEServers, HuddleQuality, HuddleTrackKind, HuddleTrackRequest } from "@/lib/api/types.gen";
 import { ApiError } from "@/lib/api/error";
 import type { ChatApi } from "@/lib/chat/api/chat-api";
+
+import type { StageTrack } from "./stage";
 
 /**
  * ハドルの通話（ADR 0066・0068）。マイク・カメラ・画面共有・RTCPeerConnection・心拍・話している人の判定を持つ。
@@ -126,6 +128,8 @@ export type HuddleCallState =
       /** 画面を共有できるブラウザか（モバイルのブラウザには getDisplayMedia がない。決定 9）。 */
       canShareScreen: boolean;
       notice?: CallNotice;
+      /** 受けているほかの人のカメラと画面（`videoKey` ごと）。ステージに載せた分だけ（ADR 0068 決定 5）。 */
+      remoteVideos: Readonly<Record<string, MediaStream>>;
     }
   | { phase: "problem"; roomId: string; problem: Exclude<CallProblem, "mic-denied" | "no-mic"> };
 
@@ -147,6 +151,7 @@ export type CallEnv = {
     | "leaveHuddle"
     | "publishHuddleTrack"
     | "unpublishHuddleTrack"
+    | "setHuddleSubscriptionQuality"
   >;
   /** 自分の user_id。 */
   userId: string;
@@ -183,7 +188,13 @@ export type CallEnv = {
   clearTimeout(id: unknown): void;
 };
 
-type Remote = { userId: string; mid: string; sink?: AudioSink; meter?: LevelMeter };
+/** 受けているトラック（mid ごと）。音声は鳴らして音量を測り、映像は remoteVideos に置く。 */
+type Remote = { userId: string; kind: HuddleTrackKind; mid: string; quality?: HuddleQuality; sink?: AudioSink; meter?: LevelMeter };
+
+/** 受けている映像の鍵（`<user id>:camera` / `<user id>:screen`）。 */
+export function videoKey(userId: string, kind: "camera" | "screen") {
+  return `${userId}:${kind}`;
+}
 
 /** 送っている（送ろうとしている）カメラか画面（ADR 0068 決定 1）。止めたら transceiver ごと止める（決定 2）。 */
 type Outgoing = { stream: MediaStream; transceiver?: RTCRtpTransceiver };
@@ -526,6 +537,7 @@ export function createHuddleCall(env: CallEnv) {
       cameraId,
       sharing: false,
       canShareScreen: env.getDisplayMedia !== undefined,
+      remoteVideos: {},
     });
     env.setCallRoom(roomId);
     try {
@@ -614,9 +626,59 @@ export function createHuddleCall(env: CallEnv) {
   }
 
   function attach(remote: Remote, remoteStream: MediaStream) {
+    if (remote.kind !== "audio") {
+      const key = videoKey(remote.userId, remote.kind);
+      patchCall((s) => (s.remoteVideos[key] === remoteStream ? s : { ...s, remoteVideos: { ...s.remoteVideos, [key]: remoteStream } }));
+      return;
+    }
     if (remote.sink) return;
     remote.sink = env.playAudio(remoteStream, state.phase === "call" ? state.speakerId : undefined);
     remote.meter = env.meter(remoteStream);
+  }
+
+  /** 受けているものを閉じる（画面から外し、Cloudflare の受けるトラックも閉じる）。 */
+  async function release(huddleId: string, participantId: string, gone: Remote[]) {
+    if (gone.length === 0) return;
+    const keys: string[] = [];
+    for (const r of gone) {
+      r.sink?.detach();
+      r.meter?.stop();
+      remotes.delete(r.mid);
+      if (r.kind !== "audio") keys.push(videoKey(r.userId, r.kind));
+    }
+    if (keys.length > 0) {
+      patchCall((s) => {
+        const remoteVideos = { ...s.remoteVideos };
+        for (const k of keys) delete remoteVideos[k];
+        return { ...s, remoteVideos };
+      });
+    }
+    await env.api.unsubscribeHuddle(huddleId, participantId, gone.map((r) => r.mid)).catch(() => {});
+  }
+
+  /** 受け始める。SFU の offer が返ったら answer を返す（決定 9）。SDP の列の中で呼ぶ。 */
+  async function receive(gen: number, huddleId: string, participantId: string, reqs: HuddleTrackRequest[]) {
+    if (reqs.length === 0 || !pc) return;
+    const res = await withConflictRetry(() => env.api.subscribeHuddle(huddleId, participantId, reqs));
+    if (gen !== generation || !pc) return;
+    for (const t of res.tracks) {
+      const quality = reqs.find((r) => r.user_id === t.user_id && r.kind === t.kind)?.quality;
+      const remote: Remote = { userId: t.user_id, kind: t.kind, mid: t.mid, quality };
+      remotes.set(t.mid, remote);
+      const pending = pendingTracks.get(t.mid);
+      if (pending) {
+        pendingTracks.delete(t.mid);
+        attach(remote, pending);
+      }
+    }
+    if (res.offer) {
+      await pc.setRemoteDescription({ type: "offer", sdp: res.offer.sdp });
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await withConflictRetry(() =>
+        env.api.renegotiateHuddle(huddleId, participantId, { type: "answer", sdp: pc?.localDescription?.sdp ?? answer.sdp ?? "" }),
+      );
+    }
   }
 
   async function beat(gen: number) {
@@ -639,46 +701,48 @@ export function createHuddleCall(env: CallEnv) {
     if (gen !== generation || state.phase !== "call" || !state.huddleId || !state.participantId || !pc) return;
     const { huddleId, participantId } = state;
     const others = new Set(participantIds.filter((id) => id !== env.userId));
-    const subscribed = new Set([...remotes.values()].map((r) => r.userId));
+    const audio = [...remotes.values()].filter((r) => r.kind === "audio");
+    const subscribed = new Set(audio.map((r) => r.userId));
 
-    // 抜けた人の分を閉じる
-    const gone = [...remotes.values()].filter((r) => !others.has(r.userId));
-    if (gone.length > 0) {
-      for (const r of gone) {
-        r.sink?.detach();
-        r.meter?.stop();
-        remotes.delete(r.mid);
-      }
-      await env.api.unsubscribeHuddle(huddleId, participantId, gone.map((r) => r.mid)).catch(() => {});
-    }
+    // 抜けた人の分を閉じる（映像はステージの選び直しで閉じる。syncVideo）
+    await release(huddleId, participantId, audio.filter((r) => !others.has(r.userId)));
 
     const added = [...others].filter((id) => !subscribed.has(id));
-    if (added.length === 0) return;
-    const res = await withConflictRetry(() =>
-      env.api.subscribeHuddle(
+    await receive(gen, huddleId, participantId, added.map((userId) => ({ user_id: userId, kind: "audio" as const })));
+  }
+
+  /**
+   * ステージに載せた映像に合わせて、受ける映像を増やし・減らし、層を替える（ADR 0068 決定 5・6）。
+   * 外れたものは閉じ（受けたまま止める仕組みは SFU にない）、層だけが変わったものは tracks/update で替える（SDP のやり取りなし）。
+   */
+  function syncVideo(tracks: readonly StageTrack[]) {
+    const gen = generation;
+    return enqueue(async () => {
+      if (gen !== generation || state.phase !== "call" || !state.huddleId || !state.participantId || !pc) return;
+      const { huddleId, participantId } = state;
+      const current = new Map([...remotes.values()].filter((r) => r.kind !== "audio").map((r) => [videoKey(r.userId, r.kind as "camera" | "screen"), r]));
+      const wanted = new Map(tracks.map((t) => [videoKey(t.userId, t.kind), t]));
+
+      await release(huddleId, participantId, [...current].filter(([k]) => !wanted.has(k)).map(([, r]) => r));
+
+      for (const [k, t] of wanted) {
+        const r = current.get(k);
+        if (!r || t.kind !== "camera" || !t.quality || r.quality === t.quality) continue;
+        // 層だけを替える。相手がカメラを止めた直後なら 404 になるが、次の huddle.updated で閉じる
+        await env.api.setHuddleSubscriptionQuality(huddleId, participantId, r.mid, t.userId, t.quality).then(
+          () => void (r.quality = t.quality),
+          () => {},
+        );
+      }
+
+      const added = [...wanted].filter(([k]) => !current.has(k)).map(([, t]) => t);
+      await receive(
+        gen,
         huddleId,
         participantId,
-        added.map((userId) => ({ user_id: userId, kind: "audio" as const })),
-      ),
-    );
-    if (gen !== generation || !pc) return;
-    for (const t of res.tracks) {
-      const remote: Remote = { userId: t.user_id, mid: t.mid };
-      remotes.set(t.mid, remote);
-      const pending = pendingTracks.get(t.mid);
-      if (pending) {
-        pendingTracks.delete(t.mid);
-        attach(remote, pending);
-      }
-    }
-    if (res.offer) {
-      await pc.setRemoteDescription({ type: "offer", sdp: res.offer.sdp });
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await withConflictRetry(() =>
-        env.api.renegotiateHuddle(huddleId, participantId, { type: "answer", sdp: pc?.localDescription?.sdp ?? answer.sdp ?? "" }),
+        added.map((t) => ({ user_id: t.userId, kind: t.kind, ...(t.quality ? { quality: t.quality } : {}) })),
       );
-    }
+    });
   }
 
   /** 同じセッションへの変更が重なった（409 huddle-negotiation-conflict）ら、少し待って 1 回だけやり直す（決定 4）。 */
@@ -786,6 +850,7 @@ export function createHuddleCall(env: CallEnv) {
     dismissNotice,
     join,
     sync,
+    syncVideo,
     setMuted,
     leave,
     receiveLeft,

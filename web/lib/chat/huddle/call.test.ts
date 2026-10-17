@@ -121,6 +121,7 @@ function setup(overrides: Partial<CallEnv> = {}) {
   const sinks: { stream: MediaStream; setSpeaker: ReturnType<typeof vi.fn>; detach: ReturnType<typeof vi.fn> }[] = [];
   const levels = new Map<MediaStream, number>();
   const prefs: Record<string, string> = {};
+  let nextRemoteMid = 1;
   const api = {
     huddleIceServers: vi.fn(async (): Promise<HuddleICEServers> => ({
       ice_servers: [{ urls: ["turn:turn.example"], username: "u", credential: "c" }],
@@ -132,9 +133,10 @@ function setup(overrides: Partial<CallEnv> = {}) {
       participant_id: "p-1",
       answer: { type: "answer", sdp: "remote-answer" },
     })),
+    // 本物と同じく、受けるトラックの mid は 1 本の接続の中で重ならない（"1"・"2"…と増える）
     subscribeHuddle: vi.fn(async (_h: string, _p: string, tracks: HuddleTrackRequest[]) => ({
       offer: { type: "offer", sdp: "remote-offer" },
-      tracks: tracks.map((t, i) => ({ user_id: t.user_id, kind: t.kind, mid: `${i + 1}` })),
+      tracks: tracks.map((t) => ({ user_id: t.user_id, kind: t.kind, mid: `${nextRemoteMid++}` })),
     })),
     renegotiateHuddle: vi.fn(async () => {}),
     unsubscribeHuddle: vi.fn(async () => {}),
@@ -142,6 +144,7 @@ function setup(overrides: Partial<CallEnv> = {}) {
     leaveHuddle: vi.fn(async () => {}),
     publishHuddleTrack: vi.fn(async () => ({ answer: { type: "answer", sdp: "track-answer" } })),
     unpublishHuddleTrack: vi.fn(async () => {}),
+    setHuddleSubscriptionQuality: vi.fn(async () => {}),
   };
   const heartbeat = vi.fn(async (): Promise<"ok" | "gone" | "unsent"> => "ok");
   const setCallRoom = vi.fn();
@@ -785,5 +788,64 @@ describe("画面共有（ADR 0068 決定 7）", () => {
   it("画面を共有できないブラウザ（getDisplayMedia がない）では canShareScreen が false", async () => {
     const t = await joinedWith(undefined);
     expect(phase(t.call.getSnapshot(), "call").canShareScreen).toBe(false);
+  });
+});
+
+describe("ほかの人の映像を受ける（ADR 0068 決定 5・6）", () => {
+  it("ステージに載せたカメラ（層つき）と共有された画面を受け、届いた映像を remoteVideos に置く。音は鳴らさない", async () => {
+    const t = await joined();
+    const sinks = t.sinks.length;
+
+    await t.call.syncVideo([
+      { userId: "u-a", kind: "camera", quality: "medium" },
+      { userId: "u-b", kind: "screen" },
+    ]);
+    expect(t.api.subscribeHuddle).toHaveBeenLastCalledWith("h-1", "p-1", [
+      { user_id: "u-a", kind: "camera", quality: "medium" },
+      { user_id: "u-b", kind: "screen" },
+    ]);
+    expect(t.api.renegotiateHuddle).toHaveBeenCalled();
+
+    t.pcs[0].track("1");
+    t.pcs[0].track("2");
+    const s = phase(t.call.getSnapshot(), "call");
+    expect(Object.keys(s.remoteVideos).sort()).toEqual(["u-a:camera", "u-b:screen"]);
+    expect(t.sinks.length).toBe(sinks);
+  });
+
+  it("層だけが変わったものは tracks/update で替え（受け直さない）、外れたものは閉じる", async () => {
+    const t = await joined();
+    await t.call.syncVideo([
+      { userId: "u-a", kind: "camera", quality: "medium" },
+      { userId: "u-b", kind: "camera", quality: "medium" },
+    ]);
+    t.pcs[0].track("1");
+    t.pcs[0].track("2");
+    t.api.subscribeHuddle.mockClear();
+
+    await t.call.syncVideo([{ userId: "u-a", kind: "camera", quality: "high" }]);
+    expect(t.api.setHuddleSubscriptionQuality).toHaveBeenCalledWith("h-1", "p-1", "1", "u-a", "high");
+    expect(t.api.subscribeHuddle).not.toHaveBeenCalled();
+    expect(t.api.unsubscribeHuddle).toHaveBeenCalledWith("h-1", "p-1", ["2"]);
+    expect(Object.keys(phase(t.call.getSnapshot(), "call").remoteVideos)).toEqual(["u-a:camera"]);
+
+    // 同じものをもう一度頼んでも、何もしない
+    t.api.setHuddleSubscriptionQuality.mockClear();
+    await t.call.syncVideo([{ userId: "u-a", kind: "camera", quality: "high" }]);
+    expect(t.api.setHuddleSubscriptionQuality).not.toHaveBeenCalled();
+    expect(t.api.subscribeHuddle).not.toHaveBeenCalled();
+  });
+
+  it("音声の出し入れは映像に触らない（抜けた人の映像はステージの選び直しで閉じる）", async () => {
+    const t = await joined();
+    await t.call.sync([ME, "u-a"]);
+    await t.call.syncVideo([{ userId: "u-a", kind: "camera", quality: "high" }]);
+    t.api.unsubscribeHuddle.mockClear();
+
+    await t.call.sync([ME]);
+    // 閉じるのは音声の mid だけ
+    expect(t.api.unsubscribeHuddle).toHaveBeenCalledWith("h-1", "p-1", ["1"]);
+    await t.call.syncVideo([]);
+    expect(t.api.unsubscribeHuddle).toHaveBeenLastCalledWith("h-1", "p-1", ["2"]);
   });
 });
