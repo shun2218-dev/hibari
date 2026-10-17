@@ -49,7 +49,7 @@ function setup({ blocked = false, mobile = false, call = fakeCall() } = {}) {
 }
 
 const IN_CALL: HuddleCallState = {
-  phase: "call", camera: false, cameras: [], sharing: false, canShareScreen: true,
+  phase: "call", camera: false, cameras: [], sharing: false, canShareScreen: true, remoteVideos: {},
   roomId: "r-1",
   huddleId: "h-1",
   participantId: "p-1",

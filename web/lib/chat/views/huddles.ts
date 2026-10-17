@@ -10,10 +10,11 @@ import type {
   HuddleMessageView,
   HuddlePreviewView,
   HuddleScreenView,
+  HuddleShareView,
   RoomKind,
   UserRef,
 } from "@/components/chat/types";
-import type { HuddleCallState } from "@/lib/chat/huddle/call";
+import { type HuddleCallState, videoKey } from "@/lib/chat/huddle/call";
 import type { HuddleLink, HuddleSuggestion, MessageHuddle, PastHuddle, Room, RoomHuddle, UserProfile } from "@/lib/api/types.gen";
 import { formatAgo } from "@/lib/chat/format/time";
 import { findHuddleLinks } from "@/lib/chat/format/links";
@@ -231,7 +232,13 @@ export function huddleLinkAction(room: Room, canPostHere: boolean): "start" | "n
 export function toHuddleScreenView(
   room: Room,
   call: CallPhase<"call">,
-  { me, names, avatarUrls = {}, renderVideo }: { me: UserRef; names: Names; avatarUrls?: UrlTable; renderVideo?: RenderVideo },
+  {
+    me,
+    names,
+    avatarUrls = {},
+    renderVideo,
+    pinnedId,
+  }: { me: UserRef; names: Names; avatarUrls?: UrlTable; renderVideo?: RenderVideo; pinnedId?: string },
 ): HuddleScreenView {
   const huddle = room.huddle !== null && (call.huddleId === undefined || room.huddle.id === call.huddleId) ? room.huddle : null;
   const ref = (id: string): UserRef =>
@@ -250,24 +257,49 @@ export function toHuddleScreenView(
         // 自分の映像は手元のカメラを映す（受ける本数に数えない。ADR 0068 決定 5）
         video: call.camera && call.video && renderVideo ? renderVideo(call.video, `camera-${me.id}`) : undefined,
       },
-      ...others.map((p) => ({
-        ...ref(p.user_id),
-        muted: p.muted,
-        speaking: !p.muted && speaking.has(p.user_id),
-        camera: p.camera,
-      })),
+      ...others.map((p) => {
+        // 受けているのはステージに載せた人の映像だけ（ADR 0068 決定 5）。載っていない人はアバターで出す
+        const stream = p.camera ? call.remoteVideos[videoKey(p.user_id, "camera")] : undefined;
+        return {
+          ...ref(p.user_id),
+          muted: p.muted,
+          speaking: !p.muted && speaking.has(p.user_id),
+          camera: p.camera,
+          video: stream && renderVideo ? renderVideo(stream, videoKey(p.user_id, "camera")) : undefined,
+        };
+      }),
     ],
     joiningSoon: (huddle?.joining_soon ?? []).filter((id) => id !== me.id).map(ref),
     muted: call.muted,
     camera: call.camera,
     sharing: call.sharing,
     canShareScreen: call.canShareScreen,
-    screens:
-      call.sharing && call.screen && renderVideo
-        ? [{ id: `screen-${me.id}`, owner: me, video: renderVideo(call.screen, `screen-${me.id}`) }]
-        : [],
+    screens: renderVideo ? huddleScreens(call, others, ref, me, renderVideo) : [],
+    pinnedId,
     notice: call.notice,
   };
+}
+
+/** 押して大きくする共有の id（ステージの pinnedId と同じ形。lib/chat/huddle/stage.ts）。 */
+export function screenPinId(userId: string) {
+  return `screen:${userId}`;
+}
+
+/** 共有されている画面（ADR 0068 決定 7）。自分の共有は手元の画面を、ほかの人の共有は受けたものを映す。受ける前のものは出さない。 */
+function huddleScreens(
+  call: CallPhase<"call">,
+  others: RoomHuddle["participants"],
+  ref: (id: string) => UserRef,
+  me: UserRef,
+  renderVideo: RenderVideo,
+): HuddleShareView[] {
+  const out: HuddleShareView[] = [];
+  if (call.sharing && call.screen) out.push({ id: screenPinId(me.id), owner: me, video: renderVideo(call.screen, videoKey(me.id, "screen")) });
+  for (const p of others) {
+    const stream = p.screen ? call.remoteVideos[videoKey(p.user_id, "screen")] : undefined;
+    if (stream) out.push({ id: screenPinId(p.user_id), owner: ref(p.user_id), video: renderVideo(stream, videoKey(p.user_id, "screen")) });
+  }
+  return out;
 }
 
 // ---- ハドルへのリンクのカード（ADR 0067 決定 2） ----

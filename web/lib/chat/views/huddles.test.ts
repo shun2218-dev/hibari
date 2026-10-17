@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { MessageHuddle, RoomHuddle } from "@/lib/api/types.gen";
 import { kei, miyuki, naoki, room } from "@/test/chat-data";
@@ -21,6 +21,7 @@ import {
   toHuddleSuggestionView,
   toHuddleMessageView,
   toHuddlePreviewView,
+  screenPinId,
   toHuddleScreenView,
 } from "./huddles";
 
@@ -159,6 +160,7 @@ describe("toHuddleScreenView（追記 C）", () => {
     cameras: [],
     sharing: false,
     canShareScreen: true,
+    remoteVideos: {},
     roomId: "room-1",
     huddleId: "h-1",
     participantId: "p-1",
@@ -189,6 +191,46 @@ describe("toHuddleScreenView（追記 C）", () => {
   it("別のハドル（終わって新しく始まった）の人は出さない", () => {
     const view = toHuddleScreenView(room("room-1", "雑談", { huddle: roomHuddle([miyuki.id], { id: "h-2" }) }), call, { me, names });
     expect(view.participants.map((p) => p.id)).toEqual([naoki.id]);
+  });
+
+  it("カメラ（ADR 0068）: 自分は手元の映像、ほかの人は受けた映像を映す。受けていない人はアバターのまま", () => {
+    const h = roomHuddle([naoki.id, miyuki.id, kei.id]);
+    h.participants[1] = { user_id: miyuki.id, muted: false, camera: true, screen: false };
+    h.participants[2] = { user_id: kei.id, muted: false, camera: true, screen: false };
+    const mine = {} as MediaStream;
+    const miyukiCamera = {} as MediaStream;
+    const renderVideo = vi.fn((stream: MediaStream, key: string) => ({ stream, key }) as never);
+    const view = toHuddleScreenView(
+      room("room-1", "雑談", { huddle: h }),
+      { ...call, camera: true, video: mine, remoteVideos: { [`${miyuki.id}:camera`]: miyukiCamera } },
+      { me, names, renderVideo },
+    );
+    expect(view.camera).toBe(true);
+    expect(view.participants.map((p) => [p.id, p.camera, p.video])).toEqual([
+      [naoki.id, true, { stream: mine, key: `camera-${naoki.id}` }],
+      [miyuki.id, true, { stream: miyukiCamera, key: `${miyuki.id}:camera` }],
+      // ステージに載っていない（受けていない）
+      [kei.id, true, undefined],
+    ]);
+  });
+
+  it("画面共有（ADR 0068 決定 7）: 自分の共有と、受けたほかの人の共有を並べる。押して大きくした id を渡す", () => {
+    const h = roomHuddle([naoki.id, miyuki.id]);
+    h.participants[1] = { user_id: miyuki.id, muted: false, camera: false, screen: true };
+    const mine = {} as MediaStream;
+    const theirs = {} as MediaStream;
+    const renderVideo = (stream: MediaStream, key: string) => ({ stream, key }) as never;
+    const view = toHuddleScreenView(
+      room("room-1", "雑談", { huddle: h }),
+      { ...call, sharing: true, screen: mine, remoteVideos: { [`${miyuki.id}:screen`]: theirs } },
+      { me, names, renderVideo, pinnedId: screenPinId(miyuki.id) },
+    );
+    expect(view.sharing).toBe(true);
+    expect(view.screens?.map((s) => [s.id, s.owner.id, s.video])).toEqual([
+      [screenPinId(naoki.id), naoki.id, { stream: mine, key: `${naoki.id}:screen` }],
+      [screenPinId(miyuki.id), miyuki.id, { stream: theirs, key: `${miyuki.id}:screen` }],
+    ]);
+    expect(view.pinnedId).toBe(`screen:${miyuki.id}`);
   });
 
   it("「もうすぐ参加する」を押した人（自分を除く）", () => {

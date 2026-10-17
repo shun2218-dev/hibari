@@ -21,7 +21,7 @@ const renderVideo: RenderVideo = (stream, key) => createElement(StreamVideo, { k
  * 通話しているハドルの、画面と帯に出すもの（ADR 0066 追記 B・C）。
  * ルームは通話のもの（開いているルームとは限らない。別のワークスペースのこともある）。
  */
-export function useHuddleView(): {
+export function useHuddleView({ pinnedId }: { pinnedId?: string } = {}): {
   call: HuddleCallState;
   room: Room | undefined;
   self: UserRef | undefined;
@@ -57,8 +57,11 @@ export function useHuddleView(): {
     [call, room, self],
   );
   const screen = useMemo(
-    () => (call.phase === "call" && room && self ? toHuddleScreenView(room, call, { me: self, names, avatarUrls, renderVideo }) : undefined),
-    [call, room, self, names, avatarUrls],
+    () =>
+      call.phase === "call" && room && self
+        ? toHuddleScreenView(room, call, { me: self, names, avatarUrls, renderVideo, pinnedId })
+        : undefined,
+    [call, room, self, names, avatarUrls, pinnedId],
   );
   return { call, room, self, names, preview, screen };
 }

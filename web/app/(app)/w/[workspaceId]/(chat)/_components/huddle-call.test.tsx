@@ -219,6 +219,41 @@ describe("カメラ（ADR 0068）", () => {
   });
 });
 
+describe("ほかの人の映像（ADR 0068 決定 5）", () => {
+  beforeEach(() => {
+    nav.params = { workspaceId: "ws-1", roomId: "r-design" };
+    nav.search = "";
+    window.localStorage.clear();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+  });
+
+  it("ハドルの画面が見えている間、カメラを付けた人の映像を層つきで受ける", async () => {
+    const user = userEvent.setup();
+    const subscriptions: unknown[] = [];
+    const { sockets } = await openDesign(
+      {},
+      {
+        "POST /api/v1/huddles/h-1/participants/p-1/subscriptions": (_url, init) => {
+          subscriptions.push(JSON.parse(init.body as string));
+          return json(200, { offer: null, tracks: [] });
+        },
+      },
+    );
+    await user.click(await screen.findByRole("button", { name: "ハドルミーティングを開始する" }));
+    const overlay = await screen.findByRole("dialog", { name: "ハドルミーティング" });
+    await user.click(await within(overlay).findByRole("button", { name: "ハドルミーティングを開始する" }));
+
+    const others = huddle([naoki.id, miyuki.id]);
+    others.participants[1] = { user_id: miyuki.id, muted: false, camera: true, screen: false };
+    sockets.last().receive({ type: "huddle.updated", data: { room_id: "r-design", huddle: others } });
+
+    await waitFor(() =>
+      // 自分と 2 人なので、大きなタイルの high（決定 6）
+      expect(subscriptions).toContainEqual({ tracks: [{ user_id: miyuki.id, kind: "camera", quality: "high" }] }),
+    );
+  });
+});
+
 describe("ハドルへのリンク（ADR 0067 決定 1・2）", () => {
   beforeEach(() => {
     nav.router.replace.mockReset();
