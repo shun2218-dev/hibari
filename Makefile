@@ -137,6 +137,10 @@ web: ## ホストで Next.js の開発サーバーを起動する（API は comp
 web-test: ## web/ の lint / 型チェック / Vitest を実行する
 	cd web && npm run lint && npm run typecheck && npm test
 
+.PHONY: tools-test
+tools-test: ## tools/ のシェルスクリプトのテストを実行する（API は呼ばない）
+	tools/linear_test.sh
+
 # ---- その他 ----
 
 .PHONY: keys

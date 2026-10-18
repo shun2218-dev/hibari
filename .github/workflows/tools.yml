@@ -1,0 +1,23 @@
+# tools/ のシェルスクリプトのテスト。PR ごとに実行する（CLAUDE.md「テスト」）。
+name: tools
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tools-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: tools/linear.sh
+        # API は呼ばない。release の PR に並べる Issue の ID の集め方だけを確かめる。
+        run: tools/linear_test.sh

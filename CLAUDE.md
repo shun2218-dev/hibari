@@ -246,11 +246,12 @@ scope の例: `auth` / `chat` / `platform` / `httpx` / `db` / `web` / `docs` / `
 - `feature/*` / `bugfix/*` → `develop`: **squash マージ**。PR のタイトルを Conventional Commits の形式にする。
 - `release/*` / `hotfix/*` → `main` と `develop`: **マージコミット**（squash しない。main と develop の履歴を分岐させないため）。
 - PR の説明には「何を・なぜ」「テスト内容」「関連する ADR / ロードマップのフェーズ」を書く。
+- feat と fix は Linear に起票し、PR の説明に `Fixes <ID>` を書く（`.claude/skills/linear`）。状態は Linear の GitHub 連携が進める（develop へのマージで「リリース待ち」、main へのマージで Done）。
 
 ### リリース手順
 1. `develop` から `release/vX.Y.Z` を切る（SemVer。1.0.0 までは `0.Y.Z`）。
 2. バージョンを更新する（`web/package.json` など）。コミットは `chore(release): vX.Y.Z`。Go のバイナリには、ビルド時に `-ldflags` でタグのバージョンを埋め込む。
-3. `release/vX.Y.Z` → `main` の PR を作ってマージする。
+3. `release/vX.Y.Z` → `main` の PR を作ってマージする。PR の説明には、`tools/linear.sh release-ids` で集めた Issue を `Fixes …` で並べる（develop に戻す手順 4 の PR には書かない）。
 4. `release/vX.Y.Z` → `develop` の PR を作ってマージする（リリースブランチでの変更を develop に戻す）。
 5. `main` のマージコミットにタグ `vX.Y.Z` を付けて push する。
 6. GitHub の Releases でリリースノートを作成する。
