@@ -4,7 +4,8 @@ Go 製のリアルタイムチャットアプリ。Slack / Discord 型の「ワ�
 
 ## 目的
 
-オーナーがバックエンド、特に WebSocket を使ったリアルタイム設計を**自分で実装して学ぶ**ためのプロジェクト。
+**AI をフル活用して開発する**実績のためのプロジェクト。実装は Claude Code、デザインは Claude Design で行う。オーナーは設計の判断とレビューを担う。
+オーナー自身が手で実装して学ぶことは目的にしない。自律的なワークフロー（サブエージェント・並列化・PR の見守り）を積極的に使う（「AI での開発の進め方」）。
 
 - 「動けばいい」コードではなく、**なぜその設計なのかがコードとコメントから読み取れる**状態を目指す。
 - 設計判断は `docs/adr/` に残す。コードのコメントは「何をしているか」ではなく「なぜそうしているか」を書く。
@@ -181,6 +182,29 @@ hibari/
 - presentational コンポーネントは、status ごとの表示（pending / sent / failed / deleted など）をテストする。
 - データ層（fetch ラッパーの単一フライトの refresh、WS の再接続と `after_change_seq` の同期、楽観的更新）はユニットテストを厚くする。
 
+## AI での開発の進め方（pstack）
+
+作業の進め方は pstack（`michael-denyer/pstack-claude`。poteto/pstack の Claude Code 版、MIT）に任せる。
+`.claude/settings.json` でプロジェクトのプラグインとして入れ、版をタグで固定する。
+
+- **優先順位**: この CLAUDE.md と `docs/` の設計の正本 → `.agents/playbooks/`（hibari 向けの上書き）→ pstack に同梱の playbook。ぶつかったら上が勝つ。
+- pstack の playbook を hibari の決まりに合わせるときは、同梱のファイルを写さずに `.agents/playbooks/` に上書きを書く（pstack の「Project playbooks」の書式）。
+- **人の確認を待つもの**: ADR・デザイン（`docs/ui/`）・`docs/` の設計の正本を変える PR、現在のフェーズの範囲外の作業、取り消せない操作（main への push、本番へのデプロイ、データの削除）。
+  これ以外の取り消せる作業は、pstack の「Autonomy」のとおり確認せずに進めてよい。
+- `/no-comments` は使わない。コメントには「なぜ」を書く（「目的」）。
+- `.claude/skills/` には hibari 固有の勘所（seq・配信の欠け・権限の反映など）だけを置く。どのプロジェクトにも通じる原則は pstack の principle スキルに任せ、写さない。
+- pstack の版を上げたら、`.agents/playbooks/` がまだ同梱の手順に合っているかを `node <pstack のプラグインのディレクトリ>/skills/poteto-mode/scripts/check-playbooks.mjs` で確かめる。
+
+### worktree
+
+- メインのチェックアウトは `develop` のまま置き、作業はブランチごとに `.claude/worktrees/<名前>` の worktree で行う。サブエージェントも自分の worktree で書く。
+- Claude Code は既定で `origin/<既定のブランチ>`（= `main`）から worktree を切る。`develop` から切るために `worktree.baseRef` を `"head"` にしてある。
+  worktree を作る前に、メインのチェックアウトの `develop` を最新にする。
+- `keys/`（`make keys` で作る開発用の鍵。git の管理外）は `worktree.symlinkDirectories` でメインのチェックアウトのものを共有する。
+- compose のプロジェクト名は `hibari` に固定なので、どの worktree からも同じ Postgres / Redis / RustFS を使う。
+  **`make test` は同時に 1 本だけ実行する**（テスト用の DB `hibari_test` と Redis の DB 1 を共有するため）。
+- `web/` は worktree ごとに `npm ci` する（`node_modules` は共有しない。`package.json` が worktree ごとに違いうるため）。
+
 ## Git 運用（Git Flow）
 
 ### ブランチ
@@ -196,7 +220,7 @@ hibari/
 
 - **`main` と `develop` への直接のコミット・push は禁止。** 取り込みは必ず PR のマージで行う。
 - `.githooks/` のフックがローカルで直接のコミットと push を止める（clone したら `git config core.hooksPath .githooks` を実行する）。GitHub 側でもブランチ保護を設定する。
-- 作業を始めるときは、必ず `develop` の最新から作業ブランチを切る。
+- 作業を始めるときは、必ず `develop` の最新から作業ブランチを切る（worktree で。「AI での開発の進め方」）。
 - ブランチ名は英小文字とハイフンで、作業内容を表す（例: `feature/dev-environment`、`feature/auth-refresh-rotation`）。フェーズ番号（`phase-1` など）は入れない。
 
 ### コミットメッセージ
