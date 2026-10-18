@@ -10,5 +10,23 @@
       "Bash(git * -c core.hooksPath*)",
       "Bash(git -c core.hooksPath*)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "pstack-claude": {
+      "source": {
+        "source": "github",
+        "repo": "michael-denyer/pstack-claude",
+        "ref": "v0.9.93"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "pstack@pstack-claude": true
+  },
+  "worktree": {
+    "baseRef": "head",
+    "symlinkDirectories": [
+      "keys"
+    ]
   }
 }

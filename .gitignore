@@ -9,6 +9,9 @@
 .env.*
 !.env.example
 
+# Claude Code の worktree（CLAUDE.md「AI での開発の進め方」）
+/.claude/worktrees/
+
 # 開発用の鍵（make keys で生成する）
 /keys/
 *.pem
