@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tools/linear.sh の release-ids を、使い捨ての git リポジトリで確かめる（API は呼ばない）。
+# create は、API を呼ぶ前に止まる引数の誤りだけを確かめる。
 # release の PR に並べる ID を取りこぼす・余計に拾うと、Issue が Done にならない・別の Issue を閉じるため。
 set -euo pipefail
 
@@ -42,5 +43,14 @@ check "範囲に Issue がなければ何も出さない" \
 check "チームのキーを変えられる" \
   "" \
   "$(env -u LINEAR_API_KEY LINEAR_TEAM_KEY=HIB "$script" release-ids main..develop)"
+
+# API を呼ぶ前に止まることを、キーを外して確かめる（キーの不足ではなく、引数の誤りで止まる）。
+check "create は知らないオプションで止まる" \
+  "linear.sh: 知らないオプション: --backlog" \
+  "$(env -u LINEAR_API_KEY "$script" create --backlog feature x 2>&1 || true)"
+
+check "create --todo のあとも種類を確かめる" \
+  "linear.sh: 種類は feature か bug（chore）" \
+  "$(env -u LINEAR_API_KEY "$script" create --todo chore x 2>&1 || true)"
 
 exit "$fail"

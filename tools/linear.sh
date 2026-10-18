@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Linear の Issue を起票し、リリースに含まれる Issue の ID を集める（.claude/skills/linear）。
 #
-#   tools/linear.sh create feature|bug <タイトル> [<説明の Markdown ファイル>]
+#   tools/linear.sh create [--todo] feature|bug <タイトル> [<説明の Markdown ファイル>]
 #       チーム（LINEAR_TEAM_KEY）の hibari プロジェクトに起票し、「<ID>\t<URL>」を出力する。
+#       状態は In Progress。--todo を付けると Todo（フェーズの残りのタスクを先にまとめて起票するとき）。
 #   tools/linear.sh release-ids [<範囲>]
 #       範囲（既定は origin/main..origin/develop）のコミットの本文から Issue の ID を集めて 1 行ずつ出力する。
 #   tools/linear.sh state <ID>
@@ -56,12 +57,18 @@ gql() {
 }
 
 cmd_create() {
+  # 起票は着手するときが基本なので In Progress を既定にし、先に積んでおくときだけ Todo にする。
+  local state="In Progress"
+  case "${1:-}" in
+    --todo) state="Todo"; shift ;;
+    -*) die "知らないオプション: $1" ;;
+  esac
   local kind="${1:-}" title="${2:-}" desc_file="${3:-}"
   local label
   case "$kind" in
     feature) label="Feature" ;;
     bug) label="Bug" ;;
-    *) die "種類は feature か bug（$kind）" ;;
+    *) die "種類は feature か bug（${kind}）" ;;
   esac
   [[ -n "$title" ]] || die "タイトルがない"
   local desc=""
@@ -83,12 +90,11 @@ cmd_create() {
   team_id="$(jq -r '.data.teams.nodes[0].id // empty' <<<"$meta")"
   project_id="$(jq -r '.data.projects.nodes[0].id // empty' <<<"$meta")"
   label_id="$(jq -r --arg n "$label" '.data.teams.nodes[0].labels.nodes[] | select(.name == $n) | .id' <<<"$meta")"
-  # 起票するのは着手するときなので、最初から In Progress にする。
-  state_id="$(jq -r '.data.teams.nodes[0].states.nodes[] | select(.name == "In Progress") | .id' <<<"$meta")"
+  state_id="$(jq -r --arg n "$state" '.data.teams.nodes[0].states.nodes[] | select(.name == $n) | .id' <<<"$meta")"
   [[ -n "$team_id" ]] || die "チーム $TEAM_KEY が見つからない"
   [[ -n "$project_id" ]] || die "プロジェクト $PROJECT_NAME が見つからない"
   [[ -n "$label_id" ]] || die "ラベル $label が見つからない"
-  [[ -n "$state_id" ]] || die "状態 In Progress が見つからない"
+  [[ -n "$state_id" ]] || die "状態 $state が見つからない"
 
   local res
   res="$(gql 'mutation($input: IssueCreateInput!) {
@@ -127,7 +133,7 @@ main() {
     create) cmd_create "$@" ;;
     release-ids) cmd_release_ids "$@" ;;
     state) cmd_state "$@" ;;
-    *) die "使い方: tools/linear.sh create feature|bug <タイトル> [<説明のファイル>] | release-ids [<範囲>] | state <ID>" ;;
+    *) die "使い方: tools/linear.sh create [--todo] feature|bug <タイトル> [<説明のファイル>] | release-ids [<範囲>] | state <ID>" ;;
   esac
 }
 

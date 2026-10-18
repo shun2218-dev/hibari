@@ -38,6 +38,17 @@ docs / chore / ci / refactor / test / build / perf は起票しない。
 3. 説明には、ロードマップのフェーズ・関連する ADR・完了の条件を書く。バグなら再現の手順も書く。説明のファイルは scratchpad に置き、コミットしない。
 4. ブランチ名は CLAUDE.md の決まり（`feature/<内容>`）のまま。ID は入れなくてよい（PR の本文で結び付く）。
 
+### フェーズの残りを先に積んでおく
+
+オーナーに頼まれたときは、フェーズの構築順のうち feat になるものを先にまとめて起票してよい。`--todo` を付けて Todo で作る。
+
+```sh
+tools/linear.sh create --todo feature "<タイトル>" [<説明の Markdown ファイル>]
+```
+
+着手するときは新しく起票せず、その Issue の ID を PR の本文の `Fixes` に書く。
+ブランチ名に ID を入れないので、ブランチを作っても Todo のまま。develop へのマージで「リリース待ち」に進むので、途中で In Progress にしなくてよい。
+
 ## PR を出す
 
 - feature / bugfix の PR の本文の `## 関連` に `Fixes <ID>` を書く。1 つの PR で複数の Issue を片付けるなら `Fixes SHU-30, SHU-31`。
@@ -59,7 +70,7 @@ docs / chore / ci / refactor / test / build / perf は起票しない。
 
 hotfix も同じ。`hotfix/vX.Y.Z` → main の PR に `Fixes` を書き、develop に戻す PR には書かない。
 
-## 確かめていないこと
+## 確かめたこと
 
-1 つの Issue に、develop 向けと main 向けの 2 本の PR が結び付いたときに、main へのマージで Done になること。
-Linear の資料には「結び付いた最後の PR が条件を満たしたときに状態が変わる」とある。最初のリリースで実物を確かめ、結果をこの節に書く。
+1 つの Issue に、develop 向けと main 向けの 2 本の PR が結び付いても、main へのマージで Done になる。
+v0.1.0 で確かめた（SHU-22 に #224 と #226 が結び付き、#226 のマージで Done になった。2026-10-19）。
