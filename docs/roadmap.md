@@ -1350,20 +1350,20 @@ Slack の実物の画面（オーナーのスクリーンショット）で見�
 **構築順**（PR を分ける。ADR 0068 の末尾と同じ）
 1. 設計: ADR 0068 ← 完了（#214）
 2. デザイン: タイルの映像・グリッドと画面共有の並べ方・ピン留め・操作の列のカメラと画面共有・プレビューのカメラ・許可がない表示・3 人目の共有・モバイル。story に描いて `docs/ui/` に足し、オーナーに見てもらう ← 完了（#215。`docs/ui/README.md` の「Phase 6.18b で足した画面」。オーナーの確認済み）
-3. サーバー: 送る・やめるの API、参加の状態のカメラと画面、受ける要求の種類と層、層を替える API、画面共有の同時 2 人、`docs/events.md`
-4. Web: 別のタブで映像を映せるかの確認、カメラと画面の取得、simulcast、ステージ、層の選び方、画面共有の並べ方、プレビューのカメラ
-5. 実物の確認はオーナー
+3. サーバー: 送る・やめるの API、参加の状態のカメラと画面、受ける要求の種類と層、層を替える API、画面共有の同時 2 人、`docs/events.md` ← 完了（SFU のクライアントは #216、API は #218。ADR 0068 追記 A）
+4. Web: 別のタブで映像を映せるかの確認、カメラと画面の取得、simulcast、ステージ、層の選び方、画面共有の並べ方、プレビューのカメラ ← 完了（送るは #220、受けるは #221。別のタブに映せることと画面の共有を求めるタブは、headless の Chrome で確かめた）
+5. 実物の確認はオーナー ← 完了（2 つのブラウザ。2026-10-17）
 
 **DoD**
-- [ ] 入った後にカメラと画面共有を始め・やめられ、ほかの人の画面にすぐ出て消える。どのハドルも音声だけで始まる
-- [ ] 参加前のプレビューでカメラのオンとオフと機器を選べ、選んだものを次も使う
-- [ ] 止めたトラックは Cloudflare で閉じ、`huddle.updated` の `camera` / `screen` が変わる（偽の SFU のテスト）
-- [ ] 同じハドルにいない人の映像は受けられない。キック・private からの削除・セッションの失効で、映像も見えなくなる（テストと実物）
-- [ ] 受ける映像はステージに載せた分だけで、ハドルのタブを閉じると 1 本も受けない（web のテスト）
-- [ ] カメラは 3 つの層で送り、タイルの大きさで層が替わる（SDP のやり取りなし）。API に `rid` が出ない
-- [ ] 画面共有の 3 人目は 409。2 人が同時に押しても 3 人にならない（並行テスト）
-- [ ] モバイルでカメラを使え、画面共有のボタンは出ない。共有された画面は見られる
-- [ ] 実物で、2 つのブラウザでカメラと画面共有が見え、転送量が ADR の見積もりに収まる
+- [x] 入った後にカメラと画面共有を始め・やめられ、ほかの人の画面にすぐ出て消える。どのハドルも音声だけで始まる（`TestPublishHuddleTrack`、web の `huddle/call.test.ts`・`huddle-call.test.tsx`、実物）
+- [x] 参加前のプレビューでカメラのオンとオフと機器を選べ、選んだものを次も使う（web の `huddle/call.test.ts`・`huddle-preview.test.tsx`、実物）
+- [x] 止めたトラックは Cloudflare で閉じ、`huddle.updated` の `camera` / `screen` が変わる（偽の SFU のテスト）（`TestPublishHuddleTrack`・`TestSetTrack`・`TestHuddleVideoAPI`）
+- [x] 同じハドルにいない人の映像は受けられない。キック・private からの削除・セッションの失効で、映像も見えなくなる（テストと実物）（`TestSubscribeHuddle`・`TestSubscribeHuddleVideo`・`TestHuddleVideoRemovedOnKick`・`TestHuddleRemovedOnAccessChange`。外すときはセッションのトラックを全部閉じる。実物はキック）
+- [x] 受ける映像はステージに載せた分だけで、ハドルのタブを閉じると 1 本も受けない（web のテスト）（`huddle/stage.test.ts`・`huddle/call.test.ts` の `syncVideo`・`huddle-call.test.tsx`、実物）
+- [x] カメラは 3 つの層で送り、タイルの大きさで層が替わる（SDP のやり取りなし）。API に `rid` が出ない（`TestMediaSubscribeSimulcast`・`TestMediaSetQuality`・`TestPullTracksSimulcast`・`TestUpdateTracks`、web の `huddle/call.test.ts`・`huddle/stage.test.ts`。API は `quality`）
+- [x] 画面共有の 3 人目は 409。2 人が同時に押しても 3 人にならない（並行テスト）（`TestConcurrentScreenSharesRespectLimit`・`TestHuddleScreenShareLimit`・`TestHuddleVideoAPI`、実物）
+- [ ] モバイルでカメラを使え、画面共有のボタンは出ない。共有された画面は見られる（ボタンを出さないことは web の `huddle-screen.test.tsx`・`huddle/call.test.ts` で確かめた。**実物のスマートフォンでの確認がまだ**）
+- [x] 実物で、2 つのブラウザでカメラと画面共有が見え、転送量が ADR の見積もりに収まる（オーナーの確認: 2026-10-17）
 
 ---
 
