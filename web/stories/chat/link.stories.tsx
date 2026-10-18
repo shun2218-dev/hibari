@@ -1,0 +1,145 @@
+import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+
+import { chat } from "@/stories/screens/chat";
+
+/**
+ * チャット / リンクと移動。
+ *
+ * story の id がそのまま docs/ui/screenshots/ の PNG のパスになる（`chat-link--…` ↔ `chat/link/….png`。ADR 0047 決定 2）。
+ * title は日本語にできるが、id は PNG のパスに合わせて固定する。
+ */
+const meta = {
+  title: "チャット/リンクと移動",
+  // PNG のパス（chat/link/）と対応させる。title を日本語にしているので、id は自動生成に任せない。
+  id: "chat-link",
+  // この tag が「docs/ui/screenshots/ の PNG と 1 対 1 の画面」の印。撮影ツールと 1 対 1 の検査がこれで選ぶ。
+  tags: ["screenshot"],
+  // 画面を見るための story で、引数をいじる想定がないので下のパネルは出さない。
+  // screenshot はこの tag と対で「撮影の対象」を表す。既定は実装から撮ったもの（story ごとに上書きする）。
+  parameters: { options: { showPanel: false }, screenshot: { source: "app" } },
+} satisfies Meta;
+
+export default meta;
+
+type Story = StoryObj<typeof meta>;
+
+export const MessageLinkCard: Story = {
+  name: "メッセージへのリンクのカード",
+  tags: ["since:6.11"],
+  render: () => chat({ linkCards: true }),
+};
+
+export const UnreadJumpBar: Story = {
+  name: "未読へ飛ぶバー",
+  tags: ["since:6.11"],
+  render: () => chat({ jump: "unread-bar" }),
+};
+
+export const JumpHighlight: Story = {
+  name: "飛んできた先の強調",
+  tags: ["since:6.11"],
+  render: () => chat({ jump: "highlight" }),
+};
+
+export const MessageNotFound: Story = {
+  name: "リンク先のメッセージが見つからない",
+  tags: ["since:6.11"],
+  render: () => chat({ jump: "not-found" }),
+};
+
+export const MobileUnreadJumpBar: Story = {
+  name: "未読へ飛ぶバー（モバイル）",
+  tags: ["since:6.11"],
+  parameters: { screenshot: { size: "390x844" } },
+  globals: { viewport: { value: "mobile" } },
+  render: () => chat({ jump: "unread-bar" }),
+};
+
+export const MobileJumpHighlight: Story = {
+  name: "飛んできた先の強調（モバイル）",
+  tags: ["since:6.11"],
+  parameters: { screenshot: { size: "390x844" } },
+  globals: { viewport: { value: "mobile" } },
+  render: () => chat({ jump: "highlight" }),
+};
+
+export const ChannelLinks: Story = {
+  name: "チャンネルへのリンク（#名前）",
+  tags: ["since:6.16"],
+  render: () => chat({ channelLinks: true }),
+};
+
+export const ChannelLinksDark: Story = {
+  name: "チャンネルへのリンク（ダーク）",
+  tags: ["since:6.16"],
+  parameters: { theme: "dark" },
+  render: () => chat({ channelLinks: true }),
+};
+
+export const ChannelCompletion: Story = {
+  name: "チャンネルへのリンク: # の補完",
+  tags: ["since:6.16"],
+  render: () => chat({ channelLinks: true, mentionQuery: "#" }),
+};
+
+// ---- 外部のリンクのプレビュー（ADR 0065）----
+
+export const LinkPreview: Story = {
+  name: "外部のリンクのプレビュー",
+  tags: ["since:6.17"],
+  render: () => chat({ linkPreviews: "timeline" }),
+};
+
+export const LinkPreviewDark: Story = {
+  name: "外部のリンクのプレビュー（ダーク）",
+  tags: ["since:6.17"],
+  parameters: { theme: "dark" },
+  render: () => chat({ linkPreviews: "timeline" }),
+};
+
+/** 横長ではない画像は、右のサムネイルに出す（ADR 0065 の追記）。 */
+export const LinkPreviewThumbnail: Story = {
+  name: "外部のリンクのプレビュー: 横長ではない画像（サムネイル）",
+  tags: ["since:6.17"],
+  render: () => chat({ linkPreviews: "thumbnail" }),
+};
+
+export const LinkPreviewRemove: Story = {
+  name: "外部のリンクのプレビュー: 本人の「x」",
+  tags: ["since:6.17"],
+  render: () => chat({ linkPreviews: "remove" }),
+};
+
+export const LinkPreviewThread: Story = {
+  name: "外部のリンクのプレビュー: スレッドのパネル",
+  tags: ["since:6.17"],
+  render: () => chat({ thread: "link-preview" }),
+};
+
+export const MobileLinkPreview: Story = {
+  name: "外部のリンクのプレビュー（モバイル）",
+  tags: ["since:6.17"],
+  parameters: { screenshot: { size: "390x844" } },
+  globals: { viewport: { value: "mobile" } },
+  render: () => chat({ linkPreviews: "timeline" }),
+};
+
+export const ComposerLinkPreview: Story = {
+  name: "入力欄のリンクのプレビュー",
+  tags: ["since:6.17"],
+  render: () => chat({ composer: "link-preview" }),
+};
+
+export const ComposerLinkPreviewLoading: Story = {
+  name: "入力欄のリンクのプレビュー: 取得中",
+  tags: ["since:6.17"],
+  render: () => chat({ composer: "link-preview-loading" }),
+};
+
+export const MobileComposerLinkPreview: Story = {
+  name: "入力欄のリンクのプレビュー（モバイル）",
+  tags: ["since:6.17"],
+  parameters: { screenshot: { size: "390x844" } },
+  globals: { viewport: { value: "mobile" } },
+  render: () => chat({ composer: "link-preview" }),
+};

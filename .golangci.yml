@@ -1,0 +1,62 @@
+# golangci-lint v2 の設定。バージョンは tools/go.mod で固定している。
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - depguard
+    - errorlint
+    - forbidigo
+    - noctx
+    - sloglint
+    - usestdlibvars
+  settings:
+    depguard:
+      rules:
+        # ADR 0001: chat は auth を import しない。境界をコンパイラではなく lint で守る。
+        chat-must-not-import-auth:
+          files:
+            - "**/internal/chat/**"
+          deny:
+            - pkg: github.com/shun2218-dev/hibari/internal/auth
+              desc: "chat は auth に依存しない。接点は platform/authn の userID / sid と Redis の失効イベントだけ（ADR 0001）"
+        # platform は横断的な部品で、ドメインを知らない。authn が auth に依存すると、chat が authn 経由で auth に依存してしまう。
+        platform-must-not-import-domains:
+          files:
+            - "**/internal/platform/**"
+          deny:
+            - pkg: github.com/shun2218-dev/hibari/internal/auth
+              desc: "platform はドメインに依存しない。auth との共通の約束（クレーム名・失効イベントの形式）は authn に置き、auth がそれを使う"
+            - pkg: github.com/shun2218-dev/hibari/internal/chat
+              desc: "platform はドメインに依存しない"
+        # JSON は encoding/json/v2 だけを使う。v1 は nil のスライスを null にし、大文字小文字を区別せずに読む（ADR 0023）。
+        # `$` を付けて v1 のパッケージだけに一致させる（encoding/json/v2 と encoding/json/jsontext は許す）。
+        json-v2-only:
+          files:
+            - $all
+          deny:
+            - pkg: encoding/json$
+              desc: "encoding/json/v2 を使う（ADR 0023）"
+    forbidigo:
+      analyze-types: true
+      forbid:
+        # 時刻は Clock から取得する（CLAUDE.md「Go 全般」）。Clock の実装だけ nolint で許可する。
+        - pattern: ^time\.Now$
+          msg: "clock.Clock を注入して Now() を使う"
+        - pattern: ^time\.Sleep$
+          msg: "テストで時間待ちをしない。Clock を固定するか、channel で同期する"
+    sloglint:
+      # 属性はキーと値の組ではなく slog.String などで型付きで書き、キーの打ち間違いを防ぐ。
+      attr-only: true
+      key-naming-case: snake
+
+  exclusions:
+    # npm のパッケージに同梱された Go のファイル（flatted など）は自分のコードではない。
+    paths:
+      - web/node_modules
+    rules:
+      # テストの単発リクエストやリスナーまで context 付きにすると読みにくくなるだけなので、noctx は本体のコードにだけ効かせる。
+      - path: _test\.go
+        linters:
+          - noctx

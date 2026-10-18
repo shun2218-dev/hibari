@@ -1,0 +1,32 @@
+<!doctype html>
+<!--
+  OGP 画像（web/app/opengraph-image.png）のもと。tools/render-brand.mjs が 1200x630 で撮る（ADR 0063 決定 4）。
+  デザインの正本は Claude Design のキャンバス「hibari ブランド（ロゴ・ファビコン・OGP・LP）」の OGP 画像。
+  色は web/app/globals.css のライトの値。画像なので CSS 変数は使えない（ファビコンと同じ扱い。ADR 0063 の結果）。
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;700&amp;family=Zen+Kaku+Gothic+New:wght@700&amp;display=block" rel="stylesheet">
+<style>
+  html, body { margin: 0; }
+  body { width: 1200px; height: 630px; overflow: hidden; background: #f2f5f2; color: #16201d; font-family: "Instrument Sans", "Zen Kaku Gothic New", sans-serif; }
+  .frame { position: relative; box-sizing: border-box; width: 1200px; height: 630px; padding: 96px; display: flex; flex-direction: column; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 24px; }
+  .name { font-size: 96px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+  .copy { margin: 0; font-size: 44px; font-weight: 700; line-height: 1.4; font-family: "Zen Kaku Gothic New", sans-serif; }
+  .domain { margin: 16px 0 0; font-size: 26px; color: #47544d; }
+  .circle { position: absolute; right: -80px; bottom: -80px; width: 360px; height: 360px; border-radius: 9999px; background: #e3efea; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="112" height="112" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#2f6f62"/><path d="M27 20.5C29.6 17.2 33.4 15.6 37.4 15.8L31.4 9 42 13.8C45.2 14.6 47.6 17 48.4 20.2L55.2 19.4 49.4 23.6 55 26.6 48.8 26.8C48.4 37.8 40 46 29.6 46.8L22.2 47.2 12.4 53.6 15.4 44C13.6 41 12.6 37.6 12.8 34 13.2 27.4 19.2 21.4 27 20.5Z" fill="#ffffff"/><circle cx="41.4" cy="20.8" r="2" fill="#2f6f62"/><path d="M19.6 37.2C24.6 32.4 32 31 38.2 33.4 32.4 34.8 27.8 37.8 24.6 42Z" fill="#2f6f62"/></svg><span class="name">hibari</span></div>
+  <div>
+    <p class="copy">ワークスペースとチャンネルで話す、<br>リアルタイムチャット。</p>
+    <p class="domain">hibari-chat.com</p>
+  </div>
+  <div class="circle"></div>
+</div>
+</body>
+</html>

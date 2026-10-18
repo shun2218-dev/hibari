@@ -1,0 +1,107 @@
+# Go の CI。PR ごとに実行し、落ちている PR はマージしない（CLAUDE.md「テスト」）。
+name: go
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - name: go mod tidy に差分がない
+        run: |
+          go mod tidy -diff
+          (cd tools && go mod tidy -diff)
+      - name: sqlc の生成結果に差分がない
+        # db/queries や db/migrations を変えて `make sqlc` を忘れた PR を落とす。
+        run: go tool -modfile=tools/go.mod sqlc diff
+      - name: go vet
+        run: go vet ./...
+      - name: golangci-lint
+        # バージョンは tools/go.mod で固定したものを使い、ローカルの `make lint` と一致させる。
+        run: go tool -modfile=tools/go.mod golangci-lint run ./...
+
+  test:
+    runs-on: ubuntu-latest
+    # DB を使う処理はモックにせず、実物の Postgres でテストする（下のステップで起動する）。
+    env:
+      # CI=true（GitHub Actions が設定する）のとき、接続先がなければテストはスキップせずに失敗する（internal/platform/testenv）。
+      TEST_DATABASE_URL: postgres://hibari:hibari@localhost:5432/hibari_test?sslmode=disable
+      TEST_REDIS_URL: redis://localhost:6379/1
+      TEST_S3_ENDPOINT: http://localhost:9000
+      TEST_S3_BUCKET: hibari-test
+      TEST_S3_ACCESS_KEY_ID: hibari
+      TEST_S3_SECRET_ACCESS_KEY: hibari-secret
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - name: Postgres を起動する
+        # pg_bigm 入りの自前のイメージ（ADR 0061 決定 1）を使う。サービスコンテナは既存のイメージしか指定できないので、
+        # Redis / ストレージと同じく docker build → docker run にする。Dockerfile は compose.yaml と同じものを使う。
+        run: |
+          docker build -t hibari-postgres:16 db/postgres
+          docker run -d --name postgres -p 5432:5432 \
+            -e POSTGRES_USER=hibari -e POSTGRES_PASSWORD=hibari -e POSTGRES_DB=hibari_test \
+            -e POSTGRES_INITDB_ARGS="--auth-local=trust --auth-host=scram-sha-256" \
+            hibari-postgres:16
+          for _ in $(seq 30); do
+            docker exec postgres pg_isready -U hibari -d hibari_test && break
+            sleep 2
+          done
+      - name: Redis を起動する
+        # サービスコンテナは起動コマンドを渡せず、起動する前にホストのカーネルの設定も変えられないので、docker run で起動する。
+        # イメージは compose.yaml と揃える。
+        # - vm.overcommit_memory=1: 無効のままだと Redis が起動時に警告する（fork によるバックグラウンドの保存が失敗しうるため）
+        # - 引数を渡す: 何も渡さないと「設定ファイルがない」と警告する。テストのデータは残さなくてよいので保存も切る
+        run: |
+          sudo sysctl -w vm.overcommit_memory=1
+          docker run -d --name redis -p 6379:6379 redis:7.4-alpine redis-server --save "" --appendonly no
+          for _ in $(seq 30); do
+            docker exec redis redis-cli ping && break
+            sleep 1
+          done
+      - name: S3 互換のストレージ（RustFS）を起動してテスト用のバケットを作る
+        # サービスコンテナは起動の引数を渡せないので、docker run で起動する。イメージは compose.yaml と揃える（ADR 0008 の追記）。
+        # バケットは S3 の CLI を入れず、curl の SigV4 署名で作る（compose の s3-init と同じ）。
+        run: |
+          docker run -d --name s3 -p 9000:9000 \
+            -e RUSTFS_ACCESS_KEY="$TEST_S3_ACCESS_KEY_ID" -e RUSTFS_SECRET_KEY="$TEST_S3_SECRET_ACCESS_KEY" \
+            rustfs/rustfs:1.0.0
+          # /health が ok を返した直後でも、S3 の API はまだ 503 を返すことがある（2026-09-25 の #188 の CI で起きた）。
+          # なのでバケットの作成が通るまで待つ。RustFS は作成済みのバケットにも 200 を返すので、繰り返してよい。
+          for i in $(seq 30); do
+            curl -fsS --aws-sigv4 "aws:amz:us-east-1:s3" --user "$TEST_S3_ACCESS_KEY_ID:$TEST_S3_SECRET_ACCESS_KEY" \
+              -X PUT http://localhost:9000/hibari-test -o /dev/null && break
+            [ "$i" = 30 ] && exit 1
+            sleep 2
+          done
+      - name: マイグレーション（up → reset → up）
+        # Down も壊れていないことを確かめるため、一度すべて戻してから適用し直す。
+        run: |
+          goose() { go tool -modfile=tools/go.mod goose -dir db/migrations postgres "$TEST_DATABASE_URL" "$@"; }
+          goose up
+          goose reset
+          goose up
+      - name: go test -race
+        run: go test -race -count=1 ./...

@@ -1,0 +1,177 @@
+package realtime
+
+import (
+	"crypto/rand"
+	"reflect"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/oklog/ulid/v2"
+
+	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/mention"
+	"github.com/shun2218-dev/hibari/internal/platform/clock"
+	"github.com/shun2218-dev/hibari/internal/platform/id"
+)
+
+var testIDs = id.NewGenerator(clock.NewFake(time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)), rand.Reader)
+
+func TestWireRoundTrip(t *testing.T) {
+	u := func() ulid.ULID { return testIDs.New() }
+	at := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	edited := at.Add(time.Minute)
+	width := 640
+	mentions := chat.NotifyMentions
+	user := chat.UserProfile{ID: u(), Handle: "alice", DisplayName: "Alice"}
+	threadRootID, threadSeq := u(), int64(3)
+	message := chat.Message{
+		ID: u(), RoomID: u(), Seq: 42, ChangeSeq: 50, Sender: user, ClientMsgID: u(), Body: "こんにちは",
+		ThreadRootID: &threadRootID, ThreadSeq: &threadSeq,
+		Thread:      &chat.ThreadSummary{ReplyCount: 2, LastThreadSeq: 3, LastReplyAt: at},
+		Attachments: []chat.MessageAttachment{{ID: u(), FileName: "a.png", ContentType: "image/png", SizeBytes: 10, Width: &width}},
+		// メンションは本文から作る表示用の値で、配信にもそのまま載る（ADR 0041）。
+		Mentions: []chat.Mention{{Kind: mention.KindUser, User: &user}, {Kind: mention.KindChannel}},
+		// リアクションも集計したまま配信に載る。me だけは受け取る人ごとの値なので、httpx が JSON にするときに落とす（ADR 0044）。
+		Reactions: []chat.MessageReaction{{Emoji: "👍", Count: 2, Me: true, Users: []ulid.ULID{user.ID, u()}}},
+		// リンクのプレビュー（ADR 0065）も、ほかのインスタンスの接続に届く
+		LinkPreviews: []chat.MessageLinkPreview{{ID: u(), URL: "https://example.com/a", SiteName: "Example", Title: "T", Description: "D", Image: &chat.LinkPreviewImage{Width: 1200, Height: 630}, HasIcon: true}},
+		CreatedAt:    at, EditedAt: &edited,
+	}
+
+	// すべてのイベントの種類を 1 つずつ。種類を足したら、ここと dataDecoders の両方に足す。
+	events := []chat.Event{
+		{Type: chat.EventMessageCreated, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}}, Data: message},
+		{Type: chat.EventMessageUpdated, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}}, Data: message},
+		// 添付のないメッセージは、store と同じく空のスライスで持つ。encoding/json/v2 は nil のスライスを [] にするので、
+		// nil を送ると空のスライスとして戻る（どちらも len が 0 で、配信の処理は区別しない）。
+		{Type: chat.EventMessageDeleted, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}}, Data: chat.Message{ID: u(), Attachments: []chat.MessageAttachment{}, Mentions: []chat.Mention{}, Reactions: []chat.MessageReaction{}, LinkPreviews: []chat.MessageLinkPreview{}, DeletedAt: &edited}},
+		{Type: chat.EventMemberJoined, To: chat.Audience{Rooms: []ulid.ULID{u()}, Users: []ulid.ULID{user.ID}}, Data: chat.MemberJoined{WorkspaceID: u(), RoomID: u(), User: user}},
+		{Type: chat.EventMemberLeft, To: chat.Audience{Rooms: []ulid.ULID{u()}}, Data: chat.MemberLeft{WorkspaceID: u(), RoomID: u(), UserID: u()}},
+		{Type: chat.EventRoomUpdated, To: chat.Audience{Rooms: []ulid.ULID{u()}, Workspaces: []ulid.ULID{u()}}, Data: chat.RoomUpdated{WorkspaceID: u(), RoomID: u(), Name: "general", IsDefault: true, ArchivedAt: &at}},
+		{
+			// 削除したルームの購読を、受け取ったインスタンスが外せるように運ぶ（ADR 0059 決定 7）
+			Type: chat.EventRoomDeleted, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}, Users: []ulid.ULID{user.ID}},
+			ClosedRooms: []ulid.ULID{message.RoomID},
+			Data:        chat.RoomDeleted{WorkspaceID: u(), RoomID: message.RoomID},
+		},
+		{
+			Type: chat.EventRoomMemberRemoved, To: chat.Audience{Users: []ulid.ULID{user.ID}},
+			AccessChanges: []chat.AccessChange{{UserID: user.ID, WorkspaceID: u()}},
+			Data:          chat.RoomMemberRemoved{WorkspaceID: u(), RoomID: u(), Reason: chat.RemovalRemoved},
+		},
+		{Type: chat.EventRoomRead, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.RoomRead{WorkspaceID: u(), RoomID: u(), LastReadSeq: 3, UnreadCount: 2}},
+		{Type: chat.EventWorkspaceUpdated, To: chat.Audience{Workspaces: []ulid.ULID{u()}}, Data: chat.WorkspaceUpdated{WorkspaceID: u(), Name: "hibari", InvitePolicy: "all_members"}},
+		{
+			Type: chat.EventWorkspaceMemberRemoved, To: chat.Audience{Workspaces: []ulid.ULID{u()}, Users: []ulid.ULID{user.ID}},
+			AccessChanges: []chat.AccessChange{{UserID: user.ID, WorkspaceID: u()}},
+			Data:          chat.WorkspaceMemberRemoved{WorkspaceID: u(), UserID: user.ID, Reason: chat.RemovalLeft},
+		},
+		{Type: chat.EventWorkspaceRoleChanged, To: chat.Audience{Workspaces: []ulid.ULID{u()}}, Data: chat.WorkspaceRoleChanged{WorkspaceID: u(), UserID: u(), Role: "admin"}},
+		{Type: chat.EventPresenceChanged, To: chat.Audience{Workspaces: []ulid.ULID{u(), u()}}, Data: chat.PresenceChanged{UserID: u(), Presence: chat.PresenceActive}},
+		{
+			Type: chat.EventMemberStatusChanged, To: chat.Audience{Workspaces: []ulid.ULID{u()}, Users: []ulid.ULID{user.ID}},
+			Data: chat.MemberStatusChanged{WorkspaceID: u(), UserID: user.ID, Away: true, Status: &chat.UserStatus{Emoji: "🍵", Text: "休憩中"}},
+		},
+		{Type: chat.EventMemberHuddleChanged, To: chat.Audience{Workspaces: []ulid.ULID{u()}}, Data: chat.MemberHuddleChanged{WorkspaceID: u(), UserID: user.ID, InHuddle: true}},
+		{Type: chat.EventTypingStarted, To: chat.Audience{Rooms: []ulid.ULID{u()}, ExceptUser: user.ID}, Data: chat.TypingStarted{WorkspaceID: u(), RoomID: u(), ThreadRootID: &threadRootID, User: user}},
+		{Type: chat.EventThreadRead, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ThreadRead{WorkspaceID: u(), RoomID: u(), ThreadRootID: u(), LastReadThreadSeq: 2, UnreadCount: 1}},
+		{Type: chat.EventThreadFollowed, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ThreadFollowed{WorkspaceID: u(), RoomID: u(), ThreadRootID: u(), LastReadThreadSeq: 3}},
+		{
+			Type: chat.EventSavedUpdated, To: chat.Audience{Users: []ulid.ULID{user.ID}},
+			Data: chat.SavedItem{ID: u(), MessageID: u(), RoomID: u(), State: chat.SavedRemoved, ChangeSeq: 4, SavedAt: time.Unix(1, 0).UTC(), Status: chat.SavedItemUnavailable},
+		},
+		{Type: chat.EventNotificationsUpdated, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.NotificationsUpdated{WorkspaceID: u(), Level: chat.NotifyNone}},
+		{
+			// 期限つきのミュートと、上書きの level（ポインタ）が往復で落ちないこと（ADR 0055）
+			Type: chat.EventRoomNotificationsUpdated, To: chat.Audience{Users: []ulid.ULID{user.ID}},
+			Data: chat.RoomNotificationsUpdated{WorkspaceID: u(), RoomID: u(), Notifications: chat.RoomNotifications{Level: &mentions, Muted: true, MutedUntil: &edited}},
+		},
+		{Type: chat.EventThreadNotificationsUpdated, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ThreadNotificationsUpdated{WorkspaceID: u(), RoomID: u(), ThreadRootID: u(), NotifyReplies: false}},
+		{
+			// アクティビティのリアクション（ADR 0058 決定 9）。付けた人と絵文字、送信者から見たルームが往復で落ちないこと
+			Type: chat.EventActivityReactionAdded, To: chat.Audience{Users: []ulid.ULID{user.ID}},
+			Data: chat.ActivityReactionAdded{WorkspaceID: u(), Item: chat.ActivityItem{
+				Key: "r:x:y:👍", Type: chat.ActivityItemReaction, Reasons: []chat.ActivityReason{chat.ReasonReaction}, OccurredAt: at,
+				Room: chat.LinkedRoom{ID: message.RoomID, Kind: "dm", DMPeer: &user}, Message: message,
+				Reaction: &chat.ActivityReaction{Emoji: "👍", User: user},
+			}},
+		},
+		{Type: chat.EventActivityReactionRemoved, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.ActivityReactionRemoved{WorkspaceID: u(), Key: "r:x:y:👍"}},
+		{
+			// ハドルのいまの全体（ADR 0066 決定 13）。版と、ミュート・「もうすぐ参加する」が往復で落ちないこと
+			Type: chat.EventHuddleUpdated, To: chat.Audience{Rooms: []ulid.ULID{message.RoomID}},
+			Data: chat.HuddleUpdated{RoomID: message.RoomID, Huddle: &chat.RoomHuddle{
+				ID: u(), RoomID: message.RoomID, MessageID: u(), StartedAt: at, Version: 7,
+				Participants: []chat.RoomHuddleParticipant{{UserID: user.ID, Muted: true}},
+				JoiningSoon:  []ulid.ULID{u()},
+			}},
+		},
+		{Type: chat.EventHuddleRinging, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.HuddleRinging{RoomID: u(), HuddleID: u(), CallerID: u()}},
+		{Type: chat.EventHuddleLeft, To: chat.Audience{Users: []ulid.ULID{user.ID}}, Data: chat.HuddleLeftData{RoomID: u(), HuddleID: u(), ParticipantID: u(), Reason: chat.HuddleMoved}},
+	}
+	if len(events) != len(dataDecoders) {
+		t.Fatalf("test covers %d event types, dataDecoders has %d", len(events), len(dataDecoders))
+	}
+
+	for _, ev := range events {
+		t.Run(string(ev.Type), func(t *testing.T) {
+			eventID := u()
+			b, err := encodeWire(ev, eventID, 3)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w, got, err := decodeWire(b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if w.ID != eventID || w.Fanout != 3 {
+				t.Errorf("id, fanout = %v, %d; want %v, 3", w.ID, w.Fanout, eventID)
+			}
+			if !reflect.DeepEqual(got, ev) {
+				t.Errorf("decoded event = %+v\nwant %+v", got, ev)
+			}
+		})
+	}
+}
+
+func TestDecodeWireRejectsUnknown(t *testing.T) {
+	for name, payload := range map[string]string{
+		"not json":        `{`,
+		"other version":   `{"v":2,"type":"message.created","data":{}}`,
+		"unknown type":    `{"v":1,"type":"reaction.added","data":{}}`,
+		"mismatched data": `{"v":1,"type":"presence.changed","data":"online"}`,
+	} {
+		if _, _, err := decodeWire([]byte(payload)); err == nil {
+			t.Errorf("%s: decodeWire() error = nil", name)
+		}
+	}
+}
+
+func TestChannelsFor(t *testing.T) {
+	room, ws, alice, bob := testIDs.New(), testIDs.New(), testIDs.New(), testIDs.New()
+	got := channelsFor(chat.Event{
+		To: chat.Audience{Rooms: []ulid.ULID{room}, Workspaces: []ulid.ULID{ws}, Users: []ulid.ULID{alice, alice}, ExceptUser: bob},
+		// 権限が変わったユーザーのチャンネルにも流す（そのユーザーの接続を持つインスタンスが再検証する）。宛先と重なっても 1 回だけ。
+		AccessChanges: []chat.AccessChange{{UserID: alice, WorkspaceID: ws}, {UserID: bob, WorkspaceID: ws}},
+	})
+	want := []string{"room:" + room.String(), "workspace:" + ws.String(), "user:" + alice.String(), "user:" + bob.String()}
+	if !slices.Equal(got, want) {
+		t.Fatalf("channelsFor() = %v, want %v", got, want)
+	}
+}
+
+func TestRecentIDs(t *testing.T) {
+	r := newRecentIDs(2)
+	a, b, c := testIDs.New(), testIDs.New(), testIDs.New()
+	if r.seen(a) || r.seen(b) {
+		t.Fatal("new ids reported as seen")
+	}
+	if !r.seen(a) {
+		t.Fatal("a not remembered")
+	}
+	// 容量を超えたら古いものから忘れる。
+	if r.seen(c) || r.seen(a) {
+		t.Fatal("c should be new and a should have been evicted")
+	}
+}

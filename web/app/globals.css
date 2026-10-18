@@ -1,0 +1,298 @@
+@import "tailwindcss";
+
+/*
+ * デザイントークンの正本（CLAUDE.md ルール 7）。各トークンの用途は docs/ui/tokens.md を参照。
+ *
+ * - 値は docs/ui/ に取り込んだ Claude Design のデザインから写したもの。ここ以外に色・余白・角丸・
+ *   フォントサイズの生の値を書かない（コンポーネントでも Tailwind の任意値でも）。
+ * - `--*: initial` で Tailwind の既定テーマを捨てる。既定のパレット（text-red-500 など）や
+ *   サイズが残っていると、トークンを経由しない値が紛れ込んでも気づけないため。
+ * - ライトの値を @theme に置き、ダークは同じ名前の変数を [data-theme="dark"] で上書きする。
+ *   Tailwind のユーティリティは var(--color-*) を参照するので、属性を切り替えるだけで全体が追従する。
+ */
+
+@theme static {
+  --*: initial;
+
+  /* ---- 色: 面と線 ---- */
+  --color-background: #f2f5f2;
+  --color-surface: #ffffff;
+  --color-surface-muted: #e8ede9;
+  --color-border: #d7ded9;
+
+  /* ---- 色: 文字 ---- */
+  --color-text: #16201d;
+  --color-text-secondary: #47544d;
+  --color-text-muted: #78857e;
+
+  /* ---- 色: primary（緑）= 操作できるもの。ボタン・リンク・選択中の項目 ---- */
+  --color-primary: #2f6f62;
+  --color-primary-hover: #245a4f;
+  --color-primary-subtle: #e3efea;
+  --color-on-primary: #ffffff;
+
+  /* ---- 色: attention（琥珀）= いま起きていること。未読・入力中・接続状態 ---- */
+  --color-attention: #c08519;
+  --color-attention-subtle: #fbf1dc;
+  --color-attention-text: #7a5410;
+  --color-on-attention: #16201d;
+
+  /* ---- 色: pinned（黄土）= ピン留めしたメッセージ（ADR 0054）。琥珀より落ち着かせ、メンションや飛んできた先と見分ける ---- */
+  --color-pinned: #9a7b2f;
+  --color-pinned-subtle: #f5f1e3;
+
+  /* ---- 色: 検索で一致した部分の地（ADR 0061）。マーカーで塗ったように見せる。
+         琥珀（いま起きていること）と黄土（ピン留め）より彩度を上げて、未読やピン留めの印と見分ける ---- */
+  --color-highlight: #f3e2a9;
+
+  /* ---- 色: インラインコードの文字（ADR 0052。Slack と同じ橙の系統。押せるもの・いま起きていること・危険とは別の意味の色） ---- */
+  --color-code-text: #a84e17;
+
+  /* ---- 色: 状態 ---- */
+  --color-danger: #b23a2e;
+  --color-danger-subtle: #f8e7e4;
+  --color-online: #3e9c7e;
+
+  /* ---- 色: オーバーレイ（ダイアログ・シートの背後） ---- */
+  --color-overlay: rgb(22 32 29 / 0.32);
+
+  /* ---- 色: アバター。ユーザーごとに 1〜6 のどれかを割り当てる ---- */
+  --color-avatar-1: #64786e;
+  --color-avatar-2: #86765c;
+  --color-avatar-3: #5e6e80;
+  --color-avatar-4: #746a7d;
+  --color-avatar-5: #4f7268;
+  --color-avatar-6: #7c6f5b;
+  --color-on-avatar: #ffffff;
+
+  /* ---- 書体 ---- */
+  /* 欧文を Instrument Sans、和文を Zen Kaku Gothic New で描く。変数は app/fonts.ts（next/font）が <html> に定義する */
+  --font-sans: var(--font-instrument-sans), var(--font-zen-kaku-gothic-new), system-ui, sans-serif;
+  /* 時刻・ハンドル・招待リンクなど、桁や文字をそろえて読ませたいもの */
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  /* ---- 文字サイズ（7 段階 + 写真の頭文字 + LP の見出し）。rem にしてブラウザの文字サイズ設定に追従させる ---- */
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-xs: 0.75rem; /* 12px */
+  --text-sm: 0.8125rem; /* 13px */
+  --text-base: 0.875rem; /* 14px */
+  --text-lg: 0.9375rem; /* 15px: メッセージ本文・入力欄 */
+  --text-xl: 1.25rem; /* 20px */
+  --text-2xl: 1.625rem; /* 26px */
+  /* 段階の外。プロフィールのパネルの大きな写真（幅いっぱいの正方形）に、画像のない人の頭文字を出すときだけ使う。
+     26px では正方形の中で小さすぎた（ADR 0050 決定 6 の追記。オーナーの確認: 2026-09-21） */
+  --text-avatar: 7rem; /* 112px */
+  /* 段階の外。LP（hibari-chat.com）の最初の見出しだけに使う。アプリの画面では使わない。
+     26px では LP の見出しとして弱かった（ADR 0063 決定 6 の追記。オーナーの確認: 2026-09-24） */
+  --text-display: 3.25rem; /* 52px: デスクトップ */
+  --text-display-sm: 2rem; /* 32px: モバイル */
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --leading-none: 1;
+  /* 段階の外の大きな見出し（LP の最初の見出し。text-display）。2 行に折り返したときに行の間が開きすぎないように
+     （ADR 0063 決定 6 の追記。オーナーの確認: 2026-09-25） */
+  --leading-tight: 1.35;
+  --leading-normal: 1.6;
+  /* メッセージ本文。半日開いたままでも読み疲れしない行送りとしてデザインで確定した値 */
+  --leading-relaxed: 1.75;
+
+  --tracking-tight: -0.015em;
+
+  /* ---- リストの記号。本文の箇条書きは段ごとに • → ◦ → ▪ と変える（Slack と同じ。ADR 0051。オーナーの確認: 2026-09-21）。
+     1 段目は Tailwind の既定の list-disc を使い、2・3 段目のためにこの 2 つを足す（list-circle / list-square になる） ---- */
+  --list-style-type-circle: circle;
+  --list-style-type-square: square;
+
+  /* ---- 余白・サイズ。p-2 = 8px のように 4px 刻みで数える ---- */
+  --spacing: 0.25rem;
+
+  /* ---- 角丸（4 段階） ---- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
+  /* ---- 影 ---- */
+  --shadow-overlay: 0 8px 24px var(--color-overlay);
+  /* LP の画面写真だけに使う。写真を背景から浮かせる、下に長く淡い影（ADR 0063 決定 6 の追記。オーナーの確認: 2026-09-25）。
+     LP はライトだけなので（決定 6）、ダークでは上書きしない */
+  --shadow-showcase: 0 24px 48px -24px rgb(22 32 29 / 0.25);
+
+  /* ---- 動き ---- */
+  /* モバイルでパネルが横からスライドするときの減速カーブ */
+  --ease-slide: cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-spin: spin 900ms linear infinite;
+  --animate-typing-dot: typing-dot 1.2s infinite;
+
+  /* ---- ブレークポイント。これ未満をモバイルのレイアウトにする ---- */
+  --breakpoint-md: 48rem; /* 768px */
+
+  /* 入力欄とメッセージの編集欄が、中身に合わせて伸びる上限（Slack に合わせて 16 行）。
+     px ではなく行数で書くのは、上限の意味が「何行まで見せるか」だから（ADR 0048） */
+  --composer-max-lines: 16;
+
+  /*
+   * ---- 伸縮できるエリアの大きさ（ADR 0048）----
+   *
+   * 既定・最小・最大の正本はここだけ。ユーザーが引っ張った値は lib/pane-size.ts が
+   * <html> の style で `--pane-*` を上書きし、限界は下の @utility の clamp が守る。
+   * TS 側に最小・最大の数値を持たせないのは、値の置き場所を 2 つにしないため
+   * （ResizeHandle は「極端な値を入れて描かせた結果」を測って限界を知る）。
+   *
+   * 幅の最大に vw を混ぜてあるのは、窓が狭いときにサイドバーとパネルで本文が潰れないようにするため。
+   */
+  --pane-sidebar: 288px;
+  --pane-sidebar-min: 200px;
+  --pane-sidebar-max: min(480px, 40vw);
+
+  --pane-members: 280px;
+  --pane-members-min: 220px;
+  --pane-members-max: min(480px, 40vw);
+
+  --pane-thread: 384px;
+  --pane-thread-min: 280px;
+  --pane-thread-max: min(640px, 50vw);
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes typing-dot {
+    0%,
+    60%,
+    100% {
+      opacity: 0.25;
+    }
+    30% {
+      opacity: 1;
+    }
+  }
+}
+
+/*
+ * 中身に合わせて伸びる入力欄の上限（ADR 0048）。`1lh` はその要素の 1 行ぶんなので、
+ * 文字サイズや行送りを変えても「16 行ぶん」の意味が保たれる。上下の padding（py-1）を足す。
+ */
+/* 下線と取り消し線を同じ文字に当てる（入力欄。Lexical は両方のときに別のクラスを 1 つ当てるので、2 つのユーティリティでは打ち消し合う） */
+@utility underline-strike {
+  text-decoration-line: underline line-through;
+}
+
+/* 横にスクロールする並びのスクロールバーを隠す（アクティビティのタブ。サイドバーの幅に 5 つが収まらないため。ADR 0058） */
+@utility scrollbar-none {
+  scrollbar-width: none;
+}
+
+@utility composer-lines {
+  max-height: calc(var(--composer-max-lines) * 1lh + var(--spacing) * 2);
+}
+
+/*
+ * 伸縮できるエリアの大きさを当てる（ADR 0048）。clamp があるので、覚えている値が古くても
+ * 窓が狭くても、最小と最大の外には出ない。幅の 3 つは md 以上でだけ使う（`md:pane-sidebar`）。
+ */
+@utility pane-sidebar {
+  width: clamp(var(--pane-sidebar-min), var(--pane-sidebar), var(--pane-sidebar-max));
+}
+
+@utility pane-members {
+  width: clamp(var(--pane-members-min), var(--pane-members), var(--pane-members-max));
+}
+
+@utility pane-thread {
+  width: clamp(var(--pane-thread-min), var(--pane-thread), var(--pane-thread-max));
+}
+
+[data-theme="dark"] {
+  --color-background: #101614;
+  --color-surface: #171f1c;
+  --color-surface-muted: #1f2926;
+  --color-border: #2b3733;
+
+  --color-text: #e8eeea;
+  --color-text-secondary: #aab8b1;
+  --color-text-muted: #7e8c85;
+
+  --color-primary: #5aa694;
+  --color-primary-hover: #6fbba8;
+  --color-primary-subtle: #1b302b;
+  --color-on-primary: #101614;
+
+  --color-attention: #d9a441;
+  --color-attention-subtle: #2e2415;
+  --color-attention-text: #d9a441;
+  --color-on-attention: #101614;
+  --color-pinned: #cbb06a;
+  --color-pinned-subtle: #25241b;
+  --color-highlight: #4d431c;
+
+  --color-code-text: #e8912d;
+  --color-danger: #d9705f;
+  --color-danger-subtle: #33201d;
+  --color-online: #4fb08f;
+
+  --color-overlay: rgb(6 10 9 / 0.55);
+
+  --color-avatar-1: #89a096;
+  --color-avatar-2: #ad9b7c;
+  --color-avatar-3: #8496aa;
+  --color-avatar-4: #9c90a8;
+  --color-avatar-5: #7fa095;
+  --color-avatar-6: #a3947a;
+  --color-on-avatar: #101614;
+
+  color-scheme: dark;
+}
+
+/* テーマはユーザーが設定画面で明示的に選ぶ（OS の設定には追従しない）ので、media ではなく属性で切り替える */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-lg);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  /*
+   * 押せるものはポインタにする。Tailwind v4 の preflight は button に cursor: pointer を当てない
+   * （v3 から変わった）ので、ここで戻す。無効なものは「押せない」ことが先に伝わるように外す
+   * （utilities の disabled:cursor-not-allowed はレイヤの順で、この規則より後に当たる）。
+   */
+  button:not(:disabled),
+  [role="button"],
+  summary {
+    cursor: pointer;
+  }
+
+  /* フォーカスリングはキーボード操作のときだけ出す。色は「操作できるもの」の primary */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+}

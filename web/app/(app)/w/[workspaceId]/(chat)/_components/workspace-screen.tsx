@@ -1,0 +1,626 @@
+"use client";
+
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+
+import { AccountMenu, RailAccountButton } from "@/components/chat/account-menu";
+import { ChatLayout } from "@/components/chat/chat-layout";
+import { RemovedFromWorkspace, ServerUnavailable } from "@/components/chat/chat-states";
+import { SideNavBar, type SideNavItems, type SideNavKey, SideNavRail } from "@/components/chat/side-nav";
+import { SearchPanel } from "@/components/chat/search-panel";
+import { Sidebar } from "@/components/chat/sidebar";
+import { TopBar } from "@/components/chat/top-bar";
+import { WorkspaceSwitcher } from "@/components/chat/workspace-switcher";
+import { Avatar } from "@/components/ui/avatar";
+import { useSession, useSessionState } from "@/hooks/auth/use-session";
+import { useChatState, useChatStore, useRealtime } from "@/hooks/chat/use-chat-store";
+import { useHuddle } from "@/hooks/chat/use-huddle";
+import { useAvatarUrls } from "@/hooks/chat/use-media";
+import { useActivityFavicon } from "@/hooks/use-activity-favicon";
+import { useDocumentTitle } from "@/hooks/use-document-title";
+import { channelTable } from "@/lib/chat/format/channel-links";
+import { withSide } from "@/lib/chat/format/links";
+import { type ChannelLinks, ChannelLinksProvider } from "@/providers/channel-links-provider";
+import { formatSearchQuery, parseSearchQuery, type SearchQuery } from "@/lib/chat/search/search-query";
+import { formatTime } from "@/lib/chat/format/time";
+import { forgetLocation, lastRoomId, rememberLocation } from "@/lib/chat/last-location";
+import { countUnreadThreads } from "@/lib/chat/rules/threads";
+import { memberSettings, memberStatus, statusView } from "@/lib/chat/views/members";
+import { huddleNavFaces } from "@/lib/chat/views/huddles";
+import { canPost } from "@/lib/chat/views/permissions";
+import { roomName, toRoomSummaryView } from "@/lib/chat/views/rooms";
+import { chatTitle } from "@/lib/document-title";
+
+import { MyStatusDialog } from "./my-status";
+
+import { CreateWorkspace } from "@/app/(app)/_components/create-workspace";
+import { CreateRoom } from "./create-room";
+import { HuddleCall, HuddleCallBar } from "./huddle-call";
+import { useDesktopNotifications } from "@/hooks/chat/use-desktop-notifications";
+import { StartDm } from "./start-dm";
+import type { ProfileSender } from "@/hooks/chat/use-senders";
+import { RoomProfile } from "./room-profile";
+import { RoomMembers } from "./room-members";
+import { RoomThread } from "./room-thread";
+import { RoomView } from "./room-view";
+import { ActivityPane, DmPane, LaterPane } from "./side-panes";
+import { WorkspaceSearch } from "./workspace-search";
+import { WorkspaceHuddles } from "./workspace-huddles";
+import { WorkspaceThreads } from "./workspace-threads";
+
+const SIDES: readonly SideNavKey[] = ["home", "dms", "activity", "later"];
+
+/** URL の `?side=`（ADR 0058 決定 1）。知らない値とホームは、ホームとして扱う。 */
+function parseSide(value: string | null): SideNavKey {
+  return SIDES.find((side) => side === value) ?? "home";
+}
+
+export function WorkspaceScreen() {
+  const { workspaceId, roomId } = useParams<{ workspaceId: string; roomId?: string }>();
+  // 開いているスレッドと、飛び先のメッセージは URL のクエリに持つ（ADR 0037 / 0040 / 0042）。
+  // 一覧やリンクから開いた画面も、リロードすると同じ所に戻る
+  const searchParams = useSearchParams();
+  const threadId = searchParams.get("t") ?? undefined;
+  const jumpMessageId = searchParams.get("m") ?? undefined;
+  // 開いているプロフィール（ADR 0050 決定 6 の追記）。スレッドと同じく URL に持ち、モバイルの全画面を「戻る」で閉じられるようにする
+  const profileId = searchParams.get("p") ?? undefined;
+  // 左のメニューで開いているもの（ADR 0058 決定 1）。ルームを開いても残すので、パスではなくクエリに持つ
+  const side = parseSide(searchParams.get("side"));
+  const pathname = usePathname();
+  const threadsView = pathname === `/w/${workspaceId}/threads`;
+  // ハドルの一覧（ADR 0067 決定 6）。スレッドの一覧と同じく、ルームの代わりにメインの領域に出す
+  const huddlesView = pathname === `/w/${workspaceId}/huddles`;
+  const router = useRouter();
+  // WebRTC のないブラウザでは null（ハドルを使えない）
+  const huddleAvailable = useHuddle() !== null;
+  const notificationBanner = useDesktopNotifications();
+  const session = useSession();
+  const { state: sessionState } = useSessionState();
+  const store = useChatStore();
+  const realtime = useRealtime();
+  const workspaces = useChatState((s) => s.workspaces);
+  const roomList = useChatState((s) => s.roomLists[workspaceId]);
+  const rooms = useChatState((s) => s.rooms);
+  const unavailable = useChatState((s) => s.connection.unavailable);
+  const removal = useChatState((s) => s.removedWorkspaces[workspaceId]);
+  const threadList = useChatState((s) => s.threadLists[workspaceId]);
+  const members = useChatState((s) => s.members[workspaceId]);
+  const unreadThreadCount = useChatState((s) => s.unreadThreadCounts[workspaceId]);
+  const unreadActivity = useChatState((s) => s.activity[workspaceId]?.unreadCount ?? 0);
+  // 開いているルームを読めない（外された、URL のルームが読めない）。メンバーのパネルも閉じる（名前を見せない。ADR 0035）
+  const roomRemoved = useChatState((s) =>
+    roomId ? s.removedRooms[roomId] !== undefined || s.timelines[roomId]?.status === "not_found" : false,
+  );
+
+  const [search, setSearch] = useState("");
+  // メッセージの検索（ADR 0061）。条件は URL（`?q=`）が正で、リロードしても同じ結果に戻る。
+  // パスはそのままにして重ねるので、検索をやめれば開いていたルームに戻る
+  const searchText = searchParams.get("q") ?? "";
+  const searching = searchText.trim() !== "";
+  // 帯の検索欄を押して開いているパネル。中身は打っている途中の文字（URL にはまだ載せない）
+  const [searchDraft, setSearchDraft] = useState<string | null>(null);
+  // ワークスペースの切り替えとアカウントのメニューは、サイドバーの上（header）と左のメニュー（rail）の 2 か所から開ける
+  const [switcherFrom, setSwitcherFrom] = useState<"header" | "rail" | null>(null);
+  const [accountMenuFrom, setAccountMenuFrom] = useState<"header" | "rail" | null>(null);
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const [startingDm, setStartingDm] = useState(false);
+  // 右の枠に出す、URL に持たないパネル（メンバー）。スレッドとプロフィールは URL に持つので、そちらが優先する
+  const [sidePanel, setSidePanel] = useState<"members" | null>(null);
+  const membersOpen = sidePanel === "members";
+  const [statusOpen, setStatusOpen] = useState(false);
+  // プロフィールをどこから開いたか。メンバーパネルからなら「メンバーに戻る」を出し、メッセージからなら送信者の値を
+  // 一覧にいない人（外された人）の名前の手がかりにする。URL には持たない（開き直すと「戻る」と手がかりは消える）
+  const [profileOrigin, setProfileOrigin] = useState<{ userId: string; fromMembers: boolean; sender?: ProfileSender }>();
+  // モバイルで「一覧に戻る」か下のメニューを押した。URL はルームのままにして、別のルーム（や別のメッセージ）を開いたら詳細に戻す
+  const [listShownFor, setListShownFor] = useState<string>();
+  const mainKey = threadsView ? "threads" : huddlesView ? "huddles" : roomId ? `${roomId}:${jumpMessageId ?? ""}` : undefined;
+
+  // キックされたワークスペースは一覧から消えるが、「削除されました」を出している間は名前とサイドバーを残す
+  const removedFromWorkspace = removal?.reason === "removed";
+  const workspace =
+    workspaces.list.find((w) => w.id === workspaceId) ?? (removedFromWorkspace ? removal.workspace : undefined);
+
+  // タブのタイトル（ADR 0063 決定 2）。メインの領域に出ているもの。外されたルームは名前を見せない（ADR 0035）
+  const openRoom = roomId && !roomRemoved ? rooms[roomId] : undefined;
+  useDocumentTitle(
+    workspace
+      ? chatTitle({
+          main: threadsView ? "スレッド" : huddlesView ? "ハドルミーティング" : openRoom ? roomName(openRoom) : undefined,
+          workspaceName: workspace.name,
+          activity: unreadActivity,
+        })
+      : undefined,
+  );
+  // アクティビティがあるあいだ、ファビコンに琥珀の丸を付ける。数はタイトルと同じもの（ADR 0063 決定 3）
+  useActivityFavicon(unreadActivity > 0);
+
+  useEffect(() => {
+    store.loadWorkspaces();
+  }, [store]);
+
+  // ワークスペースのメンバー一覧は、名前の横のステータスと DM の相手の presence に使う（ADR 0049 決定 7 の追記）
+  useEffect(() => {
+    store.loadMembers(workspaceId);
+  }, [store, workspaceId]);
+
+  // 表示中のワークスペースとそのルームを購読する（lib/chat/realtime/realtime.ts）
+  useEffect(() => {
+    store.setActiveWorkspace(workspaceId);
+    return () => store.setActiveWorkspace(null);
+  }, [store, workspaceId]);
+
+  useEffect(() => {
+    store.loadRooms(workspaceId);
+    // サイドバーの「スレッド」のバッジは、参加しているスレッドの一覧から数える（ADR 0037）
+    store.loadThreads(workspaceId);
+    // 「後で」の差分のカーソルを決め、メッセージの印の変化を取りこぼさないようにする（ADR 0054 決定 7）
+    void store.loadSaved(workspaceId, "in_progress");
+    // ブラウザ通知の判定に使う全体の設定（ADR 0057）。ルームを開かなくても要る
+    void store.loadNotificationLevel(workspaceId);
+    // 左のメニューのアクティビティのバッジ（ADR 0058 決定 5）
+    void store.loadActivityUnreadCount(workspaceId);
+  }, [store, workspaceId]);
+
+  // メンバーではない（URL を直接開いた、キックされた）ワークスペースは覚えている場所から外して、入口に戻す。
+  // 404 と「存在しない」を区別しない（ADR 0011）ので、画面も分けない
+  const notMember =
+    !removedFromWorkspace && ((workspaces.status === "ready" && !workspace) || roomList?.status === "not_found");
+  useEffect(() => {
+    if (!notMember) return;
+    forgetLocation(workspaceId);
+    router.replace("/");
+  }, [notMember, workspaceId, router]);
+
+  useEffect(() => {
+    if (workspace) rememberLocation(workspace.id, roomId);
+  }, [workspace, roomId]);
+
+  // ルームを選んでいなければ、最後に開いたルーム → is_default のルーム → 一覧の先頭の順に開く。
+  // 左のメニュー（?side=）は残す（「後で」の古い URL /saved からもここに来る）
+  useEffect(() => {
+    if (roomId || threadsView || huddlesView || roomList?.status !== "ready" || roomList.ids.length === 0) return;
+    const remembered = lastRoomId(workspaceId);
+    const target =
+      roomList.ids.find((id) => id === remembered) ??
+      roomList.ids.find((id) => rooms[id]?.is_default && rooms[id]?.is_member) ??
+      roomList.ids[0];
+    router.replace(withSide(`/w/${workspaceId}/r/${target}`, side));
+  }, [roomId, threadsView, huddlesView, roomList, rooms, workspaceId, router, side]);
+
+  // サイドバーに出す人（自分と DM の相手）のアバター。自分の avatar_url もログインの応答にあるが、1 時間で切れるので同じ経路で取り直す
+  const me = sessionState.status === "signed_in" ? sessionState.user : undefined;
+  const sidebarUserIds = useMemo(() => {
+    const ids = (roomList?.ids ?? []).flatMap((id) => (rooms[id]?.dm_peer ? [rooms[id].dm_peer.id] : []));
+    // 進行中のハドルに入っている人の顔も、サイドバーの行に出す（ADR 0066 追記 C）
+    const inHuddles = (roomList?.ids ?? []).flatMap((id) => rooms[id]?.huddle?.participants.map((p) => p.user_id) ?? []);
+    return [...new Set([...(me ? [me.id] : []), ...ids, ...inHuddles])];
+  }, [roomList, rooms, me]);
+  const avatarUrls = useAvatarUrls(sidebarUserIds);
+  // サイドバーの「ハドルミーティング」の行（ADR 0067 決定 6）。ハドルを使えるときだけ出し、入れる進行中のハドルがあれば顔を出す
+  const huddlesEnabled = useChatState((s) => s.features?.huddles ?? false) && huddleAvailable;
+
+  const memberTable = useMemo(() => memberSettings(members?.list), [members]);
+  const memberDisplayNames = useMemo(
+    () => Object.fromEntries((members?.list ?? []).map((m) => [m.user.id, m.user.display_name])),
+    [members],
+  );
+  const myMember = useMemo(() => members?.list.find((m) => m.user.id === me?.id), [members, me]);
+  const myStatus = useMemo(() => statusView(myMember?.status), [myMember]);
+  // レールの自分のアバターに載せるのは、名前の横と同じ規則のステータス（ハドル中でステータスがなければ 🎧。ADR 0067 決定 4）。
+  // アカウントのメニューとステータスのダイアログは、本人が選んだステータス（myStatus）だけを扱う
+  const myRailStatus = useMemo(() => (myMember ? memberStatus(myMember) : undefined), [myMember]);
+
+  const roomViews = useMemo(() => {
+    if (roomList?.status !== "ready") return [];
+    const now = new Date();
+    const query = search.trim().toLowerCase();
+    return roomList.ids
+      .flatMap((id) => {
+        const room = rooms[id];
+        return room ? [toRoomSummaryView(room, now, { avatarUrls, members: memberTable, names: memberDisplayNames })] : [];
+      })
+      .filter((view) => query === "" || view.name.toLowerCase().includes(query));
+  }, [roomList, rooms, search, avatarUrls, memberTable, memberDisplayNames]);
+
+  // 本文の `<#ID>` の名前とリンク先（ADR 0062 決定 2）。ルーム一覧には参加していない public ルームも入っているので、
+  // 読めるチャンネルはすべて引ける。押したら、いま開いている左のメニューのまま移る
+  const channelLinks = useMemo<ChannelLinks>(
+    () => ({
+      channels: channelTable((roomList?.ids ?? []).flatMap((id) => rooms[id] ?? [])),
+      href: (id) => withSide(`/w/${workspaceId}/r/${id}`, side),
+    }),
+    [roomList, rooms, workspaceId, side],
+  );
+
+  // 左のメニューの DM のバッジは、未読のある会話の数（Slack と同じ。ADR 0058 決定 1）
+  const unreadDms = useMemo(
+    () =>
+      (roomList?.ids ?? []).filter((id) => {
+        const r = rooms[id];
+        // ミュートした DM は、ルームの行と同じく知らせの数に入れない（ADR 0055 決定 6）。
+        // 期限の切れたミュートはストアがタイマーで外しているので（scheduleMuteExpiry）、時刻と比べなくてよい
+        return r?.kind === "dm" && r.unread_count > 0 && !r.notifications?.muted;
+      }).length,
+    [roomList, rooms],
+  );
+
+  function openThread(rootId: string) {
+    setSidePanel(null);
+    // 飛び先（?m=）は残す。リンクで開いた返信のスレッドを、パネルの中でも同じ所に合わせるため（ADR 0042）
+    const params = new URLSearchParams(searchParams);
+    params.set("t", rootId);
+    // 右の枠は 1 つ。スレッドを開くならプロフィールを閉じる
+    params.delete("p");
+    router.push(`/w/${workspaceId}/r/${roomId}?${params}`);
+  }
+
+  function closeThread() {
+    const params = new URLSearchParams(searchParams);
+    params.delete("t");
+    const query = params.toString();
+    router.replace(`/w/${workspaceId}/r/${roomId}${query === "" ? "" : `?${query}`}`);
+  }
+
+  /**
+   * 検索の条件を URL に載せる（ADR 0061）。空にすると検索をやめて、開いていたルームに戻る。
+   * 検索中は右のパネル（スレッド・プロフィール）と飛び先を閉じる。結果を押せばまたそこへ飛ぶ。
+   */
+  function goSearch(text: string) {
+    const params = new URLSearchParams(searchParams);
+    if (text.trim() === "") params.delete("q");
+    else params.set("q", text);
+    params.delete("t");
+    params.delete("p");
+    params.delete("m");
+    const query = params.toString();
+    router.push(`${pathname}${query === "" ? "" : `?${query}`}`);
+  }
+
+  /** 名前から ID を引くための表（決定 5）。クライアントが知らないルーム = 読めないルーム。 */
+  const searchLookup = useMemo(
+    () => ({
+      rooms: (roomList?.ids ?? []).flatMap((id) => {
+        const room = rooms[id];
+        if (!room) return [];
+        const name = room.kind === "dm" ? (room.dm_peer?.display_name ?? "") : (room.name ?? "");
+        return name === "" ? [] : [{ id: room.id, kind: room.kind, name }];
+      }),
+      members: (members?.list ?? []).map((m) => ({ id: m.user.id, name: m.user.display_name })),
+    }),
+    [roomList, rooms, members],
+  );
+  const searchQuery: SearchQuery = useMemo(
+    () => parseSearchQuery(searchText, searchLookup),
+    [searchText, searchLookup],
+  );
+
+  /** メンバーのパネルを開け閉てする。右のパネルは 1 つなので、開くならスレッドとプロフィールを閉じる。 */
+  function toggleSidePanel(panel: "members") {
+    const covered = threadId !== undefined || profileId !== undefined;
+    if (covered) {
+      const params = new URLSearchParams(searchParams);
+      params.delete("t");
+      params.delete("p");
+      const query = params.toString();
+      router.replace(`/w/${workspaceId}/r/${roomId}${query === "" ? "" : `?${query}`}`);
+    }
+    setSidePanel((open) => (open === panel && !covered ? null : panel));
+  }
+
+  function openProfile(userId: string, origin: { fromMembers: boolean; sender?: ProfileSender }) {
+    setSidePanel(null);
+    setProfileOrigin({ userId, ...origin });
+    // スレッドと同じく push にして、モバイルの全画面をブラウザの「戻る」で閉じられるようにする
+    const params = new URLSearchParams(searchParams);
+    params.delete("t");
+    params.set("p", userId);
+    router.push(`/w/${workspaceId}/r/${roomId}?${params}`);
+  }
+
+  function closeProfile() {
+    const params = new URLSearchParams(searchParams);
+    params.delete("p");
+    const query = params.toString();
+    // ハドルの一覧（参加者から開いた。ADR 0067 決定 6）なら一覧に、それ以外はルームに戻す
+    const base = huddlesView ? `/w/${workspaceId}/huddles` : `/w/${workspaceId}/r/${roomId}`;
+    router.replace(`${base}${query === "" ? "" : `?${query}`}`);
+  }
+
+  // 左のメニュー（ADR 0058 決定 1）。押すとサイドバーの中身が変わり、メインの領域（ルーム）はそのまま
+  const sideItems: SideNavItems = {
+    home: { href: pathname },
+    dms: { href: withSide(pathname, "dms"), badge: unreadDms },
+    activity: { href: withSide(pathname, "activity"), badge: unreadActivity },
+    later: { href: withSide(pathname, "later") },
+  };
+
+  function leaveRemovedWorkspace() {
+    forgetLocation(workspaceId);
+    store.forgetRemovedWorkspace(workspaceId);
+    router.replace("/");
+  }
+
+  // 接続できていたサーバーに、続けて届かない（chat/connection/server-error.png）。端末がオフラインのときは再接続中のバナーで待つ
+  if (unavailable) {
+    return (
+      <ServerUnavailable
+        lastConnectedLabel={formatTime(new Date(unavailable.lastConnectedAt))}
+        retryCount={unavailable.retryCount}
+        onRetry={() => realtime.retryNow()}
+      />
+    );
+  }
+
+  if (sessionState.status !== "signed_in" || !workspace || roomList?.status !== "ready") return null;
+  const user = sessionState.user;
+  const currentUser = { id: user.id, name: user.display_name, avatarUrl: avatarUrls[user.id] ?? user.avatar_url };
+
+  function toggleSwitcher(from: "header" | "rail") {
+    setAccountMenuFrom(null);
+    setSwitcherFrom((open) => (open === from ? null : from));
+  }
+
+  function toggleAccountMenu(from: "header" | "rail") {
+    setSwitcherFrom(null);
+    setAccountMenuFrom((open) => (open === from ? null : from));
+  }
+
+  const switcher = (placement: "header" | "rail") => (
+    <WorkspaceSwitcher
+      placement={placement}
+      workspaces={workspaces.list.map((w) => ({ id: w.id, name: w.name }))}
+      currentWorkspaceId={workspace.id}
+      onSelect={(id) => {
+        setSwitcherFrom(null);
+        if (id !== workspace.id) router.push(`/w/${id}`);
+      }}
+      onCreate={() => {
+        setSwitcherFrom(null);
+        setCreatingWorkspace(true);
+      }}
+      onDismiss={() => setSwitcherFrom(null)}
+    />
+  );
+
+  const accountMenu = (placement: "header" | "rail") => (
+    <AccountMenu
+      placement={placement}
+      user={{ ...currentUser, handle: user.handle, status: myStatus }}
+      away={myMember?.away ?? false}
+      onOpenStatus={() => {
+        setAccountMenuFrom(null);
+        setStatusOpen(true);
+      }}
+      onToggleAway={() => {
+        setAccountMenuFrom(null);
+        void store.setAway(!(myMember?.away ?? false));
+      }}
+      onOpenWorkspaceSettings={() => {
+        setAccountMenuFrom(null);
+        router.push(`/w/${workspaceId}/admin/settings`);
+      }}
+      onOpenSettings={() => {
+        setAccountMenuFrom(null);
+        router.push("/settings");
+      }}
+      onLogout={() => session.logout()}
+      onDismiss={() => setAccountMenuFrom(null)}
+    />
+  );
+
+  // サイドバーの列の中身（左のメニューで選んだもの）。一覧の 1 件を押しても、このメニューのまま（URL の ?side= を残す）
+  const home = (
+    <Sidebar
+      railed
+      workspace={{ id: workspace.id, name: workspace.name }}
+      currentUser={currentUser}
+      rooms={roomViews}
+      selectedRoomId={roomId}
+      roomHref={(id) => `/w/${workspaceId}/r/${id}`}
+      notice={notificationBanner}
+      search={search}
+      onSearchChange={setSearch}
+      switcherOpen={switcherFrom === "header"}
+      onToggleSwitcher={() => toggleSwitcher("header")}
+      switcher={switcher("header")}
+      accountMenuOpen={accountMenuFrom === "header"}
+      onToggleAccountMenu={() => toggleAccountMenu("header")}
+      accountMenu={accountMenu("header")}
+      onCreateRoom={() => setCreatingRoom(true)}
+      onStartDm={() => setStartingDm(true)}
+      threads={{
+        href: `/w/${workspaceId}/threads`,
+        // 一覧を取るまではルーム一覧の unread_thread_count を出す
+        unreadCount: threadList?.status === "ready" ? countUnreadThreads(threadList.list) : (unreadThreadCount ?? 0),
+        selected: threadsView,
+      }}
+      huddles={
+        huddlesEnabled
+          ? {
+              href: `/w/${workspaceId}/huddles`,
+              selected: huddlesView,
+              participants: huddleNavFaces(
+                (roomList?.ids ?? []).flatMap((id) => (rooms[id] ? [rooms[id]] : [])),
+                { names: memberDisplayNames, avatarUrls, canJoin: canPost },
+              ),
+            }
+          : undefined
+      }
+    />
+  );
+  const sidePane =
+    side === "dms" ? (
+      <DmPane workspaceId={workspaceId} variant="pane" linkSide="dms" onStartDm={() => setStartingDm(true)} />
+    ) : side === "activity" ? (
+      <ActivityPane workspaceId={workspaceId} variant="pane" linkSide="activity" />
+    ) : side === "later" ? (
+      <LaterPane workspaceId={workspaceId} variant="pane" linkSide="later" />
+    ) : (
+      home
+    );
+
+  return (
+    <ChannelLinksProvider value={channelLinks}>
+      <ChatLayout
+        topBar={
+          <TopBar
+            workspaceName={workspace.name}
+            query={searching ? searchText : undefined}
+            onOpenSearch={() => setSearchDraft(searchText)}
+            onClearQuery={() => goSearch("")}
+            // 履歴に行き先があるかはブラウザから読めないので、いつも押せるままにする（押しても何も起きないことがある）
+            canGoBack
+            canGoForward
+            onBack={() => router.back()}
+            onForward={() => router.forward()}
+            panel={
+              searchDraft === null ? undefined : (
+                <SearchPanel
+                  value={searchDraft}
+                  workspaceName={workspace.name}
+                  roomName={roomId ? roomViews.find((r) => r.id === roomId)?.name : undefined}
+                  onChange={setSearchDraft}
+                  onSubmit={() => {
+                    goSearch(searchDraft);
+                    setSearchDraft(null);
+                  }}
+                  onSearchInRoom={() => {
+                    const room = roomId ? searchLookup.rooms.find((r) => r.id === roomId) : undefined;
+                    if (!room) return;
+                    goSearch(formatSearchQuery({ ...parseSearchQuery(searchDraft, searchLookup), room }));
+                    setSearchDraft(null);
+                  }}
+                  onClose={() => setSearchDraft(null)}
+                />
+              )
+            }
+          />
+        }
+        mobileView={mainKey !== undefined && listShownFor !== mainKey ? "room" : "list"}
+        rail={
+          <SideNavRail
+            items={sideItems}
+            current={side}
+            workspace={
+              <>
+                <button
+                  type="button"
+                  aria-label="ワークスペースを切り替える"
+                  aria-expanded={switcherFrom === "rail"}
+                  aria-haspopup="dialog"
+                  onClick={() => toggleSwitcher("rail")}
+                  className="rounded-sm"
+                >
+                  <Avatar id={workspace.id} name={workspace.name} size="md" shape="square" />
+                </button>
+                {switcherFrom === "rail" && switcher("rail")}
+              </>
+            }
+            account={
+              <>
+                {/* Slack と同じく、ステータスがあればアバターの上に絵文字を載せる（ADR 0067 決定 4） */}
+                <RailAccountButton
+                  user={currentUser}
+                  status={myRailStatus}
+                  expanded={accountMenuFrom === "rail"}
+                  onClick={() => toggleAccountMenu("rail")}
+                />
+                {accountMenuFrom === "rail" && accountMenu("rail")}
+              </>
+            }
+            // ポインタを乗せると重ねて出す一覧（ADR 0058 の追記）。押しても今のサイドバーのまま
+            previews={{
+              dms: (
+                <DmPane workspaceId={workspaceId} variant="preview" linkSide={side} onStartDm={() => setStartingDm(true)} />
+              ),
+              activity: <ActivityPane workspaceId={workspaceId} variant="preview" linkSide={side} />,
+              later: <LaterPane workspaceId={workspaceId} variant="preview" linkSide={side} />,
+            }}
+          />
+        }
+        // モバイルの下のメニュー。押したら、開いているルームはそのままにして一覧を見せる
+        tabBar={<SideNavBar items={sideItems} current={side} onNavigate={() => setListShownFor(mainKey)} />}
+        // 検索中はサイドバーを畳んで、メインの領域を全幅で使う（Slack と同じ。ADR 0061 決定 9）
+        sidebar={searching ? undefined : sidePane}
+        // ハドルのタブを閉じている間の帯（ADR 0066 追記 C）
+        huddleBar={<HuddleCallBar />}
+        panel={
+          searching ? undefined : (roomId || huddlesView) && profileId && !roomRemoved ? (
+            <RoomProfile
+              key={profileId}
+              workspaceId={workspaceId}
+              userId={profileId}
+              fallback={profileOrigin?.userId === profileId ? profileOrigin.sender : undefined}
+              onClose={closeProfile}
+              onBack={
+                profileOrigin?.userId === profileId && profileOrigin.fromMembers
+                  ? () => {
+                      closeProfile();
+                      setSidePanel("members");
+                    }
+                  : undefined
+              }
+            />
+          ) : roomId && threadId && !roomRemoved ? (
+            <RoomThread
+              key={threadId}
+              workspaceId={workspaceId}
+              roomId={roomId}
+              rootId={threadId}
+              jumpMessageId={jumpMessageId}
+              onClose={closeThread}
+              onOpenProfile={(userId, sender) => openProfile(userId, { fromMembers: false, sender })}
+            />
+          ) : roomId && membersOpen && !roomRemoved ? (
+            <RoomMembers
+              roomId={roomId}
+              onClose={() => setSidePanel(null)}
+              onOpenProfile={(userId) => openProfile(userId, { fromMembers: true })}
+            />
+          ) : undefined
+        }
+      >
+        {searching && (
+          <WorkspaceSearch
+            workspaceId={workspaceId}
+            query={searchQuery}
+            side={side}
+            onChangeQuery={(next) => goSearch(formatSearchQuery(next))}
+          />
+        )}
+        {!searching && roomId && (
+          <RoomView
+            key={roomId}
+            workspaceId={workspaceId}
+            roomId={roomId}
+            membersOpen={membersOpen && !threadId && !profileId}
+            onToggleMembers={() => toggleSidePanel("members")}
+            openThreadId={threadId}
+            onOpenThread={openThread}
+            jumpMessageId={jumpMessageId}
+            onBack={() => setListShownFor(mainKey)}
+            onLeaveRemovedWorkspace={leaveRemovedWorkspace}
+            onOpenProfile={(userId, sender) => openProfile(userId, { fromMembers: false, sender })}
+          />
+        )}
+        {!searching && threadsView && !removedFromWorkspace && (
+          <WorkspaceThreads workspaceId={workspaceId} onBack={() => setListShownFor(mainKey)} />
+        )}
+        {!searching && huddlesView && !removedFromWorkspace && (
+          <WorkspaceHuddles workspaceId={workspaceId} onBack={() => setListShownFor(mainKey)} />
+        )}
+        {!searching && !roomId && removedFromWorkspace && (
+          <RemovedFromWorkspace workspaceName={workspace.name} onMove={leaveRemovedWorkspace} />
+        )}
+      </ChatLayout>
+      <CreateWorkspace open={creatingWorkspace} onClose={() => setCreatingWorkspace(false)} />
+      {statusOpen && (
+        <MyStatusDialog workspaceId={workspaceId} status={myStatus} onClose={() => setStatusOpen(false)} />
+      )}
+      <CreateRoom workspaceId={workspaceId} open={creatingRoom} onClose={() => setCreatingRoom(false)} />
+      <StartDm workspaceId={workspaceId} open={startingDm} onClose={() => setStartingDm(false)} />
+      <HuddleCall roomId={roomRemoved ? undefined : roomId} />
+    </ChannelLinksProvider>
+  );
+}

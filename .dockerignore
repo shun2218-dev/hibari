@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+!.env.example
+keys/
+bin/
+tmp/
+web/
+docs/

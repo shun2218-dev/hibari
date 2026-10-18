@@ -1,0 +1,215 @@
+package chat
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/oklog/ulid/v2"
+)
+
+// ハドルに「いま入っている人」の置き場所（ADR 0066 決定 3・5・6）。
+//
+// 自動で変わる状態なので Redis に置く（CLAUDE.md ルール 5）。chat は Redis を知らず、この interface だけを使う
+// （presence の PresenceReader と同じ。実装は internal/chat/huddle）。
+
+// ErrHuddleFull は、ハドルが上限の人数に達していることを表す（決定 7）。
+var ErrHuddleFull = errors.New("chat: huddle is full")
+
+// ErrHuddleScreenShareFull は、同時に画面を共有できる人数（2 人）に達していることを表す（ADR 0068 決定 7）。
+var ErrHuddleScreenShareFull = errors.New("chat: huddle screen share is full")
+
+// HuddleParticipant は「この端末のこの参加」（決定 4）。同じ人が別の端末から入り直すと、別の参加になる。
+type HuddleParticipant struct {
+	ID       ulid.ULID
+	HuddleID ulid.ULID
+	UserID   ulid.ULID
+	// AuthSessionID は入ったときのログインのセッション（sid）。失効したら、その参加を外す（決定 8）。
+	AuthSessionID ulid.ULID
+	// SFUSessionID は Cloudflare のセッション。クライアントには見せない（決定 2）。
+	SFUSessionID string
+	// TrackName は送っている音声のトラックの名前。ほかの人が受けるときに使う（決定 9）。
+	TrackName string
+	// CameraMid / ScreenMid は、送っているカメラと画面のトラックの mid（ADR 0068 決定 4）。送っていなければ空。
+	// トラックの名前は種類で決まる（huddleTrackName）ので、閉じるときに要る mid だけを持つ。
+	CameraMid string
+	ScreenMid string
+	Muted     bool
+	JoinedAt  time.Time
+}
+
+// HuddleTrackKind は参加者が送るトラックの種類（ADR 0068 決定 1）。1 人が送るのは種類ごとに 1 本まで。
+type HuddleTrackKind string
+
+const (
+	HuddleTrackAudio  HuddleTrackKind = "audio"
+	HuddleTrackCamera HuddleTrackKind = "camera"
+	HuddleTrackScreen HuddleTrackKind = "screen"
+)
+
+// HuddleQuality は、受けるカメラの映像の層（ADR 0068 決定 6）。
+// Cloudflare の rid は API に出さず、platform の実装が引き直す（決定 6。Cloudflare の語彙を漏らさない）。
+type HuddleQuality string
+
+const (
+	HuddleQualityHigh   HuddleQuality = "high"
+	HuddleQualityMedium HuddleQuality = "medium"
+	HuddleQualityLow    HuddleQuality = "low"
+)
+
+func (q HuddleQuality) valid() bool {
+	return q == HuddleQualityHigh || q == HuddleQualityMedium || q == HuddleQualityLow
+}
+
+// HuddleTrackResult は HuddleStates.SetTrack の結果。Previous は書き換える前の mid（送っていなければ空）。
+type HuddleTrackResult struct {
+	Version  int64
+	Previous string
+}
+
+// HuddleSnapshot は、あるハドルのいまの状態。
+type HuddleSnapshot struct {
+	HuddleID ulid.ULID
+	// Version は状態の版。変わるたびに増える（huddle.updated の順序を決める。決定 13）。
+	Version int64
+	// Participants はいま入っている人（入った順）。
+	Participants []HuddleParticipant
+	// JoiningSoon は「もうすぐ参加する」を押して、まだ入っていない人（決定 11）。
+	JoiningSoon []ulid.ULID
+}
+
+// RemovedParticipant は外した参加と、外した後のハドルの版と残りの人数。
+type RemovedParticipant struct {
+	Participant HuddleParticipant
+	Version     int64
+	Remaining   int
+}
+
+// HuddleJoinResult は HuddleStates.Join の結果。
+type HuddleJoinResult struct {
+	Version int64
+	// Evicted は、同じ人の前の参加（別のハドル、または同じハドルの別の端末。決定 6）。なければ nil。
+	Evicted *RemovedParticipant
+}
+
+// HuddleStates は、ハドルにいま入っている人の読み書き。時刻はすべて呼び出し側が Clock から渡す。
+type HuddleStates interface {
+	// Join は参加を書く。同じ人の前の参加は外して返す。上限に達していれば ErrHuddleFull。
+	// status はハドル中の印（ADR 0067 決定 3）。そのワークスペースで初めてハドル中になったら、同じ操作の中で status.Joined を配る。
+	Join(ctx context.Context, p HuddleParticipant, deadline time.Time, limit int, status HuddleStatus) (HuddleJoinResult, error)
+	// Heartbeat は心拍の期限を延ばす。参加がもうなければ false。
+	Heartbeat(ctx context.Context, userID, huddleID, participantID ulid.ULID, deadline time.Time) (bool, error)
+	// Remove は参加を外す。もう外れていれば nil。
+	Remove(ctx context.Context, huddleID, participantID ulid.ULID) (*RemovedParticipant, error)
+	// Sweep は心拍の期限が now を過ぎた参加を最大 max 件外す。
+	Sweep(ctx context.Context, now time.Time, max int) ([]RemovedParticipant, error)
+	// SetMuted はミュートを書き換えて新しい版を返す。参加がなければ ok は false。
+	SetMuted(ctx context.Context, huddleID, participantID ulid.ULID, muted bool) (version int64, ok bool, err error)
+	// SetTrack は、送っているカメラか画面のトラックの mid を書き換える（空なら送っていない。ADR 0068 決定 4）。
+	// 画面を新しく送るとき、ほかに screenLimit 人が共有していれば ErrHuddleScreenShareFull（数えるのと書くのを 1 つの操作でする。決定 7）。
+	// 参加がなければ ErrHuddleParticipantGone。mid が変わらなければ版を進めない。
+	SetTrack(ctx context.Context, huddleID, participantID ulid.ULID, kind HuddleTrackKind, mid string, screenLimit int) (HuddleTrackResult, error)
+	// JoiningSoon は「もうすぐ参加する」を until まで残し、新しい版を返す。
+	JoiningSoon(ctx context.Context, huddleID, userID ulid.ULID, until, now time.Time) (int64, error)
+	// Clear はハドルの全員を外し、ハドルの状態を消す。外した参加を返す。
+	Clear(ctx context.Context, huddleID ulid.ULID) ([]HuddleParticipant, error)
+	// Participant は参加を 1 つ読む。なければ nil。
+	Participant(ctx context.Context, huddleID, participantID ulid.ULID) (*HuddleParticipant, error)
+	// Current は、その人がいま入っている参加を返す。入っていなければ ok は false。
+	Current(ctx context.Context, userID ulid.ULID) (huddleID, participantID ulid.ULID, ok bool, err error)
+	// Snapshots は複数のハドルのいまの状態を読む。
+	Snapshots(ctx context.Context, huddleIDs []ulid.ULID, now time.Time) (map[ulid.ULID]HuddleSnapshot, error)
+	// RecordICEUsername は、その人に発行した TURN の認証情報を expiresAt まで覚える（決定 8・14）。
+	// 取り消すために、発行したものをサーバーの側で覚える（クライアントから受け取った名前を信じると、他人の分を取り消させられる）。
+	RecordICEUsername(ctx context.Context, userID ulid.ULID, username string, expiresAt, now time.Time) error
+	// TakeICEUsernames は、その人に発行してまだ期限の切れていない TURN の認証情報を返して忘れる。
+	TakeICEUsernames(ctx context.Context, userID ulid.ULID, now time.Time) ([]string, error)
+	// InHuddle は、userIDs のうち workspaceID のハドルにいま入っている人を返す（ADR 0067 決定 3）。1 回の往復で読む。
+	InHuddle(ctx context.Context, workspaceID ulid.ULID, userIDs []ulid.ULID) (map[ulid.ULID]bool, error)
+}
+
+// HuddleStatus は、入った人の「ハドル中」の印の置き場所と、変わったときに配るもの（ADR 0067 決定 3）。
+//
+// 印の出入りを配るのは、状態の変化と同じ操作（Redis の Lua）の中で行う（presence と同じ。ADR 0016）。
+// 入る・抜けるが別のインスタンスで続けて起きても、状態の変化と配る順番が食い違わないようにするため。
+// そのため、配る形（宛先のチャンネルと中身）は Go が先に作って渡す。抜けるときの中身（Left）も入るときに渡しておき、
+// 抜け方（抜けた・外された・期限切れ・別のハドルへ移った）によらず、外した操作の中で配る。
+type HuddleStatus struct {
+	WorkspaceID ulid.ULID
+	// Channels は publish する宛先。空なら配らない（印の出し入れだけをする）。
+	Channels []string
+	// Joined / Left は member.huddle_changed の in_huddle が true / false の中身。
+	Joined, Left []byte
+}
+
+// ---- Cloudflare（SFU と TURN）----
+
+// SessionDescription は SDP（RTCSessionDescription と同じ形）。
+type SessionDescription struct {
+	Type string
+	SDP  string
+}
+
+// ICEServer は RTCIceServer と同じ形。ブラウザにそのまま渡す。
+type ICEServer struct {
+	URLs       []string
+	Username   string
+	Credential string
+}
+
+// ICECredentials は発行した ICE サーバーの一覧。Username は取り消すときに使う。
+type ICECredentials struct {
+	Servers   []ICEServer
+	Username  string
+	ExpiresAt time.Time
+	// RelayOnly が true なら、ブラウザは TURN の中継だけを使う（RTCConfiguration の iceTransportPolicy = "relay"）。
+	// 開発で TURN を通る経路を確かめるための切り替え。
+	RelayOnly bool
+}
+
+// RemoteTrack は受けに行く相手のトラック。
+type RemoteTrack struct {
+	SessionID string
+	TrackName string
+	// Quality は、simulcast で送られているカメラのどの層を受けるか（ADR 0068 決定 6）。音声と画面は空。
+	Quality HuddleQuality
+}
+
+// SubscribedTrack は受けた結果。OK が false なら、そのトラックだけ受けられなかった（相手が抜けた直後など）。
+// 同じ相手のセッションから音声とカメラを受けることがあるので、どれかはトラックの名前で見分ける。
+type SubscribedTrack struct {
+	SessionID string
+	TrackName string
+	Mid       string
+	OK        bool
+}
+
+// SubscribeResult は Subscribe の結果。Offer はブラウザの answer を Renegotiate で返す。受けるものが増えなければ nil。
+type SubscribeResult struct {
+	Offer  *SessionDescription
+	Tracks []SubscribedTrack
+}
+
+// ErrHuddleNegotiationConflict は、同じ Cloudflare のセッションへの変更が重なったことを表す（決定 4）。クライアントはやり直す。
+var ErrHuddleNegotiationConflict = errors.New("chat: huddle negotiation conflict")
+
+// HuddleMedia は音声の中継（Cloudflare Realtime の SFU と TURN。決定 2・14・15）。
+// chat は Cloudflare の JSON・URL・エラーの形を知らない（実装は internal/chat/huddle の Media）。
+type HuddleMedia interface {
+	// ICEServers は有効期間 ttl の TURN の認証情報を発行する。
+	ICEServers(ctx context.Context, ttl time.Duration, now time.Time) (ICECredentials, error)
+	// RevokeICE は発行した認証情報を取り消す。
+	RevokeICE(ctx context.Context, username string) error
+	// Publish はセッションを作り、ブラウザの offer で mid の音声を trackName として送る設定をし、answer を返す。
+	Publish(ctx context.Context, offer SessionDescription, mid, trackName string) (sessionID string, answer SessionDescription, err error)
+	// Push は、すでにあるセッションで mid のトラックを trackName として送り始め、answer を返す（カメラと画面。ADR 0068 決定 1・3）。
+	Push(ctx context.Context, sessionID string, offer SessionDescription, mid, trackName string) (SessionDescription, error)
+	// SetQuality は、sessionID のセッションが mid で受けている remote の層を remote.Quality に替える（SDP のやり取りなし。ADR 0068 決定 6）。
+	SetQuality(ctx context.Context, sessionID, mid string, remote RemoteTrack) error
+	// Subscribe は sessionID のセッションで、ほかのセッションのトラックを受ける。
+	Subscribe(ctx context.Context, sessionID string, remotes []RemoteTrack) (SubscribeResult, error)
+	// Renegotiate は Subscribe の offer に対するブラウザの answer を渡す。
+	Renegotiate(ctx context.Context, sessionID string, answer SessionDescription) error
+	// Close はセッションのトラックを閉じる。mids が空なら、そのセッションのすべてのトラックを閉じる。
+	Close(ctx context.Context, sessionID string, mids []string) error
+}

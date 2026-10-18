@@ -1,0 +1,4 @@
+# Storybook（ui.hibari-chat.com）は検索エンジンに載せない（ADR 0063 決定 5）。
+# モックのデータだけで秘密がないので、読ませないだけでよい。
+User-agent: *
+Disallow: /

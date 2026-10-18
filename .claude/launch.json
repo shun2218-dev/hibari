@@ -1,0 +1,61 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "3000"
+      ],
+      "port": 3000,
+      "autoPort": false
+    },
+    {
+      "name": "web-shots",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "HIBARI_SCREENSHOTS=1",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "3000"
+      ],
+      "port": 3000,
+      "autoPort": false
+    },
+    {
+      "name": "storybook",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "web",
+        "run",
+        "storybook"
+      ],
+      "port": 6006,
+      "autoPort": false
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "site",
+        "run",
+        "dev"
+      ],
+      "port": 3100,
+      "autoPort": false
+    }
+  ]
+}

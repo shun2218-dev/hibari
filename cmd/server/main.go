@@ -1,0 +1,387 @@
+// Command server は hibari の API サーバー（auth と chat を同居させた単一バイナリ。ADR 0001）。
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	goredis "github.com/redis/go-redis/v9"
+
+	"github.com/shun2218-dev/hibari/internal/auth"
+	"github.com/shun2218-dev/hibari/internal/chat"
+	"github.com/shun2218-dev/hibari/internal/chat/huddle"
+	"github.com/shun2218-dev/hibari/internal/chat/linkpreview"
+	"github.com/shun2218-dev/hibari/internal/chat/presence"
+	"github.com/shun2218-dev/hibari/internal/chat/realtime"
+	"github.com/shun2218-dev/hibari/internal/httpx"
+	"github.com/shun2218-dev/hibari/internal/platform/authn"
+	"github.com/shun2218-dev/hibari/internal/platform/clock"
+	"github.com/shun2218-dev/hibari/internal/platform/config"
+	"github.com/shun2218-dev/hibari/internal/platform/db"
+	"github.com/shun2218-dev/hibari/internal/platform/id"
+	platformlog "github.com/shun2218-dev/hibari/internal/platform/log"
+	"github.com/shun2218-dev/hibari/internal/platform/mail"
+	"github.com/shun2218-dev/hibari/internal/platform/ratelimit"
+	"github.com/shun2218-dev/hibari/internal/platform/redis"
+	"github.com/shun2218-dev/hibari/internal/platform/safehttp"
+	"github.com/shun2218-dev/hibari/internal/platform/sfu"
+	"github.com/shun2218-dev/hibari/internal/platform/storage"
+	"github.com/shun2218-dev/hibari/internal/platform/turn"
+)
+
+// version はビルド時に -ldflags "-X main.version=vX.Y.Z" で埋め込む（CLAUDE.md「リリース手順」）。
+var version = "dev"
+
+func main() {
+	// SIGTERM は docker compose stop / Kubernetes などが送る停止要求。SIGINT は Ctrl+C と air の再起動。
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx, os.LookupEnv, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, "server:", err)
+		os.Exit(1)
+	}
+}
+
+// run は依存を組み立ててサーバーを動かし、ctx がキャンセルされたら後始末をして返す。
+// main から分けているのは、defer による後始末を os.Exit より前に確実に走らせるため。
+func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) error {
+	cfg, err := config.Load(lookupEnv)
+	if err != nil {
+		return err
+	}
+	logger := platformlog.New(logOut, cfg.LogLevel, cfg.LogFormat)
+
+	// 鍵がなければ DB に接続する前に落とす。動き出してから「ログインだけできない」状態にしない。
+	keyPEM, err := os.ReadFile(cfg.JWTPrivateKeyFile)
+	if err != nil {
+		return fmt.Errorf("read JWT_PRIVATE_KEY_FILE (run `make keys` to create a development key): %w", err)
+	}
+	signingKey, err := auth.ParseEd25519PrivateKeyPEM(keyPEM)
+	if err != nil {
+		return err
+	}
+	// メールのパスワードも同じく、接続する前に読んでおく。
+	smtpPassword, err := readSMTPPassword(cfg.Mail)
+	if err != nil {
+		return err
+	}
+
+	// 起動時の接続は無期限に待たない。依存先が上がっていないなら早く落として再起動に任せる。
+	startupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	pool, err := db.Open(startupCtx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	rdb, err := redis.Open(startupCtx, cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rdb.Close() }()
+
+	clk := clock.System{}
+	ids := id.NewGenerator(clk, rand.Reader)
+	// instanceID はこのプロセスを表す。presence でインスタンスごとの接続の有無を数えるのと、Pub/Sub の再接続の検知に使う（ADR 0016）。
+	// 複数台のログを見分けられるよう、すべてのログに付ける。
+	instanceID := ids.New()
+	logger = logger.With(slog.String("instance_id", instanceID.String()))
+
+	accessTokens, err := auth.NewAccessTokenIssuer(signingKey, cfg.JWTIssuer, cfg.JWTAudience, clk, ids)
+	if err != nil {
+		return err
+	}
+	jwks, err := accessTokens.JWKS()
+	if err != nil {
+		return err
+	}
+	passwords, err := auth.NewPasswordHasher(auth.DefaultPasswordParams, rand.Reader)
+	if err != nil {
+		return err
+	}
+	// ストレージには起動時に接続しない。落ちていても、添付とアバター以外の機能は動かせるようにする。
+	objectStorage, err := storage.New(cfg.Storage)
+	if err != nil {
+		return err
+	}
+
+	mailer, mailQueue, err := newMailer(cfg, smtpPassword, clk, ids, logger)
+	if err != nil {
+		return err
+	}
+	if mailQueue != nil {
+		// メールのキュー（ADR 0053 決定 6）も、停止の合図（ctx）では止めず、HTTP サーバーが止まってから止める。
+		// 先に止めると、停止の途中で処理を終えたリクエスト（登録やパスワードの再設定）が積んだメールを送り残す。
+		mailCtx, stopMail := context.WithCancel(context.WithoutCancel(ctx))
+		mailDone := make(chan struct{})
+		go func() {
+			defer close(mailDone)
+			mailQueue.Run(mailCtx)
+		}()
+		defer func() {
+			stopMail()
+			<-mailDone
+		}()
+	}
+
+	authService := auth.NewService(auth.Deps{
+		DB:           pool,
+		Clock:        clk,
+		IDs:          ids,
+		Random:       rand.Reader,
+		Passwords:    passwords,
+		AccessTokens: accessTokens,
+		Revocations:  authn.NewRevocationPublisher(rdb),
+		Limiter:      ratelimit.New(rdb, clk),
+		Limits:       auth.DefaultRateLimits,
+		Storage:      objectStorage,
+		AvatarLimits: auth.AvatarLimits{MaxBytes: cfg.AvatarMaxBytes, AllowedTypes: cfg.AvatarAllowedTypes},
+		Mailer:       mailer,
+		AppBaseURL:   cfg.AppBaseURL,
+		Logger:       logger,
+	})
+	// 同じプロセスなので公開鍵を直接渡す。auth を別プロセスに切り出したら、JWKS を取得して渡す形に変える（ADR 0001）。
+	verifier := authn.NewVerifier([]authn.PublicKey{accessTokens.PublicKey()}, cfg.JWTIssuer, cfg.JWTAudience, clk)
+
+	// WebSocket の配信（ADR 0015 / 0016）。イベントは Redis Pub/Sub で全インスタンスに流し、各インスタンスの Hub が自分の接続に届ける。
+	broker, err := realtime.NewBroker(startupCtx, rdb, instanceID, logger)
+	if err != nil {
+		return err
+	}
+	delivery := realtime.NewRedisDelivery(rdb, ids, logger)
+	presenceStore := presence.New(rdb, instanceID)
+	hub := realtime.NewHub(realtime.Deps{
+		Authorizer: chat.NewSubscriptionAuthorizer(pool),
+		Presence:   presenceStore,
+		// chat は auth を import しないので、セッションの有効性の問い合わせは authn のインターフェースとしてここで配線する（ADR 0001）。
+		Sessions:   authService,
+		Publisher:  delivery,
+		Subscriber: broker,
+		Logger:     logger,
+	})
+	// 失効イベントの購読は、接続を受け付ける前に始める。始める前に発行された失効は、ws-ticket の消費時の検証で拒否される。
+	revocations, err := authn.SubscribeRevocations(startupCtx, rdb, logger)
+	if err != nil {
+		return err
+	}
+
+	huddleDeps, err := newHuddleDeps(cfg.Realtime, rdb, clk, delivery, logger)
+	if err != nil {
+		return err
+	}
+
+	chatService := chat.NewService(chat.Deps{
+		DB:               pool,
+		Clock:            clk,
+		IDs:              ids,
+		Random:           rand.Reader,
+		Logger:           logger,
+		Storage:          objectStorage,
+		AttachmentLimits: chat.AttachmentLimits{MaxBytes: cfg.AttachmentMaxBytes, AllowedTypes: cfg.AttachmentAllowedTypes},
+		Delivery:         delivery,
+		Presence:         realtime.PresenceStates{Store: presenceStore},
+		// 外部のリンクのプレビュー（ADR 0065）。取りに行くのは safehttp を通したクライアントだけ（SSRF の対策。決定 8）
+		LinkPreviews: chat.LinkPreviewDeps{
+			Fetcher:    linkpreview.NewFetcher(safehttp.New(safehttp.Options{UserAgent: linkpreview.UserAgent})),
+			AppBaseURL: cfg.AppBaseURL,
+			Limiter:    ratelimit.New(rdb, clk),
+		},
+		Huddles: huddleDeps,
+	})
+
+	// 添付の掃除ジョブ（ADR 0013）。DB のプールを閉じる前に止めて、終わるのを待つ。
+	// defer は後に書いたものから実行されるので、pool.Close の defer より後に書く。
+	// Hub の定期処理（presence の延長と再検証）と、失効イベントの購読も同じく止めてから後始末する。
+	jobCtx, stopJobs := context.WithCancel(ctx)
+	var jobs sync.WaitGroup
+	jobs.Go(func() { chatService.RunAttachmentCleanup(jobCtx, chat.AttachmentCleanupInterval) })
+	jobs.Go(func() { chatService.RunLinkPreviews(jobCtx, chat.LinkPreviewInterval) })
+	// 心拍の途絶えたハドルの参加の掃除（ADR 0066 決定 5）。ハドルが無効ならすぐに戻る
+	jobs.Go(func() { chatService.RunHuddleSweeper(jobCtx, chat.HuddleSweepInterval) })
+	jobs.Go(func() { hub.Run(jobCtx, presence.RefreshInterval, realtime.RevalidateInterval) })
+	jobs.Go(func() {
+		// 失効したセッションの WebSocket を切り、そのセッションで入っていたハドルからも外す（ADR 0066 決定 8）。
+		// chat は authn の型を知らないので、ここで ID に分けて渡す（ADR 0001）
+		onRevoked := func(ctx context.Context, rev authn.Revocation) {
+			hub.CloseSessions(ctx, rev)
+			chatService.RemoveRevokedHuddleSession(ctx, rev.UserID, rev.SessionID, rev.All)
+		}
+		if err := revocations.Run(jobCtx, onRevoked); err != nil {
+			// Redis との接続が切れて購読が終わった。失効の反映は定期の再検証（5 分ごと）に頼ることになる。
+			logger.ErrorContext(jobCtx, "revocation subscription stopped", slog.Any("error", err))
+		}
+	})
+	defer func() {
+		stopJobs()
+		jobs.Wait()
+	}()
+
+	// Redis Pub/Sub の受信（ADR 0016）は、停止の合図（ctx）では止めず、Hub の停止が終わってから止める。
+	// 先に止めると、停止の途中で閉じていく接続の購読の解除や、その間に届くイベントの受け渡しができない。
+	// defer は後に書いたものから実行されるので、Redis のクライアントを閉じる defer より先に実行される。
+	brokerCtx, stopBroker := context.WithCancel(context.WithoutCancel(ctx))
+	brokerDone := make(chan struct{})
+	go func() {
+		defer close(brokerDone)
+		broker.Run(brokerCtx, hub)
+	}()
+	defer func() {
+		stopBroker()
+		<-brokerDone
+	}()
+
+	handler := httpx.NewRouter(httpx.Deps{
+		Logger: logger,
+		Clock:  clk,
+		IDs:    ids,
+		HealthChecks: []httpx.HealthCheck{
+			{Name: "postgres", Check: pool.Ping},
+			{Name: "redis", Check: func(ctx context.Context) error { return rdb.Ping(ctx).Err() }},
+		},
+		// 前段のプロキシ（ローカルは Caddy、本番は Fly のプロキシ）。空なら X-Forwarded-For を読まない（ADR 0017）。
+		TrustedProxies: cfg.TrustedProxies,
+		// Web クライアントはブラウザから API を直接呼ぶ（ADR 0021）。
+		AllowedOrigins: []string{httpx.OriginOf(cfg.AppBaseURL)},
+		Auth:           authService,
+		Verifier:       verifier,
+		// 開発環境（compose）だけ外せる（ADR 0053 決定 4）。
+		AllowUnverifiedEmail: !cfg.RequireVerifiedEmail,
+		JWKS:                 jwks,
+		RefreshCookieSecure:  cfg.RefreshCookieSecure,
+		Chat:                 chatService,
+		Realtime:             hub,
+		WSTickets:            authn.NewWSTickets(rdb, rand.Reader),
+		Sessions:             authService,
+		// ブラウザからの接続は Web クライアントのオリジンだけを許す。
+		WS: httpx.DefaultWSConfig([]string{cfg.AppBaseURL.Host}),
+	})
+
+	srv := &http.Server{
+		Handler: handler,
+		// Slowloris 対策としてヘッダの読み取りに上限を設ける。
+		// WriteTimeout は設定しない。長時間つながる WebSocket（Phase 4）を切ってしまうため。
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+	}
+
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", cfg.HTTPAddr)
+	if err != nil {
+		return fmt.Errorf("listen %s: %w", cfg.HTTPAddr, err)
+	}
+
+	logger.InfoContext(ctx, "server started", slog.String("addr", ln.Addr().String()), slog.String("version", version))
+	if err := httpx.Serve(ctx, srv, ln, cfg.ShutdownTimeout); err != nil {
+		return err
+	}
+	// http.Server.Shutdown はアップグレード済みの WebSocket を扱わないので、Hub に閉じさせて、登録が外れるのを待つ。
+	// DB のプールを閉じる（defer）前に、接続の後始末（presence の更新など）を終わらせる。
+	hubCtx, cancelHub := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
+	defer cancelHub()
+	if err := hub.Shutdown(hubCtx); err != nil {
+		return fmt.Errorf("shutdown websocket hub: %w", err)
+	}
+	logger.InfoContext(ctx, "server stopped")
+	return nil
+}
+
+// newHuddleDeps はハドルの依存を組み立てる（ADR 0066 決定 15）。Cloudflare の設定がなければ空（ハドルは無効）を返す。
+// encoder は、ハドル中の印の出入り（member.huddle_changed）を Redis の Lua の中で配るために使う（ADR 0067 決定 3）。
+func newHuddleDeps(c config.RealtimeConfig, rdb *goredis.Client, clk clock.Clock, encoder chat.EventEncoder, logger *slog.Logger) (chat.HuddleDeps, error) {
+	if !c.Enabled {
+		logger.Info("huddles: disabled (CLOUDFLARE_REALTIME_* is not set)")
+		return chat.HuddleDeps{}, nil
+	}
+	appSecret, err := readSecretFile("CLOUDFLARE_REALTIME_APP_SECRET_FILE", c.AppSecretFile)
+	if err != nil {
+		return chat.HuddleDeps{}, err
+	}
+	turnToken, err := readSecretFile("CLOUDFLARE_TURN_KEY_API_TOKEN_FILE", c.TURNKeyAPITokenFile)
+	if err != nil {
+		return chat.HuddleDeps{}, err
+	}
+	sfuClient, err := sfu.New(sfu.Config{AppID: c.AppID, AppSecret: appSecret})
+	if err != nil {
+		return chat.HuddleDeps{}, err
+	}
+	turnClient, err := turn.New(turn.Config{KeyID: c.TURNKeyID, APIToken: turnToken})
+	if err != nil {
+		return chat.HuddleDeps{}, err
+	}
+	logger.Info("huddles: enabled (Cloudflare Realtime)", slog.Bool("relay_only", c.RelayOnly))
+	return chat.HuddleDeps{
+		States:  huddle.New(rdb),
+		Media:   huddle.Media{SFU: sfuClient, TURN: turnClient, RelayOnly: c.RelayOnly},
+		Limiter: ratelimit.New(rdb, clk),
+		Encoder: encoder,
+	}, nil
+}
+
+// readSecretFile は秘密のファイルを読む。末尾の改行は取り除く（echo で作ると付く）。
+func readSecretFile(name, path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", name, err)
+	}
+	v := strings.TrimSpace(string(b))
+	if v == "" {
+		return "", fmt.Errorf("%s is empty", name)
+	}
+	return v, nil
+}
+
+// newMailer は MAIL_TRANSPORT に応じた Mailer を返す（ADR 0053 決定 5）。
+// smtp のときは、送信を待たないためのキューも返す。呼び出し側がキューの Run を動かす。
+func newMailer(cfg config.Config, smtpPassword string, clk clock.Clock, ids id.Generator, logger *slog.Logger) (auth.Mailer, *mail.Queue, error) {
+	switch cfg.Mail.Transport {
+	case config.MailTransportSMTP:
+		smtpConfig := cfg.Mail.SMTP
+		smtpConfig.Password = smtpPassword
+		sender, err := mail.NewSMTP(smtpConfig, clk, ids)
+		if err != nil {
+			return nil, nil, err
+		}
+		opts := mail.DefaultQueueOptions
+		opts.DrainTimeout = cfg.ShutdownTimeout
+		queue := mail.NewQueue(sender, opts, logger)
+		logger.Info("mail transport: smtp", slog.String("host", smtpConfig.Host), slog.Int("port", smtpConfig.Port))
+		return auth.NewMailer(queue), queue, nil
+	default:
+		// config.Load が log と smtp 以外を通さないので、ここは log。メールを送らず、リンクをログに出す。
+		logger.Info("mail transport: log (mails are not sent; links are logged)")
+		return auth.LogMailer{Logger: logger}, nil, nil
+	}
+}
+
+// readSMTPPassword は SMTP_PASSWORD_FILE を読む。smtp でなければ空を返す。
+func readSMTPPassword(c config.MailConfig) (string, error) {
+	if c.Transport != config.MailTransportSMTP {
+		return "", nil
+	}
+	b, err := os.ReadFile(c.SMTPPasswordFile)
+	if err != nil {
+		return "", fmt.Errorf("read SMTP_PASSWORD_FILE: %w", err)
+	}
+	// シークレットのファイルは末尾に改行が入りやすい（echo で作ると付く）。
+	password := strings.TrimSpace(string(b))
+	if password == "" {
+		return "", errors.New("SMTP_PASSWORD_FILE is empty")
+	}
+	return password, nil
+}

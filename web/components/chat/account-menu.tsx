@@ -1,0 +1,136 @@
+import { Avatar } from "@/components/ui/avatar";
+import { LogOutIcon, SettingsIcon, SmilePlusIcon, UsersIcon } from "@/components/ui/icons";
+import { MenuItem } from "@/components/ui/menu-item";
+import { Popover } from "@/components/ui/popover";
+import { cx } from "@/lib/cx";
+
+import type { UserRef, UserStatusView } from "./types";
+
+type AccountMenuProps = {
+  user: UserRef & { handle: string };
+  /** 自分が手動で離席にしている（ADR 0049）。自動の離席はここに出さない（自分で戻せるものだけを操作にする）。 */
+  away?: boolean;
+  onOpenStatus?: () => void;
+  onToggleAway?: () => void;
+  onOpenWorkspaceSettings?: () => void;
+  onOpenSettings?: () => void;
+  onLogout?: () => void;
+  /** 外を押す・Esc で閉じる。 */
+  onDismiss?: () => void;
+  /**
+   * どこから開くか。header はサイドバーの上のアバター（右上から下へ）、rail は md 以上の左のメニューの下のアバター
+   * （メニューの右に、下端をそろえて上へ。ADR 0058）。
+   */
+  placement?: "header" | "rail";
+};
+
+/**
+ * サイドバーの自分のアバターから開くメニュー。ステータス・離席・ワークスペース設定・設定・ログアウトへの入口。
+ * ワークスペース設定は member でも開ける（読み取り専用で見せる。ADR 0006）。
+ */
+export function AccountMenu({
+  user,
+  away = false,
+  onOpenStatus,
+  onToggleAway,
+  onOpenWorkspaceSettings,
+  onOpenSettings,
+  onLogout,
+  onDismiss,
+  placement = "header",
+}: AccountMenuProps) {
+  return (
+    <Popover label="アカウント" className={placement === "rail" ? "bottom-0 left-full ml-8 w-58" : "top-14 right-3 w-58"} onDismiss={onDismiss}>
+      <div className="flex flex-col gap-0.5 px-2.5 pt-1.5 pb-2">
+        <span className="text-base font-semibold text-text">{user.name}</span>
+        <span className="font-mono text-2xs text-text-muted">@{user.handle}</span>
+      </div>
+      <div className="my-1.5 h-px bg-border" />
+      {/* ステータスは、いま出ているものをそのまま押して変えられるようにする（Slack と同じ） */}
+      <button
+        type="button"
+        onClick={onOpenStatus}
+        className="flex h-9.5 w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
+      >
+        {user.status ? (
+          <>
+            <span role="img" aria-hidden className="flex w-4 shrink-0 justify-center">
+              {user.status.emoji}
+            </span>
+            <span className="truncate">{user.status.text ?? "ステータスを変更"}</span>
+          </>
+        ) : (
+          <>
+            <span aria-hidden className="flex w-4 shrink-0 justify-center text-text-secondary">
+              <SmilePlusIcon className="size-4" />
+            </span>
+            ステータスを設定
+          </>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={onToggleAway}
+        className="flex h-9.5 w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-left text-base text-text hover:bg-surface-muted"
+      >
+        {/* メニューのほかの行（MenuItem）とアイコンの幅をそろえ、文字の頭を合わせる */}
+        <span aria-hidden className="flex w-4 shrink-0 justify-center">
+          <span className="size-2 rounded-full border-2 border-text-muted bg-surface" />
+        </span>
+        {away ? "離席を解除する" : "離席中にする"}
+      </button>
+      <div className="my-1.5 h-px bg-border" />
+      <MenuItem icon={UsersIcon} onClick={onOpenWorkspaceSettings}>
+        ワークスペース設定
+      </MenuItem>
+      <MenuItem icon={SettingsIcon} onClick={onOpenSettings}>
+        設定
+      </MenuItem>
+      <div className="my-1.5 h-px bg-border" />
+      <MenuItem icon={LogOutIcon} onClick={onLogout} danger>
+        ログアウト
+      </MenuItem>
+    </Popover>
+  );
+}
+
+/**
+ * 左のメニュー（レール）の下の、自分のアバターのボタン（ADR 0058）。アカウントのメニューを開く。
+ *
+ * ステータスがあれば、Slack と同じくアバターの上に絵文字を載せ、1 つの角丸の枠にまとめる（ADR 0067 決定 4）。
+ * 渡すのは名前の横と同じ規則で決めたステータス（本人のステータス、なければハドル中の 🎧。`displayStatus`）。
+ */
+export function RailAccountButton({
+  user,
+  status,
+  expanded,
+  onClick,
+}: {
+  user: UserRef;
+  status?: UserStatusView;
+  expanded: boolean;
+  onClick?: () => void;
+}) {
+  const hint = status ? [status.text, status.expiresLabel].filter(Boolean).join(" · ") : "";
+  return (
+    <button
+      type="button"
+      aria-label={status ? `アカウントメニュー（ステータス: ${status.emoji}${hint ? ` ${hint}` : ""}）` : "アカウントメニュー"}
+      aria-expanded={expanded}
+      aria-haspopup="dialog"
+      onClick={onClick}
+      title={hint || undefined}
+      className={cx(
+        "flex flex-col items-center",
+        status ? cx("gap-1 rounded-md p-1 hover:bg-border", expanded ? "bg-border" : "bg-surface") : "rounded-full",
+      )}
+    >
+      {status && (
+        <span aria-hidden className="text-lg leading-none">
+          {status.emoji}
+        </span>
+      )}
+      <Avatar id={user.id} name={user.name} imageUrl={user.avatarUrl} size="sm" shape={status ? "square" : "circle"} />
+    </button>
+  );
+}

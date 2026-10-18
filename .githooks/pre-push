@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# main / develop への直接 push を禁止する（CLAUDE.md「Git 運用」）。
+# GitHub 側のブランチ保護と二重に守る。タグの push は許可する。
+set -euo pipefail
+
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/develop)
+      echo "error: '${remote_ref#refs/heads/}' への直接 push は禁止です。PR でマージしてください。" >&2
+      exit 1
+      ;;
+  esac
+done

@@ -1,0 +1,435 @@
+"use client";
+
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+import { HuddleCameraMenu, HuddleDeviceMenu, HuddlePreview } from "@/components/chat/huddle-preview";
+import { HuddleRing } from "@/components/chat/huddle-ring";
+import { HuddleBar, HuddleProblemScreen, HuddleScreen } from "@/components/chat/huddle-screen";
+import { useChatState, useChatStore } from "@/hooks/chat/use-chat-store";
+import { useHuddle, useHuddleSurface } from "@/hooks/chat/use-huddle";
+import { useHuddleLinkMenu } from "@/hooks/chat/use-huddle-link-menu";
+import { useHuddleView } from "@/hooks/chat/use-huddle-view";
+import { useAvatarUrls } from "@/hooks/chat/use-media";
+import { DESKTOP_QUERY, useMediaQuery } from "@/hooks/use-media-query";
+import { createRingtone } from "@/lib/chat/huddle/ringtone";
+import { chooseStage, EMPTY_STAGE, STAGE_HOLD_MS, type StageMemory } from "@/lib/chat/huddle/stage";
+import { watchWindowInput } from "@/lib/chat/realtime/activity";
+import { HUDDLE_LINK_PARAM } from "@/lib/chat/format/links";
+import { huddleLinkAction, toBlockedHuddlePreviewView } from "@/lib/chat/views/huddles";
+import { canPost } from "@/lib/chat/views/permissions";
+
+import { RoomThread } from "./room-thread";
+
+/**
+ * ハドル（ADR 0066・0068）の、チャットのタブ側の係。
+ *
+ * - 通話しているルームのハドルの状態（huddle.updated）に合わせて、受ける音声を増やし・減らす（決定 9）
+ * - カメラと画面共有の操作を通話につなぐ（ADR 0068）
+ * - 画面（参加前のプレビュー・ハドルの画面・知らせ）を、別のタブ（about:blank）に portal で描く。モバイルとタブを開けないときは全画面（追記 C）
+ * - DM の呼び出しを出し、呼び出し音を鳴らす（決定 11）
+ * - ショートカット（⌘⇧H で開始・参加・退出、⌘⇧Space でミュート）
+ *
+ * ハドルの帯（タブを閉じている間の、下の端の帯）は HuddleCallBar が ChatLayout の枠に描く。
+ */
+export function HuddleCall({ roomId }: { roomId?: string }) {
+  const huddle = useHuddle();
+  const store = useChatStore();
+  const router = useRouter();
+  const surface = useHuddleSurface();
+  // 押して大きくしたタイル（ADR 0068 決定 9）。参加者は user id、共有は `screen:<user id>`
+  const [pinned, setPinned] = useState<string>();
+  const { call, room, self, preview, screen } = useHuddleView({ pinnedId: pinned });
+  const features = useChatState((s) => s.features);
+  const enabled = features?.huddles ?? false;
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const currentRoom = useChatState((s) => (roomId ? s.rooms[roomId] : undefined));
+  const [chatOpen, setChatOpen] = useState(false);
+  const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
+  const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
+  const [previewMenu, setPreviewMenu] = useState<"mic" | "speaker" | "camera">();
+  // 操作の列の「…」（ハドルミーティングのリンクをコピー）。通話しているハドルのルームを指す
+  const linkMenu = useHuddleLinkMenu(room ? { workspaceId: room.workspace_id, roomId: room.id } : undefined);
+
+  // WebRTC のないブラウザでは、サーバーに聞くまでもなく使えない
+  useEffect(() => {
+    if (huddle) void store.loadFeatures();
+  }, [store, huddle]);
+
+  // 入っている人が変わったら、受ける音声を合わせる。ミュートの変化でも来るが、sync は差分だけを送る
+  const roomHuddle = room?.huddle;
+  const huddleId = call.phase === "call" ? call.huddleId : undefined;
+  useEffect(() => {
+    if (!huddle || !huddleId || !roomHuddle || roomHuddle.id !== huddleId) return;
+    void huddle.call.sync(roomHuddle.participants.map((p) => p.user_id));
+  }, [huddle, huddleId, roomHuddle]);
+
+  // 受ける映像をステージに合わせる（ADR 0068 決定 5・6）。帯だけのときは受けない。
+  // 話した順による入れ替えは間をあけて行うので、話していない間も STAGE_HOLD_MS ごとに選び直す
+  const desktop = useMediaQuery(DESKTOP_QUERY);
+  const visible = surface.kind !== "none";
+  const mobile = surface.kind === "overlay" && !desktop;
+  const stageMemory = useRef<StageMemory>(EMPTY_STAGE);
+  const [stageTick, setStageTick] = useState(0);
+  const inCall = call.phase === "call";
+  useEffect(() => {
+    if (!inCall || !visible) return;
+    const id = window.setInterval(() => setStageTick((n) => n + 1), STAGE_HOLD_MS);
+    return () => window.clearInterval(id);
+  }, [inCall, visible]);
+  const selfId = self?.id;
+  const selfCamera = call.phase === "call" && call.camera;
+  const speaking = call.phase === "call" ? call.speaking : undefined;
+  useEffect(() => {
+    if (!huddle || !huddleId || !roomHuddle || roomHuddle.id !== huddleId || !selfId) return;
+    const result = chooseStage(
+      {
+        selfId,
+        selfCamera,
+        others: roomHuddle.participants
+          .filter((p) => p.user_id !== selfId)
+          .map((p) => ({ userId: p.user_id, camera: p.camera, screen: p.screen })),
+        pinnedId: pinned,
+        speaking: speaking ?? [],
+        visible,
+        mobile,
+        now: Date.now(),
+      },
+      stageMemory.current,
+    );
+    stageMemory.current = result.memory;
+    void huddle.call.syncVideo(result.tracks);
+  }, [huddle, huddleId, roomHuddle, selfId, selfCamera, pinned, speaking, visible, mobile, stageTick]);
+
+  // 大きくしていた人が抜けた・共有をやめたら、元の並びに戻す
+  const pinnedGone =
+    pinned !== undefined &&
+    !(roomHuddle?.participants.some((p) => p.user_id === pinned || (p.screen && `screen:${p.user_id}` === pinned)) ||
+      (call.phase === "call" && call.sharing && pinned === `screen:${selfId}`) ||
+      pinned === selfId);
+  if (pinnedGone) setPinned(undefined);
+
+  // ハドルの画面を閉じたら、開いていたメニューとチャットも閉じる（次に開いたときは閉じた状態から）
+  const shown = surface.kind !== "none";
+  const [wasShown, setWasShown] = useState(shown);
+  if (wasShown !== shown) {
+    setWasShown(shown);
+    if (!shown) {
+      setChatOpen(false);
+      setDeviceMenuOpen(false);
+      setCameraMenuOpen(false);
+      setPreviewMenu(undefined);
+      setPinned(undefined);
+    }
+  }
+
+  const canStartHere = huddle !== null && enabled && currentRoom !== undefined && canPost(currentRoom);
+
+  // ハドルへのリンク（`?huddle=1`）で開いた（ADR 0067 決定 1）。押しただけでは入らず、必ずプレビューを通す。
+  // ボタンを押した操作の中ではないので、別のタブは開けず、同じタブの全画面に出る。
+  // 入れないとき（参加していない public・アーカイブ）はクエリを残したまま理由を出し、閉じたら消す。
+  // チャンネルに参加すればルームが変わって start になり、そのままプレビューに進む
+  const wantsHuddle = searchParams.get(HUDDLE_LINK_PARAM) === "1";
+  const linkAction =
+    wantsHuddle && huddle && currentRoom && features !== null
+      ? enabled
+        ? huddleLinkAction(currentRoom, canPost(currentRoom))
+        : "ignore"
+      : undefined;
+  const dropHuddleParam = () => {
+    const params = new URLSearchParams(searchParams);
+    params.delete(HUDDLE_LINK_PARAM);
+    router.replace(params.size > 0 ? `${pathname}?${params}` : pathname);
+  };
+  const dropHuddleParamOnce = useEffectEvent(dropHuddleParam);
+  useEffect(() => {
+    if (!huddle || !roomId || linkAction === undefined) return;
+    if (linkAction === "start") {
+      dropHuddleParamOnce();
+      huddle.surface.start(roomId);
+    } else if (linkAction === "ignore" || huddle.call.getSnapshot().phase !== "idle") {
+      dropHuddleParamOnce();
+    } else {
+      huddle.surface.show();
+    }
+  }, [huddle, roomId, linkAction]);
+  const blocked = linkAction === "not-member" || linkAction === "archived" ? linkAction : undefined;
+  const onShortcut = useEffectEvent((event: KeyboardEvent) => {
+    if (!huddle || !(event.metaKey || event.ctrlKey) || !event.shiftKey) return;
+    if (event.code === "KeyH") {
+      event.preventDefault();
+      if (call.phase === "call") void huddle.call.leave();
+      else if (canStartHere && roomId) huddle.surface.start(roomId);
+    } else if (event.code === "Space" && call.phase === "call") {
+      event.preventDefault();
+      huddle.call.toggleMic();
+    }
+  });
+  const popup = surface.kind === "popup" ? surface.window : undefined;
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => onShortcut(event);
+    // ハドルのタブにフォーカスがあるときも効くよう、そちらの document でも聞く
+    const docs = [document, ...(popup ? [popup.container.ownerDocument] : [])];
+    for (const doc of docs) doc.addEventListener("keydown", handler);
+    return () => {
+      for (const doc of docs) doc.removeEventListener("keydown", handler);
+    };
+  }, [popup]);
+
+  const roomLabel = room ? (room.kind === "dm" ? (room.dm_peer?.display_name ?? "") : `#${room.name ?? ""}`) : "";
+  useEffect(() => {
+    popup?.setTitle(roomLabel === "" ? "ハドルミーティング" : `ハドルミーティング: ${roomLabel}`);
+  }, [popup, roomLabel]);
+
+  if (!huddle) return null;
+  const { call: controls } = huddle;
+
+  let content: ReactNode = null;
+  const closeBlocked = () => {
+    dropHuddleParam();
+    huddle.surface.hide();
+  };
+  if (blocked && currentRoom && self && call.phase === "idle") {
+    content = (
+      <HuddlePreview
+        preview={toBlockedHuddlePreviewView(currentRoom, self, blocked)}
+        onCancel={closeBlocked}
+        onJoinRoom={() =>
+          // 参加するとルームが変わって start になり、そのままプレビューに進む（ここでマイクを求める）
+          void store.joinRoom(currentRoom.id).catch((err: unknown) => {
+            console.error("failed to join the room from a huddle link", err);
+            closeBlocked();
+          })
+        }
+      />
+    );
+  } else if (preview) {
+    content = (
+      <HuddlePreview
+        preview={preview}
+        openMenu={previewMenu}
+        onToggleMenu={(menu) => setPreviewMenu((open) => (open === menu ? undefined : menu))}
+        onToggleMic={() => controls.toggleMic()}
+        onToggleCamera={() => void controls.toggleCamera()}
+        onSelectMic={(id) => {
+          setPreviewMenu(undefined);
+          void controls.selectMic(id);
+        }}
+        onSelectCamera={(id) => {
+          setPreviewMenu(undefined);
+          void controls.selectCamera(id);
+        }}
+        onSelectSpeaker={(id) => {
+          setPreviewMenu(undefined);
+          controls.selectSpeaker(id);
+        }}
+        onCancel={() => controls.cancelPreview()}
+        onStart={() => void controls.join()}
+      />
+    );
+  } else if (screen && call.phase === "call" && room) {
+    const messageId = room.huddle?.id === call.huddleId ? room.huddle?.message_id : undefined;
+    content = (
+      <HuddleScreen
+        huddle={screen}
+        chatOpen={chatOpen && messageId !== undefined}
+        chat={
+          messageId && (
+            <RoomThread
+              key={messageId}
+              workspaceId={room.workspace_id}
+              roomId={room.id}
+              rootId={messageId}
+              onClose={() => setChatOpen(false)}
+              // プロフィールはチャットのタブに出す
+              onOpenProfile={(userId) => {
+                window.focus();
+                router.push(`/w/${room.workspace_id}/r/${room.id}?p=${encodeURIComponent(userId)}`);
+              }}
+            />
+          )
+        }
+        deviceMenu={
+          deviceMenuOpen && (
+            <HuddleDeviceMenu
+              mics={call.mics}
+              micId={call.micId}
+              speakers={call.speakers}
+              speakerId={call.speakerId}
+              onSelectMic={(id) => {
+                setDeviceMenuOpen(false);
+                void controls.selectMic(id);
+              }}
+              onSelectSpeaker={(id) => {
+                setDeviceMenuOpen(false);
+                controls.selectSpeaker(id);
+              }}
+              onDismiss={() => setDeviceMenuOpen(false)}
+            />
+          )
+        }
+        cameraMenu={
+          cameraMenuOpen && (
+            <HuddleCameraMenu
+              cameras={call.cameras}
+              cameraId={call.cameraId}
+              onSelectCamera={(id) => {
+                setCameraMenuOpen(false);
+                void controls.selectCamera(id);
+              }}
+              onDismiss={() => setCameraMenuOpen(false)}
+            />
+          )
+        }
+        onToggleMute={() => controls.toggleMic()}
+        onToggleDeviceMenu={() => setDeviceMenuOpen((open) => !open)}
+        onToggleCamera={() => void controls.toggleCamera()}
+        onToggleCameraMenu={() => setCameraMenuOpen((open) => !open)}
+        // ボタンはハドルのタブで押される。チャットのタブで画面の共有を断られたとき、そちらで求め直す（lib/chat/huddle/browser.ts）
+        onToggleShare={() => void controls.toggleShare(popup?.container.ownerDocument.defaultView ?? undefined)}
+        onDismissNotice={() => controls.dismissNotice()}
+        onPin={(id) => setPinned((current) => (current === id ? undefined : id))}
+        onToggleChat={() => setChatOpen((open) => !open)}
+        onLeave={() => void controls.leave()}
+        menu={linkMenu}
+      />
+    );
+  } else if (call.phase === "problem" && room) {
+    content = (
+      <HuddleProblemScreen
+        problem={call.problem}
+        room={{ kind: room.kind, name: room.kind === "dm" ? (room.dm_peer?.display_name ?? "") : (room.name ?? "") }}
+        onRetry={() => void controls.openPreview(room.id)}
+        onClose={() => controls.dismissProblem()}
+      />
+    );
+  }
+
+  return (
+    <>
+      {popup && content && createPortal(content, popup.container)}
+      {surface.kind === "overlay" && content && (
+        <div role="dialog" aria-label="ハドルミーティング" className="fixed inset-0 z-50 overflow-y-auto">
+          {content}
+        </div>
+      )}
+      {enabled && <Ring />}
+    </>
+  );
+}
+
+/** DM の呼び出し（決定 11）。出している間、呼び出し音を鳴らす。 */
+function Ring() {
+  const huddle = useHuddle();
+  const store = useChatStore();
+  const ring = useChatState((s) => s.huddleRing);
+  const room = useChatState((s) => (ring ? s.rooms[ring.roomId] : undefined));
+  const callerName = useChatState((s) =>
+    ring && room ? s.members[room.workspace_id]?.list.find((m) => m.user.id === ring.callerId)?.user.display_name : undefined,
+  );
+  const avatarUrls = useAvatarUrls(ring ? [ring.callerId] : []);
+  const [ringtone] = useState(createRingtone);
+
+  // 自動再生の制限があるので、このタブで操作があったときに鳴らせるようにしておく
+  useEffect(() => watchWindowInput(() => ringtone.unlock()), [ringtone]);
+  const ringing = ring !== null;
+  useEffect(() => {
+    if (!ringing) return;
+    ringtone.start();
+    return () => ringtone.stop();
+  }, [ringing, ringtone]);
+
+  if (!ring || !huddle) return null;
+  const caller = {
+    id: ring.callerId,
+    name: callerName ?? (room?.dm_peer?.id === ring.callerId ? room.dm_peer.display_name : "メンバー"),
+    avatarUrl: avatarUrls[ring.callerId] ?? undefined,
+  };
+  return (
+    <HuddleRing
+      caller={caller}
+      onJoin={() => {
+        store.dismissHuddleRing();
+        huddle.surface.start(ring.roomId);
+      }}
+      onJoinSoon={() => void store.huddleJoiningSoon(ring.huddleId).catch(() => {})}
+    />
+  );
+}
+
+/**
+ * ハドルの帯（追記 C）。通話していて、ハドルのタブを開いていない間だけ、チャットのタブの下の端に出す。
+ * ハドルのチャットは、チャットのタブの右のパネル（スレッド）で開く。
+ */
+export function HuddleCallBar() {
+  const huddle = useHuddle();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const surface = useHuddleSurface();
+  const { call, room, screen } = useHuddleView();
+  const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
+  const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
+  const linkMenu = useHuddleLinkMenu(room ? { workspaceId: room.workspace_id, roomId: room.id } : undefined);
+
+  if (!huddle || surface.kind !== "none" || call.phase !== "call" || !screen || !room) return null;
+  const messageId = room.huddle?.id === call.huddleId ? room.huddle?.message_id : undefined;
+  const chatOpen = messageId !== undefined && searchParams.get("t") === messageId;
+  const { call: controls } = huddle;
+  return (
+    <HuddleBar
+      huddle={screen}
+      chatOpen={chatOpen}
+      deviceMenu={
+        deviceMenuOpen && (
+          <HuddleDeviceMenu
+            mics={call.mics}
+            micId={call.micId}
+            speakers={call.speakers}
+            speakerId={call.speakerId}
+            onSelectMic={(id) => {
+              setDeviceMenuOpen(false);
+              void controls.selectMic(id);
+            }}
+            onSelectSpeaker={(id) => {
+              setDeviceMenuOpen(false);
+              controls.selectSpeaker(id);
+            }}
+            onDismiss={() => setDeviceMenuOpen(false)}
+          />
+        )
+      }
+      cameraMenu={
+        cameraMenuOpen && (
+          <HuddleCameraMenu
+            cameras={call.cameras}
+            cameraId={call.cameraId}
+            onSelectCamera={(id) => {
+              setCameraMenuOpen(false);
+              void controls.selectCamera(id);
+            }}
+            onDismiss={() => setCameraMenuOpen(false)}
+          />
+        )
+      }
+      onToggleMute={() => controls.toggleMic()}
+      onToggleDeviceMenu={() => setDeviceMenuOpen((open) => !open)}
+      onToggleCamera={() => void controls.toggleCamera()}
+      onToggleCameraMenu={() => setCameraMenuOpen((open) => !open)}
+      onToggleShare={() => void controls.toggleShare()}
+      onToggleChat={
+        messageId
+          ? () => {
+              const base = `/w/${room.workspace_id}/r/${room.id}`;
+              if (chatOpen) router.replace(base);
+              else router.push(`${base}?t=${encodeURIComponent(messageId)}`);
+            }
+          : undefined
+      }
+      onPopOut={() => huddle.surface.show()}
+      onLeave={() => void controls.leave()}
+      menu={linkMenu}
+    />
+  );
+}

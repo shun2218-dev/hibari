@@ -1,0 +1,296 @@
+erDiagram
+
+  users ||--o{ oauth_accounts : "連携"
+  users ||--o{ refresh_tokens : "保持"
+  users ||--o{ one_time_tokens : "保持"
+  users ||--o{ devices : "所有"
+  devices |o--o{ refresh_tokens : "紐付く"
+  refresh_tokens |o--o| refresh_tokens : "rotated_from"
+
+  users ||--o| user_presence_settings : "手動の離席"
+
+  users ||--o{ workspaces : "作成"
+  users ||--o{ workspace_members : "所属"
+  workspaces ||--o{ workspace_members : "含む"
+  workspaces ||--o{ workspace_invites : "発行"
+  users ||--o{ workspace_invites : "作成"
+  workspaces ||--o{ rooms : "含む"
+
+  users ||--o{ rooms : "作成"
+  users ||--o{ room_members : "参加"
+  rooms ||--o{ room_members : "含む"
+  rooms ||--o{ messages : "含む"
+  users ||--o{ messages : "投稿"
+  users |o--o{ messages : "ピン留め"
+  messages |o--o{ messages : "スレッドの親"
+  messages ||--o{ thread_members : "参加者"
+  room_members ||--o{ thread_members : "スレッドに参加"
+  messages ||--o{ message_mentions : "本文のメンション"
+  room_members |o--o{ message_mentions : "宛先。@channel は null"
+  messages ||--o{ message_reactions : "リアクション"
+  room_members ||--o{ message_reactions : "付けた人"
+  messages ||--o{ saved_messages : "保存"
+  workspace_members ||--o{ saved_messages : "保存した人"
+
+  rooms ||--o{ attachments : "保存先"
+  users ||--o{ attachments : "アップロード"
+  messages |o--o{ attachments : "添付"
+  messages ||--o{ message_link_previews : "リンクのプレビュー"
+  link_previews |o--o{ message_link_previews : "取得の結果"
+  rooms ||--o{ huddles : "ハドル"
+  users ||--o{ huddles : "始めた"
+  messages ||--o| huddles : "会話に残すメッセージ"
+  huddles ||--o{ huddle_participants : "入った人"
+  users ||--o{ huddle_participants : "入った"
+
+  users {
+    uuid id PK "ULID を uuid 型で保存"
+    citext handle UK "@名。表示用と別"
+    text display_name
+    citext email UK "OAuth のみでも必須にする"
+    timestamptz email_verified_at "null なら未検証"
+    text password_hash "Argon2id。OAuth のみなら null"
+    text avatar_object_key "null 可"
+    timestamptz created_at
+    timestamptz updated_at
+    timestamptz deleted_at "退会。email / handle / display_name は匿名化する"
+  }
+
+  oauth_accounts {
+    uuid id PK
+    uuid user_id FK
+    text provider "google / github"
+    text provider_account_id "UNIQUE(provider, これ)"
+    text refresh_token_enc "暗号化。不要なら持たない"
+    timestamptz created_at
+  }
+
+  refresh_tokens {
+    uuid id PK
+    uuid user_id FK
+    uuid device_id FK "null 可"
+    uuid family_id "ローテーションのチェーン ID。JWT の sid"
+    bytea token_hash UK "SHA-256。生値は絶対に保存しない"
+    uuid rotated_from FK "自己参照。監査・デバッグ用"
+    timestamptz expires_at
+    timestamptz revoked_at "null なら有効"
+    text revoked_reason "rotated / logout / reuse_detected / password_reset"
+    text user_agent
+    inet ip
+    timestamptz created_at
+  }
+
+  one_time_tokens {
+    uuid id PK
+    uuid user_id FK
+    text purpose "email_verify / password_reset"
+    bytea token_hash UK
+    timestamptz expires_at
+    timestamptz consumed_at "使用済みフラグ"
+    timestamptz created_at
+  }
+
+  devices {
+    uuid id PK "Phase 7 の Push 用。先に器だけ作る"
+    uuid user_id FK
+    text platform "web / ios / android / desktop"
+    text push_token "APNs / FCM。null 可"
+    timestamptz last_seen_at
+    timestamptz created_at
+  }
+
+  workspaces {
+    uuid id PK
+    citext slug UK "URL 用"
+    text name
+    text invite_policy "admins_only / all_members。既定 admins_only"
+    uuid created_by FK
+    timestamptz created_at
+    timestamptz updated_at
+    timestamptz deleted_at
+  }
+
+  workspace_members {
+    uuid workspace_id PK, FK "複合主キー"
+    uuid user_id PK, FK "複合主キー。INDEX(user_id)"
+    text role "owner / admin / member。owner は部分 UNIQUE で 1 人"
+    timestamptz joined_at "退出時は行を削除する"
+    text status_emoji "カスタムステータス。null なら未設定（ADR 0049）"
+    text status_text "null 可。絵文字なしの文言は CHECK で禁止"
+    timestamptz status_expires_at "null なら消えない。読むときに Clock で落とす"
+    bigint last_saved_change_seq "本人の「後で」の変更番号の採番カウンタ（ADR 0054）"
+    text notify_level "全体の通知する内容 all / mentions / none。null は mentions（ADR 0055）"
+  }
+
+  user_presence_settings {
+    uuid user_id PK, FK "ULID を uuid 型で保存。ON DELETE CASCADE"
+    boolean manual_away "本人が固定した離席。行がなければ false（ADR 0049）"
+    timestamptz updated_at
+  }
+
+  workspace_invites {
+    uuid id PK
+    uuid workspace_id FK
+    bytea code_hash UK "SHA-256。生コードは作成時に 1 度だけ返す"
+    uuid created_by FK
+    int max_uses "null なら無制限"
+    int use_count "条件付き UPDATE で加算"
+    timestamptz expires_at
+    timestamptz revoked_at
+    timestamptz created_at
+  }
+
+  rooms {
+    uuid id PK
+    uuid workspace_id FK
+    text kind "public / private / dm"
+    text name "UNIQUE(workspace_id, name) WHERE kind <> dm。dm では null"
+    text dm_key "UNIQUE(workspace_id, dm_key) WHERE kind = dm"
+    boolean is_default "ワークスペース参加時に自動参加"
+    uuid created_by FK
+    bigint last_message_seq "採番カウンタ兼最新 seq。初期値 0"
+    bigint last_change_seq "作成・編集・削除の変更番号のカウンタ。初期値 0（ADR 0014）"
+    bigint last_user_seq "チャンネルの人の発言の数。未読数に使う（ADR 0033 / 0036）"
+    timestamptz last_message_at "一覧のソート用に非正規化。スレッドの返信では進めない"
+    timestamptz created_at
+    timestamptz archived_at "アーカイブ中なら入る（ADR 0059）。送信・編集の採番の UPDATE はアーカイブ中に行を返さない"
+  }
+
+  room_members {
+    uuid room_id PK, FK "複合主キー"
+    uuid user_id PK, FK "複合主キー。INDEX(user_id)"
+    bigint last_read_seq "参加時は rooms.last_message_seq で初期化"
+    bigint last_read_user_seq "last_read_seq に対応する user_seq（ADR 0033）"
+    text notify_level "all / mentions。null は全体の設定に従う（ADR 0055）"
+    boolean muted "既定 false"
+    timestamptz muted_until "期限つきのミュートの期限。muted でなければ null。期限切れは読むときに落とす"
+    timestamptz joined_at "退出時は行を削除する"
+  }
+
+  messages {
+    uuid id PK "UNIQUE(room_id, id) も張る（返信の複合 FK 用）"
+    uuid room_id FK
+    bigint seq "UNIQUE(room_id, seq)。順序の唯一の根拠"
+    bigint change_seq "UNIQUE(room_id, change_seq)。最後の作成・編集・削除の番号。同期のカーソル"
+    uuid sender_id FK
+    uuid client_msg_id "UNIQUE(room_id, sender_id, これ)。冪等性"
+    bigint user_seq "その行までのチャンネルの人の発言の数（ADR 0033）"
+    text kind "user / system（ADR 0033）"
+    text system_type "system のときだけ。room_created / room_archived / huddle など（message_pinned は改める前の行だけ。ADR 0054 / 0059）"
+    jsonb system_data "system のときだけ。room_renamed の old_name / new_name"
+    text body "削除時は空にする"
+    uuid thread_root_id FK "スレッドの親。(room_id, thread_root_id) の複合 FK。チャンネルの投稿なら null（ADR 0036）"
+    bigint thread_seq "スレッドの中で何番目の返信か。UNIQUE(thread_root_id, これ)。返信だけ"
+    boolean in_channel "チャンネルのタイムラインに出るか。返信は「チャンネルにも投稿する」のときだけ true（ADR 0039）"
+    bigint last_thread_seq "親だけ。thread_seq の採番カウンタ（減らない）"
+    int thread_reply_count "親だけ。削除されていない返信の数（表示用）"
+    timestamptz thread_last_reply_at "親だけ。最後の返信の時刻"
+    timestamptz created_at "表示用。ソートには使わない"
+    timestamptz edited_at
+    timestamptz deleted_at "論理削除。tombstone を配信する"
+    timestamptz pinned_at "ピン留めした時刻。INDEX(room_id, これ DESC) WHERE NOT NULL。ルームごとに 100 件まで（ADR 0054）"
+    uuid pinned_by FK "ピン留めした人。pinned_at と一緒に NULL。削除で両方 NULL に戻る"
+  }
+
+  thread_members {
+    uuid thread_root_id PK, FK "複合主キー。(room_id, これ) → messages の複合 FK"
+    uuid user_id PK, FK "複合主キー。INDEX(user_id)"
+    uuid room_id FK "(room_id, user_id) → room_members の複合 FK。ルームを抜けたら CASCADE で消える"
+    bigint last_read_thread_seq "未読数 = 親の last_thread_seq - これ（ADR 0036）"
+    boolean notify_replies "返信の通知。オフでも参加は残す。既定 true（ADR 0056）"
+    timestamptz created_at
+  }
+
+  message_mentions {
+    uuid message_id FK "(room_id, これ) → messages の複合 FK。本文が変われば作り直す（ADR 0041）"
+    uuid user_id FK "宛先。null は「ルームの全員」（@channel）。(room_id, これ) → room_members の複合 FK"
+    uuid room_id FK "ルームを抜けたら CASCADE で消える"
+    text kind "user / channel / here。数え方には使わない（ADR 0041）"
+    timestamptz created_at
+  }
+
+  message_reactions {
+    uuid message_id PK, FK "複合主キー。(room_id, これ) → messages の複合 FK（ADR 0044）"
+    uuid user_id PK, FK "複合主キー。(room_id, これ) → room_members の複合 FK。ルームを抜けたら CASCADE で消える"
+    text emoji PK "複合主キー。Unicode の絵文字そのもの。正規化しない"
+    uuid room_id FK "複合 FK に使う"
+    timestamptz created_at "集計の並び（最初に付いた順）に使う。INDEX(message_id, これ)"
+  }
+
+  saved_messages {
+    uuid user_id PK, FK "複合主キー。(workspace_id, これ) → workspace_members の複合 FK。抜けたら CASCADE で消える（ADR 0054）"
+    uuid message_id PK, FK "複合主キー。(room_id, これ) → messages の複合 FK"
+    uuid workspace_id FK "ワークスペースごとの「後で」"
+    uuid room_id FK "ルームから外れても消さない。読むときに authz で伏せる"
+    uuid id "UNIQUE。保存し直すたびに振り直す。一覧の並びとカーソル"
+    text state "in_progress / archived / completed / removed。外すのは removed（行を消さない）"
+    bigint change_seq "UNIQUE(workspace_id, user_id, これ)。本人ごとの差分のカーソル"
+    timestamptz saved_at
+    timestamptz updated_at
+  }
+
+  attachments {
+    uuid id PK
+    uuid room_id FK "アップロード時点で authz 済みのルーム"
+    uuid uploader_id FK
+    uuid message_id FK "attached / deleted のときだけ持つ"
+    text status "pending / uploaded / attached / deleted。ADR 0013"
+    text object_key UK "S3 互換のキー。ファイル名は入れない"
+    text file_name "表示と Content-Disposition 用"
+    text mime_type "発行時の申告値。complete で HEAD と一致を確かめる"
+    bigint size_bytes "署名に含めるので PUT はこのサイズに限られる"
+    int width "画像のみ。クライアントの申告値"
+    int height "画像のみ。クライアントの申告値"
+    timestamptz created_at
+  }
+
+  link_previews {
+    uuid id PK "URL ごとの取得の結果。30 分以内の同じ URL はこれを使い回す（ADR 0065）"
+    text url "取得した URL（本文に書かれたもの）。INDEX(url, fetched_at DESC)"
+    text status "ok / failed。失敗も 30 分使い回す"
+    text title "og:title → twitter:title → title"
+    text description
+    text site_name "og:site_name。なければホスト名"
+    text image_object_key UK "og:image を写したオブジェクト。画像がなければ null。掃除で storage_deletions へ移す"
+    text image_content_type "image/png / jpeg / gif / webp"
+    int image_width "サーバーが画像のヘッダーから読む"
+    int image_height
+    text icon_object_key UK "サイトのアイコンを写したオブジェクト。なければ null"
+    text icon_content_type "image/png / jpeg / gif / webp / x-icon"
+    timestamptz fetched_at
+  }
+
+  message_link_previews {
+    uuid id PK
+    uuid room_id FK
+    uuid message_id FK "(room_id, これ) → messages の複合 FK。CASCADE。メッセージの削除で消す"
+    text url "本文に書かれた URL。UNIQUE(message_id, これ)"
+    int position "本文に出てきた順"
+    text status "pending / ok / failed。入力欄で消した URL は最初から removed_at を立てる"
+    uuid link_preview_id FK "ok のときだけ。link_previews への FK（RESTRICT）"
+    int attempts
+    timestamptz claimed_until "取得のジョブが取っている間。過ぎたら拾い直す"
+    timestamptz removed_at "本人が消した。編集しても戻さない"
+    timestamptz created_at
+  }
+
+  huddles {
+    uuid id PK "ハドル（ADR 0066）。いま入っている人は Redis に置く（ルール 5）"
+    uuid room_id FK "CASCADE。進行中は 1 ルームに 1 つ: UNIQUE(room_id) WHERE ended_at IS NULL。一覧: INDEX(room_id, id DESC)（ADR 0067）"
+    uuid started_by FK "始めた人"
+    uuid message_id FK "会話に残すシステムメッセージ（system_type = huddle）。(room_id, これ) → messages の複合 FK"
+    timestamptz started_at
+    timestamptz ended_at "null なら進行中。最後の人が抜けた・アーカイブ・削除で終わる"
+  }
+
+  huddle_participants {
+    uuid huddle_id PK, FK "複合主キー。CASCADE"
+    uuid user_id PK, FK "複合主キー。一度でも入った人。人ごとに 1 回だけ書く。INDEX(user_id, huddle_id DESC)（一覧と提案。ADR 0067）"
+    timestamptz joined_at "最初に入った時刻"
+  }
+
+  storage_deletions {
+    text object_key PK "ルームの削除で写した添付のオブジェクトのキー。どの表にも FK を張らない（ADR 0059）"
+    timestamptz not_before "これより前には消さない（発行済みの PUT URL の有効期間）。INDEX"
+    timestamptz created_at
+  }

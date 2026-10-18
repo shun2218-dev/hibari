@@ -1,0 +1,100 @@
+-- name: CreateRefreshToken :exec
+INSERT INTO refresh_tokens (id, user_id, family_id, token_hash, rotated_from, expires_at, user_agent, ip, created_at)
+VALUES (sqlc.arg(id), sqlc.arg(user_id), sqlc.arg(family_id), sqlc.arg(token_hash), sqlc.narg(rotated_from),
+        sqlc.arg(expires_at), sqlc.narg(user_agent), sqlc.narg(ip), sqlc.arg(now)::timestamptz);
+
+-- name: GetRefreshTokenForUpdate :one
+-- ローテーションの対象を行ロックして読む。
+-- 同じトークンで同時に refresh されても、2 本目は 1 本目のコミットを待ってから
+-- 「rotated で失効済み」の状態を読むので、必ず再利用として検知される。
+-- 退会済みのユーザーのトークンは見つからないものとして扱う。
+-- email の検証の状態も一緒に読む。新しい Access Token の email_verified に入れるため（ADR 0053 決定 2）。
+SELECT rt.id, rt.user_id, rt.family_id, rt.expires_at, rt.revoked_at, rt.revoked_reason,
+       (u.email_verified_at IS NOT NULL)::boolean AS email_verified
+  FROM refresh_tokens rt
+  JOIN users u ON u.id = rt.user_id
+ WHERE rt.token_hash = sqlc.arg(token_hash)
+   AND u.deleted_at IS NULL
+   FOR UPDATE OF rt;
+
+-- name: MarkRefreshTokenRotated :exec
+UPDATE refresh_tokens
+   SET revoked_at     = sqlc.arg(now)::timestamptz,
+       revoked_reason = 'rotated'
+ WHERE id = sqlc.arg(id);
+
+-- name: GetRefreshTokenFamily :one
+SELECT family_id
+  FROM refresh_tokens
+ WHERE token_hash = sqlc.arg(token_hash);
+
+-- name: RevokeRefreshTokenFamily :execrows
+-- セッション（family）単位の失効。rotated_from を再帰で辿らず、family_id の 1 文で全部を失効させる（ADR 0007）。
+-- すでに失効している行（rotated を含む）は理由を上書きしない。影響行数が 0 なら、すでに失効済みだったことを表す。
+UPDATE refresh_tokens
+   SET revoked_at     = sqlc.arg(now)::timestamptz,
+       revoked_reason = sqlc.arg(reason)::text
+ WHERE family_id = sqlc.arg(family_id)
+   AND revoked_at IS NULL;
+
+-- name: RevokeAllRefreshTokensForUser :execrows
+-- ユーザーの全セッションの失効（パスワードリセット）。
+UPDATE refresh_tokens
+   SET revoked_at     = sqlc.arg(now)::timestamptz,
+       revoked_reason = sqlc.arg(reason)::text
+ WHERE user_id = sqlc.arg(user_id)
+   AND revoked_at IS NULL;
+
+-- name: IsSessionActive :one
+-- セッション（family）に、未失効で期限内の Refresh Token が残っているか（ADR 0015）。
+-- ローテーション済みの行は revoked_at を持つが、family の最新の行が未失効なら、セッションは生きている。
+-- 退会済みのユーザーのセッションは生きていないものとして扱う。インデックス refresh_tokens(family_id) を使う。
+SELECT EXISTS (
+    SELECT 1
+      FROM refresh_tokens rt
+      JOIN users u ON u.id = rt.user_id
+     WHERE rt.family_id = sqlc.arg(family_id)
+       AND rt.user_id = sqlc.arg(user_id)
+       AND rt.revoked_at IS NULL
+       AND rt.expires_at > sqlc.arg(now)::timestamptz
+       AND u.deleted_at IS NULL
+)::boolean;
+
+-- name: ListActiveSessions :many
+-- 設定画面の「ログイン中のデバイス」（ADR 0019）。
+-- セッション（family）ごとに 1 行にまとめる。family の中で未失効なのは最新の 1 行だけなので、
+-- その行の user_agent を「その端末」の情報として使い、family の最初の行の時刻をログインの時刻とする。
+SELECT *
+  FROM (
+    SELECT DISTINCT ON (rt.family_id)
+           rt.family_id,
+           rt.user_agent,
+           rt.created_at AS last_used_at,
+           (SELECT min(f.created_at) FROM refresh_tokens f WHERE f.family_id = rt.family_id)::timestamptz AS started_at
+      FROM refresh_tokens rt
+     WHERE rt.user_id = sqlc.arg(user_id)
+       AND rt.revoked_at IS NULL
+       AND rt.expires_at > sqlc.arg(now)::timestamptz
+     ORDER BY rt.family_id, rt.created_at DESC
+  ) s
+ ORDER BY s.last_used_at DESC;
+
+-- name: RevokeSessionForUser :execrows
+-- 自分のセッションだけを失効させる。user_id の条件で、他人のセッション ID を指定しても 0 行になる。
+UPDATE refresh_tokens
+   SET revoked_at     = sqlc.arg(now)::timestamptz,
+       revoked_reason = sqlc.arg(reason)::text
+ WHERE user_id = sqlc.arg(user_id)
+   AND family_id = sqlc.arg(family_id)
+   AND revoked_at IS NULL;
+
+-- name: RevokeOtherSessions :many
+-- いま使っているセッション以外をすべて失効させ、失効した family を返す（呼び出し側が失効イベントを publish する）。
+-- 1 つの family に複数の行があれば同じ family_id が複数返るので、呼び出し側で重複を除く。
+UPDATE refresh_tokens
+   SET revoked_at     = sqlc.arg(now)::timestamptz,
+       revoked_reason = sqlc.arg(reason)::text
+ WHERE user_id = sqlc.arg(user_id)
+   AND family_id <> sqlc.arg(keep_family_id)
+   AND revoked_at IS NULL
+RETURNING family_id;

@@ -1,0 +1,400 @@
+import Link from "next/link";
+import type { ComponentType, ReactNode } from "react";
+
+import { Avatar } from "@/components/ui/avatar";
+import { Badge, UnreadBadge } from "@/components/ui/badge";
+import { Button, IconButton } from "@/components/ui/button";
+import { ChevronDownIcon, HashIcon, HeadphonesIcon, LockIcon, PlusIcon, SearchIcon, ThreadIcon } from "@/components/ui/icons";
+import { cx } from "@/lib/cx";
+
+import type { RoomSummaryView, UserRef, WorkspaceRef } from "./types";
+import { StatusEmoji } from "./user-status";
+
+type SidebarProps = {
+  workspace: WorkspaceRef;
+  currentUser: UserRef;
+  rooms: RoomSummaryView[];
+  selectedRoomId?: string;
+  roomHref: (roomId: string) => string;
+  search?: string;
+  onSearchChange?: (value: string) => void;
+  switcherOpen?: boolean;
+  onToggleSwitcher?: () => void;
+  /** ワークスペースの切り替えのポップオーバー。switcherOpen のときだけ出す。 */
+  switcher?: ReactNode;
+  accountMenuOpen?: boolean;
+  onToggleAccountMenu?: () => void;
+  /** 自分のアバターから開くメニュー。accountMenuOpen のときだけ出す。 */
+  accountMenu?: ReactNode;
+  onCreateRoom?: () => void;
+  /** ダイレクトメッセージを始める（相手を選ぶダイアログを開く）。 */
+  onStartDm?: () => void;
+  /**
+   * 参加しているスレッドの一覧への入口（ADR 0036）。unreadCount は未読のあるスレッドの数。
+   * 渡さなければ出さない。
+   */
+  threads?: { href: string; unreadCount: number; selected: boolean };
+  /**
+   * ハドルの一覧への入口（ADR 0067 決定 6）。participants は、いま進行中の（自分が入れる）ハドルに入っている人。
+   * 進行中のあいだだけ、行の右に顔を出す（Slack と同じ）。数は出さない（未読の概念がない）。渡さなければ出さない。
+   */
+  huddles?: { href: string; selected: boolean; participants: UserRef[] };
+  /** 検索の下に置く帯（「デスクトップ通知を有効にする」。ADR 0057）。渡さなければ出さない。 */
+  notice?: ReactNode;
+  /**
+   * md 以上で左のメニュー（`SideNavRail`）と並べる。自分のアバターはメニューの下に移るので、md 以上ではここに出さない（ADR 0058）。
+   * モバイルにはメニューの列がないので、いままでどおりここに出す。
+   */
+  railed?: boolean;
+};
+
+export function Sidebar({
+  workspace,
+  currentUser,
+  rooms,
+  selectedRoomId,
+  roomHref,
+  search = "",
+  onSearchChange,
+  switcherOpen = false,
+  onToggleSwitcher,
+  switcher,
+  accountMenuOpen = false,
+  onToggleAccountMenu,
+  accountMenu,
+  onCreateRoom,
+  onStartDm,
+  threads,
+  huddles,
+  notice,
+  railed = false,
+}: SidebarProps) {
+  // 検索して 0 件なのか、まだチャンネルがないのかで、出すものが違う
+  const searching = search.trim() !== "";
+  // アーカイブしたチャンネルはサイドバーから外し、検索したときだけ出す（ADR 0059。Slack もサイドバーから消える）
+  const channels = rooms.filter((room) => room.kind !== "dm" && (searching || !room.archived));
+  const dms = rooms.filter((room) => room.kind === "dm");
+
+  return (
+    <nav aria-label="チャンネル" className="flex h-full flex-col bg-surface">
+      <div className="relative flex h-16 shrink-0 items-center gap-2 px-3">
+        <button
+          type="button"
+          onClick={onToggleSwitcher}
+          aria-expanded={switcherOpen}
+          aria-haspopup="dialog"
+          className={cx(
+            "flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md border px-2.5 text-left",
+            switcherOpen ? "border-border bg-surface-muted" : "border-transparent hover:bg-surface-muted",
+          )}
+        >
+          <Avatar id={workspace.id} name={workspace.name} size="xs" shape="square" />
+          <span className="flex-1 truncate text-base font-bold text-text">{workspace.name}</span>
+          <ChevronDownIcon className="size-4 shrink-0 text-text-secondary" />
+        </button>
+        <button
+          type="button"
+          onClick={onToggleAccountMenu}
+          aria-label="アカウントメニュー"
+          aria-expanded={accountMenuOpen}
+          aria-haspopup="dialog"
+          className={cx("rounded-full", railed && "md:hidden")}
+        >
+          <Avatar id={currentUser.id} name={currentUser.name} imageUrl={currentUser.avatarUrl} size="sm" />
+        </button>
+        {switcherOpen && switcher}
+        {accountMenuOpen && accountMenu}
+      </div>
+
+      <div className="px-3 pb-2">
+        <label className="flex h-8.5 items-center gap-2 rounded-sm border border-border px-2.5 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-primary">
+          <SearchIcon className="size-4 shrink-0 text-text-secondary" />
+          <input
+            type="search"
+            aria-label="チャンネルを検索"
+            placeholder="チャンネルを検索"
+            value={search}
+            onChange={(e) => onSearchChange?.(e.target.value)}
+            className="min-w-0 flex-1 bg-transparent text-sm text-text focus-visible:outline-none"
+          />
+        </label>
+      </div>
+
+      {notice}
+
+      {rooms.length === 0 ? (
+        <div className="flex flex-col items-center gap-1 px-4 pt-12 text-center">
+          <p className="text-base font-medium text-text">
+            {searching ? "一致するチャンネルがありません" : "まだチャンネルがありません"}
+          </p>
+          <p className="text-xs leading-relaxed text-text-muted">
+            {searching ? "別の言葉を試すか、チャンネルを作成してください" : "誰かを招待して会話を始めましょう"}
+          </p>
+          {!searching && (
+            <Button onClick={onCreateRoom} className="mt-4">
+              チャンネルを作成
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto pb-4">
+          {/* 検索はチャンネルを探すためのものなので、検索している間は出さない */}
+          {/* 「後で」は左のメニューに移った（ADR 0058 決定 1） */}
+          {(threads || huddles) && !searching && (
+            <div className="pt-3">
+              {threads && (
+                <NavRow href={threads.href} selected={threads.selected} icon={ThreadIcon} unreadCount={threads.unreadCount}>
+                  スレッド
+                </NavRow>
+              )}
+              {huddles && (
+                <NavRow
+                  href={huddles.href}
+                  selected={huddles.selected}
+                  icon={HeadphonesIcon}
+                  trailing={huddles.participants.length > 0 ? <NavFaces participants={huddles.participants} selected={huddles.selected} /> : undefined}
+                >
+                  ハドルミーティング
+                </NavRow>
+              )}
+            </div>
+          )}
+          {/* 片方が 0 件でも見出しは出す。「+」がそのまま作成・DM の入口になっている */}
+          <RoomSection title="チャンネル" first action={{ label: "チャンネルを作成", onClick: onCreateRoom }}>
+            {channels.map((room) => (
+              <RoomRow key={room.id} room={room} href={roomHref(room.id)} selected={room.id === selectedRoomId} layout="line" />
+            ))}
+          </RoomSection>
+          <RoomSection
+            title="ダイレクトメッセージ"
+            first={false}
+            action={{ label: "ダイレクトメッセージを開く", onClick: onStartDm }}
+          >
+            {dms.map((room) => (
+              <RoomRow key={room.id} room={room} href={roomHref(room.id)} selected={room.id === selectedRoomId} layout="line" />
+            ))}
+          </RoomSection>
+        </div>
+      )}
+    </nav>
+  );
+}
+
+/**
+ * ルームの一覧の上に置く行（「スレッド」「ハドルミーティング」）。
+ * スレッドの未読は、チャンネルと同じ琥珀のバッジで「未読のあるスレッドの数」を出す。
+ * スレッドの返信はチャンネルの未読に数えないので（ADR 0036）、ここが返信に気づく唯一の場所になる。
+ */
+function NavRow({
+  href,
+  selected,
+  icon: Icon,
+  unreadCount = 0,
+  trailing,
+  children,
+}: {
+  href: string;
+  selected: boolean;
+  icon: ComponentType<{ className?: string }>;
+  unreadCount?: number;
+  /** 右端に置くもの（ハドルの一覧の、進行中のハドルに入っている人の顔）。 */
+  trailing?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={selected ? "page" : undefined}
+      className={cx("relative flex h-9 items-center gap-3 px-4", selected ? "bg-primary-subtle" : "hover:bg-surface-muted")}
+    >
+      {selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-primary" />}
+      <Icon className="size-4 shrink-0 text-text-secondary" />
+      {/* ルームの行と同じく、未読があるときだけ太字にする */}
+      <span className={cx("flex-1 text-base text-text", unreadCount > 0 ? "font-bold" : "font-normal")}>{children}</span>
+      {trailing}
+      <UnreadBadge count={unreadCount} />
+    </Link>
+  );
+}
+
+/** ハドルの一覧の行の右の顔（Slack と同じく顔だけ。2 人まで）。いま起きていることを知らせるだけで、押せる印ではない。 */
+function NavFaces({ participants, selected }: { participants: UserRef[]; selected: boolean }) {
+  return (
+    <span role="img" aria-label={`進行中のハドルミーティングに ${participants.length} 人`} className="flex shrink-0 -space-x-1">
+      {participants.slice(0, 2).map((p) => (
+        <Avatar
+          key={p.id}
+          id={p.id}
+          name={p.name}
+          imageUrl={p.avatarUrl}
+          size="xs"
+          // 重ねた顔の縁は、行の地の色に合わせる
+          className={cx("rounded-full ring-2", selected ? "ring-primary-subtle" : "ring-surface")}
+        />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * 見出しの右の「+」は、そのまとまりを増やす入口（チャンネルの作成、DM を開く）。
+ * ルームが 0 件のときは一覧ごと出ないので、空のときの「チャンネルを作成」のボタンは別に残してある。
+ */
+function RoomSection({
+  title,
+  first,
+  action,
+  children,
+}: {
+  title: string;
+  first: boolean;
+  action: { label: string; onClick?: () => void };
+  children: ReactNode;
+}) {
+  return (
+    <section className={first ? "pt-4" : "pt-3"}>
+      <div className="flex items-center justify-between gap-2 px-4 pb-2 pr-2.5">
+        <h2 className="text-2xs font-medium text-text-secondary">{title}</h2>
+        <IconButton label={action.label} onClick={action.onClick}>
+          <PlusIcon className="size-3.5" />
+        </IconButton>
+      </div>
+      <ul>{children}</ul>
+    </section>
+  );
+}
+
+/**
+ * ルームの行。ホームのサイドバーは名前だけの 1 行（`line`）、DM の一覧は最新のメッセージと時刻を添えた 2 行（`preview`）にする。
+ * サイドバーは「どこへ行くか」を選ぶ所なので、Slack と同じく名前とバッジだけにして、一度に見える数を増やす（オーナーの判断、2026-09-24）。
+ * 中身を読みたい一覧（DM のメニュー）では、今までどおり最新のメッセージを出す。
+ */
+export function RoomRow({
+  room,
+  href,
+  selected,
+  layout = "preview",
+}: {
+  room: RoomSummaryView;
+  href: string;
+  selected: boolean;
+  layout?: "line" | "preview";
+}) {
+  // ミュートしたルームは隠さずに薄くする（ADR 0055 決定 6）。未読は太字にせず、メンションの @N だけを残す
+  const muted = room.muted ?? false;
+  const line = layout === "line";
+  const name = (
+    // 知らせの要らない未読は、バッジではなく名前の太字で示す（ADR 0043）
+    // 読み終えたルームは普通の太さにする。semibold（600）にすると bold（700）と見分けがつかず、全部が未読に見えていた
+    // ステータスの絵文字は名前のすぐ横に置く。時刻と同じ並びに入れると、名前から離れて右端に寄ってしまう
+    <span className="flex min-w-0 items-baseline gap-1">
+      <span
+        className={cx(
+          "truncate text-base",
+          muted ? "text-text-muted" : "text-text",
+          room.unreadCount > 0 && !muted ? "font-bold" : "font-normal",
+        )}
+      >
+        {room.name}
+        {/* 薄い色だけでは読み上げで分からないので、言葉でも添える */}
+        {muted && <span className="sr-only">（ミュート中）</span>}
+      </span>
+      {room.peer?.status && <StatusEmoji status={room.peer.status} className="text-xs" />}
+      {room.archived && <Badge className="self-center">アーカイブ済み</Badge>}
+    </span>
+  );
+  /*
+    数字のバッジは知らせが要るものだけ（ADR 0043）。チャンネルは自分宛てのメンションの数、
+    DM は 1 通が知らせなので未読の数をそのまま出す。ただの未読のチャンネルには出さない。
+    ミュートした DM は、チャンネルと同じくメンションの数だけにする（ADR 0055 決定 6）。
+  */
+  const count =
+    room.kind === "dm" && !muted ? <UnreadBadge count={room.unreadCount} /> : <UnreadBadge count={room.mentionCount} mention />;
+  // ハドルが進行中（ADR 0066 決定 13・追記 C）。Slack と同じく行の右端、未読のバッジの前に置く
+  const badge =
+    room.huddle && room.huddle.participants.length > 0 ? (
+      <span className="flex shrink-0 items-center gap-2">
+        <HuddleBadge participants={room.huddle.participants} />
+        {count}
+      </span>
+    ) : (
+      count
+    );
+  return (
+    <li>
+      <Link
+        href={href}
+        aria-current={selected ? "page" : undefined}
+        className={cx(
+          "relative flex items-center px-4",
+          line ? "h-9 gap-3" : "gap-3 py-2",
+          selected ? "bg-primary-subtle" : "hover:bg-surface-muted",
+          room.kind === "dm" && "gap-2.5",
+        )}
+      >
+        {selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-primary" />}
+        {room.kind === "dm" ? (
+          <Avatar
+            id={room.peer?.id ?? room.id}
+            name={room.name}
+            imageUrl={room.peer?.avatarUrl}
+            size={line ? "xs" : "md"}
+            presence={room.peer?.presence}
+          />
+        ) : (
+          <span
+            className={cx(
+              "flex w-4 shrink-0 justify-center",
+              !line && "self-start pt-1",
+              muted ? "text-text-muted" : "text-text-secondary",
+            )}
+          >
+            {room.kind === "public" ? (
+              <HashIcon aria-label="公開" aria-hidden={false} role="img" className="size-4" />
+            ) : (
+              <LockIcon aria-label="非公開" aria-hidden={false} role="img" className="size-3.5" />
+            )}
+          </span>
+        )}
+        {line ? (
+          <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+            {name}
+            {badge}
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1">
+            <span className="flex items-baseline justify-between gap-2">
+              {name}
+              {room.timeLabel && <span className="shrink-0 font-mono text-2xs text-text-muted">{room.timeLabel}</span>}
+            </span>
+            <span className="flex items-center justify-between gap-2">
+              <span className="truncate text-xs text-text-muted">{room.lastMessage}</span>
+              {badge}
+            </span>
+          </span>
+        )}
+      </Link>
+    </li>
+  );
+}
+
+/** 進行中のハドルの印（Slack と同じく、入っている人の顔・ヘッドフォン・人数）。顔は 2 人まで。 */
+function HuddleBadge({ participants }: { participants: UserRef[] }) {
+  return (
+    <span
+      role="img"
+      aria-label={`ハドルミーティング中（${participants.length} 人）`}
+      className="flex shrink-0 items-center gap-1"
+    >
+      <span aria-hidden className="flex -space-x-1">
+        {participants.slice(0, 2).map((p) => (
+          <Avatar key={p.id} id={p.id} name={p.name} imageUrl={p.avatarUrl} size="xs" className="rounded-full ring-2 ring-surface" />
+        ))}
+      </span>
+      <span aria-hidden className="flex items-center gap-0.5 text-2xs font-semibold text-attention-text">
+        <HeadphonesIcon className="size-3.5 text-attention" />
+        {participants.length}
+      </span>
+    </span>
+  );
+}
