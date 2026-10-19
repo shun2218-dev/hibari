@@ -61,6 +61,29 @@ func TestRunFailsWithoutSigningKey(t *testing.T) {
 	}
 }
 
+// VAPID の設定があるのに鍵のファイルがなければ、DB に接続する前に起動を止める（ADR 0069 決定 9）。
+// 黙ってプッシュ通知を無効にすると、本番で鍵の置き忘れに気づけない。
+func TestRunFailsWithoutVAPIDKey(t *testing.T) {
+	env := map[string]string{
+		"DATABASE_URL":           "postgres://unused",
+		"REDIS_URL":              "redis://unused",
+		"JWT_PRIVATE_KEY_FILE":   writeSigningKey(t),
+		"MAIL_TRANSPORT":         "log",
+		"S3_ENDPOINT":            "http://unused",
+		"S3_BUCKET":              "unused",
+		"S3_ACCESS_KEY_ID":       "unused",
+		"S3_SECRET_ACCESS_KEY":   "unused",
+		"VAPID_PRIVATE_KEY_FILE": filepath.Join(t.TempDir(), "missing.pem"),
+		"VAPID_SUBJECT":          "mailto:ops@example.com",
+	}
+	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+
+	err := run(t.Context(), lookup, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "VAPID_PRIVATE_KEY_FILE") {
+		t.Fatalf("run() = %v, want an error mentioning VAPID_PRIVATE_KEY_FILE", err)
+	}
+}
+
 // SMTP のパスワードのファイルがなければ、DB に接続する前に起動を止める（ADR 0053）。
 func TestRunFailsWithoutSMTPPassword(t *testing.T) {
 	env := map[string]string{

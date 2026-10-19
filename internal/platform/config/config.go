@@ -65,6 +65,19 @@ type Config struct {
 	// Realtime はハドルに使う Cloudflare Realtime の SFU と TURN（ADR 0066 決定 15）。
 	// 設定がなければ Enabled が false で、ハドルだけを無効にして起動する。
 	Realtime RealtimeConfig
+
+	// Push はプッシュ通知（Web Push）の VAPID の鍵と sub（ADR 0069 決定 9）。
+	// 設定がなければ Enabled が false で、プッシュ通知だけを無効にして起動する。
+	Push PushConfig
+}
+
+// PushConfig は Web Push の VAPID の設定。鍵はファイルのパスで受け取り、起動時に読む（JWT の鍵と同じ）。
+type PushConfig struct {
+	Enabled bool
+	// VAPIDPrivateKeyFile は VAPID の秘密鍵（P-256 の PEM）のパス。開発では `make keys` が keys/vapid_p256.pem に作る。
+	VAPIDPrivateKeyFile string
+	// VAPIDSubject は VAPID の sub。プッシュのサービスが送り手に連絡するための mailto: か https: の URI（RFC 8292 の 2.1）。
+	VAPIDSubject string
 }
 
 // RealtimeConfig は Cloudflare Realtime の設定。秘密はファイルのパスで受け取り、起動時に読む（JWT の鍵と同じ）。
@@ -244,6 +257,7 @@ func Load(lookup LookupEnv) (Config, error) {
 	cfg.AvatarAllowedTypes = mediaTypesVar(&errs, optional, "AVATAR_ALLOWED_TYPES", DefaultAvatarAllowedTypes)
 
 	cfg.Realtime = realtimeVar(&errs, optional)
+	cfg.Push = pushVar(&errs, optional)
 
 	if len(errs) > 0 {
 		return Config{}, fmt.Errorf("load config: %w", errors.Join(errs...))
@@ -299,6 +313,31 @@ func realtimeVar(errs *[]error, optional func(string, string) string) RealtimeCo
 		TURNKeyAPITokenFile: values[3],
 		RelayOnly:           relayOnly,
 	}
+}
+
+// pushVar は Web Push の VAPID の設定を読む（ADR 0069 決定 9）。
+//
+// 2 つとも空ならプッシュ通知を無効にする（鍵を置いていない環境でも、ほかの機能は動かせるようにする）。
+// 片方だけなのは設定の誤りなので、ハドル（realtimeVar）と同じく、黙って無効にせず起動を止める。
+func pushVar(errs *[]error, optional func(string, string) string) PushConfig {
+	keyFile := optional("VAPID_PRIVATE_KEY_FILE", "")
+	subject := optional("VAPID_SUBJECT", "")
+	switch {
+	case keyFile == "" && subject == "":
+		return PushConfig{}
+	case keyFile == "":
+		*errs = append(*errs, errors.New("VAPID_PRIVATE_KEY_FILE: required when VAPID_SUBJECT is set (set both to enable push notifications, or neither to disable them)"))
+		return PushConfig{}
+	case subject == "":
+		*errs = append(*errs, errors.New("VAPID_SUBJECT: required when VAPID_PRIVATE_KEY_FILE is set (set both to enable push notifications, or neither to disable them)"))
+		return PushConfig{}
+	}
+	// プッシュのサービスは sub のない・形の違う JWT を拒む。動き出してから全部の通知が届かない状態にしないよう、ここで止める。
+	if !strings.HasPrefix(subject, "mailto:") && !strings.HasPrefix(subject, "https://") {
+		*errs = append(*errs, fmt.Errorf("VAPID_SUBJECT: must be a mailto: or https: URI, got %q", subject))
+		return PushConfig{}
+	}
+	return PushConfig{Enabled: true, VAPIDPrivateKeyFile: keyFile, VAPIDSubject: subject}
 }
 
 // mailVar はメールの設定を読む。

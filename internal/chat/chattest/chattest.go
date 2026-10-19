@@ -118,6 +118,18 @@ type options struct {
 	start          time.Time
 	presence       chat.PresenceReader
 	withoutHuddles bool
+	withoutPush    bool
+}
+
+// VAPIDPublicKey は、テストの Service が返す VAPID の公開鍵。購読の API のテストは送らないので、本物の鍵でなくてよい。
+const VAPIDPublicKey = "test-vapid-public-key"
+
+// PushDeps はテストで使うプッシュ通知の依存（有効）。
+var PushDeps = chat.PushDeps{VAPIDPublicKey: VAPIDPublicKey}
+
+// WithoutPush は VAPID の鍵がない（プッシュ通知が無効な）Service にする（ADR 0069 決定 9）。
+func WithoutPush() Option {
+	return func(o *options) { o.withoutPush = true }
 }
 
 // Option は New の組み立てを変える。
@@ -194,6 +206,10 @@ func New(t testing.TB, opts ...Option) *Env {
 	if o.withoutHuddles {
 		huddleDeps = chat.HuddleDeps{}
 	}
+	pushDeps := PushDeps
+	if o.withoutPush {
+		pushDeps = chat.PushDeps{}
+	}
 	return &Env{
 		Pool:       pool,
 		Clock:      clk,
@@ -217,6 +233,7 @@ func New(t testing.TB, opts ...Option) *Env {
 			Presence:         svcPresence,
 			LinkPreviews:     chat.LinkPreviewDeps{Fetcher: fetcher, AppBaseURL: AppBaseURL, Limiter: ratelimit.New(rdb, clk)},
 			Huddles:          huddleDeps,
+			Push:             pushDeps,
 		}),
 	}
 }

@@ -61,6 +61,8 @@ type apiOptions struct {
 	requireVerifiedEmail bool
 	// withoutHuddles は Cloudflare の設定がない（ハドルが無効な）サーバーにする（ADR 0066 決定 15）。
 	withoutHuddles bool
+	// withoutPush は VAPID の鍵がない（プッシュ通知が無効な）サーバーにする（ADR 0069 決定 9）。
+	withoutPush bool
 }
 
 // apiOption は newAPI の組み立てを変える。
@@ -68,6 +70,10 @@ type apiOption func(*apiOptions)
 
 func withoutHuddles() apiOption {
 	return func(o *apiOptions) { o.withoutHuddles = true }
+}
+
+func withoutPush() apiOption {
+	return func(o *apiOptions) { o.withoutPush = true }
 }
 
 func withAuthOptions(opts ...authtest.Option) apiOption {
@@ -157,12 +163,17 @@ func startInstance(t *testing.T, env *authtest.Env, o apiOptions) *apiClient {
 	if o.withoutHuddles {
 		huddleDeps = chat.HuddleDeps{}
 	}
+	pushDeps := chattest.PushDeps
+	if o.withoutPush {
+		pushDeps = chat.PushDeps{}
+	}
 	chatService := chat.NewService(chat.Deps{
 		DB: env.Pool, Clock: env.Clock, IDs: env.IDs, Random: rand.Reader, Logger: logger,
 		Storage: chattest.NewStorage(t), AttachmentLimits: chattest.AttachmentLimits,
 		Delivery: delivery, Presence: realtime.PresenceStates{Store: presenceStore},
 		LinkPreviews: chat.LinkPreviewDeps{Fetcher: fetcher, AppBaseURL: chattest.AppBaseURL, Limiter: ratelimit.New(rdb, env.Clock)},
 		Huddles:      huddleDeps,
+		Push:         pushDeps,
 	})
 	h := httpx.NewRouter(httpx.Deps{
 		Logger:         logger,

@@ -39,6 +39,7 @@ import (
 	"github.com/shun2218-dev/hibari/internal/platform/sfu"
 	"github.com/shun2218-dev/hibari/internal/platform/storage"
 	"github.com/shun2218-dev/hibari/internal/platform/turn"
+	"github.com/shun2218-dev/hibari/internal/platform/webpush"
 )
 
 // version はビルド時に -ldflags "-X main.version=vX.Y.Z" で埋め込む（CLAUDE.md「リリース手順」）。
@@ -78,6 +79,12 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	if err != nil {
 		return err
 	}
+	clk := clock.System{}
+	// VAPID の鍵も同じく、接続する前に読む（ADR 0069 決定 9）。
+	pushDeps, err := newPushDeps(cfg.Push, clk, logger)
+	if err != nil {
+		return err
+	}
 
 	// 起動時の接続は無期限に待たない。依存先が上がっていないなら早く落として再起動に任せる。
 	startupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -95,7 +102,6 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	}
 	defer func() { _ = rdb.Close() }()
 
-	clk := clock.System{}
 	ids := id.NewGenerator(clk, rand.Reader)
 	// instanceID はこのプロセスを表す。presence でインスタンスごとの接続の有無を数えるのと、Pub/Sub の再接続の検知に使う（ADR 0016）。
 	// 複数台のログを見分けられるよう、すべてのログに付ける。
@@ -202,6 +208,7 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 			Limiter:    ratelimit.New(rdb, clk),
 		},
 		Huddles: huddleDeps,
+		Push:    pushDeps,
 	})
 
 	// 添付の掃除ジョブ（ADR 0013）。DB のプールを閉じる前に止めて、終わるのを待つ。
@@ -216,10 +223,12 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 	jobs.Go(func() { hub.Run(jobCtx, presence.RefreshInterval, realtime.RevalidateInterval) })
 	jobs.Go(func() {
 		// 失効したセッションの WebSocket を切り、そのセッションで入っていたハドルからも外す（ADR 0066 決定 8）。
+		// プッシュ通知の購読も消す。ログアウトした端末にメッセージの本文が届き続けないようにするため（ADR 0069 決定 3）。
 		// chat は authn の型を知らないので、ここで ID に分けて渡す（ADR 0001）
 		onRevoked := func(ctx context.Context, rev authn.Revocation) {
 			hub.CloseSessions(ctx, rev)
 			chatService.RemoveRevokedHuddleSession(ctx, rev.UserID, rev.SessionID, rev.All)
+			chatService.RemoveRevokedPushSubscriptions(ctx, rev.UserID, rev.SessionID, rev.All)
 		}
 		if err := revocations.Run(jobCtx, onRevoked); err != nil {
 			// Redis との接続が切れて購読が終わった。失効の反映は定期の再検証（5 分ごと）に頼ることになる。
@@ -331,6 +340,30 @@ func newHuddleDeps(c config.RealtimeConfig, rdb *goredis.Client, clk clock.Clock
 		Limiter: ratelimit.New(rdb, clk),
 		Encoder: encoder,
 	}, nil
+}
+
+// newPushDeps はプッシュ通知の依存を組み立てる（ADR 0069 決定 9）。VAPID の設定がなければ空（プッシュ通知は無効）を返す。
+//
+// 設定があるのに鍵が読めないときは起動を止める。JWT の鍵と同じく、動き出してから「通知だけ届かない」状態にしないため。
+func newPushDeps(c config.PushConfig, clk clock.Clock, logger *slog.Logger) (chat.PushDeps, error) {
+	if !c.Enabled {
+		logger.Info("push notifications: disabled (VAPID_PRIVATE_KEY_FILE is not set)")
+		return chat.PushDeps{}, nil
+	}
+	pem, err := os.ReadFile(c.VAPIDPrivateKeyFile)
+	if err != nil {
+		return chat.PushDeps{}, fmt.Errorf("read VAPID_PRIVATE_KEY_FILE (run `make keys` to create a development key): %w", err)
+	}
+	key, err := webpush.ParseVAPIDKeyPEM(pem)
+	if err != nil {
+		return chat.PushDeps{}, err
+	}
+	sender, err := webpush.New(webpush.Options{Key: key, Subject: c.VAPIDSubject, Clock: clk})
+	if err != nil {
+		return chat.PushDeps{}, err
+	}
+	logger.Info("push notifications: enabled (Web Push)")
+	return chat.PushDeps{VAPIDPublicKey: sender.PublicKey()}, nil
 }
 
 // readSecretFile は秘密のファイルを読む。末尾の改行は取り除く（echo で作ると付く）。

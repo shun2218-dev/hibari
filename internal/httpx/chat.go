@@ -96,6 +96,13 @@ type ChatService interface {
 	LeaveHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID) error
 	HuddleJoiningSoon(ctx context.Context, actor, huddleID ulid.ULID) error
 	HeartbeatHuddle(ctx context.Context, actor, huddleID, participantID ulid.ULID) (bool, error)
+
+	// プッシュ通知の購読（ADR 0069）。sid はいまのセッション（Access Token の sid）
+	PushConfig() chat.PushConfig
+	RegisterPushSubscription(ctx context.Context, actor, sid ulid.ULID, in chat.PushSubscriptionInput) (chat.PushSubscription, error)
+	RemoveCurrentPushSubscription(ctx context.Context, actor, sid ulid.ULID) error
+	ListPushSubscriptions(ctx context.Context, actor, sid ulid.ULID) ([]chat.PushSubscription, error)
+	RemovePushSubscription(ctx context.Context, actor, subscriptionID ulid.ULID) error
 }
 
 type chatHandlers struct {
@@ -207,6 +214,12 @@ func registerChatRoutes(mux *http.ServeMux, d Deps) {
 	handle("PATCH /api/v1/huddles/{huddleID}/participants/{participantID}", h.updateHuddleParticipant)
 	handle("DELETE /api/v1/huddles/{huddleID}/participants/{participantID}", h.leaveHuddle)
 	handle("POST /api/v1/huddles/{huddleID}/joining-soon", h.huddleJoiningSoon)
+	// プッシュ通知（ADR 0069 決定 4）。購読はいまのセッションに 1 つなので単数のパス、ほかの端末の購読は一覧の ID で止める
+	handle("GET /api/v1/push/config", h.getPushConfig)
+	handle("PUT /api/v1/me/push-subscription", h.putPushSubscription)
+	handle("DELETE /api/v1/me/push-subscription", h.deleteCurrentPushSubscription)
+	handle("GET /api/v1/me/push-subscriptions", h.listPushSubscriptions)
+	handle("DELETE /api/v1/me/push-subscriptions/{subscriptionID}", h.deletePushSubscription)
 	handle("POST /api/v1/attachments/{attachmentID}/complete", h.completeAttachment)
 	handle("GET /api/v1/attachments/{attachmentID}/url", h.getAttachmentURL)
 }
