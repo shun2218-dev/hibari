@@ -144,11 +144,18 @@ tools-test: ## tools/ のシェルスクリプトのテストを実行する
 # ---- その他 ----
 
 .PHONY: keys
-keys: ## 開発用の JWT 署名鍵（Ed25519）を keys/ に生成する。既存の鍵は上書きしない
+keys: ## 開発用の鍵（JWT の署名鍵 Ed25519 と、Web Push の VAPID の鍵 P-256）を keys/ に生成する。既存の鍵は上書きしない
 	@mkdir -p keys
-	@if [ -e keys/jwt_ed25519.pem ]; then echo "keys/jwt_ed25519.pem already exists"; exit 0; fi; \
+	@if [ -e keys/jwt_ed25519.pem ]; then echo "keys/jwt_ed25519.pem already exists"; else \
 	$(RUN_GO) openssl genpkey -algorithm ed25519 -out keys/jwt_ed25519.pem && \
-	chmod 600 keys/jwt_ed25519.pem && echo "generated keys/jwt_ed25519.pem"
+	chmod 600 keys/jwt_ed25519.pem && echo "generated keys/jwt_ed25519.pem"; fi
+	@# VAPID の鍵は RFC 8292 が P-256 と決めている（ADR 0069 決定 9）。鍵を替えると全員の購読が無効になるので、作り直さない。
+	@# 鍵はコンテナの標準出力から受けて、ホストで書く。worktree の keys/ はメインのチェックアウトへのシンボリックリンクで、
+	@# コンテナの中からは辿れない（リンク先のホストのパスがマウントされていない）ため。
+	@if [ -e keys/vapid_p256.pem ]; then echo "keys/vapid_p256.pem already exists"; else \
+	(umask 077 && $(RUN_GO) openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 > keys/vapid_p256.pem.tmp) && \
+	mv keys/vapid_p256.pem.tmp keys/vapid_p256.pem && echo "generated keys/vapid_p256.pem" || \
+	{ rm -f keys/vapid_p256.pem.tmp; exit 1; }; fi
 
 .PHONY: diagrams
 diagrams: ## docs/*.mermaid から docs/*.svg を生成する（ADR 0009）
