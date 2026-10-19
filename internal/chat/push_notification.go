@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -420,7 +419,7 @@ func messagePushBody(msg Message, names plaintext.Names) string {
 		for i, a := range msg.Attachments {
 			files[i] = a.FileName
 		}
-		text = "ファイルを " + strconv.Itoa(len(files)) + " 件送りました: " + strings.Join(files, "、")
+		text = plaintext.FilesSent(files)
 	}
 	return truncateRunes(text, pushBodyMax)
 }

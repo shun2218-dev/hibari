@@ -98,8 +98,10 @@ export function notificationContent(message: Message, room: Room, channels: Chan
   for (const m of message.mentions) if (m.user) names[m.user.id] = m.user.display_name;
   const sender = message.sender.display_name;
   const place = room.kind === "dm" ? "" : message.thread_root_id !== null ? `#${roomName(room)} のスレッド` : `#${roomName(room)}`;
-  const text = plainText(message.body, names, channels);
-  const body = text === "" ? "ファイルを送信しました" : text.length > BODY_MAX ? `${text.slice(0, BODY_MAX)}…` : text;
+  const plain = plainText(message.body, names, channels);
+  // 添付だけの投稿は、プッシュ通知（サーバーの messagePushBody）と同じ文言にする（ADR 0069 決定 7。docs/ui の「届く通知の中身」）
+  const text = plain === "" && message.attachments.length > 0 ? filesSentText(message.attachments.map((a) => a.file_name)) : plain;
+  const body = text.length > BODY_MAX ? `${text.slice(0, BODY_MAX)}…` : text;
   const url = permalinkPath({
     workspaceId: room.workspace_id,
     roomId: room.id,
@@ -107,6 +109,14 @@ export function notificationContent(message: Message, room: Room, channels: Chan
     threadRootId: message.thread_root_id ?? undefined,
   });
   return { title: place === "" ? sender : `${sender}（${place}）`, body, tag: message.id, url };
+}
+
+/**
+ * 本文がなく添付だけの投稿の本文（「ファイルを 2 件送りました: a.pdf、b.png」）。
+ * プッシュ通知はサーバー（internal/chat/plaintext の FilesSent）が同じ文言で作る。testdata/format/files-sent.json を両方のテストで読む。
+ */
+export function filesSentText(fileNames: readonly string[]): string {
+  return `ファイルを ${fileNames.length} 件送りました: ${fileNames.join("、")}`;
 }
 
 /**

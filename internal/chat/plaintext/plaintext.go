@@ -13,6 +13,7 @@ package plaintext
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -56,6 +57,13 @@ var listLineRe = regexp.MustCompile(`^ *(?:[-*•]|[0-9]{1,9}\.) ([^\r\x{2028}\x
 // リンクは文字（なければ URL）にする。空白の並びは 1 つにまとめ、前後の空白を落とす。
 func Render(body string, names Names) string {
 	return renderer{names: names}.body(body)
+}
+
+// FilesSent は、本文がなく添付だけの投稿の通知の本文（docs/ui の「届く通知の中身」）。
+// 「ファイルを 2 件送りました: a.pdf、b.png」。Web の filesSentText（タブの通知）と同じ文言で、
+// 両方のテストが testdata/format/files-sent.json を読んでずれを防ぐ（ADR 0069 決定 7）。
+func FilesSent(fileNames []string) string {
+	return "ファイルを " + strconv.Itoa(len(fileNames)) + " 件送りました: " + strings.Join(fileNames, "、")
 }
 
 // ChannelIDs は、本文のチャンネルへのリンクの ID を出てきた順に返す（重複もそのまま）。コードの中は含めない。
