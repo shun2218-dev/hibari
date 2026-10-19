@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/json/v2"
@@ -35,6 +37,24 @@ func writeSigningKey(t *testing.T) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "jwt_ed25519.pem")
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// writeVAPIDKey は `make keys` と同じ形式（PKCS#8 の PEM）の使い捨ての VAPID の鍵（P-256）を書き、そのパスを返す。
+func writeVAPIDKey(t *testing.T) string {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "vapid_p256.pem")
 	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +131,7 @@ func TestRunFailsWithoutSMTPPassword(t *testing.T) {
 
 // 実物の Postgres / Redis に対してサーバーを起動し、/healthz が 200 を返し、
 // ctx のキャンセルで run がエラーなく戻る（graceful shutdown して後始末まで終わる）ことを確かめる。
+// プッシュ通知も有効にして、送信の goroutine（PushDelivery.Run）まで止まってから戻ることを確かめる（ADR 0069 決定 8）。
 func TestRunServesHealthzAndShutsDown(t *testing.T) {
 	env := map[string]string{
 		"DATABASE_URL":     testenv.DatabaseURL(t),
@@ -122,6 +143,9 @@ func TestRunServesHealthzAndShutsDown(t *testing.T) {
 		"MAIL_TRANSPORT":       "log",
 		// 登録した直後の（未検証の）利用者で WebSocket を張るので、開発環境（compose）と同じく検証を外す（ADR 0053 決定 4）。
 		"AUTH_REQUIRE_VERIFIED_EMAIL": "false",
+
+		"VAPID_PRIVATE_KEY_FILE": writeVAPIDKey(t),
+		"VAPID_SUBJECT":          "mailto:ops@example.com",
 	}
 	s3 := testenv.S3(t)
 	env["S3_ENDPOINT"], env["S3_BUCKET"], env["S3_ACCESS_KEY_ID"], env["S3_SECRET_ACCESS_KEY"] = s3.Endpoint, s3.Bucket, s3.AccessKeyID, s3.SecretAccessKey

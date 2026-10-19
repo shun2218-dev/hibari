@@ -191,6 +191,18 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		return err
 	}
 
+	// プッシュ通知（ADR 0069 決定 8）。ユースケースに渡す配信だけを PushDelivery で包む。
+	// Hub とハドルの印の配信（Publisher / Encoder）は包まない。どちらもプッシュのきっかけを配らず、
+	// Redis で配られた先のインスタンスでは Delivery を通らないので、送るのはイベントを作ったインスタンスだけになる。
+	// VAPID の鍵がなければ包まず、いままでの配信をそのまま使う。
+	var chatDelivery chat.Delivery = delivery
+	var pushDelivery *chat.PushDelivery
+	if pushDeps.Sender != nil {
+		pushDeps.Sessions = authService
+		pushDelivery = chat.NewPushDelivery(delivery, chat.DefaultPushDeliveryOptions, logger)
+		chatDelivery = pushDelivery
+	}
+
 	chatService := chat.NewService(chat.Deps{
 		DB:               pool,
 		Clock:            clk,
@@ -199,7 +211,7 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		Logger:           logger,
 		Storage:          objectStorage,
 		AttachmentLimits: chat.AttachmentLimits{MaxBytes: cfg.AttachmentMaxBytes, AllowedTypes: cfg.AttachmentAllowedTypes},
-		Delivery:         delivery,
+		Delivery:         chatDelivery,
 		Presence:         realtime.PresenceStates{Store: presenceStore},
 		// 外部のリンクのプレビュー（ADR 0065）。取りに行くのは safehttp を通したクライアントだけ（SSRF の対策。決定 8）
 		LinkPreviews: chat.LinkPreviewDeps{
@@ -239,6 +251,24 @@ func run(ctx context.Context, lookupEnv config.LookupEnv, logOut io.Writer) erro
 		stopJobs()
 		jobs.Wait()
 	}()
+
+	if pushDelivery != nil {
+		// プッシュ通知の送信も、停止の合図（ctx）では止めず、HTTP サーバーが止まってから止める（メールのキューと同じ理由）。
+		// 列に残った分は捨てる（再起動で消える。ADR 0069 決定 8）。DB のプールを閉じる defer より後に書いて、先に止める。
+		pushCtx, stopPush := context.WithCancel(context.WithoutCancel(ctx))
+		pushDone := make(chan struct{})
+		go func() {
+			defer close(pushDone)
+			pushDelivery.Run(pushCtx, chatService)
+		}()
+		defer func() {
+			stopPush()
+			<-pushDone
+			if n := pushDelivery.Dropped(); n > 0 {
+				logger.Warn("push delivery: dropped while running", slog.Int64("dropped_total", n))
+			}
+		}()
+	}
 
 	// Redis Pub/Sub の受信（ADR 0016）は、停止の合図（ctx）では止めず、Hub の停止が終わってから止める。
 	// 先に止めると、停止の途中で閉じていく接続の購読の解除や、その間に届くイベントの受け渡しができない。
@@ -363,7 +393,8 @@ func newPushDeps(c config.PushConfig, clk clock.Clock, logger *slog.Logger) (cha
 		return chat.PushDeps{}, err
 	}
 	logger.Info("push notifications: enabled (Web Push)")
-	return chat.PushDeps{VAPIDPublicKey: sender.PublicKey()}, nil
+	// Sessions は auth の Service を組み立ててから入れる（run）
+	return chat.PushDeps{VAPIDPublicKey: sender.PublicKey(), Sender: sender}, nil
 }
 
 // readSecretFile は秘密のファイルを読む。末尾の改行は取り除く（echo で作ると付く）。

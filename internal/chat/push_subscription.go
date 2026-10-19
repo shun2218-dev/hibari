@@ -14,6 +14,7 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/shun2218-dev/hibari/internal/chat/store"
+	"github.com/shun2218-dev/hibari/internal/platform/authn"
 	"github.com/shun2218-dev/hibari/internal/platform/webpush"
 )
 
@@ -30,6 +31,11 @@ var ErrPushUnavailable = errors.New("chat: push notifications are unavailable")
 type PushDeps struct {
 	// VAPIDPublicKey は VAPID の公開鍵（base64url、詰め物なし）。ブラウザの pushManager.subscribe の applicationServerKey に渡す。
 	VAPIDPublicKey string
+	// Sender は通知を送る（*webpush.Sender）。nil なら購読の API だけが動き、送らない（購読の API のテスト）。
+	Sender PushSender
+	// Sessions は、送る直前に購読のセッション（sid）がまだ有効かを確かめる（決定 3）。
+	// chat は auth を import しないので、authn のインターフェースとして main で配線する（ADR 0001）。
+	Sessions authn.SessionChecker
 }
 
 // PushConfig はブラウザが購読を作るのに要る設定（GET /api/v1/push/config）。
