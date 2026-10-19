@@ -1372,13 +1372,13 @@ Slack の実物の画面（オーナーのスクリーンショット）で見�
 
 6.18 の後に作る（オーナーの依頼。2026-10-19 に着手）。「Phase 7 以降」の項目の Push 通知のうち、ネイティブのアプリがなくても届く Web Push の部分を先に作る。APNs / FCM は「Phase 7 以降」に残す。
 
-**ADR**: ADR 0069（提案）。Web Push を `Delivery` の配信先に足し、送るかどうかは ADR 0055 / 0056 の規則でサーバーが決める。画面を見ている接続がどこかにあれば送らない。
+**ADR**: ADR 0069（採用。オーナーの確認: 2026-10-19）。Web Push を `Delivery` の配信先に足し、送るかどうかは ADR 0055 / 0056 の規則でサーバーが決める。画面を見ている接続がどこかにあれば送らない。
 購読は sid に結び付けてログアウトで消し、`devices` テーブルは `push_subscriptions` に置き換える。
 
 **デザイン**: Claude Design のキャンバス https://claude.ai/artifact/6f55fBSbN4hHL7GHhai6XB （オーナーの確認済み。2026-10-19）
 
 **構築順**（PR を分ける。Linear の Issue は SHU-23〜29）
-1. 設計: ADR 0069
+1. 設計: ADR 0069 ← 完了（#230）
 2. デザイン: キャンバスの 5 枚を story に描き、`docs/ui/` に足す（SHU-23）
 3. サーバー: `push_subscriptions`・購読の API・`GET /api/v1/push/config`・失効で消す・ERD（SHU-24）
 4. サーバー: 送る相手の判定と本文の平文化。クライアントと同じ表のテスト（SHU-25）
