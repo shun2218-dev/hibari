@@ -251,7 +251,7 @@ scope の例: `auth` / `chat` / `platform` / `httpx` / `db` / `web` / `docs` / `
 ### リリース手順
 1. `develop` から `release/vX.Y.Z` を切る（SemVer。1.0.0 までは `0.Y.Z`）。
 2. バージョンを更新する（`web/package.json` など）。コミットは `chore(release): vX.Y.Z`。Go のバイナリには、ビルド時に `-ldflags` でタグのバージョンを埋め込む。
-3. `release/vX.Y.Z` → `main` の PR を作ってマージする。PR の説明には、`tools/linear.sh release-ids` で集めた Issue を `Fixes …` で並べる（develop に戻す手順 4 の PR には書かない）。
+3. `release/vX.Y.Z` → `main` の PR を作ってマージする。PR の説明には、`tools/release-ids.sh` で集めた Issue を `Fixes …` で並べる（develop に戻す手順 4 の PR には書かない）。
 4. `release/vX.Y.Z` → `develop` の PR を作ってマージする（リリースブランチでの変更を develop に戻す）。
 5. `main` のマージコミットにタグ `vX.Y.Z` を付けて push する。
 6. GitHub の Releases でリリースノートを作成する。
