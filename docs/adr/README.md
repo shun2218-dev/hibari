@@ -75,6 +75,7 @@
 | [0066](0066-huddles.md) | 音声のハドル（Phase 6.18a。音声は DM も含めて必ず Cloudflare Realtime の SFU を通し、合図と参加の状態は Go が持つ。いま入っている人は Redis と心拍） | 採用 |
 | [0067](0067-huddle-list-status-and-links.md) | ハドルの一覧・ハドル中の印・ハドルへのリンク（Phase 6.18c。リンクはルームを指し、印はワークスペースの中だけに出す） | 採用 |
 | [0068](0068-huddle-video-and-screen-share.md) | ハドルのカメラと画面共有（Phase 6.18b。音声と同じセッションにトラックを足し、受ける映像はステージに載せた分だけにする。カメラは simulcast） | 採用 |
+| [0069](0069-web-push-notifications.md) | プッシュ通知（Phase 7.1。Web Push を `Delivery` の配信先に足し、送るかどうかをサーバーが決める） | 採用 |
 
 ## テンプレート
 
