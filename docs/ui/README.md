@@ -1191,3 +1191,53 @@ ADR 0068 のとおり足した。新しいトークンは足していない。�
 - 大きくしたタイルの印（右上のピン）。Slack のピン留めの見た目は確かめていない。
 - 画面共有中のタイルの下の列（横 1 列にして、はみ出したら横にスクロール）。
 - 大人数でステージから外れた人は、カメラを付けていてもアバターのまま出す（ADR 0068 決定 5。映像を受けていないため）。
+
+### Phase 7.1 で足した画面（プッシュ通知）
+
+ADR 0069 のとおり足した。新しいトークンは足していない。アイコンは Safari の「共有」と「ホーム画面に追加」の 2 つを足した（lucide の `Share` と `SquarePlus`。iPhone の手順で押す場所を Safari と同じ形で示すため）。
+**サーバーの設定でプッシュを使えない（`GET /api/v1/push/config` が `enabled: false`）ときは、6.14b の画面（デスクトップ通知の帯とカード）のまま**なので、それらの PNG は残す（決定 9）。
+
+**ユーザー設定の「通知」**
+
+| 画面 | スクリーンショット | 関連する API |
+|---|---|---|
+| このブラウザ: プッシュ通知が有効・通知を受け取る端末 | `settings/notifications/notifications-push.png`、`settings/notifications/notifications-push-dark.png`、`settings/notifications/mobile-notifications-push.png` | `GET /api/v1/push/config`、`PUT /api/v1/me/push-subscription`、`GET /api/v1/me/push-subscriptions`、`DELETE /api/v1/me/push-subscriptions/{id}` |
+| 同: オフ（ほかの端末では有効） | `settings/notifications/notifications-push-off.png` | `DELETE /api/v1/me/push-subscription` |
+| 同: ブラウザの許可を待っている | `settings/notifications/notifications-push-requesting.png` | `Notification.requestPermission()`（ブラウザ） |
+| 同: 登録に失敗 | `settings/notifications/notifications-push-failed.png` | `PUT /api/v1/me/push-subscription` |
+| 同: ブラウザで拒否されている / 対応していない | `settings/notifications/notifications-push-denied.png`、`settings/notifications/notifications-push-unsupported.png` | — |
+| 同: iPhone でホーム画面に追加していない | `settings/notifications/mobile-notifications-push-install.png` | — |
+
+**サイドバーの帯と iPhone の案内**
+
+| 画面 | スクリーンショット | 関連する API |
+|---|---|---|
+| プッシュ通知を有効にする帯 | `chat/notification/push-banner.png`、`chat/notification/push-banner-dark.png`、`chat/notification/mobile-push-banner.png` | `Notification.requestPermission()`、`PushManager.subscribe()`（ブラウザ）、`PUT /api/v1/me/push-subscription` |
+| ホーム画面に追加すると通知が届く帯（iPhone） | `chat/notification/mobile-install-banner.png` | — |
+| ホーム画面に追加する手順のシート（iPhone） | `chat/notification/mobile-home-screen-sheet.png` | — |
+
+- **「このブラウザ」のカード**は、プッシュを使えるときは「デスクトップ通知」を「プッシュ通知」に替え、右にスイッチを置く。スイッチを出すのは切り替えられる状態（オフ / 有効 / 許可を待っている / 失敗）だけ。
+  許可を待っている間はオンのまま押せなく（薄く）し、失敗したらオフに戻して説明を danger の色にする。拒否・非対応・ホーム画面にない iPhone はスイッチを出さない（押しても何も起きないため）。iPhone は緑のボタン「追加のしかたを見る」でシートを開く。
+- **「通知音を鳴らす」は残す**が、説明を「タブの通知を出すときに短い音を鳴らす」にした（プッシュの通知は Service Worker が出し、音を鳴らせない。決定 2）。
+- **「通知を受け取る端末」の節**は「このブラウザ」の下に置く。見た目は「ログイン中のデバイス」（`settings/devices/devices.png`）にそろえ、いまの端末は「このデバイス」の印と `bg-surface-muted` の地、ほかの端末は右に「停止する」（danger の文字ボタン）。
+  いまの端末はカードのスイッチで止めるので「停止する」を出さない。購読が 1 つもなければ節を出さない。
+- **サイドバーの帯**は 6.14b と同じ場所と形で、文言だけ替える。iPhone の Safari（ホーム画面にない）では、許可の代わりに「追加のしかた」でシートを開く。
+- **ホーム画面に追加する手順**は下から出るシート（メンバーやリアクションのシートと同じ形）。番号は `bg-primary-subtle` の丸、Safari で押すものはアイコンと名前の組で示し、「閉じる」で閉じる。
+
+**届く通知の中身**（OS が描くので story にしない。ADR 0069 決定 7）
+
+アイコンはどれも hibari のマーク（`docs/ui/brand/mark.svg` から作る PNG）。同じルーム（スレッドの返信ならスレッド）の通知は `tag` で 1 つにまとめる。
+
+| きっかけ | タイトル | 本文 |
+|---|---|---|
+| チャンネルのメンション | 高橋 みゆき（#デザインレビュー） | 本文を平文にした最初の 100 文字（`<@ID>` は `@名前`） |
+| DM | 佐藤 直樹 | 同上 |
+| スレッドの返信 | 中村 涼（#リリース準備 のスレッド） | 同上 |
+| ファイルだけ | 送信者（ルーム） | ファイルを 1 件送りました: hibari-type-scale.pdf |
+| 同じルームで続いた | #デザインレビュー | 新しいメッセージが 3 件あります（その下に最後の 1 件） |
+| DM のハドルの呼び出し | 佐藤 直樹 | ハドルを始めました |
+
+#### デザインで決めた点（オーナーに確認する）
+
+- iPad の Safari でもシートは下から出る（画面が広くても浮かせない）。キャンバスは iPhone だけを描いていた。
+- 「通知を受け取る端末」の説明は、ほかの節の「通知する内容」と同じ小さい文字（12px）にした（「ログイン中のデバイス」は 13px）。

@@ -18,4 +18,19 @@ describe("Switch", () => {
     await userEvent.click(screen.getByRole("switch"));
     expect(onChange).toHaveBeenCalledWith(true);
   });
+
+  it("押せないときは onChange を呼ばない", async () => {
+    const onChange = vi.fn();
+    render(<Switch label="プッシュ通知" checked disabled onChange={onChange} />);
+
+    await userEvent.click(screen.getByRole("switch", { name: "プッシュ通知" }));
+    expect(screen.getByRole("switch")).toBeDisabled();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("文字を隠しても、読み上げの名前は残る", () => {
+    render(<Switch label="プッシュ通知" checked={false} hideLabel />);
+
+    expect(screen.getByRole("switch", { name: "プッシュ通知" })).toBeInTheDocument();
+  });
 });

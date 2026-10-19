@@ -22,6 +22,12 @@ export const Off: Story = { name: "オフ" };
 
 export const On: Story = { name: "オン", args: { checked: true } };
 
+/** 押せない（オンのまま、ブラウザの許可の確認を待っている間。ADR 0069）。 */
+export const Disabled: Story = { name: "押せない", args: { checked: true, disabled: true } };
+
+/** 文字を読み上げだけにする（見出しの隣に置くとき）。 */
+export const HiddenLabel: Story = { name: "文字なし", args: { label: "プッシュ通知", checked: true, hideLabel: true } };
+
 /** 切り替わるところ（story の中で状態を持つ）。 */
 export const Interactive: Story = {
   name: "切り替えられる",
