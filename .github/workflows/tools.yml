@@ -18,6 +18,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: tools/linear.sh
-        # API は呼ばない。release の PR に並べる Issue の ID の集め方だけを確かめる。
-        run: tools/linear_test.sh
+      - name: tools/release-ids.sh
+        # release の PR に並べる Linear の Issue の ID の集め方を確かめる。
+        run: tools/release-ids_test.sh
