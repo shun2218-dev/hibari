@@ -40,7 +40,7 @@ export type ActivityItemType = "message" | "reaction";
 
 export type ActivityReason = "dm" | "mention" | "thread" | "channel" | "reaction";
 
-export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "room-archived" | "room-not-archived" | "room-protected" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified" | "huddles-unavailable" | "huddle-full" | "huddle-participant-gone" | "huddle-negotiation-conflict" | "huddle-screen-share-full";
+export type ProblemType = "bad-request" | "validation-error" | "unauthenticated" | "forbidden" | "not-found" | "internal" | "rate-limited" | "invalid-credentials" | "invalid-refresh-token" | "invalid-one-time-token" | "handle-taken" | "email-taken" | "avatar-not-uploaded" | "avatar-mismatch" | "invite-invalid" | "invite-expired" | "invite-exhausted" | "owner-must-transfer" | "room-name-taken" | "user-not-in-workspace" | "message-deleted" | "room-archived" | "room-not-archived" | "room-protected" | "attachment-not-uploaded" | "attachment-mismatch" | "ws-ticket-invalid" | "email-unverified" | "huddles-unavailable" | "huddle-full" | "huddle-participant-gone" | "huddle-negotiation-conflict" | "huddle-screen-share-full" | "push-unavailable";
 
 export type ICETransportPolicy = "all" | "relay";
 
@@ -600,6 +600,34 @@ export interface HuddleLinks {
 export interface Features {
   /** huddles は音声のハドル。Cloudflare の設定がなければ false。 */
   huddles: boolean;
+}
+
+export interface PushConfig {
+  /** enabled が false なら、サーバーに VAPID の鍵がない。画面はスイッチを出さない（決定 9）。 */
+  enabled: boolean;
+  /** vapid_public_key は pushManager.subscribe の applicationServerKey（base64url、詰め物なし）。無効なら省く。 */
+  vapid_public_key?: string;
+}
+
+export interface PushSubscriptionRequest {
+  endpoint: string;
+  keys: PushSubscriptionKeys;
+}
+
+export interface PushSubscriptionKeys {
+  p256dh: string;
+  auth: string;
+}
+
+export interface PushSubscriptionItem {
+  id: string;
+  user_agent: string;
+  is_current: boolean;
+  created_at: string;
+}
+
+export interface PushSubscriptionList {
+  subscriptions: PushSubscriptionItem[];
 }
 
 export interface JoinHuddleRequest {

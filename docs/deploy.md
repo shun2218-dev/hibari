@@ -260,6 +260,34 @@ fly secrets set CLOUDFLARE_TURN_KEY_API_TOKEN="$(pbpaste | base64)"
 
 音声は利用者のブラウザと Cloudflare の間を直接流れ、Fly を通らない（ADR 0066 決定 2）。Fly で UDP を受ける設定（専用の IPv4 など）は要らない。
 
+## プッシュ通知（Web Push。ADR 0069）
+
+| 変数 | 内容 |
+|---|---|
+| `VAPID_PRIVATE_KEY_FILE` | VAPID の秘密鍵（P-256 の PEM）のファイルのパス |
+| `VAPID_SUBJECT` | プッシュのサービスが送り手に連絡するための `mailto:` か `https:` の URI |
+
+2 つとも書けば有効、どちらも書かなければ無効（`GET /api/v1/push/config` が `enabled: false` を返し、画面はスイッチを出さない）。片方だけだと起動しない。
+書いたのに鍵のファイルが読めないときも起動しない。
+
+- ローカル（compose）: `make keys` が `keys/vapid_p256.pem` を作り、compose.yaml が 2 つとも設定する。`make keys` の前の checkout では server が起動しないので、一度 `make keys` を実行する
+- **鍵を作り直さない。** 鍵を替えると、ブラウザが持っている購読がすべて無効になる（`applicationServerKey` が変わるため）。本番の鍵は一度作ったら秘密として持ち続ける
+
+```toml
+# fly.toml
+[env]
+VAPID_PRIVATE_KEY_FILE = "/run/secrets/vapid_p256.pem"
+VAPID_SUBJECT = "mailto:<運用の連絡先>"
+
+[[files]]
+guest_path = "/run/secrets/vapid_p256.pem"
+secret_name = "VAPID_PRIVATE_KEY"
+```
+
+```bash
+fly secrets set VAPID_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 | base64)"
+```
+
 ## 置き場所（ADR 0046）
 
 | 役割 | 本番 | ローカル |

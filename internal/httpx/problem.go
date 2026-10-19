@@ -56,6 +56,8 @@ const (
 	problemHuddleParticipantGone     problemType = "huddle-participant-gone"
 	problemHuddleNegotiationConflict problemType = "huddle-negotiation-conflict"
 	problemHuddleScreenShareFull     problemType = "huddle-screen-share-full"
+	// プッシュ通知（ADR 0069）
+	problemPushUnavailable problemType = "push-unavailable"
 )
 
 // problem は RFC 9457 の Problem Details。
@@ -150,6 +152,9 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 	case errors.Is(err, chat.ErrHuddlesUnavailable):
 		// Cloudflare の設定がなく、ハドルだけが無効（ADR 0066 決定 15）。Web はボタンを出さない
 		writeProblem(w, r, problem{Type: problemHuddlesUnavailable, Title: "Huddles are not available", Status: http.StatusServiceUnavailable})
+	case errors.Is(err, chat.ErrPushUnavailable):
+		// VAPID の鍵がなく、プッシュ通知だけが無効（ADR 0069 決定 9）。Web は push/config を見てスイッチを出さない
+		writeProblem(w, r, problem{Type: problemPushUnavailable, Title: "Push notifications are not available", Status: http.StatusServiceUnavailable})
 	case errors.Is(err, chat.ErrHuddleScreenShareFull):
 		writeProblem(w, r, problem{Type: problemHuddleScreenShareFull, Title: "Two people are already sharing their screens", Status: http.StatusConflict})
 	case errors.Is(err, chat.ErrHuddleFull):

@@ -3,8 +3,7 @@ erDiagram
   users ||--o{ oauth_accounts : "連携"
   users ||--o{ refresh_tokens : "保持"
   users ||--o{ one_time_tokens : "保持"
-  users ||--o{ devices : "所有"
-  devices |o--o{ refresh_tokens : "紐付く"
+  users ||--o{ push_subscriptions : "購読"
   refresh_tokens |o--o| refresh_tokens : "rotated_from"
 
   users ||--o| user_presence_settings : "手動の離席"
@@ -68,7 +67,6 @@ erDiagram
   refresh_tokens {
     uuid id PK
     uuid user_id FK
-    uuid device_id FK "null 可"
     uuid family_id "ローテーションのチェーン ID。JWT の sid"
     bytea token_hash UK "SHA-256。生値は絶対に保存しない"
     uuid rotated_from FK "自己参照。監査・デバッグ用"
@@ -90,12 +88,15 @@ erDiagram
     timestamptz created_at
   }
 
-  devices {
-    uuid id PK "Phase 7 の Push 用。先に器だけ作る"
-    uuid user_id FK
-    text platform "web / ios / android / desktop"
-    text push_token "APNs / FCM。null 可"
-    timestamptz last_seen_at
+  push_subscriptions {
+    uuid id PK "プッシュ通知の購読（ADR 0069）"
+    uuid user_id FK "CASCADE。INDEX"
+    uuid sid UK "refresh_tokens.family_id。FK は張れない（family_id は一意でない）。失効で消す"
+    text kind "webpush（APNs / FCM を足すときに値を足す）"
+    text endpoint UK "既知のプッシュのサービスの https の URL だけ。ログに出さない"
+    bytea p256dh "受け手の公開鍵。65 バイト"
+    bytea auth "受け手と共有する秘密。16 バイト"
+    text user_agent "端末の名前を作る。null 可"
     timestamptz created_at
   }
 

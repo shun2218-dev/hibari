@@ -380,3 +380,56 @@ func TestLoadRealtime(t *testing.T) {
 		})
 	}
 }
+
+// VAPID の鍵と sub は 2 つとも揃えばプッシュ通知を有効に、どちらもなければ無効にする。片方だけなら起動を止める（ADR 0069 決定 9）。
+func TestLoadPush(t *testing.T) {
+	base := map[string]string{
+		"DATABASE_URL": "postgres://localhost/hibari", "REDIS_URL": "redis://localhost:6379/0",
+		"JWT_PRIVATE_KEY_FILE": "/keys/jwt.pem", "MAIL_TRANSPORT": "log",
+		"S3_ENDPOINT": "http://s3:9000", "S3_BUCKET": "hibari", "S3_ACCESS_KEY_ID": "id", "S3_SECRET_ACCESS_KEY": "secret",
+	}
+	tests := []struct {
+		name    string
+		extra   map[string]string
+		want    config.PushConfig
+		wantErr string
+	}{
+		{name: "none disables push", want: config.PushConfig{}},
+		{
+			name:  "mailto subject",
+			extra: map[string]string{"VAPID_PRIVATE_KEY_FILE": "/keys/vapid_p256.pem", "VAPID_SUBJECT": "mailto:ops@example.com"},
+			want:  config.PushConfig{Enabled: true, VAPIDPrivateKeyFile: "/keys/vapid_p256.pem", VAPIDSubject: "mailto:ops@example.com"},
+		},
+		{
+			name:  "https subject",
+			extra: map[string]string{"VAPID_PRIVATE_KEY_FILE": "/keys/vapid_p256.pem", "VAPID_SUBJECT": "https://hibari.example.com"},
+			want:  config.PushConfig{Enabled: true, VAPIDPrivateKeyFile: "/keys/vapid_p256.pem", VAPIDSubject: "https://hibari.example.com"},
+		},
+		{name: "key without subject", extra: map[string]string{"VAPID_PRIVATE_KEY_FILE": "/keys/vapid_p256.pem"}, wantErr: "VAPID_SUBJECT"},
+		{name: "subject without key", extra: map[string]string{"VAPID_SUBJECT": "mailto:ops@example.com"}, wantErr: "VAPID_PRIVATE_KEY_FILE"},
+		{
+			name:    "http subject",
+			extra:   map[string]string{"VAPID_PRIVATE_KEY_FILE": "/keys/vapid_p256.pem", "VAPID_SUBJECT": "http://hibari.example.com"},
+			wantErr: "VAPID_SUBJECT",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := maps.Clone(base)
+			maps.Copy(m, tt.extra)
+			got, err := config.Load(env(m))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("err = %v, want it to name %s", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Push != tt.want {
+				t.Errorf("Push = %+v, want %+v", got.Push, tt.want)
+			}
+		})
+	}
+}

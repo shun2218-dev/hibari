@@ -33,6 +33,8 @@ type Deps struct {
 	LinkPreviews LinkPreviewDeps
 	// Huddles は音声のハドル（ADR 0066）。Media がなければハドルは無効（決定 15）。
 	Huddles HuddleDeps
+	// Push はプッシュ通知（ADR 0069）。VAPID の鍵がなければプッシュ通知は無効（決定 9）。
+	Push PushDeps
 }
 
 // PresenceReader は自動で決まる presence（Redis に TTL 付きで置く。CLAUDE.md ルール 5）を読む。
@@ -57,6 +59,7 @@ type Service struct {
 	presence         PresenceReader
 	previews         linkPreviews
 	huddles          huddles
+	push             PushDeps
 }
 
 // NewService は Service を返す。
@@ -74,6 +77,7 @@ func NewService(d Deps) *Service {
 		presence:         d.Presence,
 		previews:         newLinkPreviews(d.LinkPreviews),
 		huddles:          huddles{states: d.Huddles.States, media: d.Huddles.Media, limiter: d.Huddles.Limiter, encoder: d.Huddles.Encoder},
+		push:             d.Push,
 	}
 }
 

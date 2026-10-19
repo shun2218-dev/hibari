@@ -89,7 +89,7 @@ var tsEnums = []tsEnum{
 		problemRoomArchived, problemRoomNotArchived, problemRoomProtected,
 		problemAttachmentNotUploaded, problemAttachmentMismatch, problemWSTicketInvalid, problemEmailUnverified,
 		problemHuddlesUnavailable, problemHuddleFull, problemHuddleParticipantGone, problemHuddleNegotiationConflict,
-		problemHuddleScreenShareFull),
+		problemHuddleScreenShareFull, problemPushUnavailable),
 	enumOf("ICETransportPolicy", iceTransportAll, iceTransportRelay),
 	enumOf("HuddleTrackKind", chat.HuddleTrackAudio, chat.HuddleTrackCamera, chat.HuddleTrackScreen),
 	enumOf("HuddleQuality", chat.HuddleQualityHigh, chat.HuddleQualityMedium, chat.HuddleQualityLow),
@@ -194,6 +194,12 @@ var tsDecls = []tsDecl{
 	response[huddleLinkResponse]("HuddleLink"),
 	response[huddleLinksResponse]("HuddleLinks"),
 	response[featuresResponse]("Features"),
+	// プッシュ通知（ADR 0069）
+	response[pushConfigResponse]("PushConfig"),
+	request[pushSubscriptionRequest]("PushSubscriptionRequest"),
+	request[pushSubscriptionKeys]("PushSubscriptionKeys"),
+	response[pushSubscriptionResponse]("PushSubscriptionItem"), // DOM の PushSubscription と名前をぶつけない
+	response[pushSubscriptionListResponse]("PushSubscriptionList"),
 	request[joinHuddleRequest]("JoinHuddleRequest"),
 	response[joinHuddleResponse]("JoinedHuddle"),
 	request[subscribeHuddleRequest]("SubscribeHuddleRequest"),
