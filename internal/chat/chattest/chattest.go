@@ -20,6 +20,7 @@ import (
 	"github.com/shun2218-dev/hibari/internal/chat/huddle"
 	"github.com/shun2218-dev/hibari/internal/chat/presence"
 	"github.com/shun2218-dev/hibari/internal/chat/realtime"
+	"github.com/shun2218-dev/hibari/internal/platform/authn"
 	"github.com/shun2218-dev/hibari/internal/platform/clock"
 	"github.com/shun2218-dev/hibari/internal/platform/config"
 	"github.com/shun2218-dev/hibari/internal/platform/db"
@@ -119,6 +120,8 @@ type options struct {
 	presence       chat.PresenceReader
 	withoutHuddles bool
 	withoutPush    bool
+	pushSender     chat.PushSender
+	pushSessions   authn.SessionChecker
 }
 
 // VAPIDPublicKey は、テストの Service が返す VAPID の公開鍵。購読の API のテストは送らないので、本物の鍵でなくてよい。
@@ -130,6 +133,12 @@ var PushDeps = chat.PushDeps{VAPIDPublicKey: VAPIDPublicKey}
 // WithoutPush は VAPID の鍵がない（プッシュ通知が無効な）Service にする（ADR 0069 決定 9）。
 func WithoutPush() Option {
 	return func(o *options) { o.withoutPush = true }
+}
+
+// WithPushSender は、通知を送る Service にする（ADR 0069 決定 8）。sender と sessions は偽物でよい
+// （ネットワークに出ず、auth の Service も組み立てずに、送り先の応答とセッションの失効を決められる）。
+func WithPushSender(sender chat.PushSender, sessions authn.SessionChecker) Option {
+	return func(o *options) { o.pushSender, o.pushSessions = sender, sessions }
 }
 
 // Option は New の組み立てを変える。
@@ -207,6 +216,7 @@ func New(t testing.TB, opts ...Option) *Env {
 		huddleDeps = chat.HuddleDeps{}
 	}
 	pushDeps := PushDeps
+	pushDeps.Sender, pushDeps.Sessions = o.pushSender, o.pushSessions
 	if o.withoutPush {
 		pushDeps = chat.PushDeps{}
 	}

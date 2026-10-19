@@ -12,6 +12,24 @@ import (
 	ulid "github.com/oklog/ulid/v2"
 )
 
+const deleteGonePushSubscription = `-- name: DeleteGonePushSubscription :exec
+DELETE FROM push_subscriptions
+ WHERE id = $1 AND endpoint = $2
+`
+
+type DeleteGonePushSubscriptionParams struct {
+	ID       ulid.ULID
+	Endpoint string
+}
+
+// プッシュのサービスが 404 / 410 を返した購読を消す（ADR 0069 決定 8）。
+// endpoint も条件に入れるのは、送っている間に同じセッションが新しい endpoint で登録し直していたら（同じ ID のまま置き換わる）、
+// その新しい購読まで消さないため。
+func (q *Queries) DeleteGonePushSubscription(ctx context.Context, arg DeleteGonePushSubscriptionParams) error {
+	_, err := q.db.Exec(ctx, deleteGonePushSubscription, arg.ID, arg.Endpoint)
+	return err
+}
+
 const deletePushSubscriptionByID = `-- name: DeletePushSubscriptionByID :execrows
 DELETE FROM push_subscriptions
  WHERE user_id = $1 AND id = $2
@@ -114,6 +132,52 @@ func (q *Queries) ListPushSubscriptions(ctx context.Context, userID ulid.ULID) (
 			&i.Sid,
 			&i.UserAgent,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPushTargets = `-- name: ListPushTargets :many
+SELECT id, user_id, sid, endpoint, p256dh, auth
+  FROM push_subscriptions
+ WHERE user_id = ANY($1::uuid[])
+   AND kind = 'webpush'
+ ORDER BY user_id, id
+`
+
+type ListPushTargetsRow struct {
+	ID       ulid.ULID
+	UserID   ulid.ULID
+	Sid      ulid.ULID
+	Endpoint string
+	P256dh   []byte
+	Auth     []byte
+}
+
+// 送る先: 通知を受け取る人たちの購読を 1 回で読む（PushDelivery。人ごとに引くと N+1 になる）。
+// sid も返すのは、送る直前にセッションがまだ有効かを確かめるため（ADR 0069 決定 3 の二段構え）。
+func (q *Queries) ListPushTargets(ctx context.Context, userIds []ulid.ULID) ([]ListPushTargetsRow, error) {
+	rows, err := q.db.Query(ctx, listPushTargets, userIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPushTargetsRow{}
+	for rows.Next() {
+		var i ListPushTargetsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Sid,
+			&i.Endpoint,
+			&i.P256dh,
+			&i.Auth,
 		); err != nil {
 			return nil, err
 		}
