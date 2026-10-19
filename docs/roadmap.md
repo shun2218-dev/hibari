@@ -1382,7 +1382,7 @@ Slack の実物の画面（オーナーのスクリーンショット）で見�
 2. デザイン: キャンバスの 5 枚を story に描き、`docs/ui/` に足す（SHU-23） ← 完了（#231）
 3. サーバー: `push_subscriptions`・購読の API・`GET /api/v1/push/config`・失効で消す・ERD（SHU-24） ← 完了（#233）
 4. サーバー: 送る相手の判定と本文の平文化。クライアントと同じ表のテスト（SHU-25） ← 完了（#234）
-5. サーバー: `platform/webpush`（RFC 8291 / 8292）と `PushDelivery`（SHU-26）
+5. サーバー: `platform/webpush`（RFC 8291 / 8292）と `PushDelivery`（SHU-26） ← 完了（#232・#235）
 6. Web: Service Worker・通知の表示とまとめ・押したときの移動・タブの通知との分担（SHU-27）
 7. Web: 設定の「通知」（SHU-28）、サイドバーの帯・iPhone の案内・manifest（SHU-29）
 8. 実物の確認はオーナー（デスクトップの Chrome、Android、ホーム画面に追加した iPhone）
