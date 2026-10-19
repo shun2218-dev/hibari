@@ -4,10 +4,12 @@
 // 名前を引いて検査してから接続する形は、2 回の名前解決の間に DNS の答えを変えられる（DNS rebinding）と破られるので、
 // **実際に接続する直前の IP を net.Dialer.Control で検査する**。リダイレクトの先にも、同じ検査が接続のたびにかかる。
 //
-// チャットの知識（OGP、メッセージ）は持たない。取るのは「URL の GET と、上限までの本文」だけ。
+// チャットの知識（OGP、メッセージ、プッシュの購読）は持たない。するのは「URL への GET か POST と、上限までの本文の読み取り」だけ。
+// POST はプッシュのサービスへの送信（ADR 0069 決定 4）のためにある。endpoint は利用者のブラウザが渡す URL なので、同じ検査を通す。
 package safehttp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -102,6 +104,11 @@ func New(opts Options) *Client {
 		Transport: transport,
 		// Cookie を持たない（Jar を設定しない）。取りに行った先のセッションを覚えない。
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// POST はリダイレクトを辿らず、3xx をそのまま返す（呼ぶ側には 2xx でない応答として届く）。
+			// 辿ると、利用者の渡した URL から別の所へ、本文とヘッダ（VAPID の署名など）を送り直すことになる。
+			if via[0].Method != http.MethodGet {
+				return http.ErrUseLastResponse
+			}
 			if len(via) > opts.MaxRedirects {
 				return fmt.Errorf("safehttp: stopped after %d redirects", opts.MaxRedirects)
 			}
@@ -147,13 +154,42 @@ func (c *Client) Get(ctx context.Context, rawURL, accept string, maxBytes int64)
 	}
 	// 日本語のサイトが言語ごとにタイトルを出し分けるときに、日本語を選ばせる
 	req.Header.Set("Accept-Language", "ja,en;q=0.8")
+	return c.do(req, "get", maxBytes)
+}
 
+// Post は rawURL に body を POST し、応答の本文を maxBytes まで読む。2xx でなければ *StatusError。
+// header はそのまま付ける（User-Agent はクライアントの設定が勝つ）。リダイレクトは辿らない（New の CheckRedirect）。
+func (c *Client) Post(ctx context.Context, rawURL string, header http.Header, body []byte, maxBytes int64) (*Response, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrBlocked, err)
+	}
+	if err := c.checkURL(u); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrBlocked, err)
+	}
+	for k, vs := range header {
+		req.Header[k] = vs
+	}
+	if c.userAgent != "" {
+		req.Header.Set("User-Agent", c.userAgent)
+	}
+	return c.do(req, "post", maxBytes)
+}
+
+// do は req を送り、本文を maxBytes まで読む。op はエラーの文脈（get / post）。
+func (c *Client) do(req *http.Request, op string, maxBytes int64) (*Response, error) {
 	res, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("safehttp: get: %w", err)
+		return nil, fmt.Errorf("safehttp: %s: %w", op, err)
 	}
 	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
+		// 上限までは読み捨てる。読み切った接続は使い回せる（プッシュのサービスへは同じホストに何度も送る）
+		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, maxBytes))
 		return nil, &StatusError{Code: res.StatusCode}
 	}
 

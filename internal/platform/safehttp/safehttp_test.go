@@ -3,6 +3,7 @@ package safehttp
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -261,5 +262,63 @@ func TestGetHonorsContext(t *testing.T) {
 	cancel()
 	if _, err := loopbackClient(serverPort(t, s)).Get(ctx, s.URL, "", 1024); !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestPostSendsHeaderAndBody(t *testing.T) {
+	var gotMethod, gotUA, gotTTL, gotBody string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotUA, gotTTL = r.Method, r.Header.Get("User-Agent"), r.Header.Get("TTL")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer s.Close()
+
+	// 呼ぶ側の User-Agent はクライアントの設定で上書きする（名乗りを 1 か所にそろえる）
+	h := http.Header{"Ttl": {"60"}, "User-Agent": {"other"}}
+	if _, err := loopbackClient(serverPort(t, s)).Post(context.Background(), s.URL, h, []byte("payload"), 1024); err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodPost || gotUA != "hibari-test" || gotTTL != "60" || gotBody != "payload" {
+		t.Errorf("method = %q user-agent = %q ttl = %q body = %q", gotMethod, gotUA, gotTTL, gotBody)
+	}
+}
+
+func TestPostBlocksLoopbackByDefault(t *testing.T) {
+	var hit bool
+	s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { hit = true }))
+	defer s.Close()
+
+	c := New(Options{Ports: []uint16{serverPort(t, s)}})
+	if _, err := c.Post(context.Background(), s.URL, nil, []byte("x"), 1024); !errors.Is(err, ErrBlocked) {
+		t.Fatalf("err = %v, want ErrBlocked", err)
+	}
+	if _, err := New(Options{}).Post(context.Background(), "http://example.com:8080/", nil, nil, 1024); !errors.Is(err, ErrBlocked) {
+		t.Fatalf("port check: err = %v, want ErrBlocked", err)
+	}
+	if hit {
+		t.Error("request reached the server")
+	}
+}
+
+func TestPostDoesNotFollowRedirects(t *testing.T) {
+	var redirected bool
+	final := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { redirected = true }))
+	defer final.Close()
+	outer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, final.URL, http.StatusTemporaryRedirect)
+	}))
+	defer outer.Close()
+
+	// 両方のポートを許しても、POST は 3xx をそのまま返す
+	c := loopbackClient(serverPort(t, outer), serverPort(t, final))
+	_, err := c.Post(context.Background(), outer.URL, nil, []byte("x"), 1024)
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("err = %v, want StatusError 307", err)
+	}
+	if redirected {
+		t.Error("followed the redirect")
 	}
 }
