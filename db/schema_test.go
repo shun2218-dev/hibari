@@ -173,6 +173,44 @@ func TestRefreshTokensConstraints(t *testing.T) {
 	})
 }
 
+// ---- プッシュ通知（ADR 0069 決定 3） ----
+
+func TestPushSubscriptionsConstraints(t *testing.T) {
+	pool := openPool(t)
+	inTx(t, pool, func(tx pgx.Tx) {
+		uid := insertUser(t, tx, "alice")
+		const insert = `INSERT INTO push_subscriptions (id, user_id, sid, kind, endpoint, p256dh, auth, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+		p256dh, auth := make([]byte, 65), make([]byte, 16)
+		sid := ids.New()
+
+		mustExec(t, tx, insert, ids.New(), uid, sid, "webpush", "https://fcm.googleapis.com/fcm/send/a", p256dh, auth, now)
+
+		// 1 つの endpoint（ブラウザ）は 1 行、1 つのセッションも 1 行
+		expectViolation(t, tx, sqlstateUnique, "push_subscriptions_endpoint_key",
+			insert, ids.New(), uid, ids.New(), "webpush", "https://fcm.googleapis.com/fcm/send/a", p256dh, auth, now)
+		expectViolation(t, tx, sqlstateUnique, "push_subscriptions_sid_key",
+			insert, ids.New(), uid, sid, "webpush", "https://fcm.googleapis.com/fcm/send/b", p256dh, auth, now)
+		expectViolation(t, tx, sqlstateCheck, "push_subscriptions_kind_check",
+			insert, ids.New(), uid, ids.New(), "apns", "https://fcm.googleapis.com/fcm/send/c", p256dh, auth, now)
+		// base64url の文字列のまま入れてしまうミスを止める
+		expectViolation(t, tx, sqlstateCheck, "push_subscriptions_p256dh_check",
+			insert, ids.New(), uid, ids.New(), "webpush", "https://fcm.googleapis.com/fcm/send/d", []byte("BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA"), auth, now)
+		expectViolation(t, tx, sqlstateCheck, "push_subscriptions_auth_check",
+			insert, ids.New(), uid, ids.New(), "webpush", "https://fcm.googleapis.com/fcm/send/e", p256dh, []byte("tBHItJI5svbpez7KI4CCXg"), now)
+
+		// devices と refresh_tokens.device_id は消した（決定 3）
+		var n int
+		if err := tx.QueryRow(t.Context(),
+			`SELECT count(*) FROM information_schema.columns WHERE table_name = 'refresh_tokens' AND column_name = 'device_id'`).Scan(&n); err != nil || n != 0 {
+			t.Errorf("refresh_tokens.device_id: count = %d, %v; want 0", n, err)
+		}
+		if err := tx.QueryRow(t.Context(), `SELECT count(*) FROM information_schema.tables WHERE table_name = 'devices'`).Scan(&n); err != nil || n != 0 {
+			t.Errorf("devices: count = %d, %v; want 0", n, err)
+		}
+	})
+}
+
 // ---- ワークスペース ----
 
 func TestWorkspaceOwnerIsUnique(t *testing.T) {
