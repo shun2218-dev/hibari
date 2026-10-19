@@ -26,7 +26,8 @@ export type NotifyInput = {
 
 /**
  * 通知の対象になる理由（ADR 0055 決定 1・ADR 0056 決定 3・ADR 0057 決定 1・ADR 0058 決定 2）。空なら対象ではない。
- * ブラウザ通知（shouldNotify）とアクティビティ（activity-feed.ts）が同じ規則を使う。サーバーの db/queries/chat/activity.sql も同じで、
+ * ブラウザ通知（shouldNotify）とアクティビティ（activity-feed.ts）が同じ規則を使う。サーバーの db/queries/chat/activity.sql と
+ * プッシュ通知（internal/chat/push_notification.go の pushReasons。ADR 0069 決定 5）も同じで、
  * 規則の表（testdata/notification-rules.json）を両方のテストが読む。
  *
  * - ミュートしている → 対象にしない（メンションでも）
@@ -111,6 +112,8 @@ export function notificationContent(message: Message, room: Room, channels: Chan
 /**
  * 本文を平文にする。書式の記号を外し、メンションを `@名前`、チャンネルへのリンクを `#名前`（ADR 0062 決定 5）、
  * リンクを文字（なければ URL）にする。
+ * プッシュ通知の本文はサーバー（internal/chat/plaintext の Render）が同じ規則で作る。ずれは testdata/format/plaintext.json を
+ * 両方のテストで読んで防ぐ（ADR 0069 決定 7）。
  */
 export function plainText(body: string, names: Readonly<Record<string, string>>, channels: ChannelTable = {}): string {
   const ctx = { names, channels };

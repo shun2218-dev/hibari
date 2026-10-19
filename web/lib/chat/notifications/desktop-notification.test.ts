@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { FollowedThread, Message, NotifyLevel, Room, RoomNotifications } from "@/lib/api/types.gen";
 import { message, miyuki, naoki, room } from "@/test/chat-data";
 
+import plaintextCases from "@testdata/format/plaintext.json";
 import { notificationContent, plainText, shouldNotify } from "./desktop-notification";
 
 const me = naoki.id;
@@ -101,5 +102,22 @@ describe("plainText", () => {
     const other = "01J8ZZZZZZZZZZZZZZZZZZZZZB";
     const channels = { [id]: { id, name: "雑談", private: false, archived: false } };
     expect(plainText(`<#${id}> と <#${other}>`, {}, channels)).toBe("#雑談 と #アクセスできないチャンネル");
+  });
+
+  // プッシュ通知の本文はサーバー（internal/chat/plaintext の Render）が作る。同じ表を読んで、タブの通知と見え方をそろえる（ADR 0069 決定 7）
+  describe("サーバーと共有する表（testdata/format/plaintext.json）", () => {
+    type Case = { name: string; body: string; users?: Record<string, string>; channels?: Record<string, string>; text: string };
+    const cases = (plaintextCases as { cases: Case[] }).cases;
+
+    it("表が空でない", () => {
+      expect(cases.length).toBeGreaterThan(0);
+    });
+
+    it.each(cases.map((c) => [c.name, c] as const))("%s", (_name, c) => {
+      const channels = Object.fromEntries(
+        Object.entries(c.channels ?? {}).map(([id, name]) => [id, { id, name, private: false, archived: false }]),
+      );
+      expect(plainText(c.body, c.users ?? {}, channels)).toBe(c.text);
+    });
   });
 });
