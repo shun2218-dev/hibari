@@ -8,11 +8,20 @@ export function Switch({
   label,
   checked,
   onChange,
+  disabled = false,
+  hideLabel = false,
   className,
 }: {
   label: string;
   checked: boolean;
   onChange?: (checked: boolean) => void;
+  /** 押せない（ブラウザの許可の確認を待っている間など）。見た目は薄くする。 */
+  disabled?: boolean;
+  /**
+   * 文字を読み上げだけにする。見出しの隣に置くとき（設定のカードの「プッシュ通知」）は、見出しが文字の代わりになるため。
+   * 見出しと同じ文言を渡す。
+   */
+  hideLabel?: boolean;
   className?: string;
 }) {
   return (
@@ -20,10 +29,14 @@ export function Switch({
       type="button"
       role="switch"
       aria-checked={checked}
+      disabled={disabled}
       onClick={() => onChange?.(!checked)}
-      className={cx("flex shrink-0 cursor-pointer items-center gap-2 text-sm font-medium text-text-secondary", className)}
+      className={cx(
+        "flex shrink-0 cursor-pointer items-center gap-2 text-sm font-medium text-text-secondary disabled:cursor-not-allowed disabled:opacity-60",
+        className,
+      )}
     >
-      {label}
+      {hideLabel ? <span className="sr-only">{label}</span> : label}
       <span
         aria-hidden
         className={cx(

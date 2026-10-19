@@ -77,6 +77,8 @@ import {
   EyeOff,
   ScreenShare,
   ScreenShareOff,
+  Share,
+  SquarePlus,
   Video,
   VideoOff,
 } from "lucide-react";
@@ -192,3 +194,8 @@ export const VideoOffIcon = withDefaults(VideoOff);
 export const ScreenShareIcon = withDefaults(ScreenShare);
 /** 画面共有をやめる。 */
 export const ScreenShareOffIcon = withDefaults(ScreenShareOff);
+// ---- プッシュ通知（ADR 0069） ----
+/** iPhone の Safari の「共有」（ホーム画面に追加する手順の 1 つ目。Safari のボタンと同じ形にして、どれを押すか分かるようにする）。 */
+export const ShareIcon = withDefaults(Share);
+/** iPhone の共有のメニューの「ホーム画面に追加」（同じく iOS のメニューの形に合わせる）。 */
+export const AddToHomeScreenIcon = withDefaults(SquarePlus);

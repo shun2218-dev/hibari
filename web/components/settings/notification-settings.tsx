@@ -1,6 +1,9 @@
 import { Avatar } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Button, TextButton } from "@/components/ui/button";
 import { RadioCard } from "@/components/ui/choice";
+import { BrowserIcon, PhoneIcon } from "@/components/ui/icons";
+import { Switch } from "@/components/ui/switch";
 import type { NotifyLevel } from "@/lib/api/types.gen";
 import { notifyLevelLabels } from "@/lib/chat/notifications/mute";
 import { cx } from "@/lib/cx";
@@ -36,6 +39,9 @@ export function NotificationSettings({
   return (
     <div className="flex max-w-100 flex-col gap-8">
       {browser && <BrowserNotificationSettings {...browser} />}
+      {browser?.push?.devices && browser.push.devices.length > 0 && (
+        <PushDevicesSettings devices={browser.push.devices} onStop={browser.push.onStopDevice} />
+      )}
       {workspaces.map((workspace) => (
         <fieldset key={workspace.id} className="flex flex-col gap-2">
           <legend className="flex items-center gap-2 pb-3">
@@ -76,6 +82,45 @@ export type BrowserNotificationView = {
   /** 通知音（ADR 0057 決定 6）。端末ごとの好みで、既定はオン。 */
   sound: boolean;
   onSoundChange?: (sound: boolean) => void;
+  /**
+   * このブラウザのプッシュ通知（ADR 0069）。渡したときだけ「デスクトップ通知」のカードを「プッシュ通知」のカードに替える。
+   * サーバーの設定でプッシュを使えない（`GET /api/v1/push/config` が `enabled: false`）ときは渡さない（決定 9）。
+   */
+  push?: PushNotificationView;
+};
+
+/**
+ * このブラウザのプッシュ通知の状態（ADR 0069）。
+ * - off / on: 購読していない・している（スイッチで切り替える）
+ * - requesting: ブラウザの許可の確認を待っている（スイッチはオンのまま押せない）
+ * - failed: 許可は出たが購読の登録に失敗した（スイッチはオフに戻す）
+ * - denied: ブラウザで通知が拒否されている（hibari からは求め直せないので、スイッチを出さない）
+ * - unsupported: Push API のないブラウザ
+ * - install: iPhone / iPad の Safari で、ホーム画面に追加していない（追加した hibari だけが受け取れる。決定 1）
+ */
+export type PushNotificationState = "off" | "on" | "requesting" | "failed" | "denied" | "unsupported" | "install";
+
+export type PushNotificationView = {
+  state: PushNotificationState;
+  onEnabledChange?: (enabled: boolean) => void;
+  /** install のときの「追加のしかたを見る」。ホーム画面に追加する手順のシートを開く。 */
+  onShowInstallGuide?: () => void;
+  /** 自分の購読（`GET /api/v1/me/push-subscriptions`）。1 つ以上あれば「通知を受け取る端末」の節を出す。 */
+  devices?: PushDeviceView[];
+  /** ほかの端末の購読を止める（`DELETE /api/v1/me/push-subscriptions/{id}`）。 */
+  onStopDevice?: (subscriptionId: string) => void;
+};
+
+/** プッシュ通知を受け取る端末（購読 1 つ = セッション 1 つ。ADR 0069 決定 3）。 */
+export type PushDeviceView = {
+  /** 購読の ID。 */
+  id: string;
+  kind: "browser" | "phone";
+  /** 「Chrome · macOS」「Safari · iPhone（ホーム画面）」。サーバーが user_agent から作る（決定 4）。 */
+  name: string;
+  /** 「10月19日に有効にしました」 */
+  enabledLabel: string;
+  current: boolean;
 };
 
 const permissionText: Record<BrowserNotificationPermission, string> = {
@@ -85,21 +130,35 @@ const permissionText: Record<BrowserNotificationPermission, string> = {
   unsupported: "このブラウザはデスクトップ通知に対応していません",
 };
 
-/** ユーザー設定の「通知」の、このブラウザの節（デスクトップ通知の許可と通知音）。 */
-function BrowserNotificationSettings({ permission, onRequestPermission, sound, onSoundChange }: BrowserNotificationView) {
+const pushText: Record<PushNotificationState, string> = {
+  on: "有効です。hibari を閉じていても、このブラウザに届きます。hibari のタブを見ている間は出しません",
+  off: "オフです。有効にすると、hibari を閉じていてもこのブラウザに届きます",
+  requesting: "ブラウザの確認で「許可」を選んでください",
+  failed: "通知を受け取る準備ができませんでした。もう一度お試しください",
+  denied: "ブラウザで通知が拒否されています。アドレスバーの左のアイコンから、hibari の通知を「許可」にしてください",
+  unsupported: "このブラウザはプッシュ通知に対応していません",
+  install: "iPhone と iPad では、hibari をホーム画面に追加すると通知を受け取れます",
+};
+
+/** ユーザー設定の「通知」の、このブラウザの節（デスクトップ通知かプッシュ通知と、通知音）。 */
+function BrowserNotificationSettings({ permission, onRequestPermission, sound, onSoundChange, push }: BrowserNotificationView) {
   const usable = permission === "granted";
   return (
     <fieldset className="flex flex-col gap-3">
       <legend className="pb-3 text-base font-bold text-text">このブラウザ</legend>
-      <div className="flex flex-col gap-2 rounded-md border border-border px-3.5 py-3">
-        <span className="text-base font-semibold text-text">デスクトップ通知</span>
-        <span className="text-2xs leading-normal text-text-muted">{permissionText[permission]}</span>
-        {permission === "default" && (
-          <Button size="sm" onClick={onRequestPermission} className="self-start">
-            有効にする
-          </Button>
-        )}
-      </div>
+      {push ? (
+        <PushNotificationCard {...push} />
+      ) : (
+        <div className="flex flex-col gap-2 rounded-md border border-border px-3.5 py-3">
+          <span className="text-base font-semibold text-text">デスクトップ通知</span>
+          <span className="text-2xs leading-normal text-text-muted">{permissionText[permission]}</span>
+          {permission === "default" && (
+            <Button size="sm" onClick={onRequestPermission} className="self-start">
+              有効にする
+            </Button>
+          )}
+        </div>
+      )}
       <label
         className={cx(
           "flex items-start gap-2.5 rounded-md border border-border px-3.5 py-3",
@@ -116,9 +175,100 @@ function BrowserNotificationSettings({ permission, onRequestPermission, sound, o
         />
         <span className="flex flex-col gap-0.5">
           <span className="text-base font-semibold text-text">通知音を鳴らす</span>
-          <span className="text-2xs text-text-muted">デスクトップ通知を出すときに短い音を鳴らす。この端末だけの設定</span>
+          <span className="text-2xs text-text-muted">
+            {/* プッシュの通知は Service Worker が出し、そこからは音を鳴らせない（ADR 0069 決定 2）。音が効くのはタブの通知だけ */}
+            {push ? "タブの通知を出すときに短い音を鳴らす。この端末だけの設定" : "デスクトップ通知を出すときに短い音を鳴らす。この端末だけの設定"}
+          </span>
         </span>
       </label>
+    </fieldset>
+  );
+}
+
+/**
+ * 「プッシュ通知」のカード（ADR 0069）。切り替えられる状態（off / on / requesting / failed）だけ右にスイッチを置く。
+ * 拒否・非対応・ホーム画面にない、はスイッチを押しても何も起きないので出さない（押せそうに見せない）。
+ */
+function PushNotificationCard({ state, onEnabledChange, onShowInstallGuide }: PushNotificationView) {
+  const switchable = state === "off" || state === "on" || state === "requesting" || state === "failed";
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-border px-3.5 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <span className="flex flex-col gap-1">
+          <span className="text-base font-semibold text-text">プッシュ通知</span>
+          <span className={cx("text-2xs leading-normal", state === "failed" ? "text-danger" : "text-text-muted")}>
+            {pushText[state]}
+          </span>
+        </span>
+        {switchable && (
+          <Switch
+            label="プッシュ通知"
+            hideLabel
+            // 確認を待っている間は、押した結果（オン）を見せたまま押せなくする。失敗したらオフに戻す
+            checked={state === "on" || state === "requesting"}
+            disabled={state === "requesting"}
+            onChange={onEnabledChange}
+            className="mt-0.5"
+          />
+        )}
+      </div>
+      {state === "install" && (
+        <Button size="sm" onClick={onShowInstallGuide} className="self-start">
+          追加のしかたを見る
+        </Button>
+      )}
+    </div>
+  );
+}
+
+const pushDeviceIcon = { browser: BrowserIcon, phone: PhoneIcon } as const;
+
+/**
+ * 「通知を受け取る端末」（ADR 0069 決定 4）。見た目は「ログイン中のデバイス」（settings/devices）にそろえる。
+ * 購読はセッションに結び付くので（決定 3）、ここで止めるのはプッシュだけで、その端末のログインは残る。
+ */
+function PushDevicesSettings({ devices, onStop }: { devices: PushDeviceView[]; onStop?: (subscriptionId: string) => void }) {
+  return (
+    <fieldset className="flex flex-col gap-3">
+      <legend className="pb-1 text-base font-bold text-text">通知を受け取る端末</legend>
+      <p className="text-xs leading-relaxed text-text-secondary">プッシュ通知を有効にした端末です。ログアウトした端末には届きません</p>
+      <ul className="overflow-hidden rounded-md border border-border">
+        {devices.map((device, index) => {
+          const Icon = pushDeviceIcon[device.kind];
+          return (
+            <li
+              key={device.id}
+              className={cx(
+                "flex items-center gap-3 px-3.5 py-3",
+                index > 0 && "border-t border-border",
+                device.current && "bg-surface-muted",
+              )}
+            >
+              <span
+                className={cx(
+                  "flex size-9 shrink-0 items-center justify-center rounded-sm text-text-secondary",
+                  !device.current && "bg-surface-muted",
+                )}
+              >
+                <Icon className="size-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-2">
+                  <span className="truncate text-base text-text">{device.name}</span>
+                  {device.current && <Badge tone="primary">このデバイス</Badge>}
+                </p>
+                <p className="text-xs text-text-muted">{device.enabledLabel}</p>
+              </div>
+              {/* いまの端末はカードのスイッチで止める。入口を 2 つにしない */}
+              {!device.current && (
+                <TextButton tone="danger" onClick={() => onStop?.(device.id)} className="text-sm font-semibold">
+                  停止する
+                </TextButton>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </fieldset>
   );
 }

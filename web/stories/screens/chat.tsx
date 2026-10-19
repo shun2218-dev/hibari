@@ -24,7 +24,8 @@ import { HuddleRing } from "@/components/chat/huddle-ring";
 import { HuddleBar } from "@/components/chat/huddle-screen";
 import { MembersPanel } from "@/components/chat/members-panel";
 import { NotificationMenu } from "@/components/chat/notification-menu";
-import { NotificationPermissionBanner } from "@/components/chat/notification-permission-banner";
+import { HomeScreenSheet } from "@/components/chat/home-screen-sheet";
+import { type NotificationBannerKind, NotificationPermissionBanner } from "@/components/chat/notification-permission-banner";
 import { PinsList } from "@/components/chat/pins-list";
 import { ProfileHoverCard } from "@/components/chat/profile-card";
 import { RoomHeader } from "@/components/chat/room-header";
@@ -304,8 +305,13 @@ export type ChatOptions = {
    * - sidebar: ミュートしたルームの混ざったサイドバー（開いているルームはミュートしていない）
    */
   notifications?: "menu" | "menu-muted" | "menu-temporary" | "menu-dm" | "sidebar";
-  /** サイドバーの上の「デスクトップ通知を有効にしますか？」の帯（ADR 0057）。 */
-  permissionBanner?: boolean;
+  /**
+   * サイドバーの上の「通知を有効にしますか？」の帯。true はプッシュを使えないときのデスクトップ通知の帯（ADR 0057）、
+   * 種類を渡すとプッシュ通知の帯（ADR 0069。push / install）。
+   */
+  permissionBanner?: boolean | NotificationBannerKind;
+  /** iPhone の「ホーム画面に追加する」のシートを開いたところ（ADR 0069 決定 1）。 */
+  homeScreenSheet?: boolean;
   /**
    * 左のメニューで開いているもの（ADR 0058。既定はホーム）。md 以上はサイドバーの左に縦のメニュー、モバイルは一覧の下にタブを出し、
    * サイドバーの列の中身を選んだメニューのものにする（ホーム・DM・アクティビティ・後で）。
@@ -495,6 +501,7 @@ export function chat({
   saved,
   notifications,
   permissionBanner,
+  homeScreenSheet,
   side = "home",
   activity,
   dmsEmpty,
@@ -714,7 +721,16 @@ export function chat({
             }}
             railed
             roomHref={roomHref}
-            notice={permissionBanner ? <NotificationPermissionBanner onEnable={noop} onDismiss={noop} /> : undefined}
+            notice={
+              permissionBanner ? (
+                <NotificationPermissionBanner
+                  kind={permissionBanner === true ? "desktop" : permissionBanner}
+                  onEnable={noop}
+                  onShowInstallGuide={noop}
+                  onDismiss={noop}
+                />
+              ) : undefined
+            }
             search={search}
             onCreateRoom={noop}
             onStartDm={noop}
@@ -991,6 +1007,8 @@ export function chat({
         />
       )}
       <CreateWorkspaceDialog open={Boolean(createWorkspace)} />
+      {/* シートは body の直下に出る（Portal）ので、ダークの印が届かない。撮るのはライトのモバイルだけ */}
+      {homeScreenSheet && <HomeScreenSheet onClose={noop} />}
     </ChannelLinksProvider>
   );
 }

@@ -98,3 +98,43 @@ export const MobilePermissionBanner: Story = {
   globals: { viewport: { value: "mobile" } },
   render: () => chat({ permissionBanner: true, mobileView: "list" }),
 };
+
+// ---- プッシュ通知（ADR 0069）。上の 3 つはプッシュを使えないときの帯として残る（決定 9） ----
+
+export const PushBanner: Story = {
+  name: "プッシュ通知を有効にする帯",
+  tags: ["since:7.1"],
+  render: () => chat({ permissionBanner: "push" }),
+};
+
+export const PushBannerDark: Story = {
+  name: "プッシュ通知を有効にする帯（ダーク）",
+  tags: ["since:7.1"],
+  parameters: { theme: "dark" },
+  render: () => chat({ permissionBanner: "push", dark: true }),
+};
+
+export const MobilePushBanner: Story = {
+  name: "プッシュ通知を有効にする帯（モバイル）",
+  tags: ["since:7.1"],
+  parameters: { screenshot: { size: "390x844" } },
+  globals: { viewport: { value: "mobile" } },
+  render: () => chat({ permissionBanner: "push", mobileView: "list" }),
+};
+
+/** iPhone の Safari で、ホーム画面に追加していない（決定 1）。iPhone だけの帯なのでモバイルだけ撮る。 */
+export const MobileInstallBanner: Story = {
+  name: "ホーム画面に追加すると通知が届く帯（iPhone）",
+  tags: ["since:7.1"],
+  parameters: { screenshot: { size: "390x844" } },
+  globals: { viewport: { value: "mobile" } },
+  render: () => chat({ permissionBanner: "install", mobileView: "list" }),
+};
+
+export const MobileHomeScreenSheet: Story = {
+  name: "ホーム画面に追加する手順（iPhone）",
+  tags: ["since:7.1"],
+  parameters: { screenshot: { size: "390x844" } },
+  globals: { viewport: { value: "mobile" } },
+  render: () => chat({ permissionBanner: "install", mobileView: "list", homeScreenSheet: true }),
+};
