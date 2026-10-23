@@ -20,4 +20,21 @@ describe("HomeScreenSheet（ADR 0069 決定 1）", () => {
     await userEvent.click(within(sheet).getByRole("button", { name: "閉じる" }));
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it("開いたらシートへフォーカスを移し、閉じたら元の要素に戻す。Escape でも閉じる", async () => {
+    const onClose = vi.fn();
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+
+    const { unmount } = render(<HomeScreenSheet onClose={onClose} />);
+    expect(screen.getByRole("dialog", { name: "ホーム画面に追加する" })).toHaveFocus();
+
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledOnce();
+
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
 });
