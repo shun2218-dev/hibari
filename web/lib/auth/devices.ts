@@ -1,5 +1,6 @@
 import type { DeviceKind, DeviceView } from "@/components/settings/devices-settings";
-import type { Session } from "@/lib/api/types.gen";
+import type { PushDeviceView } from "@/components/settings/notification-settings";
+import type { PushSubscriptionItem, Session } from "@/lib/api/types.gen";
 
 /**
  * ログイン中のデバイスの表示（`settings/devices/devices.png`）。
@@ -78,6 +79,30 @@ export function toDeviceView(session: Session, now: Date, timeZone?: string): De
     lastActiveLabel: session.current ? "現在アクティブ" : formatLastActive(new Date(session.last_used_at), now, timeZone),
     current: session.current,
   };
+}
+
+/**
+ * 「通知を受け取る端末」の 1 行（`settings/notifications/notifications-push.png`。ADR 0069 決定 4）。
+ * 購読は sid に 1 つで（決定 3）、端末はログイン中のデバイスと同じものなので、名前と種類も同じ関数で作る。
+ * サーバーは user_agent を保存したまま返す（ADR 0019 と同じ分担）。
+ */
+export function toPushDeviceView(subscription: PushSubscriptionItem, now: Date, timeZone?: string): PushDeviceView {
+  return {
+    id: subscription.id,
+    // Web Push を受けるのはブラウザだけなので、ネイティブのアプリの desktop は来ない。来てもブラウザの絵にしておく
+    kind: deviceKind(subscription.user_agent) === "phone" ? "phone" : "browser",
+    name: deviceLabel(subscription.user_agent),
+    enabledLabel: `${formatDate(new Date(subscription.created_at), now, timeZone)}に有効にしました`,
+    current: subscription.is_current,
+  };
+}
+
+/** 「10月19日」。年が違うときだけ年を付ける（formatLastActive の古い日付と同じ書き方）。 */
+function formatDate(date: Date, now: Date, timeZone: string | undefined): string {
+  const day = localDay(date, timeZone);
+  const today = localDay(now, timeZone);
+  if (day.year === today.year) return `${day.month}月${day.day}日`;
+  return `${day.year}年${day.month}月${day.day}日`;
 }
 
 type Day = { year: number; month: number; day: number };
