@@ -23,6 +23,11 @@ export type SessionOptions = {
   /** 現在時刻（ミリ秒）。Access Token の期限の判定に使う。 */
   now?: () => number;
   locks?: LockManagerLike;
+  /**
+   * ログアウトの前に、この端末で片付けること（このブラウザのプッシュ通知の購読を外す。ADR 0069 決定 3）。
+   * 認証はプッシュを知らないので、外から渡す。失敗してもログアウトは続ける。
+   */
+  beforeLogout?: () => Promise<void>;
 };
 
 /** Access Token の期限が、この時間を切っていたら先に refresh する（時計のずれと通信時間の分の余裕）。 */

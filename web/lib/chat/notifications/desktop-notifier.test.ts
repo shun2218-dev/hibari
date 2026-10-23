@@ -157,6 +157,20 @@ describe("createDesktopNotifier（ADR 0057 決定 2）", () => {
     expect(a.show).not.toHaveBeenCalled();
   });
 
+  it("このブラウザでプッシュ通知が有効なら出さず、音も鳴らさない（ADR 0069 決定 2。Service Worker が出す）", () => {
+    let push = true;
+    const a = tab({ tabId: "a", pushEnabled: () => push });
+    a.notifier.start();
+
+    expect(a.notifier.notify(content)).toBe(false);
+    expect(a.show).not.toHaveBeenCalled();
+    expect(a.playSound).not.toHaveBeenCalled();
+
+    // このブラウザで止めたら（または登録に失敗したら）、タブの通知に戻る
+    push = false;
+    expect(a.notifier.notify(content)).toBe(true);
+  });
+
   it("出したら音を鳴らし（切っていれば鳴らさない）、押されたらそのメッセージを開く", () => {
     const a = tab({ tabId: "a" });
     a.notifier.start();

@@ -21,6 +21,8 @@ import { type AttachmentUploader, type UploaderOptions, createAttachmentUploader
 import { notificationContent, shouldNotify } from "@/lib/chat/notifications/desktop-notification";
 import { type DesktopNotifier, createChime, createDesktopNotifier } from "@/lib/chat/notifications/desktop-notifier";
 import { soundEnabled } from "@/lib/chat/notifications/notification-prefs";
+import { listenServiceWorkerOpen } from "@/lib/chat/notifications/service-worker-open";
+import { type WebPush, browserPushEnv, createWebPush } from "@/lib/chat/notifications/web-push";
 import { watchWindowInput, watchWindowVisibility, windowVisible } from "@/lib/chat/realtime/activity";
 import { type SocketLike, webSocketUrl } from "@/lib/chat/realtime/connection";
 import { type Realtime, createRealtime } from "@/lib/chat/realtime/subscriptions";
@@ -34,7 +36,12 @@ export type ChatContextValue = {
    * ブラウザ通知（ADR 0057）。押したときの移動は画面（ルーター）が決めるので、あとから setOpen で渡す。
    * テストや Notification のない環境では null。
    */
-  desktop: { notifier: DesktopNotifier; setOpen: (open: (url: string) => void) => void } | null;
+  desktop: { notifier: DesktopNotifier; setOpen: (open: (url: string) => void) => void; open: (url: string) => void } | null;
+  /**
+   * このブラウザのプッシュ通知（ADR 0069）。設定の「通知」とサイドバーの帯（SHU-28 / SHU-29）が state / enable / disable を呼ぶ。
+   * 偽のソケットで描くテストでは null。
+   */
+  push: WebPush | null;
   media: MediaStore;
   linkCards: LinkCardStore;
   /** 本文に貼られたハドルのリンクのカードのうち、手元のストアにないルームの中身（ADR 0067 決定 2）。 */
@@ -101,8 +108,9 @@ export function ChatProvider({
     const api = createChatApi(session.request);
     const store = createChatStore(api, { userId });
     const { url, createSocket, random } = transport ?? browserTransport();
-    // 偽のソケットで描くテストでは、ブラウザ通知の係を作らない（本物の Notification と Web Locks を使うため）
-    const desktop = transport ? null : createDesktop();
+    // 偽のソケットで描くテストでは、ブラウザ通知の係もプッシュも作らない（本物の Notification・Web Locks・Service Worker を使うため）
+    const push = transport || typeof window === "undefined" ? null : createWebPush(api, browserPushEnv());
+    const desktop = transport ? null : createDesktop(push);
     // realtime より先に作れないので、心拍は後から入れる realtime を読む
     const late: { realtime?: Realtime } = {};
     const envFactory = huddleEnv ?? (!transport && callSupported() ? browserCallEnv : undefined);
@@ -144,6 +152,7 @@ export function ChatProvider({
       store,
       realtime,
       desktop,
+      push,
       media,
       linkCards,
       huddleLinkCards,
@@ -170,7 +179,15 @@ export function ChatProvider({
   useEffect(() => {
     value.realtime.start();
     value.desktop?.notifier.start();
+    // ページを開くたびに、いまの購読をサーバーに登録し直す（ADR 0069 決定 4）。通知を押したときの移動もここで受ける
+    void value.push?.resync();
+    const stopOpen = value.push
+      ? listenServiceWorkerOpen(navigator.serviceWorker, (url) =>
+          value.desktop ? value.desktop.open(url) : window.location.assign(url),
+        )
+      : undefined;
     return () => {
+      stopOpen?.();
       value.huddle?.surface.hide();
       value.huddle?.call.dispose();
       value.realtime.stop();
@@ -193,8 +210,9 @@ function browserHuddleWindow(): HuddleWindowOptions {
 /**
  * ブラウザ通知の係を作る（ADR 0057）。Notification のない環境では null。
  * 音は、このタブで操作があったときに鳴らせるようにしておく（自動再生の制限。決定 6）。
+ * このブラウザでプッシュ通知が有効なら、係は出さない（ADR 0069 決定 2）。
  */
-function createDesktop(): ChatContextValue["desktop"] {
+function createDesktop(push: WebPush | null): ChatContextValue["desktop"] {
   if (typeof window === "undefined" || !("Notification" in window)) return null;
   const chime = createChime();
   watchWindowInput(() => chime.unlock());
@@ -218,9 +236,11 @@ function createDesktop(): ChatContextValue["desktop"] {
     playSound: () => chime.play(),
     soundEnabled,
     open: (url) => open(url),
+    pushEnabled: () => push?.enabled() ?? false,
   });
   return {
     notifier,
+    open: (url) => open(url),
     setOpen: (next) => {
       open = next;
     },

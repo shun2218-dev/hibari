@@ -12,7 +12,7 @@ import { createProfile } from "./profile";
  */
 export function createSession(options: SessionOptions) {
   const core = createSessionCore(options);
-  const account = createAccount(core);
+  const account = createAccount(core, { beforeLogout: options.beforeLogout });
   const email = createEmail(core);
   const profile = createProfile(core);
   const devices = createDevices(core);

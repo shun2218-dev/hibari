@@ -1,0 +1,8 @@
+{
+  "description": "本文がなく添付だけの投稿の通知の本文（docs/ui の「届く通知の中身」・ADR 0069 決定 7）。タブの通知は Web（web/lib/chat/notifications/desktop-notification.ts の filesSentText）、プッシュ通知は Go（internal/chat/plaintext の FilesSent）が作るので、両方のテストがこのファイルを読んでずれを防ぐ。files は添付の順のファイル名。100 文字で切るのは呼ぶ側。",
+  "cases": [
+    {"name": "1 件", "files": ["hibari-type-scale.pdf"], "text": "ファイルを 1 件送りました: hibari-type-scale.pdf"},
+    {"name": "2 件は読点でつなぐ", "files": ["a.pdf", "b.png"], "text": "ファイルを 2 件送りました: a.pdf、b.png"},
+    {"name": "名前には手を加えない", "files": ["議事録 10月.docx", "*memo*.txt"], "text": "ファイルを 2 件送りました: 議事録 10月.docx、*memo*.txt"}
+  ]
+}

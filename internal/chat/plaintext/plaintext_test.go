@@ -39,6 +39,34 @@ func TestRenderSharedCases(t *testing.T) {
 	}
 }
 
+// TestFilesSentSharedCases は、Web の filesSentText と同じ例（testdata/format/files-sent.json）で同じ文言になることを確かめる。
+func TestFilesSentSharedCases(t *testing.T) {
+	data, err := os.ReadFile("../../../testdata/format/files-sent.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file struct {
+		Cases []struct {
+			Name  string   `json:"name"`
+			Files []string `json:"files"`
+			Text  string   `json:"text"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &file); err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Cases) == 0 {
+		t.Fatal("no cases")
+	}
+	for _, c := range file.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			if got := FilesSent(c.Files); got != c.Text {
+				t.Errorf("FilesSent(%q) = %q, want %q", c.Files, got, c.Text)
+			}
+		})
+	}
+}
+
 func TestChannelIDs(t *testing.T) {
 	const a, b = "01J8ZZZZZZZZZZZZZZZZZZZZZA", "01J8ZZZZZZZZZZZZZZZZZZZZZB"
 	tests := []struct {

@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type { FollowedThread, Message, NotifyLevel, Room, RoomNotifications } from "@/lib/api/types.gen";
+import type { FollowedThread, Message, MessageAttachment, NotifyLevel, Room, RoomNotifications } from "@/lib/api/types.gen";
 import { message, miyuki, naoki, room } from "@/test/chat-data";
 
+import filesSentCases from "@testdata/format/files-sent.json";
 import plaintextCases from "@testdata/format/plaintext.json";
-import { notificationContent, plainText, shouldNotify } from "./desktop-notification";
+import { filesSentText, notificationContent, plainText, shouldNotify } from "./desktop-notification";
+
+function file(name: string): MessageAttachment {
+  return { id: `a-${name}`, file_name: name, content_type: "application/octet-stream", size_bytes: 1, width: null, height: null };
+}
 
 const me = naoki.id;
 const NOW = Date.parse("2026-09-22T09:00:00Z");
@@ -75,8 +80,11 @@ describe("notificationContent（ADR 0057 決定 3）", () => {
   });
 
   it("DM は送信者だけ、スレッドの返信はパネルを開く先、添付だけは決まった文言", () => {
-    const dm = notificationContent(message(5, { id: "m-5", sender: miyuki, body: "" }), room("d1", "", { kind: "dm", workspace_id: "ws-1" }));
-    expect(dm).toMatchObject({ title: "高橋 みゆき", body: "ファイルを送信しました" });
+    const dm = notificationContent(
+      message(5, { id: "m-5", sender: miyuki, body: "", attachments: [file("hibari-type-scale.pdf")] }),
+      room("d1", "", { kind: "dm", workspace_id: "ws-1" }),
+    );
+    expect(dm).toMatchObject({ title: "高橋 みゆき", body: "ファイルを 1 件送りました: hibari-type-scale.pdf" });
 
     const reply = notificationContent(
       message(6, { id: "m-6", sender: miyuki, body: "返信", thread_root_id: "m-1" }),
@@ -85,9 +93,30 @@ describe("notificationContent（ADR 0057 決定 3）", () => {
     expect(reply).toMatchObject({ title: "高橋 みゆき（#雑談 のスレッド）", url: "/w/ws-1/r/r1?m=m-6&t=m-1" });
   });
 
+  it("添付が複数なら件数と名前を読点でつなぐ。本文があれば本文を出す（サーバーの messagePushBody と同じ）", () => {
+    const files = notificationContent(message(5, { sender: miyuki, body: "", attachments: [file("a.pdf"), file("b.png")] }), room("r1", "雑談"));
+    expect(files.body).toBe("ファイルを 2 件送りました: a.pdf、b.png");
+    const withBody = notificationContent(message(5, { sender: miyuki, body: "資料です", attachments: [file("a.pdf")] }), room("r1", "雑談"));
+    expect(withBody.body).toBe("資料です");
+  });
+
   it("本文は 100 文字で切る", () => {
     const got = notificationContent(message(5, { sender: miyuki, body: "あ".repeat(120) }), room("r1", "雑談"));
     expect(got.body).toBe(`${"あ".repeat(100)}…`);
+  });
+});
+
+// プッシュ通知の添付だけの本文はサーバー（internal/chat/plaintext の FilesSent）が作る。同じ表を読んで文言をそろえる（ADR 0069 決定 7）
+describe("filesSentText（testdata/format/files-sent.json）", () => {
+  type Case = { name: string; files: string[]; text: string };
+  const cases = (filesSentCases as { cases: Case[] }).cases;
+
+  it("表が空でない", () => {
+    expect(cases.length).toBeGreaterThan(0);
+  });
+
+  it.each(cases.map((c) => [c.name, c] as const))("%s", (_name, c) => {
+    expect(filesSentText(c.files)).toBe(c.text);
   });
 });
 

@@ -1,12 +1,12 @@
 import { apiErrorFrom } from "@/lib/api/error";
 import type { LoginRequest, RegisterRequest, TokenResponse } from "@/lib/api/types.gen";
 
-import type { SessionCore } from "./core";
+import type { SessionCore, SessionOptions } from "./core";
 
 /**
  * 登録・ログイン・ログアウト（ADR 0010）。どれも Refresh Token の Cookie を使う。
  */
-export function createAccount(core: SessionCore) {
+export function createAccount(core: SessionCore, { beforeLogout }: Pick<SessionOptions, "beforeLogout"> = {}) {
   const { acceptTokens, authRequest, setState, signOutLocally } = core;
 
   async function signIn(path: "login" | "register", body: LoginRequest | RegisterRequest) {
@@ -34,6 +34,8 @@ export function createAccount(core: SessionCore) {
      * （Cookie は残るので、次に開いたときに refresh で戻る）。
      */
     async logout(): Promise<void> {
+      // 失効させる前に片付ける（失効の後だと、片付けに要る状態がもう画面から消えている）
+      await beforeLogout?.().catch(() => {});
       try {
         await authRequest("logout");
       } catch {
