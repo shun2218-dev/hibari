@@ -8,6 +8,8 @@
 // - web/app/apple-icon.png       ← mark.svg を 180x180 で撮る。iOS は透明な角を黒く塗るので、角も緑で埋める
 // - web/app/favicon.ico          ← mark.svg を 32x32 で撮り、PNG をそのまま ICO に包む（SVG を読めないブラウザ向け。丸は付けない）
 // - web/app/opengraph-image.png  ← docs/ui/brand/ogp.html を 1200x630 で撮る
+// - web/public/notification-icon.png ← mark.svg を 192x192 で撮る（プッシュ通知のアイコン。ADR 0069 決定 7）。
+//   通知の icon は SVG を受けないブラウザがあるので PNG にする。角は透明のまま（OS が通知の中に置くだけで、黒く塗られない）
 //
 // 画像は headless Chrome で撮る（tools/shoot-ui.mjs と同じ。画像の変換の道具をホストに入れなくてよい）。
 // 生成したファイルもコミットする。デザインを変えたら、もとを直してから書き出し直す。
@@ -87,4 +89,5 @@ await copyFile(path.join(BRAND, "mark-activity.svg"), path.join(WEB, "public/ico
 await writeFile(path.join(WEB, "app/apple-icon.png"), await screenshotSVG(path.join(BRAND, "mark.svg"), 180, { background: "#2f6f62" }));
 await writeFile(path.join(WEB, "app/favicon.ico"), icoFromPNG(await screenshotSVG(path.join(BRAND, "mark.svg"), 32), 32));
 await writeFile(path.join(WEB, "app/opengraph-image.png"), await screenshot(path.join(BRAND, "ogp.html"), 1200, 630));
-console.log("wrote web/app/{icon.svg,apple-icon.png,favicon.ico,opengraph-image.png} and web/public/icon-activity.svg");
+await writeFile(path.join(WEB, "public/notification-icon.png"), await screenshotSVG(path.join(BRAND, "mark.svg"), 192));
+console.log("wrote web/app/{icon.svg,apple-icon.png,favicon.ico,opengraph-image.png} and web/public/{icon-activity.svg,notification-icon.png}");
