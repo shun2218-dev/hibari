@@ -16,6 +16,9 @@ export const metadata: Metadata = {
   title: { absolute: LP_TITLE },
   metadataBase: siteBaseUrl(),
   alternates: { canonical: "/" },
+  // app/manifest.ts はアプリ（`app.`）のもの。root が入れる link を外す（LP のホストでは /manifest.webmanifest が /lp の下に
+  // 書き換わって 404 になる。proxy.ts）。LP をホーム画面に足しても通知は届かないので、インストールできるアプリにしない
+  manifest: null,
 };
 
 export default function LandingRoute() {
