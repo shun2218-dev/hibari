@@ -98,7 +98,7 @@
 | `web/app/apple-icon.png` | iOS のホーム画面（180px） |
 
 - タブの背景はブラウザと OS の設定で明るくも暗くもなる（hibari のテーマの設定とは関係ない）。マークはどちらの背景でも読める形にしてもらう。
-- Web App Manifest（PWA）は作らない。ロードマップにないため。
+- Web App Manifest（PWA）は作らない。ロードマップにないため。→ 2026-10-23 の追記で取り下げ（ADR 0069 のプッシュ通知で要るようになった）
 - **追記（2026-09-24、実装）**:
   - マークはオーナーの要望で雲雀の形を入れ、3 案（さえずる雲雀 / 吹き出しが雲雀になる / さえずる吹き出し）から「さえずる吹き出し」に決めた。もとは `docs/ui/brand/`（`docs/ui/README.md` の「ブランド」）。
   - 丸は雲雀のくちばしに重ならないよう、右上の角に寄せた（`cx=54 cy=10 r=9`、白い縁取り）。
@@ -210,6 +210,14 @@ Claude Design に頼むもの:
 3. ファビコンの丸を琥珀にする（決定 3）。Slack は赤。
 4. LP はライトだけ（決定 6）。
 5. 決定 2 の表のタイトル。特に、DM は相手の表示名、`/j/<code>` にはワークスペース名を入れない、の 2 点。
+
+## 追記（2026-10-23、Web App Manifest を作った。ADR 0069）
+
+- 決定 3 の「Web App Manifest（PWA）は作らない。ロードマップにないため」は取り下げる。Phase 7.1 のプッシュ通知（ADR 0069）で、iPhone と iPad はホーム画面に追加した Web アプリでしかプッシュを受け取れないため、`display: standalone` の manifest が要る（#238）
+- `web/app/manifest.ts` が `/manifest.webmanifest` を出す。`start_url` と `scope` は `/`（最後のワークスペースか、ログインに振り分ける）。アイコンは `make brand` がマークから書き出す 192px と 512px
+- `background_color` と `theme_color` は `globals.css` のライトの `--color-background` をビルドのときに読む。Android のステータスバーを画面の地の色に合わせるため
+- LP（apex）には manifest を付けない。LP をホーム画面に追加しても通知は受け取れないため
+- オフラインのキャッシュは持たない（Service Worker に fetch の処理を置かない。ADR 0069）。「PWA」としてできるのは、ホーム画面からの起動とプッシュ通知だけ
 
 ## 実装の順序
 
