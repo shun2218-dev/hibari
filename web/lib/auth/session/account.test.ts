@@ -56,6 +56,28 @@ describe("登録・ログイン・ログアウト", () => {
       expect(api.calls.at(-1)?.init.credentials).toBe("include");
     });
 
+    it("runs beforeLogout before revoking, and still signs out when it fails", async () => {
+      const order: string[] = [];
+      const api = fakeApi({
+        "POST /api/v1/auth/login": () => tokens("at-1", true),
+        "POST /api/v1/auth/logout": () => {
+          order.push("logout");
+          return new Response(null, { status: 204 });
+        },
+      });
+      const beforeLogout = vi.fn(async () => {
+        order.push("beforeLogout");
+        throw new Error("boom");
+      });
+      const session = createSession({ baseUrl: BASE, fetch: api.fetch, beforeLogout });
+      await session.login({ email: user.email, password: "correct-horse" });
+
+      await session.logout();
+
+      expect(order).toEqual(["beforeLogout", "logout"]);
+      expect(session.getSnapshot()).toEqual({ status: "signed_out" });
+    });
+
     it("signs out locally even when the server is unreachable", async () => {
       const api = fakeApi({
         "POST /api/v1/auth/login": () => tokens("at-1", true),

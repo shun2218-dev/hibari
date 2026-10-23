@@ -6,6 +6,7 @@ import type { NotificationContent } from "./desktop-notification";
  * - Web Locks の `hibari:notifier` を持ったタブだけが出す。ロックを持つタブが閉じられると、待っていたタブが引き継ぐ（ADR 0024 と同じ仕組み）
  * - どのタブも見えていないときだけ出す。タブの見え方は BroadcastChannel で知らせ合う
  * - Web Locks がない環境では、そのタブが見えていないときにそのタブが出す（重複は tag で OS が置き換える）
+ * - このブラウザでプッシュ通知を有効にしていたら出さない（ADR 0069 決定 2。Service Worker が出す）
  *
  * ブラウザの API はすべて外から渡す（テストで偽物に替えるため）。
  */
@@ -44,6 +45,11 @@ export type DesktopNotifierOptions = {
   soundEnabled: () => boolean;
   /** 押したときに、このタブを前に出して開く。 */
   open: (url: string) => void;
+  /**
+   * このブラウザでプッシュ通知が有効か（web-push.ts）。有効なら出さない。Service Worker がプッシュを受けて出すので、
+   * 二重に出さないため（ADR 0069 決定 2）。省けば常に無効（プッシュのない環境）。
+   */
+  pushEnabled?: () => boolean;
 };
 
 export type DesktopNotifier = {
@@ -117,7 +123,7 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
     },
 
     notify(content) {
-      if (!running || !leader || options.permission() !== "granted" || anyVisible()) return false;
+      if (!running || !leader || options.permission() !== "granted" || options.pushEnabled?.() || anyVisible()) return false;
       options.show(content, () => options.open(content.url));
       if (options.soundEnabled()) options.playSound();
       return true;
