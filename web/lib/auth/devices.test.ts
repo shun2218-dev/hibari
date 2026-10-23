@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { deviceKind, deviceLabel, formatLastActive, toDeviceView } from "./devices";
+import { deviceKind, deviceLabel, formatLastActive, toDeviceView, toPushDeviceView } from "./devices";
 
 const TZ = "Asia/Tokyo";
 
@@ -77,5 +77,27 @@ describe("toDeviceView", () => {
     );
 
     expect(view).toEqual({ id: "s-1", kind: "browser", name: "Chrome · macOS", lastActiveLabel: "現在アクティブ", current: true });
+  });
+});
+
+describe("toPushDeviceView（ADR 0069 決定 4）", () => {
+  const now = new Date("2026-10-23T12:00:00+09:00");
+
+  it("名前と種類はログイン中のデバイスと同じに作り、有効にした日を書く", () => {
+    expect(
+      toPushDeviceView({ id: "p1", user_agent: chromeMac, is_current: true, created_at: "2026-10-19T09:00:00+09:00" }, now, TZ),
+    ).toEqual({ id: "p1", kind: "browser", name: "Chrome · macOS", enabledLabel: "10月19日に有効にしました", current: true });
+  });
+
+  it("電話は phone、年が違えば年を付ける", () => {
+    expect(
+      toPushDeviceView({ id: "p2", user_agent: chromeAndroid, is_current: false, created_at: "2025-12-31T10:00:00+09:00" }, now, TZ),
+    ).toMatchObject({ kind: "phone", name: "Chrome · Android", enabledLabel: "2025年12月31日に有効にしました", current: false });
+  });
+
+  it("日付は見る人の暦で決める（UTC では前の日でも、東京では次の日）", () => {
+    expect(
+      toPushDeviceView({ id: "p3", user_agent: chromeMac, is_current: false, created_at: "2026-10-18T16:00:00Z" }, now, TZ).enabledLabel,
+    ).toBe("10月19日に有効にしました");
   });
 });
