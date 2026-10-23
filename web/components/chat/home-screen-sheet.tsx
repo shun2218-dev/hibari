@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useEffect, useId, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { AddToHomeScreenIcon, ShareIcon } from "@/components/ui/icons";
@@ -13,17 +13,33 @@ import { Portal } from "@/components/ui/portal";
  * ホーム画面への追加はページから起こせない（Safari にその API がない）ので、押す場所を Safari の見た目のまま示すしかない。
  * 開くのは iPhone / iPad の Safari だけなので、下から出るシートにする（メンバーやリアクションのシートと同じ形）。
  * 開くかどうかは呼ぶ側が決め、開いている間だけ描く。
+ *
+ * フォーカスは Dialog と同じく、開いたらシートへ移し、閉じたら開いたボタン（「追加のしかた」）へ戻す。
+ * 画面の読み上げで、シートを閉じた後に位置を見失わないため。Escape でも閉じる（外付けのキーボードの iPad）。
  */
 export function HomeScreenSheet({ onClose }: { onClose?: () => void }) {
   const titleId = useId();
+  const sheetRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    sheetRef.current?.focus();
+    return () => previous?.focus();
+  }, []);
+
   return (
     <Portal>
       <div aria-hidden className="fixed inset-0 z-40 bg-overlay" onClick={onClose} />
       <div
+        ref={sheetRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="fixed inset-x-0 bottom-0 z-50 flex flex-col gap-5 rounded-t-lg bg-surface px-5 pt-6 pb-8"
+        tabIndex={-1}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onClose?.();
+        }}
+        className="fixed inset-x-0 bottom-0 z-50 flex flex-col gap-5 rounded-t-lg bg-surface px-5 pt-6 pb-8 focus-visible:outline-none"
       >
         <div className="flex flex-col gap-2">
           <h2 id={titleId} className="text-xl font-bold text-text">
